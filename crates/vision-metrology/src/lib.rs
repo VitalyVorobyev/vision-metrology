@@ -7,4 +7,5 @@ pub use vm_contour::*;
 pub use vm_core::*;
 pub use vm_edge::*;
 pub use vm_laser::*;
+pub use vm_morph::*;
 pub use vm_pyr::*;

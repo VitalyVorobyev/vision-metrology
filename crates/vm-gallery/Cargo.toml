@@ -1,11 +1,16 @@
 [package]
-name = "vision-metrology"
+name = "vm-gallery"
 version = "0.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
-description = "Industrial machine-vision metrology library"
+description = "External-fixture gallery executor for vision-metrology"
 
 [dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+image = { version = "0.25", default-features = true, features = ["png"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 vm-contour = { path = "../vm-contour" }
 vm-core = { path = "../vm-core" }
 vm-edge = { path = "../vm-edge" }
