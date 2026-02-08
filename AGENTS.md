@@ -1,6 +1,11 @@
 # AGENTS.md
 
-Guidance for coding agents working in `vision-metrology`.
+Guidance for coding agents working in `vision-metrology`. This repo implements high-precision, high-performance image processing for industrial metrology:
+
+- Morphology
+- 1D/2D subpixel edges
+- Laser stripe extraction (edge-pair method)
+- Subpixel contours with junctions (T/Y)
 
 ## Project layout
 - `crates/vm-core`: core image/geometry/sampling primitives.
@@ -20,6 +25,12 @@ Guidance for coding agents working in `vision-metrology`.
 - Rows scanning should be the fastest path.
 - Column scanning should use reusable gather buffers (or transposed mode if provided).
 - Reuse detector/extractor scratch buffers across calls.
+
+## Style (minimal)
+
+- Keep public APIs small and explicit.
+- Document coordinate conventions and border/ROI rules in crate docs.
+- Prefer deterministic tests (synthetic fixtures) over “random noise” unless seeded.
 
 ## Typical tasks
 
