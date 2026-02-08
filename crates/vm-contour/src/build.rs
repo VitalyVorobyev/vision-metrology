@@ -114,14 +114,7 @@ pub fn build_graph_from_edgels(
         if active[p] == 0 {
             continue;
         }
-
-        let mut d = 0_u8;
-        for &dir in dirs {
-            if connected_neighbor(p, dir, &active, width, height, cfg.connectivity).is_some() {
-                d = d.saturating_add(1);
-            }
-        }
-        deg[p] = d;
+        deg[p] = topology_degree(p, &active, width, height, cfg.connectivity, dirs);
     }
 
     let mut nodes = Vec::new();
@@ -670,12 +663,57 @@ fn connected_neighbor(
 
         let side_a = index_if_in_bounds(x as isize + dx, y as isize, width, height);
         let side_b = index_if_in_bounds(x as isize, y as isize + dy, width, height);
+        // Suppress corner-cut diagonal hops when either orthogonal side is
+        // occupied. This keeps junction topology stable on rasterized edges.
         if side_a.is_some_and(|i| occupancy[i] != 0) || side_b.is_some_and(|i| occupancy[i] != 0) {
             return None;
         }
     }
 
     Some(nb)
+}
+
+#[inline]
+fn topology_degree(
+    p: usize,
+    occupancy: &[u8],
+    width: usize,
+    height: usize,
+    connectivity: Connectivity,
+    dirs: &[u8],
+) -> u8 {
+    match connectivity {
+        Connectivity::C4 => {
+            let mut d = 0_u8;
+            for &dir in dirs {
+                if connected_neighbor(p, dir, occupancy, width, height, connectivity).is_some() {
+                    d = d.saturating_add(1);
+                }
+            }
+            d
+        }
+        Connectivity::C8 => {
+            let mut bits = [0_u8; 8];
+            for &dir in dirs {
+                if connected_neighbor(p, dir, occupancy, width, height, connectivity).is_some() {
+                    bits[dir as usize] = 1;
+                }
+            }
+
+            // Digital topology degree for 8-connectivity: number of circular
+            // 0->1 neighbor transitions. This keeps staircase/corner chains as
+            // degree-2 instead of over-classifying them as junctions.
+            let mut transitions = 0_u8;
+            let mut prev = bits[7];
+            for &b in &bits {
+                if prev == 0 && b != 0 {
+                    transitions = transitions.saturating_add(1);
+                }
+                prev = b;
+            }
+            transitions
+        }
+    }
 }
 
 #[inline]
@@ -831,5 +869,21 @@ mod tests {
         );
 
         assert!(!g.edges.is_empty());
+    }
+
+    #[test]
+    fn c8_staircase_chain_stays_single_edge() {
+        let edgels = vec![e(1, 1), e(2, 1), e(3, 2), e(4, 2), e(5, 3), e(6, 3)];
+        let cfg = ContourBuildConfig {
+            connectivity: Connectivity::C8,
+            min_component_size: 2,
+            record_strengths: false,
+        };
+        let g = build_graph_from_edgels(10, 8, &edgels, &cfg);
+
+        assert_eq!(g.num_junctions(), 0);
+        assert_eq!(g.num_ends(), 2);
+        assert_eq!(g.edges.len(), 1);
+        assert!(g.edges[0].points.len() >= 2);
     }
 }
