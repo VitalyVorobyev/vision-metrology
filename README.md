@@ -9,13 +9,13 @@ Rust workspace for industrial machine-vision metrology.
 ## Current status
 - `vm-core` implemented and tested (image views, sampling, geometry).
 - `vm-pyr` implemented and benchmarked (fast 2x2 mean downsample, reusable f32 pyramid).
-- `vm-edge` implemented and tested (1D DoG edges, subpixel refinement, edge-pair selection for laser rows).
+- `vm-edge` implemented and tested (1D DoG edges + edge-pair selection, and single-scale 2D edgel extraction with subpixel refinement along normal).
 - `vm-laser` implemented and tested (row/column laser line extraction with ROI + prior tracking).
 - CI, audit, and docs workflows are configured in GitHub Actions.
 
 ## Crates
 - `vm-core`: image views, sampling/interpolation, geometry primitives.
-- `vm-edge`: robust 1D edge extraction + opposite-polarity edge-pair primitive.
+- `vm-edge`: robust 1D DoG edge extraction + edge-pair primitive, and 2D edgel detection (Scharr + NMS + hysteresis + subpixel).
 - `vm-laser`: industrial laser line extraction using edge-pair tracking (rows/cols/transposed).
 - `vm-pyr`: fast 2x2 mean downsample and reusable f32 image pyramid.
 - `vision-metrology`: umbrella crate re-exporting workspace crates.
@@ -51,6 +51,11 @@ Run `vm-laser` benchmarks:
 cargo bench -p vm-laser
 ```
 
+Run `vm-edge` benchmarks:
+```bash
+cargo bench -p vm-edge --bench edge2d
+```
+
 ### Benchmark snapshot
 Measured via `cargo bench --workspace` on 2026-02-08 (local machine, Criterion defaults):
 
@@ -60,5 +65,6 @@ Measured via `cargo bench --workspace` on 2026-02-08 (local machine, Criterion d
 | `vm_pyr::pyramid_build_u8_6_levels_1280x1024` | `122.6 us` |
 | `vm_laser::rows_1280x512` | `2.10 ms` |
 | `vm_laser::cols_gather_512x1280` | `146.1 us` |
+| `vm_edge::edge2d_detect_u8_1280x1024` | `5.52 ms` |
 
 Numbers vary by CPU, toolchain, thermal state, and background load.
