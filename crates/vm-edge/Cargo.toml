@@ -8,5 +8,12 @@ description = "Fast 1D subpixel edge extraction for metrology and laser profiles
 [dependencies]
 vm-core = { path = "../vm-core" }
 
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "edge2d"
+harness = false
+
 [lints]
 workspace = true
