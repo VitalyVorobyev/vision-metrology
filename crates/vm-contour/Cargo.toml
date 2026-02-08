@@ -1,0 +1,20 @@
+[package]
+name = "vm-contour"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Junction-aware contour graph extraction from 2D edgels"
+
+[dependencies]
+vm-core = { path = "../vm-core" }
+vm-edge = { path = "../vm-edge" }
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "build_graph"
+harness = false
+
+[lints]
+workspace = true

@@ -6,6 +6,7 @@ license = "MIT OR Apache-2.0"
 description = "Industrial machine-vision metrology library"
 
 [dependencies]
+vm-contour = { path = "../vm-contour" }
 vm-core = { path = "../vm-core" }
 vm-edge = { path = "../vm-edge" }
 vm-laser = { path = "../vm-laser" }
