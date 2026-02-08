@@ -74,12 +74,32 @@ impl Edge1DDetector {
         self.detect_in_f32_borrowed(signal, cfg).to_vec()
     }
 
+    pub fn detect_in_f32_ref<'a>(
+        &'a mut self,
+        signal: &[f32],
+        cfg: &Edge1DConfig,
+    ) -> &'a [EdgePeak] {
+        self.detect_in_f32_borrowed(signal, cfg)
+    }
+
     pub fn detect_in_u8(&mut self, signal: &[u8], cfg: &Edge1DConfig) -> Vec<EdgePeak> {
         self.detect_in_u8_borrowed(signal, cfg).to_vec()
     }
 
+    pub fn detect_in_u8_ref<'a>(&'a mut self, signal: &[u8], cfg: &Edge1DConfig) -> &'a [EdgePeak] {
+        self.detect_in_u8_borrowed(signal, cfg)
+    }
+
     pub fn detect_in_u16(&mut self, signal: &[u16], cfg: &Edge1DConfig) -> Vec<EdgePeak> {
         self.detect_in_u16_borrowed(signal, cfg).to_vec()
+    }
+
+    pub fn detect_in_u16_ref<'a>(
+        &'a mut self,
+        signal: &[u16],
+        cfg: &Edge1DConfig,
+    ) -> &'a [EdgePeak] {
+        self.detect_in_u16_borrowed(signal, cfg)
     }
 
     pub(crate) fn detect_in_u8_borrowed<'a>(

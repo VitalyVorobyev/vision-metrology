@@ -2,6 +2,7 @@
 members = [
   "crates/vm-core",
   "crates/vm-edge",
+  "crates/vm-laser",
   "crates/vm-pyr",
   "crates/vision-metrology",
 ]
