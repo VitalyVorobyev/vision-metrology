@@ -1,0 +1,19 @@
+[package]
+name = "vm-pyr"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Fast 2x2 mean image pyramids for vision metrology"
+
+[dependencies]
+vm-core = { path = "../vm-core" }
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "downsample"
+harness = false
+
+[lints]
+workspace = true
