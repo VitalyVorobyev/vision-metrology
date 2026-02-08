@@ -7,6 +7,7 @@ description = "Industrial machine-vision metrology library"
 
 [dependencies]
 vm-core = { path = "../vm-core" }
+vm-edge = { path = "../vm-edge" }
 vm-pyr = { path = "../vm-pyr" }
 
 [lints]

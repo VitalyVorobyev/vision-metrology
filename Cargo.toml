@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "crates/vm-core",
+  "crates/vm-edge",
   "crates/vm-pyr",
   "crates/vision-metrology",
 ]

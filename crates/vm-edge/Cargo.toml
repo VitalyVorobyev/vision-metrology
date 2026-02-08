@@ -1,0 +1,12 @@
+[package]
+name = "vm-edge"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Fast 1D subpixel edge extraction for metrology and laser profiles"
+
+[dependencies]
+vm-core = { path = "../vm-core" }
+
+[lints]
+workspace = true
