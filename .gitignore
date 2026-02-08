@@ -1,2 +1,5 @@
 target
 Cargo.lock
+tools/figures/.venv/
+tools/figures/**/__pycache__/
+tools/figures/**/*.pyc
