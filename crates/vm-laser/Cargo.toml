@@ -1,0 +1,25 @@
+[package]
+name = "vm-laser"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Industrial laser line extraction via edge pairing"
+
+[features]
+default = []
+rayon = ["dep:rayon"]
+
+[dependencies]
+vm-core = { path = "../vm-core" }
+vm-edge = { path = "../vm-edge" }
+rayon = { version = "1", optional = true }
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "extract"
+harness = false
+
+[lints]
+workspace = true
