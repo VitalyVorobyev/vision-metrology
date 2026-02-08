@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "crates/vm-contour",
   "crates/vm-core",
   "crates/vm-edge",
   "crates/vm-laser",
