@@ -1,0 +1,12 @@
+[package]
+name = "vision-metrology"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Industrial machine-vision metrology library"
+
+[dependencies]
+vm-core = { path = "../vm-core" }
+
+[lints]
+workspace = true
