@@ -9,3 +9,4 @@ tools/**/__pycache__/
 tools/**/*.pyc
 docs/fig/fixtures
 docs/fig/raw
+data
