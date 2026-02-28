@@ -2,20 +2,31 @@ use vm_core::ImageView;
 
 use crate::edge1d::{Edge1DConfig, Edge1DDetector, EdgePeak, EdgePolarity};
 
+/// A pair of opposite-polarity 1-D edge peaks forming a laser stripe.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EdgePair1D {
+    /// Left (rising or first) edge peak.
     pub left: EdgePeak,
+    /// Right (falling or second) edge peak.
     pub right: EdgePeak,
+    /// Subpixel centre of the stripe: `(left.x + right.x) / 2`.
     pub center_x: f32,
+    /// Stripe width in pixels: `right.x - left.x`.
     pub width: f32,
+    /// Detection quality score (higher is better).
     pub score: f32,
+    /// `true` when the left edge is rising (bright-on-dark stripe).
     pub bright_on_dark: bool,
 }
 
+/// Configuration for edge-pair selection from a 1-D peak list.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EdgePairConfig {
+    /// Minimum stripe width in pixels.
     pub min_width: f32,
+    /// Maximum stripe width in pixels.
     pub max_width: f32,
+    /// When `true`, bright-on-dark pairs receive a higher score than dark-on-bright.
     pub prefer_bright_on_dark: bool,
 }
 
@@ -29,6 +40,10 @@ impl Default for EdgePairConfig {
     }
 }
 
+/// Find the best opposite-polarity edge pair among `peaks` according to `cfg`.
+///
+/// Evaluates all valid pairs (opposite polarity, width in `[min_width, max_width]`)
+/// and returns the one with the highest score, or `None` if no pair exists.
 pub fn best_edge_pair(peaks: &[EdgePeak], cfg: &EdgePairConfig) -> Option<EdgePair1D> {
     let mut best: Option<EdgePair1D> = None;
 
@@ -82,6 +97,9 @@ pub fn best_edge_pair(peaks: &[EdgePeak], cfg: &EdgePairConfig) -> Option<EdgePa
     best
 }
 
+/// Run 1-D edge detection on row `y` of a `u8` image and return the best edge pair.
+///
+/// Convenience wrapper around [`best_edge_pair`] that first calls the detector on the row.
 pub fn best_edge_pair_in_row_u8(
     detector: &mut Edge1DDetector,
     img: &ImageView<'_, u8>,

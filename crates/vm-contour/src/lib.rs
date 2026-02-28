@@ -16,11 +16,13 @@
 
 mod build;
 mod graph;
+mod smooth;
 
 pub use build::{
     Connectivity, ContourBuildConfig, build_graph_from_detector_output, build_graph_from_edgels,
 };
 pub use graph::{ContourGraph, EdgeId, GraphEdge, Node, NodeId, NodeKind};
+pub use smooth::{MAX_KERNEL_PTS, smooth_polyline};
 
 #[cfg(test)]
 mod geom_tests {

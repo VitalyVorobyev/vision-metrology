@@ -7,13 +7,21 @@
 /// - `dg` is not normalized to unit sum; numerically `sum(dg) ~= 0`.
 #[derive(Debug, Clone)]
 pub struct DoGKernel1D {
+    /// Standard deviation of the Gaussian in pixels.
     pub sigma: f32,
+    /// Half-width of both kernels: `ceil(3 * sigma)`, minimum 1.
     pub radius: usize,
+    /// Gaussian kernel coefficients, length `2 * radius + 1`, normalised to sum ≈ 1.
     pub g: Vec<f32>,
+    /// First-derivative-of-Gaussian coefficients; `dg[i] = -(x/σ²) * g[i]`.
     pub dg: Vec<f32>,
 }
 
 impl DoGKernel1D {
+    /// Construct a kernel pair for the given Gaussian sigma.
+    ///
+    /// # Panics
+    /// Panics when `sigma <= 0` or `sigma` is not finite.
     pub fn new(sigma: f32) -> Self {
         assert!(
             sigma.is_finite() && sigma > 0.0,

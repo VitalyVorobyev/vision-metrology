@@ -1,6 +1,13 @@
 use crate::border::{BorderMode, map_index};
 use crate::image::ImageView;
 
+/// Sample image `img` at continuous position `(x, y)` using nearest-neighbor interpolation.
+///
+/// Rounds `(x, y)` to the nearest integer index and applies `border` for
+/// out-of-bounds coordinates.
+///
+/// # Panics
+/// Panics when the image is empty and `border` is not [`BorderMode::Constant`].
 pub fn sample_nearest<T: Copy>(img: &ImageView<'_, T>, x: f32, y: f32, border: BorderMode<T>) -> T {
     let xi = x.round() as isize;
     let yi = y.round() as isize;
@@ -31,6 +38,13 @@ pub fn sample_nearest<T: Copy>(img: &ImageView<'_, T>, x: f32, y: f32, border: B
     }
 }
 
+/// Sample image `img` at continuous position `(x, y)` using bilinear interpolation.
+///
+/// Uses floor-based 2×2 neighborhood. Pixel type `T` is converted to `f32`
+/// via `Into<f32>` before blending. Applies `border` for out-of-bounds pixels.
+///
+/// # Panics
+/// Panics when the image is empty and `border` is not [`BorderMode::Constant`].
 pub fn sample_bilinear_f32<T: Copy + Into<f32>>(
     img: &ImageView<'_, T>,
     x: f32,

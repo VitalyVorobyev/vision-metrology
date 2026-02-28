@@ -3,19 +3,32 @@ use vm_core::BorderMode;
 use crate::conv1d::convolve_f32;
 use crate::kernels1d::DoGKernel1D;
 
+/// Subpixel refinement method applied to raw DoG peak positions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SubpixRefine {
+    /// No subpixel refinement; the reported position is the integer peak index.
     None,
+    /// Fit a parabola to the three samples around the peak and use its vertex.
     Parabolic3,
-    Centroid { radius: usize },
+    /// Intensity-weighted centroid over `±radius` samples around the peak.
+    Centroid {
+        /// Half-width of the centroid window in samples.
+        radius: usize,
+    },
 }
 
+/// Configuration for the 1-D DoG edge detector.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Edge1DConfig {
+    /// Standard deviation of the Gaussian smoothing kernel in pixels.
     pub sigma: f32,
+    /// Border extension mode applied during convolution. Default: `Clamp`.
     pub border: BorderMode<f32>,
+    /// Minimum positive DoG response to report a rising edge peak.
     pub pos_thresh: f32,
+    /// Minimum absolute negative DoG response to report a falling edge peak.
     pub neg_thresh: f32,
+    /// Subpixel refinement method.
     pub refine: SubpixRefine,
 }
 
@@ -31,21 +44,33 @@ impl Default for Edge1DConfig {
     }
 }
 
+/// Polarity of a 1-D edge (sign of the first derivative of intensity).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EdgePolarity {
+    /// Positive edge: intensity increases (dark-to-bright transition).
     Rising,
+    /// Negative edge: intensity decreases (bright-to-dark transition).
     Falling,
 }
 
+/// A detected 1-D edge peak with subpixel position and strength.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EdgePeak {
+    /// Subpixel position in pixels along the scanned signal.
     pub x: f32,
+    /// Integer sample index of the peak in the DoG response buffer.
     pub idx: usize,
+    /// DoG response value at the peak (signed; positive for rising edges).
     pub value: f32,
+    /// Absolute DoG response strength (`|value|`).
     pub strength: f32,
+    /// Whether this is a rising or falling intensity transition.
     pub polarity: EdgePolarity,
 }
 
+/// Reusable 1-D edge detector based on first-derivative-of-Gaussian (DoG) convolution.
+///
+/// Scratch buffers are owned and reused across `detect_*` calls to avoid per-call allocation.
 #[derive(Debug, Clone)]
 pub struct Edge1DDetector {
     kernel: DoGKernel1D,
@@ -55,6 +80,7 @@ pub struct Edge1DDetector {
 }
 
 impl Edge1DDetector {
+    /// Create a new detector with a DoG kernel of the given Gaussian sigma.
     pub fn new(sigma: f32) -> Self {
         Self {
             kernel: DoGKernel1D::new(sigma),
@@ -64,16 +90,21 @@ impl Edge1DDetector {
         }
     }
 
+    /// Update the Gaussian sigma. Rebuilds the kernel only if `sigma` changed.
     pub fn set_sigma(&mut self, sigma: f32) {
         if (sigma - self.kernel.sigma).abs() > f32::EPSILON {
             self.kernel = DoGKernel1D::new(sigma);
         }
     }
 
+    /// Detect edges in an `f32` signal; returns an owned `Vec<EdgePeak>`.
     pub fn detect_in_f32(&mut self, signal: &[f32], cfg: &Edge1DConfig) -> Vec<EdgePeak> {
         self.detect_in_f32_borrowed(signal, cfg).to_vec()
     }
 
+    /// Detect edges in an `f32` signal; borrows the internal peak buffer.
+    ///
+    /// The returned slice is valid until the next call to any `detect_*` method.
     pub fn detect_in_f32_ref<'a>(
         &'a mut self,
         signal: &[f32],
@@ -82,18 +113,26 @@ impl Edge1DDetector {
         self.detect_in_f32_borrowed(signal, cfg)
     }
 
+    /// Detect edges in a `u8` signal; returns an owned `Vec<EdgePeak>`.
     pub fn detect_in_u8(&mut self, signal: &[u8], cfg: &Edge1DConfig) -> Vec<EdgePeak> {
         self.detect_in_u8_borrowed(signal, cfg).to_vec()
     }
 
+    /// Detect edges in a `u8` signal; borrows the internal peak buffer.
+    ///
+    /// The returned slice is valid until the next call to any `detect_*` method.
     pub fn detect_in_u8_ref<'a>(&'a mut self, signal: &[u8], cfg: &Edge1DConfig) -> &'a [EdgePeak] {
         self.detect_in_u8_borrowed(signal, cfg)
     }
 
+    /// Detect edges in a `u16` signal; returns an owned `Vec<EdgePeak>`.
     pub fn detect_in_u16(&mut self, signal: &[u16], cfg: &Edge1DConfig) -> Vec<EdgePeak> {
         self.detect_in_u16_borrowed(signal, cfg).to_vec()
     }
 
+    /// Detect edges in a `u16` signal; borrows the internal peak buffer.
+    ///
+    /// The returned slice is valid until the next call to any `detect_*` method.
     pub fn detect_in_u16_ref<'a>(
         &'a mut self,
         signal: &[u16],

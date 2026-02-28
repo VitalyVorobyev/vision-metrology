@@ -3,27 +3,38 @@ use core::{
     ops::{Add, Mul, Neg, Sub},
 };
 
+/// A 2-D point in floating-point pixel coordinates.
+///
+/// By convention, integer coordinate `i` refers to the **center** of pixel `i`.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Point2f {
+    /// Horizontal (column) coordinate in pixels.
     pub x: f32,
+    /// Vertical (row) coordinate in pixels.
     pub y: f32,
 }
 
+/// A 2-D displacement vector (difference of two [`Point2f`] values).
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Vec2f {
+    /// Horizontal component in pixels.
     pub x: f32,
+    /// Vertical component in pixels.
     pub y: f32,
 }
 
 impl Vec2f {
+    /// Dot product `self · rhs`.
     pub fn dot(self, rhs: Self) -> f32 {
         self.x * rhs.x + self.y * rhs.y
     }
 
+    /// Euclidean length `√(x² + y²)`.
     pub fn norm(self) -> f32 {
         self.dot(self).sqrt()
     }
 
+    /// Returns a unit vector in the same direction, or the zero vector if `norm() == 0`.
     pub fn normalize(self) -> Self {
         let n = self.norm();
         if n == 0.0 {
@@ -108,14 +119,19 @@ impl Mul<Vec2f> for f32 {
     }
 }
 
+/// A 2-D line represented by a point and a direction vector.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Line2f {
+    /// A point on the line.
     pub p: Point2f,
+    /// Direction vector (not necessarily unit length).
     pub dir: Vec2f,
 }
 
+/// An ordered sequence of 2-D points forming a polyline.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Polyline2f {
+    /// Ordered vertices of the polyline.
     pub points: Vec<Point2f>,
 }
 
@@ -129,9 +145,13 @@ pub struct Polyline2f {
 /// `[x, x + width) × [y, y + height)`.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Rect2f {
+    /// Left edge (column) of the rectangle.
     pub x: f32,
+    /// Top edge (row) of the rectangle.
     pub y: f32,
+    /// Horizontal extent in pixels.
     pub width: f32,
+    /// Vertical extent in pixels.
     pub height: f32,
 }
 

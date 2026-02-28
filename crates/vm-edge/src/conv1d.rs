@@ -1,5 +1,13 @@
 use vm_core::{BorderMode, map_index};
 
+/// Convolve a 1-D `f32` signal with a symmetric kernel.
+///
+/// `kernel` must have length `2 * radius + 1`. The output `out` must have the
+/// same length as `signal`. `border` controls how out-of-bounds positions are
+/// handled during the convolution.
+///
+/// # Panics
+/// Panics when `out.len() != signal.len()` or `kernel.len() != 2 * radius + 1`.
 pub fn convolve_f32(
     signal: &[f32],
     kernel: &[f32],

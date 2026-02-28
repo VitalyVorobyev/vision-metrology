@@ -3,57 +3,97 @@ use std::ops::Range;
 use vm_core::{BorderMode, ImageView, Point2f};
 use vm_edge::{Edge1DConfig, Edge1DDetector, EdgePair1D, EdgePeak, EdgePolarity, SubpixRefine};
 
+/// Which image axis to scan along when extracting a laser line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScanAxis {
+    /// Scan horizontally: one detection per row.
     Rows,
-    Cols { access: ColAccess },
+    /// Scan vertically: one detection per column.
+    Cols {
+        /// Column memory access strategy.
+        access: ColAccess,
+    },
 }
 
+/// Memory access strategy for column-direction laser scans.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ColAccess {
+    /// Gather each column into a temporary buffer before detection.
     Gather,
+    /// Use a pre-transposed image (row-major layout with axes swapped).
     Transposed,
 }
 
+/// Per-scan-line detection result for a laser stripe.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LaserSample {
+    /// Index of the row (or column) this sample was extracted from.
     pub scan_i: usize,
+    /// Subpixel center of the stripe along the scan axis.
     pub center: f32,
+    /// Stripe width in pixels (distance between opposite-polarity edge peaks).
     pub width: f32,
+    /// Detection quality score (higher is better).
     pub score: f32,
+    /// Left (or top) edge position in subpixel coordinates.
     pub left: f32,
+    /// Right (or bottom) edge position in subpixel coordinates.
     pub right: f32,
+    /// `false` when no valid stripe was found on this scan line.
     pub valid: bool,
 }
 
+/// Extracted laser line composed of per-scan-line samples and 2-D point list.
 #[derive(Debug, Clone)]
 pub struct LaserLine {
+    /// Scan axis used during extraction.
     pub axis: ScanAxis,
+    /// One entry per scanned row or column, including invalid samples.
     pub samples: Vec<LaserSample>,
+    /// Valid subpixel stripe centres in image pixel coordinates.
     pub points: Vec<Point2f>,
 }
 
+/// Coarse centre-finding method applied before the precise DoG edge-pair search.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CoarseMethod {
+    /// Use the position of the maximum intensity pixel as the coarse centre.
     Max,
+    /// Compute the intensity-weighted centroid within a local window.
     CenterOfMass {
+        /// Half-width of the centroid window in pixels.
         half_width: usize,
+        /// Threshold as a fraction of the local maximum; pixels below are ignored.
         threshold_frac: f32,
     },
 }
 
+/// Configuration for [`LaserExtractor`].
 #[derive(Debug, Clone)]
 pub struct LaserExtractConfig {
+    /// Which image axis to scan along (rows or columns).
     pub axis: ScanAxis,
+    /// Coarse centre-finding method used to seed the ROI for each scan line.
     pub coarse: CoarseMethod,
+    /// Half-width of the ROI (in pixels) centred on the coarse estimate.
     pub roi_half_width: usize,
+    /// Maximum allowed position jump between adjacent scan lines (pixels).
+    /// Jumps larger than this trigger a gap.
     pub max_jump_px: f32,
+    /// Maximum number of consecutive invalid scan lines before the tracker resets.
     pub max_gap_scans: usize,
+    /// Minimum detection score to accept a sample as valid.
     pub min_score: f32,
+    /// Minimum accepted stripe width in pixels.
     pub min_width: f32,
+    /// Maximum accepted stripe width in pixels.
     pub max_width: f32,
+    /// Configuration forwarded to the 1-D DoG edge detector.
     pub edge_cfg: Edge1DConfig,
+    /// Weight in `[0, 1]` blending the previous position into the coarse prior.
+    /// `0.0` = no prior (full re-detection per scan line); `1.0` = frozen prior.
     pub prior_weight: f32,
+    /// If `true`, apply light smoothing to the output centre positions.
     pub enable_smoothing: bool,
 }
 
@@ -84,6 +124,11 @@ impl Default for LaserExtractConfig {
     }
 }
 
+/// Reusable laser stripe extractor.
+///
+/// Owns scratch buffers for 1-D edge detection and column gathering. All
+/// `extract_line_*` methods are allocation-free per row/column scan after
+/// initial construction.
 #[derive(Debug, Clone)]
 pub struct LaserExtractor {
     detector: Edge1DDetector,
@@ -93,6 +138,7 @@ pub struct LaserExtractor {
 }
 
 impl LaserExtractor {
+    /// Create a new extractor with a DoG smoothing sigma.
     pub fn new(sigma: f32) -> Self {
         Self {
             detector: Edge1DDetector::new(sigma),
@@ -102,10 +148,15 @@ impl LaserExtractor {
         }
     }
 
+    /// Update the Gaussian sigma used by the internal 1-D edge detector.
     pub fn set_sigma(&mut self, sigma: f32) {
         self.detector.set_sigma(sigma);
     }
 
+    /// Extract a laser stripe from a `u8` image over `scan_range` rows or columns.
+    ///
+    /// Pass `transposed` when using `ColAccess::Transposed` (the transposed
+    /// image must have dimensions swapped relative to `img`).
     pub fn extract_line_u8(
         &mut self,
         img: &ImageView<'_, u8>,
@@ -150,6 +201,9 @@ impl LaserExtractor {
         }
     }
 
+    /// Extract a laser stripe from a `u16` image over `scan_range` rows or columns.
+    ///
+    /// See [`extract_line_u8`][Self::extract_line_u8] for parameter details.
     pub fn extract_line_u16(
         &mut self,
         img: &ImageView<'_, u16>,
@@ -194,6 +248,9 @@ impl LaserExtractor {
         }
     }
 
+    /// Extract a laser stripe from an `f32` image over `scan_range` rows or columns.
+    ///
+    /// See [`extract_line_u8`][Self::extract_line_u8] for parameter details.
     pub fn extract_line_f32(
         &mut self,
         img: &ImageView<'_, f32>,
@@ -781,6 +838,10 @@ fn smooth_valid_centers(samples: &mut [LaserSample]) {
     }
 }
 
+/// Find the best bright-on-dark edge pair given a predicted centre position.
+///
+/// Scores each pair as `(left.strength + right.strength) - prior_weight * |centre - predicted|`.
+/// Returns `None` when no valid pair exists within `[min_width, max_width]`.
 pub fn best_pair_with_prior(
     peaks: &[EdgePeak],
     min_width: f32,
@@ -856,14 +917,24 @@ fn best_pair_with_prior_offset(
     best
 }
 
+/// Estimate the coarse stripe centre in a `u8` scan-line using the given method.
+///
+/// Returns the estimated subpixel centre position, or `None` if the signal is
+/// too weak to locate a centre.
 pub fn coarse_center_u8(line: &[u8], coarse: &CoarseMethod) -> Option<f32> {
     coarse_center_u8_in_range(line, coarse, 0, line.len())
 }
 
+/// Estimate the coarse stripe centre in a `u16` scan-line using the given method.
+///
+/// See [`coarse_center_u8`] for details.
 pub fn coarse_center_u16(line: &[u16], coarse: &CoarseMethod) -> Option<f32> {
     coarse_center_u16_in_range(line, coarse, 0, line.len())
 }
 
+/// Estimate the coarse stripe centre in an `f32` scan-line using the given method.
+///
+/// See [`coarse_center_u8`] for details.
 pub fn coarse_center_f32(line: &[f32], coarse: &CoarseMethod) -> Option<f32> {
     coarse_center_f32_in_range(line, coarse, 0, line.len())
 }

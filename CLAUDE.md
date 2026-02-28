@@ -8,7 +8,7 @@ Please read and follow **@AGENTS.md** (repo-wide conventions and invariants).
 * **M2 — Multi-scale edges** ✅ complete
 * **M3 — Shape detection** ✅ complete (`vm-shape`: LSD + Bookstein/Fitzgibbon conic + RANSAC)
 * **M4 — Segmentation + Matching** ✅ complete (`vm-segment`, `vm-match`, `vm-python`)
-* **M5 — Hardening** pending
+* **M5 — Hardening** ✅ complete (similarity matching, IoU NMS, polyline smoothing, gradient buffers, `measure_circles` example, full API docs, bench_baselines.md)
 
 See `ROADMAP.md` for the full backlog and architectural decisions.
 
@@ -18,12 +18,12 @@ See `ROADMAP.md` for the full backlog and architectural decisions.
 * `crates/vm-pyr`: ultra-fast 2×2 mean pyramid
 * `crates/vm-edge`: 1D/2D subpixel edges (DoG), edgels
 * `crates/vm-laser`: stripe extraction using opposite-polarity edge pairs
-* `crates/vm-contour`: contour graph, junctions, per-edge tangent/curvature geometry
+* `crates/vm-contour`: contour graph, junctions, per-edge tangent/curvature geometry, polyline smoothing
 * `crates/vm-morph`: binary morphology (parameterized SE), chamfer distance, Zhang-Suen thinning
 * `crates/vm-multiscale`: multi-scale edge detection across pyramid levels
 * `crates/vm-shape`: LSD, Bookstein/Fitzgibbon conic fitting, RANSAC ellipse fitting
 * `crates/vm-segment`: Otsu/adaptive thresholding, CCL, watershed, edgel region growing
-* `crates/vm-match`: `EdgeModel` + chamfer map, rigid grid search, ICP refinement, normal scoring
+* `crates/vm-match`: `EdgeModel` + chamfer map, rigid/similarity grid search, IoU NMS, ICP refinement
 * `crates/vm-python`: PyO3 extension module exposing detectors with numpy array I/O
 * `crates/vision-metrology`: umbrella re-export crate
 

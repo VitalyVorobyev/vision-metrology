@@ -7,13 +7,23 @@ use core::fmt;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
     /// Buffer or dimension mismatch between two operands.
-    SizeMismatch { expected: usize, actual: usize },
+    SizeMismatch {
+        /// Expected size.
+        expected: usize,
+        /// Actual size encountered.
+        actual: usize,
+    },
     /// Index or coordinate is outside valid range.
     OutOfBounds,
     /// Stride value is inconsistent with image dimensions.
     InvalidStride,
     /// Fewer data points than required for the operation (e.g. fitting needs ≥ N samples).
-    InsufficientData { need: usize, got: usize },
+    InsufficientData {
+        /// Minimum number of samples required.
+        need: usize,
+        /// Number of samples actually provided.
+        got: usize,
+    },
     /// Degenerate geometric configuration (e.g. singular matrix, collinear points).
     Degenerate(&'static str),
     /// Parameter combination is invalid or out of range.

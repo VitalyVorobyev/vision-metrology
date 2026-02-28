@@ -17,33 +17,60 @@
 
 use vm_core::{BorderMode, Image, ImageView, Point2f, Vec2f, sample_bilinear_f32};
 
+/// A single subpixel 2-D edge element (edgel).
+///
+/// Produced by [`Edge2DDetector`] after NMS and hysteresis thresholding.
+/// Positions follow the pixel-center convention: integer `(x, y)` is the
+/// center of pixel `(x, y)`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Edgel {
+    /// Subpixel position in pixel-center coordinates.
     pub p: Point2f,
+    /// Unit normal pointing dark-to-bright (increasing intensity direction).
     pub n: Vec2f,
+    /// Gradient magnitude at this edgel (NMS value, same units as input).
     pub strength: f32,
+    /// Integer grid cell `(x, y)` that contains this edgel (for chamfer maps).
     pub idx: (usize, usize),
 }
 
+/// Sub-pixel refinement mode for [`Edge2DDetector`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Subpix2D {
+    /// No sub-pixel refinement: edgel position is the NMS peak pixel center.
     None,
+    /// Parabolic interpolation along the gradient normal direction using the
+    /// NMS values at `±1` pixel offsets. Offsets are clamped to `[-0.5, 0.5]`.
     ParabolicAlongNormal,
 }
 
+/// Pre-smoothing kernel applied before Scharr gradient computation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SmoothKind {
+    /// No pre-smoothing.
     None,
+    /// Separable 3-tap binomial filter `[1, 2, 1] / 4` applied in x then y.
     Binomial3,
 }
 
+/// Configuration for [`Edge2DDetector`].
+///
+/// All fields are public and cheaply cloneable. Construct with
+/// `Edge2DConfig::default()` and override individual fields as needed.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Edge2DConfig {
+    /// Apply pre-smoothing before gradient computation.
     pub pre_smooth: bool,
+    /// Which pre-smoothing kernel to use (only relevant when `pre_smooth = true`).
     pub smooth_kind: SmoothKind,
+    /// Lower hysteresis threshold. Set both to `0.0` for automatic selection
+    /// (`low = 0.1 * max_nms`, `high = 0.2 * max_nms`).
     pub low_thresh: f32,
+    /// Upper hysteresis threshold. See `low_thresh` for auto-threshold rules.
     pub high_thresh: f32,
+    /// Border replication mode for gradient and NMS sampling.
     pub border: BorderMode<f32>,
+    /// Sub-pixel refinement mode applied after NMS.
     pub subpix: Subpix2D,
 }
 
@@ -60,6 +87,11 @@ impl Default for Edge2DConfig {
     }
 }
 
+/// 2-D subpixel edge detector (Scharr + NMS + hysteresis).
+///
+/// Create once with [`Edge2DDetector::new`] and call any of the `detect_*`
+/// methods to extract [`Edgel`]s. Internal scratch buffers are reused across
+/// calls so no per-frame heap allocation occurs outside the output `Vec<Edgel>`.
 #[derive(Debug, Clone)]
 pub struct Edge2DDetector {
     tmp: Image<f32>,
@@ -73,7 +105,36 @@ pub struct Edge2DDetector {
     stack: Vec<usize>,
 }
 
+/// Read-only view into the internal gradient buffers of an [`Edge2DDetector`].
+///
+/// Returned by [`Edge2DDetector::detect_f32_with_gradients`] and
+/// [`Edge2DDetector::detect_u8_with_gradients`].
+///
+/// # Validity
+/// The slices are borrowed from the detector's internal scratch memory.
+/// They are **invalidated** by any subsequent call to a `detect_*` method on
+/// the same detector. Do not retain the view across detect calls.
+///
+/// # Layout
+/// All slices are in row-major order with `width` columns per row.
+/// Pixel `(x, y)` is at index `y * width + x`.
+pub struct GradientBuffers<'a> {
+    /// Horizontal gradient (Scharr Gx), same units as the input pixel values.
+    pub gx: &'a [f32],
+    /// Vertical gradient (Scharr Gy), same units as the input pixel values.
+    pub gy: &'a [f32],
+    /// Gradient magnitude `sqrt(gx^2 + gy^2)`.
+    pub mag: &'a [f32],
+    /// Image width in pixels.
+    pub width: usize,
+    /// Image height in pixels.
+    pub height: usize,
+}
+
 impl Edge2DDetector {
+    /// Create a new detector with empty scratch buffers.
+    ///
+    /// Buffers are allocated on the first `detect_*` call.
     pub fn new() -> Self {
         Self {
             tmp: Image::new_fill(0, 0, 0.0),
@@ -88,22 +149,89 @@ impl Edge2DDetector {
         }
     }
 
+    /// Detect edgels in a `u8` image.
+    ///
+    /// Internally converts pixel values to `f32` (range [0, 255]).
     pub fn detect_u8(&mut self, img: &ImageView<'_, u8>, cfg: &Edge2DConfig) -> Vec<Edgel> {
         self.ensure_dims(img.width(), img.height());
         copy_u8_to_tmp(img, self.tmp.data_mut(), img.width());
         self.detect_from_tmp(cfg)
     }
 
+    /// Detect edgels in a `u16` image.
+    ///
+    /// Internally converts pixel values to `f32` (range [0, 65535]).
     pub fn detect_u16(&mut self, img: &ImageView<'_, u16>, cfg: &Edge2DConfig) -> Vec<Edgel> {
         self.ensure_dims(img.width(), img.height());
         copy_u16_to_tmp(img, self.tmp.data_mut(), img.width());
         self.detect_from_tmp(cfg)
     }
 
+    /// Detect edgels in an `f32` image.
     pub fn detect_f32(&mut self, img: &ImageView<'_, f32>, cfg: &Edge2DConfig) -> Vec<Edgel> {
         self.ensure_dims(img.width(), img.height());
         copy_f32_to_tmp(img, self.tmp.data_mut(), img.width());
         self.detect_from_tmp(cfg)
+    }
+
+    /// Like [`detect_f32`][Self::detect_f32] but also returns a view into the
+    /// internal gradient buffers.
+    ///
+    /// The returned [`GradientBuffers`] borrows from `self` and is valid only
+    /// until the next call to any `detect_*` method on this detector.
+    ///
+    /// # Example
+    /// ```rust
+    /// use vm_edge::edge2d::{Edge2DConfig, Edge2DDetector};
+    /// use vm_core::Image;
+    ///
+    /// let img = Image::<f32>::new_fill(64, 48, 0.0);
+    /// let mut det = Edge2DDetector::new();
+    /// let (edgels, grads) = det.detect_f32_with_gradients(&img.as_view(), &Edge2DConfig::default());
+    /// assert_eq!(grads.width, 64);
+    /// assert_eq!(grads.height, 48);
+    /// assert_eq!(grads.gx.len(), 64 * 48);
+    /// ```
+    pub fn detect_f32_with_gradients<'a>(
+        &'a mut self,
+        img: &ImageView<'_, f32>,
+        cfg: &Edge2DConfig,
+    ) -> (Vec<Edgel>, GradientBuffers<'a>) {
+        let edgels = self.detect_f32(img, cfg);
+        let w = self.gx.width();
+        let h = self.gx.height();
+        let grads = GradientBuffers {
+            gx: self.gx.data(),
+            gy: self.gy.data(),
+            mag: self.mag.data(),
+            width: w,
+            height: h,
+        };
+        (edgels, grads)
+    }
+
+    /// Like [`detect_u8`][Self::detect_u8] but also returns a view into the
+    /// internal gradient buffers.
+    ///
+    /// Converts the `u8` input to `f32` internally (same as [`detect_u8`][Self::detect_u8]).
+    /// The returned [`GradientBuffers`] borrows from `self` and is valid only
+    /// until the next call to any `detect_*` method on this detector.
+    pub fn detect_u8_with_gradients<'a>(
+        &'a mut self,
+        img: &ImageView<'_, u8>,
+        cfg: &Edge2DConfig,
+    ) -> (Vec<Edgel>, GradientBuffers<'a>) {
+        let edgels = self.detect_u8(img, cfg);
+        let w = self.gx.width();
+        let h = self.gx.height();
+        let grads = GradientBuffers {
+            gx: self.gx.data(),
+            gy: self.gy.data(),
+            mag: self.mag.data(),
+            width: w,
+            height: h,
+        };
+        (edgels, grads)
     }
 
     fn ensure_dims(&mut self, w: usize, h: usize) {
@@ -619,5 +747,114 @@ mod tests {
 
         assert!(!e16.is_empty());
         assert!(!e32.is_empty());
+    }
+
+    #[test]
+    fn gradient_buffers_non_zero_at_step_edge() {
+        // A vertical step edge in the centre of the image should produce
+        // non-zero gradient magnitude in the columns near the step.
+        let (w, h) = (64usize, 32usize);
+        let edge_x = 32;
+        let mut img_f = vec![0.0f32; w * h];
+        for y in 0..h {
+            for x in 0..w {
+                img_f[y * w + x] = if x >= edge_x { 1.0 } else { 0.0 };
+            }
+        }
+        blur_binomial3(&mut img_f, w, h, 2);
+        let img = Image::from_vec(w, h, img_f).expect("valid image");
+
+        let mut det = Edge2DDetector::new();
+        let (_edgels, grads) =
+            det.detect_f32_with_gradients(&img.as_view(), &Edge2DConfig::default());
+
+        assert_eq!(grads.width, w);
+        assert_eq!(grads.height, h);
+        assert_eq!(grads.gx.len(), w * h);
+        assert_eq!(grads.gy.len(), w * h);
+        assert_eq!(grads.mag.len(), w * h);
+
+        // At the step edge region (columns near edge_x), magnitude should be > 0.
+        let max_mag = grads.mag.iter().copied().fold(0.0f32, f32::max);
+        assert!(
+            max_mag > 0.0,
+            "gradient magnitude should be non-zero at step edge"
+        );
+
+        // The peak gx column should be near edge_x.
+        let (peak_idx, _) = grads
+            .gx
+            .iter()
+            .copied()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).expect("finite"))
+            .expect("non-empty");
+        let peak_x = peak_idx % w;
+        assert!(
+            (peak_x as isize - edge_x as isize).abs() <= 3,
+            "peak gx should be near edge_x={edge_x}, got peak_x={peak_x}"
+        );
+    }
+
+    #[test]
+    fn gradient_gx_sign_left_to_right_increase() {
+        // A left-dark, right-bright step edge: gx should be positive at the edge.
+        // Pixel values: 0 on the left, 1 on the right.
+        let (w, h) = (32usize, 16usize);
+        let edge_x = 16;
+        let mut img_f = vec![0.0f32; w * h];
+        for y in 0..h {
+            for x in 0..w {
+                img_f[y * w + x] = if x >= edge_x { 1.0 } else { 0.0 };
+            }
+        }
+        blur_binomial3(&mut img_f, w, h, 2);
+        let img = Image::from_vec(w, h, img_f).expect("valid image");
+
+        let mut det = Edge2DDetector::new();
+        let cfg = Edge2DConfig {
+            pre_smooth: false,
+            ..Edge2DConfig::default()
+        };
+        let (_edgels, grads) = det.detect_f32_with_gradients(&img.as_view(), &cfg);
+
+        // Sum gx values in the column at edge_x across all rows:
+        // majority should be positive (left-to-right brightness increase → gx > 0).
+        let row_mid = h / 2;
+        let idx = row_mid * w + edge_x;
+        // The Scharr gx should be positive here.
+        assert!(
+            grads.gx[idx] > 0.0,
+            "gx at the step edge (left-dark, right-bright) should be positive, got {}",
+            grads.gx[idx]
+        );
+    }
+
+    #[test]
+    fn detect_u8_with_gradients_returns_consistent_buffers() {
+        // Verify that detect_u8_with_gradients produces the same edgel count
+        // as detect_u8 on the same image.
+        let (w, h) = (64usize, 48usize);
+        let (mut img_f, _, _) = build_slanted_step(w, h, 30.0);
+        blur_binomial3(&mut img_f, w, h, 2);
+        let img_u8: Vec<u8> = img_f
+            .iter()
+            .map(|&v| (v * 255.0).clamp(0.0, 255.0) as u8)
+            .collect();
+        let img = Image::from_vec(w, h, img_u8).expect("valid image");
+
+        let cfg = Edge2DConfig::default();
+        let mut det = Edge2DDetector::new();
+
+        let edgels_ref = det.detect_u8(&img.as_view(), &cfg);
+        let (edgels_w, grads) = det.detect_u8_with_gradients(&img.as_view(), &cfg);
+
+        assert_eq!(
+            edgels_ref.len(),
+            edgels_w.len(),
+            "detect_u8 and detect_u8_with_gradients should produce same edgel count"
+        );
+        assert_eq!(grads.width, w);
+        assert_eq!(grads.height, h);
     }
 }

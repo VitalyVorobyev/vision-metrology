@@ -1,5 +1,9 @@
 use crate::Error;
 
+/// Owned, contiguous 2-D image buffer.
+///
+/// Pixel `(x, y)` is stored at index `y * width + x` (row-major, no padding).
+/// For borrowed/strided access, use [`ImageView`] or [`ImageViewMut`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct Image<T> {
     width: usize,
@@ -8,6 +12,11 @@ pub struct Image<T> {
 }
 
 impl<T> Image<T> {
+    /// Construct an image from a `Vec<T>`, verifying `data.len() == width * height`.
+    ///
+    /// # Errors
+    /// Returns [`Error::SizeMismatch`] when the data length does not match
+    /// `width * height`, or when `width * height` overflows `usize`.
     pub fn from_vec(width: usize, height: usize, data: Vec<T>) -> Result<Self, Error> {
         let expected = width.checked_mul(height).ok_or(Error::SizeMismatch {
             expected: usize::MAX,
@@ -28,22 +37,27 @@ impl<T> Image<T> {
         })
     }
 
+    /// Image width in pixels.
     pub fn width(&self) -> usize {
         self.width
     }
 
+    /// Image height in pixels.
     pub fn height(&self) -> usize {
         self.height
     }
 
+    /// Flat pixel slice in row-major order, length `width * height`.
     pub fn data(&self) -> &[T] {
         &self.data
     }
 
+    /// Mutable flat pixel slice in row-major order, length `width * height`.
     pub fn data_mut(&mut self) -> &mut [T] {
         &mut self.data
     }
 
+    /// Borrow the image as a read-only view (stride = width, no padding).
     pub fn as_view(&self) -> ImageView<'_, T> {
         ImageView {
             width: self.width,
@@ -53,6 +67,7 @@ impl<T> Image<T> {
         }
     }
 
+    /// Borrow the image as a mutable view (stride = width, no padding).
     pub fn as_view_mut(&mut self) -> ImageViewMut<'_, T> {
         ImageViewMut {
             width: self.width,
@@ -64,6 +79,10 @@ impl<T> Image<T> {
 }
 
 impl<T: Clone> Image<T> {
+    /// Create a `width × height` image filled with `value`.
+    ///
+    /// # Panics
+    /// Panics if `width * height` overflows `usize`.
     pub fn new_fill(width: usize, height: usize, value: T) -> Self {
         let len = width.checked_mul(height).expect("image size overflow");
         Self {
@@ -74,6 +93,11 @@ impl<T: Clone> Image<T> {
     }
 }
 
+/// Read-only 2-D image view, potentially with stride > width.
+///
+/// Pixel `(x, y)` is at data index `y * stride + x`.
+/// Construct from an owned [`Image`] via [`Image::as_view`], or from a
+/// raw slice via [`ImageView::from_slice`].
 #[derive(Debug, Clone, Copy)]
 pub struct ImageView<'a, T> {
     width: usize,
@@ -83,6 +107,11 @@ pub struct ImageView<'a, T> {
 }
 
 impl<'a, T> ImageView<'a, T> {
+    /// Create a view from a raw slice with explicit stride.
+    ///
+    /// # Errors
+    /// Returns [`Error::InvalidStride`] when `stride < width`.
+    /// Returns [`Error::SizeMismatch`] when `data` is too short.
     pub fn from_slice(
         width: usize,
         height: usize,
@@ -113,24 +142,32 @@ impl<'a, T> ImageView<'a, T> {
         })
     }
 
+    /// View width in pixels.
     pub fn width(&self) -> usize {
         self.width
     }
 
+    /// View height in pixels.
     pub fn height(&self) -> usize {
         self.height
     }
 
+    /// Row stride in elements (distance between the first pixels of adjacent rows).
     pub fn stride(&self) -> usize {
         self.stride
     }
 
+    /// Return row `y` as a slice of length `width`.
+    ///
+    /// # Panics
+    /// Panics if `y >= height`.
     pub fn row(&self, y: usize) -> &'a [T] {
         assert!(y < self.height, "row index out of bounds");
         let start = y * self.stride;
         &self.data[start..start + self.width]
     }
 
+    /// Return a reference to pixel `(x, y)`, or `None` if out of bounds.
     pub fn get(&self, x: usize, y: usize) -> Option<&'a T> {
         if x >= self.width || y >= self.height {
             return None;
@@ -149,6 +186,12 @@ impl<'a, T> ImageView<'a, T> {
         unsafe { self.data.get_unchecked(y * self.stride + x) }
     }
 
+    /// Borrow a rectangular sub-view at pixel offset `(x, y)`.
+    ///
+    /// The returned view shares the same underlying data and stride.
+    ///
+    /// # Errors
+    /// Returns [`Error::OutOfBounds`] if the sub-view would exceed the parent bounds.
     pub fn subview(
         &self,
         x: usize,
@@ -183,10 +226,14 @@ impl<'a, T> ImageView<'a, T> {
         })
     }
 
+    /// Returns `true` when `stride == width` (no padding between rows).
     pub fn is_contiguous(&self) -> bool {
         self.stride == self.width
     }
 
+    /// Return all pixels as a flat slice when the view is contiguous (`stride == width`).
+    ///
+    /// Returns `None` when `stride > width`.
     pub fn as_contiguous_slice(&self) -> Option<&'a [T]> {
         if !self.is_contiguous() {
             return None;
@@ -196,6 +243,10 @@ impl<'a, T> ImageView<'a, T> {
     }
 }
 
+/// Mutable 2-D image view, potentially with stride > width.
+///
+/// Construct from an owned [`Image`] via [`Image::as_view_mut`], or from a
+/// raw mutable slice via [`ImageViewMut::from_slice_mut`].
 #[derive(Debug)]
 pub struct ImageViewMut<'a, T> {
     width: usize,
@@ -205,6 +256,11 @@ pub struct ImageViewMut<'a, T> {
 }
 
 impl<'a, T> ImageViewMut<'a, T> {
+    /// Create a mutable view from a raw slice with explicit stride.
+    ///
+    /// # Errors
+    /// Returns [`Error::InvalidStride`] when `stride < width`.
+    /// Returns [`Error::SizeMismatch`] when `data` is too short.
     pub fn from_slice_mut(
         width: usize,
         height: usize,
@@ -235,30 +291,45 @@ impl<'a, T> ImageViewMut<'a, T> {
         })
     }
 
+    /// View width in pixels.
     pub fn width(&self) -> usize {
         self.width
     }
 
+    /// View height in pixels.
     pub fn height(&self) -> usize {
         self.height
     }
 
+    /// Row stride in elements.
     pub fn stride(&self) -> usize {
         self.stride
     }
 
+    /// Return row `y` as a slice of length `width`.
+    ///
+    /// # Panics
+    /// Panics if `y >= height`.
     pub fn row(&self, y: usize) -> &[T] {
         assert!(y < self.height, "row index out of bounds");
         let start = y * self.stride;
         &self.data[start..start + self.width]
     }
 
+    /// Return mutable row `y` as a slice of length `width`.
+    ///
+    /// # Panics
+    /// Panics if `y >= height`.
     pub fn row_mut(&mut self, y: usize) -> &mut [T] {
         assert!(y < self.height, "row index out of bounds");
         let start = y * self.stride;
         &mut self.data[start..start + self.width]
     }
 
+    /// Borrow a rectangular sub-view at pixel offset `(x, y)`.
+    ///
+    /// # Errors
+    /// Returns [`Error::OutOfBounds`] if the sub-view would exceed the parent bounds.
     pub fn subview(
         &self,
         x: usize,
@@ -269,6 +340,7 @@ impl<'a, T> ImageViewMut<'a, T> {
         self.as_view().subview(x, y, width, height)
     }
 
+    /// Return a reference to pixel `(x, y)`, or `None` if out of bounds.
     pub fn get(&self, x: usize, y: usize) -> Option<&T> {
         if x >= self.width || y >= self.height {
             return None;
@@ -277,6 +349,7 @@ impl<'a, T> ImageViewMut<'a, T> {
         self.data.get(idx)
     }
 
+    /// Return a mutable reference to pixel `(x, y)`, or `None` if out of bounds.
     pub fn get_mut(&mut self, x: usize, y: usize) -> Option<&mut T> {
         if x >= self.width || y >= self.height {
             return None;
@@ -305,6 +378,10 @@ impl<'a, T> ImageViewMut<'a, T> {
         unsafe { self.data.get_unchecked_mut(y * self.stride + x) }
     }
 
+    /// Borrow a mutable rectangular sub-view at pixel offset `(x, y)`.
+    ///
+    /// # Errors
+    /// Returns [`Error::OutOfBounds`] if the sub-view would exceed the parent bounds.
     pub fn subview_mut(
         &mut self,
         x: usize,
@@ -339,6 +416,7 @@ impl<'a, T> ImageViewMut<'a, T> {
         })
     }
 
+    /// Downgrade to a read-only [`ImageView`].
     pub fn as_view(&self) -> ImageView<'_, T> {
         ImageView {
             width: self.width,
@@ -348,10 +426,14 @@ impl<'a, T> ImageViewMut<'a, T> {
         }
     }
 
+    /// Returns `true` when `stride == width` (no padding between rows).
     pub fn is_contiguous(&self) -> bool {
         self.stride == self.width
     }
 
+    /// Return all pixels as a flat slice when the view is contiguous.
+    ///
+    /// Returns `None` when `stride > width`.
     pub fn as_contiguous_slice(&self) -> Option<&[T]> {
         if !self.is_contiguous() {
             return None;
@@ -360,6 +442,9 @@ impl<'a, T> ImageViewMut<'a, T> {
         self.data.get(0..len)
     }
 
+    /// Return all pixels as a mutable flat slice when the view is contiguous.
+    ///
+    /// Returns `None` when `stride > width`.
     pub fn as_contiguous_slice_mut(&mut self) -> Option<&mut [T]> {
         if !self.is_contiguous() {
             return None;
@@ -379,6 +464,7 @@ fn min_required_len(width: usize, height: usize, stride: usize) -> Option<usize>
     base.checked_add(width)
 }
 
+/// Convert a `u8` image to `f32` (values in `[0.0, 255.0]`).
 pub fn to_f32(img: &ImageView<'_, u8>) -> Image<f32> {
     let mut out = Vec::with_capacity(img.width() * img.height());
     for y in 0..img.height() {
@@ -394,6 +480,7 @@ pub fn to_f32(img: &ImageView<'_, u8>) -> Image<f32> {
     }
 }
 
+/// Convert a `u16` image to `f32` (values in `[0.0, 65535.0]`).
 pub fn to_f32_u16(img: &ImageView<'_, u16>) -> Image<f32> {
     let mut out = Vec::with_capacity(img.width() * img.height());
     for y in 0..img.height() {

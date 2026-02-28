@@ -63,6 +63,7 @@ fn bench_rigid_match(c: &mut Criterion) {
         refine_icp: false,
         top_k: 5,
         resolution_factor: 1.0,
+        ..RigidMatchConfig::default()
     };
 
     let mut matcher = RigidEdgeMatcher::new();

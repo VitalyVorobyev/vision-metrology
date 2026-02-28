@@ -1,4 +1,5 @@
-//! Rigid directed-edge object matching for the `vision-metrology` workspace.
+//! Rigid and similarity directed-edge object matching for the `vision-metrology`
+//! workspace.
 //!
 //! This crate matches a set of model edgels (stored in an [`EdgeModel`]) against
 //! scene edgels using a chamfer-distance coarse search followed by point-to-point
@@ -43,7 +44,7 @@ mod rigid;
 mod score;
 
 pub use icp::icp_refine;
-pub use matcher::{RigidEdgeMatcher, RigidMatchResult};
+pub use matcher::{MatchResult, RigidEdgeMatcher, RigidMatchResult};
 pub use model::EdgeModel;
-pub use rigid::RigidMatchConfig;
-pub use score::{build_scene_chamfer, chamfer_score, normal_score};
+pub use rigid::{MatchConfig, RigidMatchConfig};
+pub use score::{build_scene_chamfer, chamfer_score, normal_score, transform_points};

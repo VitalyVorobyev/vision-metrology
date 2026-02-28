@@ -1,10 +1,24 @@
+/// Border replication strategy used when sampling outside image bounds.
+///
+/// Applies to both 1-D convolution helpers and 2-D sampling functions.
 #[derive(Debug, Clone, PartialEq)]
 pub enum BorderMode<T> {
+    /// Replicate the nearest edge pixel for out-of-bounds coordinates.
     Clamp,
+    /// Fill out-of-bounds coordinates with a constant value `T`.
     Constant(T),
+    /// Mirror-reflect around the boundary without repeating edge pixels
+    /// (gfx-rs / OpenCV BORDER_REFLECT_101 convention).
+    ///
+    /// For a 1-D buffer `[a, b, c, d]` the virtual sequence is
+    /// `… c b a b c d c b …`.
     Reflect101,
 }
 
+/// Map a possibly out-of-bounds index `i` into `[0, len)` using `mode`.
+///
+/// Returns `None` when `mode` is `Constant` (the constant value should be
+/// used directly) or when `len == 0`.
 pub fn map_index<T>(i: isize, len: usize, mode: &BorderMode<T>) -> Option<usize> {
     match mode {
         BorderMode::Constant(_) => None,

@@ -1,23 +1,37 @@
 use vm_core::{Point2f, Vec2f};
 
+/// Index of a node in [`ContourGraph::nodes`].
 pub type NodeId = usize;
+/// Index of an edge in [`ContourGraph::edges`].
 pub type EdgeId = usize;
 
+/// Topological role of a contour graph node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NodeKind {
+    /// Degree-1 node: free endpoint of an open contour chain.
     End,
+    /// Degree ≥ 3 node: branching point where multiple chains meet (T/Y/X junction).
     Junction,
+    /// Degree-0 node: isolated pixel not connected to any chain.
     Isolated,
+    /// Anchor node for a loop component (closed curve with no end-points).
     LoopAnchor,
 }
 
+/// A topological node (endpoint or junction) in a [`ContourGraph`].
 #[derive(Debug, Clone)]
 pub struct Node {
+    /// Unique identifier; equals the index of this node in [`ContourGraph::nodes`].
     pub id: NodeId,
+    /// Topological role.
     pub kind: NodeKind,
+    /// Subpixel position (from the originating edgel).
     pub p: Point2f,
+    /// Integer pixel grid cell containing this node.
     pub idx: (usize, usize),
+    /// Number of incident arcs. Equals `incident_edges.len()`.
     pub degree: usize,
+    /// Indices of all arcs incident to this node in [`ContourGraph::edges`].
     pub incident_edges: Vec<EdgeId>,
 }
 
@@ -25,18 +39,24 @@ pub struct Node {
 ///
 /// Geometry fields (`tangents`, `curvatures`, `arc_params`) are populated
 /// lazily by calling [`GraphEdge::compute_geometry`] or by setting
-/// [`ContourBuildConfig::record_geometry`] to `true` at build time.
+/// `ContourBuildConfig::record_geometry` to `true` at build time.
 #[derive(Debug, Clone)]
 pub struct GraphEdge {
+    /// Unique identifier; equals the index of this edge in [`ContourGraph::edges`].
     pub id: EdgeId,
+    /// [`NodeId`] of the first endpoint.
     pub a: NodeId,
+    /// [`NodeId`] of the second endpoint (equals `a` for loop edges).
     pub b: NodeId,
+    /// Ordered subpixel points along the arc from `a` to `b`.
     pub points: Vec<Point2f>,
+    /// Edgel gradient magnitudes at each point, if recorded.
     pub strengths: Option<Vec<f32>>,
     /// Euclidean arc length of the polyline in pixels.
     pub length: f32,
     /// Mean edgel strength along the arc.
     pub score: f32,
+    /// `true` when this edge forms a closed loop (its two endpoints are the same node).
     pub is_loop: bool,
     /// Unit tangent direction at each point, computed by [`GraphEdge::compute_geometry`].
     /// `tangents[i]` is the symmetric finite-difference tangent at `points[i]`.
@@ -120,15 +140,26 @@ impl GraphEdge {
     }
 }
 
+/// Topological graph of contour chains extracted from 2-D edgels.
+///
+/// Nodes represent endpoints and junctions; edges are polyline arcs
+/// connecting them. Build via [`build_graph_from_edgels`].
+///
+/// [`build_graph_from_edgels`]: crate::build_graph_from_edgels
 #[derive(Debug, Clone, Default)]
 pub struct ContourGraph {
+    /// Width of the source image (used as grid map extent).
     pub width: usize,
+    /// Height of the source image.
     pub height: usize,
+    /// All nodes (endpoints, junctions, isolated points, loop anchors).
     pub nodes: Vec<Node>,
+    /// All arc edges.
     pub edges: Vec<GraphEdge>,
 }
 
 impl ContourGraph {
+    /// Number of junction nodes (degree ≥ 3).
     pub fn num_junctions(&self) -> usize {
         self.nodes
             .iter()
@@ -136,6 +167,7 @@ impl ContourGraph {
             .count()
     }
 
+    /// Number of end nodes (degree 1).
     pub fn num_ends(&self) -> usize {
         self.nodes
             .iter()
@@ -143,14 +175,20 @@ impl ContourGraph {
             .count()
     }
 
+    /// Iterate over all junction nodes.
     pub fn iter_junctions(&self) -> impl Iterator<Item = &Node> {
         self.nodes.iter().filter(|n| n.kind == NodeKind::Junction)
     }
 
+    /// Iterate over all arc edges.
     pub fn iter_edges(&self) -> impl Iterator<Item = &GraphEdge> {
         self.edges.iter()
     }
 
+    /// Return the polyline points for the arc with the given `id`.
+    ///
+    /// # Panics
+    /// Panics if `id >= self.edges.len()`.
     pub fn edge_polyline(&self, id: EdgeId) -> &[Point2f] {
         &self.edges[id].points
     }

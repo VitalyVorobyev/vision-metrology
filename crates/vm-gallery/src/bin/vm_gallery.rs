@@ -1,3 +1,9 @@
+//! `vm-gallery` — visualisation gallery for the vision-metrology workspace.
+//!
+//! Generates annotated images demonstrating edge detection, contour graphs,
+//! laser stripe extraction, and shape fitting on synthetic and real inputs.
+//! Run with `vm-gallery --help` for available sub-commands.
+
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};

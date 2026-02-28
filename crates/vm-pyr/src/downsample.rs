@@ -5,6 +5,10 @@ fn dst_dims(src_w: usize, src_h: usize) -> (usize, usize) {
     (src_w / 2, src_h / 2)
 }
 
+/// Downsample a `u8` image by 2× using 2×2 block averaging, returning an `f32` image.
+///
+/// Output dimensions are `(src.width() / 2, src.height() / 2)`.
+/// Odd border pixels are dropped. Uses an optimised contiguous fast-path when available.
 pub fn downsample2x2_mean_u8_to_f32(src: &ImageView<'_, u8>) -> Image<f32> {
     let (dst_w, dst_h) = dst_dims(src.width(), src.height());
     let mut dst = Image::new_fill(dst_w, dst_h, 0.0f32);
@@ -12,6 +16,10 @@ pub fn downsample2x2_mean_u8_to_f32(src: &ImageView<'_, u8>) -> Image<f32> {
     dst
 }
 
+/// Downsample a `u16` image by 2× using 2×2 block averaging, returning an `f32` image.
+///
+/// Output dimensions are `(src.width() / 2, src.height() / 2)`.
+/// Odd border pixels are dropped. Uses an optimised contiguous fast-path when available.
 pub fn downsample2x2_mean_u16_to_f32(src: &ImageView<'_, u16>) -> Image<f32> {
     let (dst_w, dst_h) = dst_dims(src.width(), src.height());
     let mut dst = Image::new_fill(dst_w, dst_h, 0.0f32);
@@ -19,6 +27,10 @@ pub fn downsample2x2_mean_u16_to_f32(src: &ImageView<'_, u16>) -> Image<f32> {
     dst
 }
 
+/// Downsample an `f32` image by 2× using 2×2 block averaging.
+///
+/// Output dimensions are `(src.width() / 2, src.height() / 2)`.
+/// Odd border pixels are dropped. Uses an optimised contiguous fast-path when available.
 pub fn downsample2x2_mean_f32(src: &ImageView<'_, f32>) -> Image<f32> {
     let (dst_w, dst_h) = dst_dims(src.width(), src.height());
     let mut dst = Image::new_fill(dst_w, dst_h, 0.0f32);
@@ -26,6 +38,10 @@ pub fn downsample2x2_mean_f32(src: &ImageView<'_, f32>) -> Image<f32> {
     dst
 }
 
+/// Downsample a `u8` image by 2× using 2×2 block averaging with rounding.
+///
+/// Output dimensions are `(src.width() / 2, src.height() / 2)`.
+/// Result is rounded to nearest integer: `(sum + 2) / 4`.
 pub fn downsample2x2_mean_u8(src: &ImageView<'_, u8>) -> Image<u8> {
     let (dst_w, dst_h) = dst_dims(src.width(), src.height());
     let mut dst = Image::new_fill(dst_w, dst_h, 0u8);
@@ -33,6 +49,10 @@ pub fn downsample2x2_mean_u8(src: &ImageView<'_, u8>) -> Image<u8> {
     dst
 }
 
+/// Downsample a `u16` image by 2× using 2×2 block averaging with rounding.
+///
+/// Output dimensions are `(src.width() / 2, src.height() / 2)`.
+/// Result is rounded to nearest integer: `(sum + 2) / 4`.
 pub fn downsample2x2_mean_u16(src: &ImageView<'_, u16>) -> Image<u16> {
     let (dst_w, dst_h) = dst_dims(src.width(), src.height());
     let mut dst = Image::new_fill(dst_w, dst_h, 0u16);

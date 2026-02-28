@@ -8,16 +8,30 @@ const DY: [isize; 8] = [0, -1, -1, -1, 0, 1, 1, 1];
 const DIRS_C4: [u8; 4] = [0, 2, 4, 6];
 const DIRS_C8: [u8; 8] = [0, 1, 2, 3, 4, 5, 6, 7];
 
+/// Grid connectivity mode for contour tracing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Connectivity {
+    /// 4-connectivity: only axis-aligned neighbours (horizontal + vertical).
     C4,
+    /// 8-connectivity: axis-aligned + diagonal neighbours.
+    ///
+    /// Recommended for diagonal edges to avoid spurious chain breaks.
     C8,
 }
 
+/// Configuration for contour graph construction.
+///
+/// All fields are public. Construct with `ContourBuildConfig::default()` and
+/// override individual fields as needed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContourBuildConfig {
+    /// Grid adjacency model used to link edgels. Default: [`Connectivity::C8`].
     pub connectivity: Connectivity,
+    /// Discard connected components with fewer than this many edgels.
+    /// Default: `2`.
     pub min_component_size: usize,
+    /// When `true`, store per-vertex gradient strength in [`GraphEdge::strengths`].
+    /// Default: `false`.
     pub record_strengths: bool,
     /// When `true`, call [`GraphEdge::compute_geometry`] on every edge after
     /// building the graph, populating `tangents`, `curvatures`, and `arc_params`.
@@ -35,6 +49,10 @@ impl Default for ContourBuildConfig {
     }
 }
 
+/// Run edge detection on `img` and build a contour graph in one step.
+///
+/// Equivalent to calling [`Edge2DDetector::detect_u8`] followed by
+/// [`build_graph_from_edgels`].
 pub fn build_graph_from_detector_output(
     img: &ImageView<'_, u8>,
     detector: &mut Edge2DDetector,
@@ -45,6 +63,10 @@ pub fn build_graph_from_detector_output(
     build_graph_from_edgels(img.width(), img.height(), &edgels, contour_cfg)
 }
 
+/// Build a contour graph from a pre-detected edgel slice.
+///
+/// `width` and `height` are the dimensions of the source image (used to
+/// allocate the grid map). Returns an empty graph when `edgels` is empty.
 pub fn build_graph_from_edgels(
     width: usize,
     height: usize,

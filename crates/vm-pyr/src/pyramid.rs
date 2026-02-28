@@ -15,6 +15,7 @@ pub struct PyramidF32 {
 }
 
 impl PyramidF32 {
+    /// Create an empty pyramid (no levels allocated).
     pub fn new() -> Self {
         Self { levels: Vec::new() }
     }
@@ -45,6 +46,11 @@ impl PyramidF32 {
         }
     }
 
+    /// Build the pyramid from a `u8` source image.
+    ///
+    /// Level 0 is a f32 copy of `src`. Each subsequent level is a 2×2 mean
+    /// downsample. Building stops when either `num_levels` is reached or the
+    /// level dimensions fall below 2×2.
     pub fn build_from_u8(&mut self, src: &ImageView<'_, u8>, num_levels: usize) {
         let build_levels = max_build_levels(src.width(), src.height(), num_levels);
         if build_levels == 0 {
@@ -63,6 +69,10 @@ impl PyramidF32 {
         }
     }
 
+    /// Build the pyramid from a `u16` source image.
+    ///
+    /// Identical to [`build_from_u8`][Self::build_from_u8] except the level-0
+    /// copy converts `u16` values to `f32`.
     pub fn build_from_u16(&mut self, src: &ImageView<'_, u16>, num_levels: usize) {
         let build_levels = max_build_levels(src.width(), src.height(), num_levels);
         if build_levels == 0 {
@@ -81,6 +91,10 @@ impl PyramidF32 {
         }
     }
 
+    /// Build the pyramid from an `f32` source image.
+    ///
+    /// Identical to [`build_from_u8`][Self::build_from_u8] except level 0
+    /// is copied directly without type conversion.
     pub fn build_from_f32(&mut self, src: &ImageView<'_, f32>, num_levels: usize) {
         let build_levels = max_build_levels(src.width(), src.height(), num_levels);
         if build_levels == 0 {
@@ -99,10 +113,12 @@ impl PyramidF32 {
         }
     }
 
+    /// Return a reference to level `i`, or `None` if `i >= num_levels()`.
     pub fn level(&self, i: usize) -> Option<&Image<f32>> {
         self.levels.get(i)
     }
 
+    /// Number of levels currently built.
     pub fn num_levels(&self) -> usize {
         self.levels.len()
     }
