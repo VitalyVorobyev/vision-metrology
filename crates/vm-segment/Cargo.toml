@@ -1,0 +1,22 @@
+[package]
+name = "vm-segment"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Image segmentation: Otsu/adaptive thresholding, CCL, watershed, edgel region growing"
+
+[dependencies]
+vm-core    = { path = "../vm-core" }
+vm-edge    = { path = "../vm-edge" }
+vm-morph   = { path = "../vm-morph" }
+vm-contour = { path = "../vm-contour" }
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "segment"
+harness = false
+
+[lints]
+workspace = true

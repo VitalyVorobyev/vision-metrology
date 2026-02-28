@@ -1,0 +1,32 @@
+[package]
+name = "vm-python"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "PyO3 Python bindings for the vision-metrology workspace"
+
+[lib]
+name = "vm_python"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+vm-core    = { path = "../vm-core" }
+vm-edge    = { path = "../vm-edge" }
+vm-match   = { path = "../vm-match" }
+vm-shape   = { path = "../vm-shape" }
+pyo3       = { version = "0.22", features = ["extension-module"] }
+numpy      = "0.22"
+
+[lints.rust]
+# PyO3 0.22 generates code that calls unsafe fns in implicit unsafe context,
+# which conflicts with the workspace `unsafe_op_in_unsafe_fn = "deny"` lint
+# when used with Rust 2024 edition. We relax this lint for vm-python only.
+unsafe_op_in_unsafe_fn = "allow"
+
+[lints.clippy]
+dbg_macro = "deny"
+todo = "deny"
+# PyO3 0.22 type alias `PyResult<T>` triggers a spurious `useless_conversion`
+# warning on return types. This is a known pyo3 / clippy interaction; suppress
+# it here rather than litter each function with allow attributes.
+useless_conversion = "allow"
