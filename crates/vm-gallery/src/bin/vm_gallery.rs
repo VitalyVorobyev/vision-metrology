@@ -584,6 +584,7 @@ fn run_contour_graph(args: ContourArgs) -> Result<()> {
         connectivity: Connectivity::C8,
         min_component_size: args.min_component_size,
         record_strengths: false,
+        record_geometry: false,
     };
 
     let mut edge_det = Edge2DDetector::new();

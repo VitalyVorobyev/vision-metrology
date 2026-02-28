@@ -22,6 +22,9 @@ mod sample;
 
 pub use border::{BorderMode, map_index};
 pub use error::Error;
-pub use geom::{Line2f, Point2f, Polyline2f, Vec2f};
+pub use geom::{
+    Affine2f, Angle, Isometry2f, Line2f, Point2f, Polyline2f, Projective2f, Rect2f, Similarity2f,
+    Vec2f, from_na_point, from_na_vec, to_na_point, to_na_vec, wrap_angle,
+};
 pub use image::{Image, ImageView, ImageViewMut, to_f32, to_f32_u16};
 pub use sample::{sample_bilinear_f32, sample_nearest};

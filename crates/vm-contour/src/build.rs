@@ -19,6 +19,9 @@ pub struct ContourBuildConfig {
     pub connectivity: Connectivity,
     pub min_component_size: usize,
     pub record_strengths: bool,
+    /// When `true`, call [`GraphEdge::compute_geometry`] on every edge after
+    /// building the graph, populating `tangents`, `curvatures`, and `arc_params`.
+    pub record_geometry: bool,
 }
 
 impl Default for ContourBuildConfig {
@@ -27,6 +30,7 @@ impl Default for ContourBuildConfig {
             connectivity: Connectivity::C8,
             min_component_size: 2,
             record_strengths: false,
+            record_geometry: false,
         }
     }
 }
@@ -196,6 +200,9 @@ pub fn build_graph_from_edgels(
                 is_loop: closed && start_node == end_node,
                 points,
                 strengths,
+                tangents: None,
+                curvatures: None,
+                arc_params: None,
             });
         }
 
@@ -269,6 +276,9 @@ pub fn build_graph_from_edgels(
                 is_loop,
                 points,
                 strengths,
+                tangents: None,
+                curvatures: None,
+                arc_params: None,
             });
         }
     }
@@ -283,12 +293,18 @@ pub fn build_graph_from_edgels(
         }
     }
 
-    ContourGraph {
+    let mut graph = ContourGraph {
         width,
         height,
         nodes,
         edges,
+    };
+
+    if cfg.record_geometry {
+        graph.compute_all_geometry();
     }
+
+    graph
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -771,6 +787,7 @@ mod tests {
             connectivity: Connectivity::C8,
             min_component_size: 2,
             record_strengths: false,
+            record_geometry: false,
         };
         let g = build_graph_from_edgels(9, 9, &edgels, &cfg);
 
@@ -805,6 +822,7 @@ mod tests {
             connectivity: Connectivity::C8,
             min_component_size: 2,
             record_strengths: false,
+            record_geometry: false,
         };
         let g = build_graph_from_edgels(9, 9, &edgels, &cfg);
 
@@ -832,6 +850,7 @@ mod tests {
             connectivity: Connectivity::C4,
             min_component_size: 2,
             record_strengths: false,
+            record_geometry: false,
         };
         let g = build_graph_from_edgels(9, 9, &edgels, &cfg);
 
@@ -878,6 +897,7 @@ mod tests {
             connectivity: Connectivity::C8,
             min_component_size: 2,
             record_strengths: false,
+            record_geometry: false,
         };
         let g = build_graph_from_edgels(10, 8, &edgels, &cfg);
 

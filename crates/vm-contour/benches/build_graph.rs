@@ -48,6 +48,7 @@ fn bench_build_graph(c: &mut Criterion) {
         connectivity: Connectivity::C8,
         min_component_size: 2,
         record_strengths: false,
+        record_geometry: false,
     };
 
     c.bench_function("vm_contour_build_graph_50k", |b| {
