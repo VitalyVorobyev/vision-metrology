@@ -8,6 +8,7 @@ members = [
   "crates/vm-morph",
   "crates/vm-multiscale",
   "crates/vm-pyr",
+  "crates/vm-shape",
   "crates/vision-metrology",
 ]
 resolver = "3"

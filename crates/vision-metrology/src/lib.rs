@@ -10,3 +10,4 @@ pub use vm_laser::*;
 pub use vm_morph::*;
 pub use vm_multiscale::*;
 pub use vm_pyr::*;
+pub use vm_shape::*;

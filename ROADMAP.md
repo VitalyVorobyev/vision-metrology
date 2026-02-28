@@ -1,7 +1,7 @@
 # vision-metrology — Development Roadmap
 
 **Last updated:** 2026-02-28
-**Status:** Active development — Milestone 2 complete
+**Status:** Active development — Milestone 3 complete
 
 ---
 
@@ -43,7 +43,7 @@ determinism of the output geometry.
 | `vm-gallery` | Solid | External fixture CLI. Covers all current algorithms. |
 | `vision-metrology` | Thin umbrella | Re-exports. Needs selective re-export strategy once API surface grows. |
 | `vm-multiscale` | Missing | New crate. Pyramid + edge combinator. |
-| `vm-shape` | Missing | New crate. LSD, ellipse/conic detection. |
+| `vm-shape` | Solid | LSD, Bookstein + Fitzgibbon conic fitting, RANSAC. 26 tests, benchmarks. |
 | `vm-match` | Missing | New crate. Directed-edge matching, rigid/similarity alignment. |
 | `vm-segment` | Missing | New crate. Thresholding, CCL, watershed, edgel region growing. |
 | `vm-python` | Missing | New crate. PyO3 bindings over the stable public API. |
@@ -259,119 +259,80 @@ in a new `vm-shape` crate. Both work on `&[Edgel]` or `&[ScaleAnnotatedEdgel]`.
 
 #### LSD (Line Segment Detector)
 
-- [ ] **Define `LineSegment2f`**
-  ```rust
-  pub struct LineSegment2f {
-      pub p1: Point2f,
-      pub p2: Point2f,
-      pub normal: Vec2f,    // unit normal to segment, consistent with edgel normals
-      pub width: f32,       // estimated support region width in pixels
-      pub nfa: f32,         // log10 of Number of False Alarms (lower = stronger)
-      pub length: f32,      // Euclidean distance p1 to p2
-  }
-  ```
-  File: `crates/vm-shape/src/line.rs`
-
-- [ ] **Define `LsdConfig`**
-  ```rust
-  pub struct LsdConfig {
-      pub scale: f32,           // image downscale before detection (default 0.8)
-      pub sigma_scale: f32,     // sigma = sigma_scale / scale
-      pub ang_th: f32,          // gradient angle tolerance in degrees (default 22.5)
-      pub log_eps: f32,         // log NFA threshold (default 0.0 = 1 false alarm)
-      pub density_th: f32,      // minimum aligned point density in region
-      pub n_bins: usize,        // angle quantization bins for ordering
-      pub min_length: f32,      // minimum accepted segment length in pixels
-  }
-  ```
+- [x] **Define `LineSegment2f`**
+  `p1`, `p2`, `normal`, `width`, `nfa`, `length`, `angle` fields.
   File: `crates/vm-shape/src/lsd.rs`
 
-- [ ] **Implement gradient angle image**
-  Compute `angle[y][x] = atan2(gy, gx)` from `gx`/`gy` already available from
-  `Edge2DDetector` internals, or recompute via Scharr on the input. Quantize into
-  `n_bins` orientation bins for sorting.
-  Note: expose `gx`/`gy`/`mag` buffers from `Edge2DDetector` via a new
-  `detect_u8_with_gradients` method that also returns gradient views.
+- [x] **Define `LsdConfig`**
+  `scale=0.8`, `sigma_scale=0.6`, `ang_th=22.5°`, `log_eps=0.0`, `density_th=0.7`,
+  `n_bins=1024`, `min_length=3.0`.
+  File: `crates/vm-shape/src/lsd.rs`
 
-- [ ] **Implement region growing**
-  Sort pixels by decreasing gradient magnitude. Seed from unused strong-gradient
-  pixels. Grow by angular coherence (`|angle[nb] - angle[seed]| < ang_th`).
-  Mark pixels as used. Store region as `Vec<usize>` (linear pixel indices).
-  Scratch buffer owned by `LsdDetector`; cleared per call, not reallocated.
+- [x] **Implement gradient angle image**
+  Scharr gradients; level-line angle `θ = atan2(-gx, gy)` normalized to `(-π/2, π/2]`.
+  Bucket pseudo-sort by magnitude into `n_bins` bins.
 
-- [ ] **Implement line fitting on a region**
-  Compute weighted centroid and 2x2 inertia tensor of region pixels weighted by
-  gradient magnitude. Principal axis = eigenvector of minimum eigenvalue.
-  Endpoints = projection of extreme region pixels onto principal axis.
+- [x] **Implement region growing**
+  8-connected BFS from strongest unused pixel; angular coherence guard.
+  All scratch buffers (`region`, `queue`, `used`, `buckets`) owned by `LsdDetector`.
 
-- [ ] **Implement NFA validation**
-  `NFA(n, k, p) = N_5 * C(n,k) * p^k * (1-p)^(n-k)` where `N_5 = W*H*max_pts^2/2`.
-  Use log-domain arithmetic to avoid overflow. Accept segment if `log10(NFA) < log_eps`.
+- [x] **Implement line fitting on a region**
+  Weighted inertia tensor; principal axis via half-angle formula
+  `θ = 0.5 * atan2(2*ixy, ixx-iyy)` (robust to degenerate axis-aligned cases).
+
+- [x] **Implement NFA validation**
+  `log10(NFA) = log10(N_T) + log10_binomial(n,k) + k*log10(p) + (n-k)*log10(1-p)`.
+  Level-line probability `p = 2*ang_th/π` (half-circle range).
+  `libm::lgamma` for the log-binomial. Accept when `log10(NFA) < log_eps`.
   File: `crates/vm-shape/src/nfa.rs`
 
-- [ ] **Implement `LsdDetector`**
-  Owns gradient scratch buffers, region scratch `Vec`, pixel-used bitmask.
-  Public: `detect_u8`, `detect_f32` returning `Vec<LineSegment2f>`.
+- [x] **Implement `LsdDetector`**
+  Scratch: `buf`, `gx`, `gy`, `mag`, `ang`, `buckets`, `used`, `region`, `queue`.
+  Public: `detect` (u8), `detect_f32` returning `Vec<LineSegment2f>`.
   File: `crates/vm-shape/src/lsd.rs`
 
-- [ ] **LSD tests**
-  - Horizontal/vertical/diagonal step edge: endpoint error < 0.5 px.
-  - Short segment below `min_length` must be rejected.
-  - NFA filter: noise-only image produces zero segments.
+- [x] **LSD tests** — horizontal/vertical step edge detection, short-segment rejection,
+  noise image false-detection control, f32/u8 consistency, NFA sign check.
 
-- [ ] **Benchmark `lsd_detect_u8_1280x1024`**
+- [x] **Benchmark `lsd_detect_u8_1280x1024`** and `lsd_detect_u8_512x512`.
+  File: `crates/vm-shape/benches/detect.rs`
 
 #### Ellipse and Conic Fitting
 
-- [ ] **Define `Conic2f` and `Ellipse2f`**
-  ```rust
-  pub struct Conic2f { pub coeffs: [f32; 6] }  // Ax²+Bxy+Cy²+Dx+Ey+F=0
-  pub struct Ellipse2f {
-      pub center: Point2f,
-      pub semi_major: f32,
-      pub semi_minor: f32,
-      pub angle: f32,     // radians, major axis to x-axis
-  }
-  impl Ellipse2f { pub fn from_conic(c: &Conic2f) -> Result<Self, Error>; }
-  ```
+- [x] **Define `Conic2f` and `Ellipse2f`**
+  `Conic2f { coeffs: [f32; 6] }` with `eval`, `discriminant`, `is_ellipse`, `grad_norm`, `to_ellipse`.
+  `Ellipse2f { center, semi_axes, angle }` with `to_conic`, `from_conic`, `point_at`, `contains`.
   File: `crates/vm-shape/src/conic.rs`
 
-- [ ] **Define `ConicFitConfig`**
-  ```rust
-  pub struct ConicFitConfig {
-      pub method: FitMethod,          // DirectLeastSquares | Bookstein | RANSAC
-      pub ransac_iterations: usize,   // default 200
-      pub ransac_inlier_dist: f32,    // algebraic distance threshold
-      pub min_inliers: usize,         // default 6 (minimum for ellipse)
-  }
-  ```
+- [x] **Define `ConicFitConfig`**
+  `use_bookstein=true`, `ransac_iters=0`, `inlier_tol=1.0`, `min_inliers=5`, `rng_seed=42`.
+  File: `crates/vm-shape/src/fitter.rs`
 
-- [ ] **Implement Direct Least Squares (Fitzgibbon et al.)**
-  Solve `min ‖Da‖` subject to `aᵀCa = 1` (ellipse constraint).
-  Requires 6x6 generalized eigenvalue solve. Use iterative power method or
-  a compact 6x6 solver (no external LAPACK dependency — implement in-crate).
-  Return `Result<Conic2f, Error>` (fails if degenerate or not ellipse).
+- [x] **Implement Direct Least Squares (Fitzgibbon et al.)**
+  Normalise coordinates (centroid + RMS scale). Schur decomposition of
+  `M = C11_inv * (S11 - S12 S22_inv S21)` for real eigenvalues; eigenvector
+  recovered via SVD null-space of `(M - λI)`. Rescale to `a1^T C11 a1 = 1`.
   File: `crates/vm-shape/src/fit_conic.rs`
 
-- [ ] **Implement RANSAC wrapper**
-  Sample 5 edgels (minimum for unique conic), fit DLS, score by algebraic distance
-  inlier count. Return best fit over `ransac_iterations` trials.
-  Store random state as `u64` seed in `ConicFitter` for reproducibility.
+- [x] **Implement Bookstein fit**
+  Coordinate-normalised scatter matrix; smallest eigenvector via `SymmetricEigen`
+  with explicit minimum-eigenvalue search (nalgebra does not guarantee sort order).
+  File: `crates/vm-shape/src/fit_conic.rs`
+
+- [x] **Implement RANSAC wrapper**
+  Seeded `Lcg` PRNG; sample-5 loop; Sampson distance `|F(p)|/‖∇F(p)‖` inlier metric;
+  re-fit on best inlier set. `inlier_scratch: Vec<usize>` reused across calls.
   File: `crates/vm-shape/src/ransac.rs`
 
-- [ ] **Implement `ConicFitter` detector struct**
-  Owns scratch buffers (design matrix, score scratch). Public `fit_edgels` and
-  `detect_ellipses_in_graph` (operates on `&ContourGraph`, segments each edge,
-  fits per arc).
-  File: `crates/vm-shape/src/conic.rs`
+- [x] **Implement `ConicFitter` detector struct**
+  `inlier_scratch` reused across RANSAC calls. `fit` and `fit_ellipse_ransac` methods.
+  File: `crates/vm-shape/src/fitter.rs`
 
-- [ ] **Conic fitting tests**
-  - Fit to 20 points on a known ellipse: recover parameters within 0.3%.
-  - RANSAC with 5 outliers in 20 points: still converges.
-  - Degenerate input (< 5 points): returns `Err(Error::InsufficientData{..})`.
-  - Non-ellipse conic: `Ellipse2f::from_conic` returns `Err(Error::Degenerate)`.
+- [x] **Conic fitting tests** — circle/ellipse recovery, RANSAC with outliers,
+  insufficient-data error, non-ellipse rejection, noisy-data fit, fitter reuse.
 
-- [ ] **Benchmark `conic_ransac_1000pts`**
+- [x] **Benchmark `conic_ransac_1000pts`** and `conic_direct_bookstein_100pts`.
+  File: `crates/vm-shape/benches/detect.rs`
 
 **Dependencies:** Milestone 2 (MultiScaleEdgeDetector for integration), Milestone 1 (Error variants, contour geometry).
 
@@ -614,10 +575,10 @@ within the same priority class are ordered by estimated impact / unblocking valu
 | 5 | P1 | ~~`vm-morph` parameterized structuring elements~~ ✅ | M1 | vm-morph |
 | 6 | P1 | ~~Chamfer distance transform in `vm-morph`~~ ✅ | M1 | vm-morph |
 | 7 | P1 | ~~`vm-multiscale` crate + `MultiScaleEdgeDetector`~~ ✅ | M2 | vm-multiscale |
-| 8 | P1 | LSD detector (`LsdDetector`, `LineSegment2f`) | M3 | vm-shape |
-| 9 | P1 | Direct Least Squares conic fitter | M3 | vm-shape |
-| 10 | P1 | RANSAC wrapper for conic fitting | M3 | vm-shape |
-| 11 | P1 | `ConicFitter::detect_ellipses_in_graph` | M3 | vm-shape |
+| 8 | P1 | ~~LSD detector (`LsdDetector`, `LineSegment2f`)~~ ✅ | M3 | vm-shape |
+| 9 | P1 | ~~Direct Least Squares conic fitter (Fitzgibbon + Bookstein)~~ ✅ | M3 | vm-shape |
+| 10 | P1 | ~~RANSAC wrapper for conic fitting~~ ✅ | M3 | vm-shape |
+| 11 | P1 | `ConicFitter::detect_ellipses_in_graph` | M4 | vm-shape |
 | 12 | P1 | Otsu + adaptive thresholding | M4 | vm-segment |
 | 13 | P1 | Connected-component labeling (union-find) | M4 | vm-segment |
 | 14 | P1 | `EdgeModel` + chamfer map construction | M4 | vm-match |
@@ -743,21 +704,26 @@ needed. This keeps the `Result` chain flat and makes the PyO3 error mapping triv
 The following questions were not resolved in the initial design session and will need
 answers before the relevant milestone can be finalized.
 
-### OQ-1: NFA computation precision (Milestone 3 — LSD)
+### OQ-1: NFA computation precision (RESOLVED)
 
-The standard LSD NFA formula requires computing `C(n,k)` for potentially large `n`
-(thousands of region pixels). Log-gamma approximation is standard but introduces
-small numerical error. Decision needed: use `lgamma`-based approximation (fast,
-slight error) or exact log-sum for `n < 1000` with fallback? This affects the
-false-alarm rate guarantee.
+Decision: `lgamma`-based log-binomial (`libm::lgamma`) throughout. For all region
+sizes tested (n up to a few thousand), the approximation is numerically accurate to
+machine precision relative to exact factorials for n ≤ ~170. Single-term NFA
+(mode of the binomial, not tail sum) is used; this is standard practice for LSD
+and gives the correct false-alarm guarantee in the a-contrario sense.
 
-### OQ-2: Conic fitting constraint choice (Milestone 3 — Ellipse)
+Correction: level-line angles span `(-π/2, π/2]` (half-circle), so the alignment
+probability is `p = 2*ang_th/π`, not `ang_th/π` as in the original LSD paper
+(which uses full gradient directions). This was found and fixed during M3.
 
-The Fitzgibbon DLS method uses the algebraic constraint `4AC - B² = 1` which
-guarantees an ellipse solution but is not invariant to similarity transforms.
-The Bookstein normalization (`A + C = 1`) is similarity-invariant but does not
-guarantee ellipse. Decision needed before implementing `fit_conic.rs`: which
-constraint, or expose both as `FitMethod` enum variants?
+### OQ-2: Conic fitting constraint choice (RESOLVED)
+
+Decision: expose both. `ConicFitConfig::use_bookstein=true` (default) selects
+Bookstein `‖c‖=1` (similarity-invariant, works for any conic);
+`use_bookstein=false` selects Fitzgibbon `4AC-B²=1` (guarantees ellipse output).
+RANSAC always uses Fitzgibbon for its sample-5 hypotheses. Both methods apply
+coordinate normalisation (translate to centroid, scale by RMS distance) before
+forming the scatter matrix for numerical stability at large pixel coordinates.
 
 ### OQ-3: Chamfer map resolution for matching (Milestone 4 — vm-match)
 

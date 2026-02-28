@@ -13,6 +13,7 @@ vm-laser = { path = "../vm-laser" }
 vm-morph = { path = "../vm-morph" }
 vm-multiscale = { path = "../vm-multiscale" }
 vm-pyr = { path = "../vm-pyr" }
+vm-shape = { path = "../vm-shape" }
 
 [dev-dependencies]
 anyhow = "1"
