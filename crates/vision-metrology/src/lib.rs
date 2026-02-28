@@ -8,4 +8,5 @@ pub use vm_core::*;
 pub use vm_edge::*;
 pub use vm_laser::*;
 pub use vm_morph::*;
+pub use vm_multiscale::*;
 pub use vm_pyr::*;

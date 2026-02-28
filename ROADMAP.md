@@ -1,7 +1,7 @@
 # vision-metrology — Development Roadmap
 
 **Last updated:** 2026-02-28
-**Status:** Active development — Milestone 1 complete
+**Status:** Active development — Milestone 2 complete
 
 ---
 
@@ -212,51 +212,31 @@ site for scale-invariant edgel extraction.
 
 **Tasks:**
 
-- [ ] **Create `crates/vm-multiscale/Cargo.toml`**
-  Deps: `vm-core`, `vm-pyr`, `vm-edge`. Optional `rayon` feature mirroring vm-laser.
+- [x] **Create `crates/vm-multiscale/Cargo.toml`**
+  Deps: `vm-core`, `vm-pyr`, `vm-edge`. Optional `rayon` feature.
 
-- [ ] **Define `ScaleAnnotatedEdgel`**
-  ```rust
-  pub struct ScaleAnnotatedEdgel {
-      pub p: Point2f,       // coordinates in level-0 pixel space
-      pub n: Vec2f,         // normal direction (dark-to-bright)
-      pub strength: f32,    // NMS magnitude at detection scale
-      pub scale: f32,       // effective sigma at detection level
-      pub idx: (usize, usize), // integer grid index at level-0
-  }
-  ```
+- [x] **Define `ScaleAnnotatedEdgel`**
+  Flat struct: `p`, `n`, `strength`, `scale`, `level`, `idx` (all level-0 coords).
   File: `crates/vm-multiscale/src/edgel.rs`
 
-- [ ] **Define `MultiScaleConfig`**
-  ```rust
-  pub struct MultiScaleConfig {
-      pub num_levels: usize,
-      pub base_sigma: f32,
-      pub per_level: Edge2DConfig,   // border, thresholds, subpix
-      pub merge_duplicates: bool,    // suppress level-0 duplicates within 1px
-  }
-  ```
+- [x] **Define `MultiScaleConfig`**
+  `num_levels` (total including level-0), `base_sigma`, `edge: Edge2DConfig`,
+  `merge_duplicates`. Thresholds auto-scaled per level (÷ 2^l).
   File: `crates/vm-multiscale/src/config.rs`
 
-- [ ] **Implement `MultiScaleEdgeDetector`**
-  Owns `PyramidF32` and `Edge2DDetector`. `detect_u8` / `detect_u16` / `detect_f32`
-  methods. Per-level: build pyramid level, run detector, map `Edgel.p` and `Edgel.idx`
-  back to level-0 coordinates by multiplying by `2^level`.
+- [x] **Implement `MultiScaleEdgeDetector`**
+  Owns `PyramidF32`, `Edge2DDetector`, dedup scratch `cell_used: Vec<bool>`.
+  `detect_u8` / `detect_u16` / `detect_f32` methods.
   File: `crates/vm-multiscale/src/detector.rs`
 
-- [ ] **Duplicate suppression**
-  When `merge_duplicates = true`, sort merged edgels by pixel index and keep the
-  strongest within a 1-pixel radius (integer grid cell uniqueness). Allocation-free
-  using an in-place sort + linear scan on the scratch buffer.
+- [x] **Deduplication** — keep finest-scale (level-0 first) per level-0 pixel cell.
 
-- [ ] **Benchmark `multiscale_detect_u8_1280x1024_3levels`**
+- [x] **Benchmarks** — `multiscale_detect_u8_1280x1024_3levels` and `_1level`.
   File: `crates/vm-multiscale/benches/detect.rs`
 
-- [ ] **Update `vision-metrology/src/lib.rs`**
-  Add `pub use vm_multiscale::*;`
+- [x] **Update `vision-metrology/src/lib.rs`** — `pub use vm_multiscale::*`
 
-- [ ] **`vm-gallery` `multiscale_edges` subcommand**
-  Renders edgels colored by scale level.
+- [ ] **`vm-gallery` `multiscale_edges` subcommand** — deferred to M5 polish pass.
 
 **Dependencies:** Milestone 1 (affine types, extended Error).
 
@@ -633,7 +613,7 @@ within the same priority class are ordered by estimated impact / unblocking valu
 | 4 | P1 | ~~Arc-length parameterization on `GraphEdge`~~ ✅ | M1 | vm-contour |
 | 5 | P1 | ~~`vm-morph` parameterized structuring elements~~ ✅ | M1 | vm-morph |
 | 6 | P1 | ~~Chamfer distance transform in `vm-morph`~~ ✅ | M1 | vm-morph |
-| 7 | P1 | `vm-multiscale` crate + `MultiScaleEdgeDetector` | M2 | vm-multiscale |
+| 7 | P1 | ~~`vm-multiscale` crate + `MultiScaleEdgeDetector`~~ ✅ | M2 | vm-multiscale |
 | 8 | P1 | LSD detector (`LsdDetector`, `LineSegment2f`) | M3 | vm-shape |
 | 9 | P1 | Direct Least Squares conic fitter | M3 | vm-shape |
 | 10 | P1 | RANSAC wrapper for conic fitting | M3 | vm-shape |

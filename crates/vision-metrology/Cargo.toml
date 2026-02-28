@@ -11,6 +11,7 @@ vm-core = { path = "../vm-core" }
 vm-edge = { path = "../vm-edge" }
 vm-laser = { path = "../vm-laser" }
 vm-morph = { path = "../vm-morph" }
+vm-multiscale = { path = "../vm-multiscale" }
 vm-pyr = { path = "../vm-pyr" }
 
 [dev-dependencies]

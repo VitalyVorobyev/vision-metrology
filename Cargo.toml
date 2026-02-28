@@ -6,6 +6,7 @@ members = [
   "crates/vm-edge",
   "crates/vm-laser",
   "crates/vm-morph",
+  "crates/vm-multiscale",
   "crates/vm-pyr",
   "crates/vision-metrology",
 ]
