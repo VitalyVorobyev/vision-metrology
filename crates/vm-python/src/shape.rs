@@ -2,142 +2,178 @@
 
 use numpy::{PyReadonlyArray2, PyUntypedArrayMethods};
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList};
+use pyo3::types::PyList;
 use vm_core::Point2f;
-use vm_shape::{ConicFitConfig, ConicFitter, LsdConfig, LsdDetector};
+use vm_shape::{ConicFitter as NativeConicFitter, LsdDetector as NativeLsdDetector};
 
+use crate::config_py::{ConicFitConfig, LsdConfig};
 use crate::convert::image_from_numpy_u8;
+use crate::types::{Ellipse, LineSegment};
 
-// ---------------------------------------------------------------------------
-// PyLsdDetector
-// ---------------------------------------------------------------------------
+fn segments_to_pylist<'py>(
+    py: Python<'py>,
+    segs: &[vm_shape::LineSegment2f],
+) -> PyResult<Bound<'py, PyList>> {
+    let list = PyList::empty(py);
+    for s in segs {
+        let dx = s.p2.x - s.p1.x;
+        let dy = s.p2.y - s.p1.y;
+        let length = (dx * dx + dy * dy).sqrt();
+        let obj = Py::new(
+            py,
+            LineSegment {
+                x1: s.p1.x,
+                y1: s.p1.y,
+                x2: s.p2.x,
+                y2: s.p2.y,
+                width: s.width,
+                nfa: s.nfa,
+                angle: s.angle,
+                length,
+            },
+        )?;
+        list.append(obj)?;
+    }
+    Ok(list)
+}
+
+fn points_from_numpy(pts: PyReadonlyArray2<'_, f32>) -> PyResult<Vec<Point2f>> {
+    let shape = pts.shape();
+    if shape.len() != 2 || shape[1] != 2 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "pts must be a (N, 2) float32 array",
+        ));
+    }
+    let n = shape[0];
+    let slice = pts.as_slice().map_err(|e| {
+        pyo3::exceptions::PyValueError::new_err(format!("array not C-contiguous: {e}"))
+    })?;
+
+    Ok((0..n)
+        .map(|i| Point2f {
+            x: slice[i * 2],
+            y: slice[i * 2 + 1],
+        })
+        .collect())
+}
 
 /// Python-facing Line Segment Detector.
-///
-/// ## Example (Python)
-/// ```python
-/// det = vm_python.PyLsdDetector()
-/// segs = det.detect(img)  # list of dicts
-/// ```
 #[pyclass]
-pub struct PyLsdDetector {
-    det: LsdDetector,
+pub struct LsdDetector {
+    det: NativeLsdDetector,
     cfg: LsdConfig,
 }
 
 #[pymethods]
-impl PyLsdDetector {
-    /// Create a new LSD detector with default configuration.
+impl LsdDetector {
+    /// Create a new LSD detector with optional explicit config.
     #[new]
-    pub fn new() -> Self {
+    #[pyo3(signature = (config=None))]
+    pub fn new(config: Option<LsdConfig>) -> Self {
         Self {
-            det: LsdDetector::new(),
-            cfg: LsdConfig::default(),
+            det: NativeLsdDetector::new(),
+            cfg: config.unwrap_or_default(),
         }
     }
 
     /// Detect line segments in a 2-D `uint8` numpy array.
-    ///
-    /// Returns a list of dicts, each with keys:
-    /// - `x1`, `y1` (float): first endpoint.
-    /// - `x2`, `y2` (float): second endpoint.
-    /// - `width` (float): estimated line width.
-    /// - `nfa` (float): log₁₀(NFA) — negative means significant.
-    /// - `angle` (float): orientation angle in radians.
-    pub fn detect<'py>(
+    pub fn detect_u8<'py>(
         &mut self,
         py: Python<'py>,
         img: PyReadonlyArray2<'py, u8>,
     ) -> PyResult<Bound<'py, PyList>> {
         let image = image_from_numpy_u8(py, &img)?;
-        let segs = self.det.detect(&image.as_view(), &self.cfg);
+        let cfg = self.cfg.to_native()?;
+        let segs = self.det.detect(&image.as_view(), &cfg);
+        segments_to_pylist(py, &segs)
+    }
 
-        let list = PyList::empty_bound(py);
-        for s in &segs {
-            let d = PyDict::new_bound(py);
-            d.set_item("x1", s.p1.x)?;
-            d.set_item("y1", s.p1.y)?;
-            d.set_item("x2", s.p2.x)?;
-            d.set_item("y2", s.p2.y)?;
-            d.set_item("width", s.width)?;
-            d.set_item("nfa", s.nfa)?;
-            d.set_item("angle", s.angle)?;
-            list.append(d)?;
-        }
-        Ok(list)
+    /// Return a copy of the current detector config.
+    pub fn config(&self) -> LsdConfig {
+        self.cfg.clone()
+    }
+
+    /// Replace detector configuration.
+    pub fn set_config(&mut self, config: LsdConfig) {
+        self.cfg = config;
     }
 }
 
-// ---------------------------------------------------------------------------
-// PyConicFitter
-// ---------------------------------------------------------------------------
-
 /// Python-facing conic/ellipse fitter.
-///
-/// ## Example (Python)
-/// ```python
-/// fitter = vm_python.PyConicFitter()
-/// pts = np.array([[x, y], ...], dtype=np.float32)
-/// result = fitter.fit_ellipse(pts)  # dict or None
-/// ```
 #[pyclass]
-pub struct PyConicFitter {
-    fitter: ConicFitter,
+pub struct ConicFitter {
+    fitter: NativeConicFitter,
     cfg: ConicFitConfig,
 }
 
 #[pymethods]
-impl PyConicFitter {
-    /// Create a new conic fitter with default configuration.
+impl ConicFitter {
+    /// Create a new conic fitter with optional explicit config.
     #[new]
-    pub fn new() -> Self {
+    #[pyo3(signature = (config=None))]
+    pub fn new(config: Option<ConicFitConfig>) -> Self {
         Self {
-            fitter: ConicFitter::new(),
-            cfg: ConicFitConfig::default(),
+            fitter: NativeConicFitter::new(),
+            cfg: config.unwrap_or_default(),
         }
     }
 
     /// Fit an ellipse to a set of 2-D points.
     ///
     /// `pts` must be a `(N, 2)` float32 numpy array.
-    ///
-    /// Returns a dict with keys `cx`, `cy`, `a`, `b`, `angle` on success,
-    /// or `None` if fitting fails or the result is not an ellipse.
+    /// Returns an `Ellipse` on success, or `None` if fitting fails.
     pub fn fit_ellipse<'py>(
         &mut self,
         py: Python<'py>,
         pts: PyReadonlyArray2<'py, f32>,
-    ) -> PyResult<Option<Bound<'py, PyDict>>> {
-        let shape = pts.shape();
-        if shape.len() != 2 || shape[1] != 2 {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "pts must be a (N, 2) float32 array",
-            ));
-        }
-        let n = shape[0];
-        let slice = pts.as_slice().map_err(|e| {
-            pyo3::exceptions::PyValueError::new_err(format!("array not C-contiguous: {e}"))
-        })?;
+    ) -> PyResult<Option<Py<PyAny>>> {
+        let points = points_from_numpy(pts)?;
+        let cfg = self.cfg.to_native()?;
+        let result = self.fitter.fit_ellipse_ransac(&points, &cfg);
 
-        let points: Vec<Point2f> = (0..n)
-            .map(|i| Point2f {
-                x: slice[i * 2],
-                y: slice[i * 2 + 1],
-            })
-            .collect();
-
-        let result = self.fitter.fit_ellipse_ransac(&points, &self.cfg);
         match result {
             Ok(ellipse) => {
-                let d = PyDict::new_bound(py);
-                d.set_item("cx", ellipse.center.x)?;
-                d.set_item("cy", ellipse.center.y)?;
-                d.set_item("a", ellipse.semi_axes.x)?;
-                d.set_item("b", ellipse.semi_axes.y)?;
-                d.set_item("angle", ellipse.angle)?;
-                Ok(Some(d))
+                let obj = Py::new(
+                    py,
+                    Ellipse {
+                        cx: ellipse.center.x,
+                        cy: ellipse.center.y,
+                        a: ellipse.semi_major(),
+                        b: ellipse.semi_minor(),
+                        angle: ellipse.angle,
+                    },
+                )?;
+                Ok(Some(obj.into()))
             }
             Err(_) => Ok(None),
         }
     }
+
+    /// Return a copy of the current fitter config.
+    pub fn config(&self) -> ConicFitConfig {
+        self.cfg.clone()
+    }
+
+    /// Replace fitter configuration.
+    pub fn set_config(&mut self, config: ConicFitConfig) {
+        self.cfg = config;
+    }
+}
+
+pub(crate) fn detect_line_segments_u8_impl<'py>(
+    py: Python<'py>,
+    img: PyReadonlyArray2<'py, u8>,
+    config: LsdConfig,
+) -> PyResult<Bound<'py, PyList>> {
+    let mut det = LsdDetector::new(Some(config));
+    det.detect_u8(py, img)
+}
+
+pub(crate) fn fit_ellipse_impl<'py>(
+    py: Python<'py>,
+    pts: PyReadonlyArray2<'py, f32>,
+    config: ConicFitConfig,
+) -> PyResult<Option<Py<PyAny>>> {
+    let mut fitter = ConicFitter::new(Some(config));
+    fitter.fit_ellipse(py, pts)
 }

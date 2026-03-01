@@ -1,17 +1,17 @@
-//! Python binding for `Edge2DDetector`.
+//! Python binding for `MultiScaleEdgeDetector`.
 
 use numpy::PyReadonlyArray2;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
-use vm_edge::edge2d::Edge2DDetector;
+use vm_multiscale::MultiScaleEdgeDetector;
 
-use crate::config_py::EdgeConfig;
+use crate::config_py::MultiScaleConfig;
 use crate::convert::image_from_numpy_u8;
 use crate::types::Edgel;
 
 fn edgels_to_pylist<'py>(
     py: Python<'py>,
-    edgels: &[vm_edge::edge2d::Edgel],
+    edgels: &[vm_multiscale::ScaleAnnotatedEdgel],
 ) -> PyResult<Bound<'py, PyList>> {
     let list = PyList::empty(py);
     for e in edgels {
@@ -30,26 +30,26 @@ fn edgels_to_pylist<'py>(
     Ok(list)
 }
 
-/// Python-facing 2-D edge detector.
+/// Python-facing multi-scale 2-D edge detector.
 #[pyclass]
-pub struct EdgeDetector {
-    det: Edge2DDetector,
-    cfg: EdgeConfig,
+pub struct MultiScaleDetector {
+    det: MultiScaleEdgeDetector,
+    cfg: MultiScaleConfig,
 }
 
 #[pymethods]
-impl EdgeDetector {
-    /// Create a detector with an optional explicit configuration.
+impl MultiScaleDetector {
+    /// Create a multi-scale detector with an optional explicit config.
     #[new]
     #[pyo3(signature = (config=None))]
-    pub fn new(config: Option<EdgeConfig>) -> Self {
+    pub fn new(config: Option<MultiScaleConfig>) -> Self {
         Self {
-            det: Edge2DDetector::new(),
+            det: MultiScaleEdgeDetector::new(),
             cfg: config.unwrap_or_default(),
         }
     }
 
-    /// Detect edges in a 2-D `uint8` numpy array.
+    /// Detect edges in a 2-D `uint8` numpy array across all pyramid levels.
     pub fn detect_u8<'py>(
         &mut self,
         py: Python<'py>,
@@ -62,21 +62,21 @@ impl EdgeDetector {
     }
 
     /// Return a copy of the current detector config.
-    pub fn config(&self) -> EdgeConfig {
+    pub fn config(&self) -> MultiScaleConfig {
         self.cfg.clone()
     }
 
     /// Replace detector configuration.
-    pub fn set_config(&mut self, config: EdgeConfig) {
+    pub fn set_config(&mut self, config: MultiScaleConfig) {
         self.cfg = config;
     }
 }
 
-pub(crate) fn detect_edges_u8_impl<'py>(
+pub(crate) fn detect_multiscale_edges_u8_impl<'py>(
     py: Python<'py>,
     img: PyReadonlyArray2<'py, u8>,
-    config: EdgeConfig,
+    config: MultiScaleConfig,
 ) -> PyResult<Bound<'py, PyList>> {
-    let mut det = EdgeDetector::new(Some(config));
+    let mut det = MultiScaleDetector::new(Some(config));
     det.detect_u8(py, img)
 }

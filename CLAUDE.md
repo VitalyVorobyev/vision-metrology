@@ -2,16 +2,6 @@
 
 Please read and follow **@AGENTS.md** (repo-wide conventions and invariants).
 
-## Milestone status (2026-02-28)
-
-* **M1 — Foundation** ✅ complete
-* **M2 — Multi-scale edges** ✅ complete
-* **M3 — Shape detection** ✅ complete (`vm-shape`: LSD + Bookstein/Fitzgibbon conic + RANSAC)
-* **M4 — Segmentation + Matching** ✅ complete (`vm-segment`, `vm-match`, `vm-python`)
-* **M5 — Hardening** ✅ complete (similarity matching, IoU NMS, polyline smoothing, gradient buffers, `measure_circles` example, full API docs, bench_baselines.md)
-
-See `ROADMAP.md` for the full backlog and architectural decisions.
-
 ## Quick repo map
 
 * `crates/vm-core`: image views, sampling, border modes, geometry + nalgebra type aliases
