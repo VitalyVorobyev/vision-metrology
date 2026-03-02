@@ -12,8 +12,8 @@
 //! cargo run -p vision-metrology --example morphology
 //! ```
 
-use vm_core::Image;
-use vm_morph::{
+use vision_metrology::Image;
+use vision_metrology::{
     StructuringElement, chamfer_distance_u8, dilate_binary_u8, erode_binary_u8, thin_binary_u8,
 };
 
@@ -69,7 +69,9 @@ fn main() {
         .iter()
         .copied()
         .enumerate()
-        .max_by(|(_, a), (_, b)| a.partial_cmp(b).expect("finite compare"))
+        .max_by(|(_, a): &(usize, f32), (_, b): &(usize, f32)| {
+            a.partial_cmp(b).expect("finite compare")
+        })
         .expect("non-empty image");
     let max_x = max_idx % w;
     let max_y = max_idx / w;

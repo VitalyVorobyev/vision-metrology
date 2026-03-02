@@ -3,8 +3,8 @@
 use numpy::{PyReadonlyArray2, PyUntypedArrayMethods};
 use pyo3::prelude::*;
 use pyo3::types::PyList;
-use vm_core::Point2f;
-use vm_shape::{ConicFitter as NativeConicFitter, LsdDetector as NativeLsdDetector};
+use vision_metrology::{ConicFitter as NativeConicFitter, LsdDetector as NativeLsdDetector};
+use vm_primitives::Point2f;
 
 use crate::config_py::{ConicFitConfig, LsdConfig};
 use crate::convert::image_from_numpy_u8;
@@ -12,7 +12,7 @@ use crate::types::{Ellipse, LineSegment};
 
 fn segments_to_pylist<'py>(
     py: Python<'py>,
-    segs: &[vm_shape::LineSegment2f],
+    segs: &[vision_metrology::LineSegment2f],
 ) -> PyResult<Bound<'py, PyList>> {
     let list = PyList::empty(py);
     for s in segs {

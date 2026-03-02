@@ -14,9 +14,9 @@
 //! cargo run -p vision-metrology --example edge_matching
 //! ```
 
-use vm_core::{Point2f, Rect2f, Vec2f};
-use vm_edge::edge2d::Edgel;
-use vm_match::{EdgeModel, RigidEdgeMatcher, RigidMatchConfig};
+use vision_metrology::edge::edge2d::Edgel;
+use vision_metrology::{EdgeModel, RigidEdgeMatcher, RigidMatchConfig};
+use vision_metrology::{Point2f, Rect2f, Vec2f};
 
 /// Build a rectangular perimeter of edgels at (ox, oy) with dimensions w×h.
 /// Normals: top edge → (0,-1), right → (1,0), bottom → (0,1), left → (-1,0).
@@ -106,7 +106,7 @@ fn main() {
 
     match &result {
         Some(r) => {
-            let (tx, ty) = r.translation();
+            let (tx, ty): (f32, f32) = r.translation();
             println!("Match found:");
             println!("  tx={tx:.2}, ty={ty:.2}");
             println!("  angle={:.4} rad", r.angle());

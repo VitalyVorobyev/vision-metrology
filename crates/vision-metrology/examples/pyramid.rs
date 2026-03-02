@@ -11,8 +11,8 @@
 //! cargo run -p vision-metrology --example pyramid
 //! ```
 
-use vm_core::Image;
-use vm_pyr::PyramidF32;
+use vision_metrology::Image;
+use vision_metrology::PyramidF32;
 
 fn main() {
     let (w, h) = (128usize, 128usize);

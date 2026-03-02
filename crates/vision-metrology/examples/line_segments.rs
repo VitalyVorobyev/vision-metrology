@@ -17,8 +17,8 @@
 //! cargo run -p vision-metrology --example line_segments
 //! ```
 
-use vm_core::Image;
-use vm_shape::{LsdConfig, LsdDetector};
+use vision_metrology::Image;
+use vision_metrology::{LsdConfig, LsdDetector};
 
 fn main() {
     let (w, h) = (128usize, 128usize);

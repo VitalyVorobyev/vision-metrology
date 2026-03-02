@@ -1,0 +1,25 @@
+[package]
+name = "vm-primitives"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Core image, geometry, edge, pyramid, and morphology primitives for vision metrology"
+keywords = ["machine-vision", "metrology", "image-processing", "edge-detection"]
+categories = ["computer-vision", "science"]
+
+[dependencies]
+nalgebra = { workspace = true }
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "downsample"
+harness = false
+
+[[bench]]
+name = "edge2d"
+harness = false
+
+[lints]
+workspace = true

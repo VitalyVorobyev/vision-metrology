@@ -2,11 +2,11 @@
 
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use vm_core::{BorderMode, Rect2f};
-use vm_edge::edge2d::{Edge2DConfig, SmoothKind, Subpix2D};
-use vm_match::RigidMatchConfig as NativeRigidMatchConfig;
-use vm_multiscale::MultiScaleConfig as NativeMultiScaleConfig;
-use vm_shape::{ConicFitConfig as NativeConicFitConfig, LsdConfig as NativeLsdConfig};
+use vision_metrology::MultiScaleConfig as NativeMultiScaleConfig;
+use vision_metrology::RigidMatchConfig as NativeRigidMatchConfig;
+use vision_metrology::{ConicFitConfig as NativeConicFitConfig, LsdConfig as NativeLsdConfig};
+use vm_primitives::edge::edge2d::{Edge2DConfig, SmoothKind, Subpix2D};
+use vm_primitives::{BorderMode, Rect2f};
 
 #[pyclass(get_all, set_all, from_py_object)]
 #[derive(Debug, Clone)]

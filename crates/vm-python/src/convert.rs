@@ -8,7 +8,7 @@
 
 use numpy::{PyReadonlyArray2, PyUntypedArrayMethods};
 use pyo3::prelude::*;
-use vm_core::Image;
+use vm_primitives::Image;
 
 /// Convert a 2-D numpy `uint8` array to an owned `Image<u8>`.
 ///

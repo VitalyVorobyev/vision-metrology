@@ -1,17 +1,8 @@
 [workspace]
 members = [
-  "crates/vm-contour",
-  "crates/vm-core",
-  "crates/vm-edge",
-  "crates/vm-laser",
-  "crates/vm-match",
-  "crates/vm-morph",
-  "crates/vm-multiscale",
-  "crates/vm-pyr",
-  "crates/vm-python",
-  "crates/vm-segment",
-  "crates/vm-shape",
+  "crates/vm-primitives",
   "crates/vision-metrology",
+  "crates/vm-python",
 ]
 resolver = "3"
 

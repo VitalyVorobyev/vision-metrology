@@ -4,23 +4,28 @@ Please read and follow **@AGENTS.md** (repo-wide conventions and invariants).
 
 ## Quick repo map
 
-* `crates/vm-core`: image views, sampling, border modes, geometry + nalgebra type aliases
-* `crates/vm-pyr`: ultra-fast 2×2 mean pyramid
-* `crates/vm-edge`: 1D/2D subpixel edges (DoG), edgels
-* `crates/vm-laser`: stripe extraction using opposite-polarity edge pairs
-* `crates/vm-contour`: contour graph, junctions, per-edge tangent/curvature geometry, polyline smoothing
-* `crates/vm-morph`: binary morphology (parameterized SE), chamfer distance, Zhang-Suen thinning
-* `crates/vm-multiscale`: multi-scale edge detection across pyramid levels
-* `crates/vm-shape`: LSD, Bookstein/Fitzgibbon conic fitting, RANSAC ellipse fitting
-* `crates/vm-segment`: Otsu/adaptive thresholding, CCL, watershed, edgel region growing
-* `crates/vm-match`: `EdgeModel` + chamfer map, rigid/similarity grid search, IoU NMS, ICP refinement
+Three published crates, two layers:
+
+* `crates/vm-primitives`: low-level building blocks
+  * `::core` — image views, sampling, border modes, geometry + nalgebra type aliases
+  * `::pyr`  — ultra-fast 2×2 mean pyramid
+  * `::edge` — 1D/2D subpixel edges (DoG), edgels, edge-pairs
+  * `::morph` — binary morphology (parameterized SE), chamfer distance, Zhang-Suen thinning
+* `crates/vision-metrology`: high-level domain modules (depends on `vm-primitives`)
+  * `::contour`   — contour graph, junctions, per-edge tangent/curvature, polyline smoothing
+  * `::laser`     — stripe extraction using opposite-polarity edge pairs
+  * `::matching`  — `EdgeModel` + chamfer map, rigid/similarity grid search, IoU NMS, ICP
+  * `::multiscale`— multi-scale edge detection across pyramid levels
+  * `::segment`   — Otsu/adaptive thresholding, CCL, watershed, edgel region growing
+  * `::shape`     — LSD, Bookstein/Fitzgibbon conic fitting, RANSAC ellipse fitting
 * `crates/vm-python`: PyO3 extension module exposing detectors with numpy array I/O
-* `crates/vision-metrology`: umbrella re-export crate
+
+Both `vm-primitives` and `vision-metrology` provide flat crate-root re-exports in addition to module paths.
 
 ## Key decisions
 
-* `nalgebra 0.33` is a workspace dependency; use type aliases `Isometry2f / Similarity2f / Affine2f / Projective2f` from `vm_core` — do **not** re-implement linear algebra.
-* Error type: `vm_core::Error` across all crates.
+* `nalgebra 0.33` is a workspace dependency; use type aliases `Isometry2f / Similarity2f / Affine2f / Projective2f` from `vm_primitives` — do **not** re-implement linear algebra.
+* Error type: `vm_primitives::Error` across all crates.
 * All public output types must be `'static` / lifetime-free (PyO3 compatibility).
 * Config-struct + reusable-detector API pattern throughout.
 

@@ -12,8 +12,8 @@
 //! cargo run -p vision-metrology --example multiscale_edges
 //! ```
 
-use vm_core::Image;
-use vm_multiscale::{MultiScaleConfig, MultiScaleEdgeDetector};
+use vision_metrology::Image;
+use vision_metrology::{MultiScaleConfig, MultiScaleEdgeDetector};
 
 fn main() {
     let (w, h) = (256usize, 256usize);

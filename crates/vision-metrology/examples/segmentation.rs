@@ -15,9 +15,9 @@
 //! cargo run -p vision-metrology --example segmentation
 //! ```
 
-use vm_contour::Connectivity;
-use vm_core::Image;
-use vm_segment::{component_stats, label_connected_components_u8, otsu_threshold_u8};
+use vision_metrology::Connectivity;
+use vision_metrology::Image;
+use vision_metrology::{component_stats, label_connected_components_u8, otsu_threshold_u8};
 
 fn main() {
     let (w, h) = (64usize, 64usize);

@@ -3,7 +3,7 @@
 use numpy::PyReadonlyArray2;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
-use vm_multiscale::MultiScaleEdgeDetector;
+use vision_metrology::MultiScaleEdgeDetector;
 
 use crate::config_py::MultiScaleConfig;
 use crate::convert::image_from_numpy_u8;
@@ -11,7 +11,7 @@ use crate::types::Edgel;
 
 fn edgels_to_pylist<'py>(
     py: Python<'py>,
-    edgels: &[vm_multiscale::ScaleAnnotatedEdgel],
+    edgels: &[vision_metrology::ScaleAnnotatedEdgel],
 ) -> PyResult<Bound<'py, PyList>> {
     let list = PyList::empty(py);
     for e in edgels {

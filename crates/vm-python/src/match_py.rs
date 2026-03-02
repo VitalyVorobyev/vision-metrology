@@ -2,9 +2,9 @@
 
 use numpy::{PyReadonlyArray2, PyUntypedArrayMethods};
 use pyo3::prelude::*;
-use vm_core::{Point2f, Rect2f, Vec2f};
-use vm_edge::edge2d::{Edge2DDetector, Edgel as NativeEdgel};
-use vm_match::{EdgeModel, RigidEdgeMatcher};
+use vision_metrology::{EdgeModel, RigidEdgeMatcher};
+use vm_primitives::edge::edge2d::{Edge2DDetector, Edgel as NativeEdgel};
+use vm_primitives::{Point2f, Rect2f, Vec2f};
 
 use crate::config_py::{EdgeConfig, RigidMatchConfig};
 use crate::convert::image_from_numpy_u8;

@@ -21,11 +21,13 @@
 //!
 //! Output is deterministic (no RNG, no file I/O).
 
-use vm_contour::{Connectivity, ContourBuildConfig, ContourGraph, NodeId, build_graph_from_edgels};
-use vm_core::{Image, Point2f};
-use vm_edge::edge2d::Edgel;
-use vm_multiscale::{MultiScaleConfig, MultiScaleEdgeDetector};
-use vm_shape::{ConicFitConfig, ConicFitter, Ellipse2f};
+use vision_metrology::edge::edge2d::Edgel;
+use vision_metrology::{ConicFitConfig, ConicFitter, Ellipse2f};
+use vision_metrology::{
+    Connectivity, ContourBuildConfig, ContourGraph, NodeId, build_graph_from_edgels,
+};
+use vision_metrology::{Image, Point2f};
+use vision_metrology::{MultiScaleConfig, MultiScaleEdgeDetector};
 
 // ---------------------------------------------------------------------------
 // Ground-truth circles
@@ -90,7 +92,7 @@ fn generate_synthetic_image(width: usize, height: usize) -> Image<u8> {
 // ScaleAnnotatedEdgel → Edgel conversion
 // ---------------------------------------------------------------------------
 
-fn to_edgel(e: &vm_multiscale::ScaleAnnotatedEdgel) -> Edgel {
+fn to_edgel(e: &vision_metrology::ScaleAnnotatedEdgel) -> Edgel {
     Edgel {
         p: e.p,
         n: e.n,

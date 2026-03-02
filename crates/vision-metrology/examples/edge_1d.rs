@@ -12,7 +12,7 @@
 //! cargo run -p vision-metrology --example edge_1d
 //! ```
 
-use vm_edge::edge1d::{Edge1DConfig, Edge1DDetector, EdgePolarity};
+use vision_metrology::edge::edge1d::{Edge1DConfig, Edge1DDetector, EdgePolarity};
 
 fn main() {
     // --- Step 1: create a 64-sample step-edge signal ---

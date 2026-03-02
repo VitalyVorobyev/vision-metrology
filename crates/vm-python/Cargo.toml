@@ -10,15 +10,10 @@ name = "vision_metrology"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-vm-core       = { path = "../vm-core" }
-vm-edge       = { path = "../vm-edge" }
-vm-match      = { path = "../vm-match" }
-vm-shape      = { path = "../vm-shape" }
-vm-multiscale = { path = "../vm-multiscale" }
-vm-segment    = { path = "../vm-segment" }
-vm-contour    = { path = "../vm-contour" }
-pyo3          = { version = "0.28", features = ["extension-module", "abi3-py310"] }
-numpy         = "0.28"
+vm-primitives    = { path = "../vm-primitives" }
+vision-metrology = { path = "../vision-metrology" }
+pyo3             = { version = "0.28", features = ["extension-module", "abi3-py310"] }
+numpy            = "0.28"
 
 [build-dependencies]
 pyo3-build-config = "0.28"

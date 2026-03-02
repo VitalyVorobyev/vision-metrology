@@ -3,9 +3,11 @@
 use numpy::{IntoPyArray, PyArray2, PyReadonlyArray2, PyUntypedArrayMethods};
 use pyo3::prelude::*;
 use pyo3::types::PyList;
-use vm_contour::Connectivity;
-use vm_core::Image;
-use vm_segment::{CcLabel, component_stats, label_connected_components_u8, otsu_threshold_u8};
+use vision_metrology::Connectivity;
+use vision_metrology::{
+    CcLabel, component_stats, label_connected_components_u8, otsu_threshold_u8,
+};
+use vm_primitives::Image;
 
 use crate::convert::image_from_numpy_u8;
 use crate::types::ComponentStats;
@@ -74,7 +76,7 @@ pub(crate) fn component_stats_impl<'py>(
         pyo3::exceptions::PyValueError::new_err(format!("array not C-contiguous: {e}"))
     })?;
     let data: Vec<u32> = slice.iter().map(|&v| v as u32).collect();
-    let label_map = vm_core::Image::from_vec(w, h, data)
+    let label_map = vm_primitives::Image::from_vec(w, h, data)
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("image error: {e}")))?;
 
     let ccl = CcLabel {
