@@ -42,9 +42,11 @@ agent) can pick it up cold. When an item is scheduled it moves into
 - **R3 — coarse-level aliasing on fine-toothed contours.** `PyramidF32` is a plain 2×2 box
   mean with no pre-smoothing; high-frequency contours (fine teeth, thin webs) can alias or
   vanish by level 3–4, so the true match dies at the coarse level. `coarse_score_factor`
-  is a band-aid; the real fix is an optional binomial pre-smooth on the pyramid. Track 1
-  adds the test that pins the current behavior; the pyramid fix is unscheduled. The canend
-  data cannot reveal this (smooth contours) — a customer part with fine teeth will.
+  is a band-aid; the real fix is an optional binomial pre-smooth on the pyramid. The comb
+  fixture test (`r3_fine_toothed_model_survives_the_pyramid`) pins the current behavior —
+  an 8 px tooth pitch survives today because the auto level count stops where coarse
+  points destabilize. The pyramid pre-smooth remains unscheduled; a part with even finer
+  teeth than the fixture may still need it.
 - **Laser extractor u16/f32 depth**: after the Track 1 split, the generic scan loop makes
   it cheap to run the full test matrix over all three pixel types — today u16/f32 have one
   cross-check test each.

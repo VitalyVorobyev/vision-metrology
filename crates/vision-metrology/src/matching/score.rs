@@ -428,4 +428,102 @@ mod tests {
             }
         }
     }
+
+    /// T13 — the greedy bound at `greediness = 0` is provably safe.
+    ///
+    /// Sweep every pose of a textured 64x64 scene. Wherever the exhaustive
+    /// reference (a bound that never fires) scores at or above `min_score`,
+    /// the guarded evaluation must return the **bit-identical** score; where
+    /// the guarded evaluation aborts, the reference must be strictly below
+    /// `min_score`. This is the single easiest property to get subtly wrong
+    /// in the whole matcher, so it is pinned exactly, for all three
+    /// polarities and several angles.
+    #[test]
+    fn t13_safe_bound_never_rejects_a_qualifying_pose() {
+        // Deterministic texture: LCG noise plus low-frequency structure, so
+        // the field has both coherent edges and clutter.
+        let (w, h) = (64usize, 64usize);
+        let mut data = vec![0.0f32; w * h];
+        let mut state = 0x2545_f491_4f6c_dd1du64;
+        for y in 0..h {
+            for x in 0..w {
+                state = state
+                    .wrapping_mul(6_364_136_223_846_793_005)
+                    .wrapping_add(1_442_695_040_888_963_407);
+                let noise = ((state >> 33) & 0xff) as f32;
+                let wave = 96.0 * (0.35 * x as f32).sin() * (0.22 * y as f32).cos();
+                data[y * w + x] = (96.0 + 0.35 * noise + wave).clamp(0.0, 255.0);
+            }
+        }
+        let img = Image::from_vec(w, h, data).unwrap();
+        let mut field = DirectionField::new();
+        field.build_f32(&img.as_view(), SmoothKind::Binomial3, 10.0);
+
+        // A 24-point model with deterministic pseudo-random offsets and unit
+        // directions -- realistic enough that partial sums dip and recover.
+        let mut pts = Vec::new();
+        let mut st = 0x9e37_79b9_7f4a_7c15u64;
+        for _ in 0..24 {
+            let mut next = || {
+                st = st
+                    .wrapping_mul(6_364_136_223_846_793_005)
+                    .wrapping_add(1_442_695_040_888_963_407);
+                ((st >> 33) & 0xffff) as f32 / 65_535.0
+            };
+            let d = Vec2f {
+                x: (next() - 0.5) * 16.0,
+                y: (next() - 0.5) * 16.0,
+            };
+            let a = next() * core::f32::consts::TAU;
+            pts.push(ModelPoint {
+                d,
+                t: Vec2f {
+                    x: a.cos(),
+                    y: a.sin(),
+                },
+            });
+        }
+
+        let min_score = 0.5f32;
+        let mut rot = Vec::new();
+        for polarity in [
+            Polarity::Match,
+            Polarity::IgnoreGlobal,
+            Polarity::IgnoreLocal,
+        ] {
+            for k in 0..8 {
+                let angle = k as f32 * core::f32::consts::TAU / 8.0;
+                rotate_into(&pts, angle, 1.0, &mut rot);
+                let safe = Bound::new(rot.len(), 0.0, min_score);
+
+                let mut qualifying = 0usize;
+                for qy in 0..h as i32 {
+                    for qx in 0..w as i32 {
+                        let reference = score_at(&field, &rot, qx, qy, polarity, Bound::never())
+                            .expect("never-bound always yields a score");
+                        let guarded = score_at(&field, &rot, qx, qy, polarity, safe);
+                        if reference >= min_score {
+                            qualifying += 1;
+                            assert_eq!(
+                                guarded,
+                                Some(reference),
+                                "safe bound rejected or altered a qualifying pose at                                  ({qx},{qy}) angle {k} polarity {polarity:?}"
+                            );
+                        } else if let Some(g) = guarded {
+                            // Surviving a non-qualifying pose is allowed (the
+                            // bound is necessary, not sufficient) -- but the
+                            // score must still be identical arithmetic.
+                            assert_eq!(g, reference);
+                        }
+                    }
+                }
+                // The fixture must actually exercise the property: IgnoreLocal
+                // scores are generous, so at least that polarity has to
+                // produce qualifying poses.
+                if polarity == Polarity::IgnoreLocal {
+                    assert!(qualifying > 0, "fixture produced no qualifying poses");
+                }
+            }
+        }
+    }
 }

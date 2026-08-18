@@ -134,6 +134,20 @@ bounding boxes of surviving candidates is the one that would pay.
 the pyramid. On a textured scene the cap can bite; `ShapeMatcher::truncated()`
 reports when it did, which distinguishes "not present" from "gave up".
 
+## Persisting a model
+
+With the `serde` feature, a model built offline ships to the machine as a
+versioned JSON document:
+
+```rust
+let json = model.to_json()?;              // {"format_version":1,"model":{...}}
+let model = ShapeModel::from_json(&json)?; // refuses unknown versions
+```
+
+Python mirrors this as `model.save(path)` / `ShapeModel.load(path)`. The
+`format_version` gate means an old runtime refuses a newer document instead of
+silently mis-reading it.
+
 ## Pose and coordinates
 
 `ShapeMatch::pose` is a `Similarity2f` that maps **reference-image coordinates

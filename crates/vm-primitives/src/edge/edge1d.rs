@@ -352,4 +352,182 @@ mod tests {
         assert!((rise_ref - x_l).abs() <= 0.1);
         assert!((fall_ref - x_r).abs() <= 0.1);
     }
+
+    #[test]
+    fn centroid_refinement_locates_the_stripe_edges() {
+        // The centroid window integrates the (single-signed) DoG lobe around
+        // each edge, so on a clean blurred step it should land close to the
+        // true edge -- looser than Parabolic3, but well under a pixel.
+        let sigma = 1.2;
+        let x_l = 20.3;
+        let x_r = 35.7;
+        let sig = blur(&stripe_signal(96, x_l, x_r), sigma);
+
+        let mut det = Edge1DDetector::new(sigma);
+        let cfg = Edge1DConfig {
+            sigma,
+            border: BorderMode::Clamp,
+            pos_thresh: 0.01,
+            neg_thresh: 0.01,
+            refine: SubpixRefine::Centroid { radius: 2 },
+        };
+
+        let peaks = det.detect_in_f32(&sig, &cfg);
+        let rise = nearest_peak_x(&peaks, EdgePolarity::Rising, x_l);
+        let fall = nearest_peak_x(&peaks, EdgePolarity::Falling, x_r);
+        assert!((rise - x_l).abs() <= 0.25, "rise {rise} vs {x_l}");
+        assert!((fall - x_r).abs() <= 0.25, "fall {fall} vs {x_r}");
+    }
+
+    #[test]
+    fn u8_and_u16_inputs_agree_with_f32() {
+        // A uniform intensity scale does not move DoG extrema, so the three
+        // typed entry points must report the same subpixel positions on the
+        // same underlying stripe.
+        let sigma = 1.2;
+        let (x_l, x_r) = (20.3, 35.7);
+        let sig_f = blur(&stripe_signal(96, x_l, x_r), sigma);
+        let sig_u8: Vec<u8> = sig_f.iter().map(|&v| (v * 200.0).round() as u8).collect();
+        let sig_u16: Vec<u16> = sig_f
+            .iter()
+            .map(|&v| (v * 50_000.0).round() as u16)
+            .collect();
+
+        let cfg = Edge1DConfig {
+            sigma,
+            border: BorderMode::Clamp,
+            pos_thresh: 0.01,
+            neg_thresh: 0.01,
+            refine: SubpixRefine::Parabolic3,
+        };
+        // Scale-invariant thresholds: keep them below the weakest response in
+        // every scaling.
+        let mut det = Edge1DDetector::new(sigma);
+        let f_rise = nearest_peak_x(&det.detect_in_f32(&sig_f, &cfg), EdgePolarity::Rising, x_l);
+        let f_fall = nearest_peak_x(&det.detect_in_f32(&sig_f, &cfg), EdgePolarity::Falling, x_r);
+
+        let cfg_u = Edge1DConfig {
+            pos_thresh: 1.0,
+            neg_thresh: 1.0,
+            ..cfg.clone()
+        };
+        let u8_rise = nearest_peak_x(
+            &det.detect_in_u8(&sig_u8, &cfg_u),
+            EdgePolarity::Rising,
+            x_l,
+        );
+        let u8_fall = nearest_peak_x(
+            &det.detect_in_u8(&sig_u8, &cfg_u),
+            EdgePolarity::Falling,
+            x_r,
+        );
+        let u16_rise = nearest_peak_x(
+            &det.detect_in_u16(&sig_u16, &cfg_u),
+            EdgePolarity::Rising,
+            x_l,
+        );
+        let u16_fall = nearest_peak_x(
+            &det.detect_in_u16(&sig_u16, &cfg_u),
+            EdgePolarity::Falling,
+            x_r,
+        );
+
+        // u8 quantization moves the parabola vertex slightly; u16 barely.
+        assert!((u8_rise - f_rise).abs() <= 0.05, "{u8_rise} vs {f_rise}");
+        assert!((u8_fall - f_fall).abs() <= 0.05, "{u8_fall} vs {f_fall}");
+        assert!((u16_rise - f_rise).abs() <= 0.01);
+        assert!((u16_fall - f_fall).abs() <= 0.01);
+    }
+
+    #[test]
+    fn thresholds_reject_weak_peaks() {
+        // Two stripes: full-contrast and 10%-contrast. A threshold between
+        // their DoG responses must keep the strong pair and drop the weak one.
+        let sigma = 1.2;
+        let strong = stripe_signal(96, 20.0, 30.0);
+        let weak: Vec<f32> = stripe_signal(96, 60.0, 70.0)
+            .iter()
+            .map(|v| v * 0.1)
+            .collect();
+        let combined: Vec<f32> = strong.iter().zip(&weak).map(|(a, b)| a + b).collect();
+        let sig = blur(&combined, sigma);
+
+        let mut det = Edge1DDetector::new(sigma);
+        let permissive = Edge1DConfig {
+            sigma,
+            border: BorderMode::Clamp,
+            pos_thresh: 0.0,
+            neg_thresh: 0.0,
+            refine: SubpixRefine::Parabolic3,
+        };
+        let all = det.detect_in_f32(&sig, &permissive);
+        let strong_rise = all
+            .iter()
+            .filter(|p| p.polarity == EdgePolarity::Rising)
+            .map(|p| p.strength)
+            .fold(0.0f32, f32::max);
+        let weak_rise = all
+            .iter()
+            .filter(|p| p.polarity == EdgePolarity::Rising && (p.x - 60.0).abs() < 3.0)
+            .map(|p| p.strength)
+            .fold(0.0f32, f32::max);
+        assert!(
+            weak_rise > 0.0,
+            "weak edge must be found without thresholds"
+        );
+        assert!(weak_rise < strong_rise);
+
+        let thr = 0.5 * (weak_rise + strong_rise);
+        let strict = Edge1DConfig {
+            pos_thresh: thr,
+            neg_thresh: thr,
+            ..permissive
+        };
+        let kept = det.detect_in_f32(&sig, &strict);
+        assert!(!kept.is_empty());
+        for p in &kept {
+            assert!(
+                (p.x - 60.0).abs() > 3.0 && (p.x - 70.0).abs() > 3.0,
+                "weak-stripe peak at {} survived the threshold",
+                p.x
+            );
+        }
+    }
+
+    #[test]
+    fn empty_and_short_signals_yield_no_peaks() {
+        let mut det = Edge1DDetector::new(1.2);
+        let cfg = Edge1DConfig::default();
+
+        assert!(det.detect_in_f32(&[], &cfg).is_empty());
+        assert!(det.detect_in_f32(&[1.0, 2.0], &cfg).is_empty());
+        assert!(det.detect_in_u8(&[], &cfg).is_empty());
+        assert!(det.detect_in_u8(&[10, 200], &cfg).is_empty());
+        assert!(det.detect_in_u16(&[], &cfg).is_empty());
+    }
+
+    #[test]
+    fn detector_reuse_across_sigmas_is_consistent() {
+        // One detector reused with a changed (and then unchanged) sigma must
+        // give the same answers as a fresh detector at each sigma.
+        let (x_l, x_r) = (20.3, 35.7);
+        for &sigma in &[1.0f32, 2.0, 2.0] {
+            let sig = blur(&stripe_signal(96, x_l, x_r), sigma);
+            let cfg = Edge1DConfig {
+                sigma,
+                border: BorderMode::Clamp,
+                pos_thresh: 0.005,
+                neg_thresh: 0.005,
+                refine: SubpixRefine::Parabolic3,
+            };
+
+            let mut reused = Edge1DDetector::new(0.8);
+            reused.detect_in_f32(&[0.0; 16], &Edge1DConfig::default());
+            let a = nearest_peak_x(&reused.detect_in_f32(&sig, &cfg), EdgePolarity::Rising, x_l);
+
+            let mut fresh = Edge1DDetector::new(sigma);
+            let b = nearest_peak_x(&fresh.detect_in_f32(&sig, &cfg), EdgePolarity::Rising, x_l);
+            assert_eq!(a, b, "sigma {sigma}");
+        }
+    }
 }

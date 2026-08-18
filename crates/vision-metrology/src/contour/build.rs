@@ -179,6 +179,15 @@ pub fn build_graph_from_edgels(
         deg[p] = topology_degree(p, &active, width, height, cfg.connectivity, dirs);
     }
 
+    let grid = GridCtx {
+        active: &active,
+        edgel_at: &edgel_at,
+        edgels,
+        width,
+        height,
+        connectivity: cfg.connectivity,
+    };
+
     let mut nodes = Vec::new();
     let mut node_at = vec![-1_i32; n];
     for p in 0..n {
@@ -222,14 +231,9 @@ pub fn build_graph_from_edgels(
                 start_idx,
                 first,
                 dir,
-                &active,
-                &edgel_at,
-                edgels,
+                &grid,
                 &node_at,
                 &mut used_link,
-                width,
-                height,
-                cfg.connectivity,
                 cfg.record_strengths,
             );
 
@@ -237,13 +241,11 @@ pub fn build_graph_from_edgels(
                 id
             } else {
                 ensure_terminal_node(
-                    end_pixel_from_points(&points, &edgel_at, edgels, width, height),
+                    end_pixel_from_points(&points, &grid),
                     &mut node_at,
                     &mut nodes,
                     &deg,
-                    &edgel_at,
-                    edgels,
-                    width,
+                    &grid,
                     NodeKind::End,
                 )
             };
@@ -287,9 +289,7 @@ pub fn build_graph_from_edgels(
                 &mut node_at,
                 &mut nodes,
                 &deg,
-                &edgel_at,
-                edgels,
-                width,
+                &grid,
                 NodeKind::LoopAnchor,
             );
 
@@ -297,14 +297,9 @@ pub fn build_graph_from_edgels(
                 p,
                 next,
                 dir,
-                &active,
-                &edgel_at,
-                edgels,
+                &grid,
                 &node_at,
                 &mut used_link,
-                width,
-                height,
-                cfg.connectivity,
                 cfg.record_strengths,
             );
 
@@ -312,13 +307,11 @@ pub fn build_graph_from_edgels(
                 (anchor, anchor, true)
             } else {
                 let end_node = ensure_terminal_node(
-                    end_pixel_from_points(&points, &edgel_at, edgels, width, height),
+                    end_pixel_from_points(&points, &grid),
                     &mut node_at,
                     &mut nodes,
                     &deg,
-                    &edgel_at,
-                    edgels,
-                    width,
+                    &grid,
                     NodeKind::End,
                 );
                 (anchor, end_node, anchor == end_node)
@@ -365,33 +358,40 @@ pub fn build_graph_from_edgels(
     graph
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Read-only grid state shared by the chain-tracing helpers.
+///
+/// `trace_chain`, `find_next_neighbor`, `ensure_terminal_node` and
+/// `end_pixel_from_points` all consult the same masks, edgel tables and
+/// dimensions; bundling them keeps each signature down to the values that
+/// actually vary per call.
+struct GridCtx<'a> {
+    active: &'a [u8],
+    edgel_at: &'a [i32],
+    edgels: &'a [Edgel],
+    width: usize,
+    height: usize,
+    connectivity: Connectivity,
+}
+
 fn trace_chain(
     start: usize,
     first: usize,
     start_dir: u8,
-    active: &[u8],
-    edgel_at: &[i32],
-    edgels: &[Edgel],
+    grid: &GridCtx<'_>,
     node_at: &[i32],
     used_link: &mut [u8],
-    width: usize,
-    height: usize,
-    connectivity: Connectivity,
     record_strengths: bool,
 ) -> (Vec<Point2f>, Option<Vec<f32>>, Option<NodeId>, bool, f32) {
-    let dirs = dirs_for(connectivity);
-
     let mut points = Vec::new();
     let mut strengths = record_strengths.then(Vec::new);
 
-    let start_edgel = edgel_at[start] as usize;
-    points.push(edgels[start_edgel].p);
+    let start_edgel = grid.edgel_at[start] as usize;
+    points.push(grid.edgels[start_edgel].p);
 
-    let mut sum_strength = edgels[start_edgel].strength;
+    let mut sum_strength = grid.edgels[start_edgel].strength;
     let mut num_strength = 1_usize;
     if let Some(s) = &mut strengths {
-        s.push(edgels[start_edgel].strength);
+        s.push(grid.edgels[start_edgel].strength);
     }
 
     let mut prev = start;
@@ -400,16 +400,16 @@ fn trace_chain(
     let mut end_node = None;
     let mut is_closed = false;
 
-    let max_steps = active.len().max(1);
+    let max_steps = grid.active.len().max(1);
     for _ in 0..max_steps {
         mark_link_both(used_link, prev, dir, cur);
 
-        let cur_edgel = edgel_at[cur] as usize;
-        points.push(edgels[cur_edgel].p);
-        sum_strength += edgels[cur_edgel].strength;
+        let cur_edgel = grid.edgel_at[cur] as usize;
+        points.push(grid.edgels[cur_edgel].p);
+        sum_strength += grid.edgels[cur_edgel].strength;
         num_strength += 1;
         if let Some(s) = &mut strengths {
-            s.push(edgels[cur_edgel].strength);
+            s.push(grid.edgels[cur_edgel].strength);
         }
 
         if cur == start {
@@ -423,16 +423,7 @@ fn trace_chain(
             break;
         }
 
-        let Some((next_dir, next)) = find_next_neighbor(
-            cur,
-            prev,
-            active,
-            used_link,
-            width,
-            height,
-            connectivity,
-            dirs,
-        ) else {
+        let Some((next_dir, next)) = find_next_neighbor(cur, prev, grid, used_link) else {
             break;
         };
 
@@ -457,20 +448,22 @@ fn trace_chain(
     (points, strengths, end_node, is_closed, score)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn find_next_neighbor(
     cur: usize,
     prev: usize,
-    active: &[u8],
+    grid: &GridCtx<'_>,
     used_link: &[u8],
-    width: usize,
-    height: usize,
-    connectivity: Connectivity,
-    dirs: &[u8],
 ) -> Option<(u8, usize)> {
     let mut fallback = None;
-    for &dir in dirs {
-        let Some(nb) = connected_neighbor(cur, dir, active, width, height, connectivity) else {
+    for &dir in dirs_for(grid.connectivity) {
+        let Some(nb) = connected_neighbor(
+            cur,
+            dir,
+            grid.active,
+            grid.width,
+            grid.height,
+            grid.connectivity,
+        ) else {
             continue;
         };
         if nb == prev {
@@ -548,23 +541,20 @@ fn build_active_mask(
     active
 }
 
-#[allow(clippy::too_many_arguments)]
 fn ensure_terminal_node(
     pixel: usize,
     node_at: &mut [i32],
     nodes: &mut Vec<Node>,
     deg: &[u8],
-    edgel_at: &[i32],
-    edgels: &[Edgel],
-    width: usize,
+    grid: &GridCtx<'_>,
     fallback_kind: NodeKind,
 ) -> NodeId {
     if node_at[pixel] >= 0 {
         return node_at[pixel] as usize;
     }
 
-    let eidx = edgel_at[pixel] as usize;
-    let (x, y) = (pixel % width, pixel / width);
+    let eidx = grid.edgel_at[pixel] as usize;
+    let (x, y) = (pixel % grid.width, pixel / grid.width);
 
     let degree = deg[pixel] as usize;
     let kind = match degree {
@@ -580,7 +570,7 @@ fn ensure_terminal_node(
     nodes.push(Node {
         id: node_id,
         kind,
-        p: edgels[eidx].p,
+        p: grid.edgels[eidx].p,
         idx: (x, y),
         degree,
         incident_edges: Vec::new(),
@@ -589,13 +579,14 @@ fn ensure_terminal_node(
     node_id
 }
 
-fn end_pixel_from_points(
-    points: &[Point2f],
-    edgel_at: &[i32],
-    edgels: &[Edgel],
-    width: usize,
-    height: usize,
-) -> usize {
+fn end_pixel_from_points(points: &[Point2f], grid: &GridCtx<'_>) -> usize {
+    let GridCtx {
+        edgel_at,
+        edgels,
+        width,
+        height,
+        ..
+    } = *grid;
     // Fallback for malformed chains: map last point back to integer idx if exact,
     // otherwise scan for the nearest available edgel pixel.
     let last = points[points.len().saturating_sub(1)];
@@ -1099,5 +1090,86 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// C4 must refuse the diagonal step that C8 accepts: a staircase chain is
+    /// one connected path under C8 but falls apart into isolated pixels under
+    /// C4, where each diagonal neighbor is not a neighbor at all.
+    #[test]
+    fn c4_disconnects_a_diagonal_staircase_that_c8_connects() {
+        let mut edgels = Vec::new();
+        for i in 1..=6 {
+            edgels.push(e(i, i)); // pure diagonal
+        }
+
+        let base = ContourBuildConfig {
+            min_component_size: 1,
+            record_strengths: false,
+            record_geometry: false,
+            ..Default::default()
+        };
+
+        let g8 = build_graph_from_edgels(
+            9,
+            9,
+            &edgels,
+            &ContourBuildConfig {
+                connectivity: Connectivity::C8,
+                ..base.clone()
+            },
+        );
+        assert_eq!(g8.edges.len(), 1, "C8 sees one chain");
+        assert_eq!(g8.num_ends(), 2);
+
+        let g4 = build_graph_from_edgels(
+            9,
+            9,
+            &edgels,
+            &ContourBuildConfig {
+                connectivity: Connectivity::C4,
+                ..base
+            },
+        );
+        // Under C4 every diagonal pixel is isolated: no chains at all, and
+        // each pixel becomes its own isolated node.
+        assert_eq!(g4.edges.len(), 0, "C4 must not traverse diagonals");
+        assert_eq!(
+            g4.nodes
+                .iter()
+                .filter(|n| n.kind == NodeKind::Isolated)
+                .count(),
+            edgels.len()
+        );
+    }
+
+    /// `min_component_size` drops small connected components before tracing:
+    /// a 3-pixel fleck disappears while the long chain survives untouched.
+    #[test]
+    fn min_component_size_filters_small_flecks() {
+        let mut edgels = Vec::new();
+        for x in 1..=10 {
+            edgels.push(e(x, 2)); // 10-pixel line
+        }
+        edgels.push(e(1, 8)); // 3-pixel fleck, far from the line
+        edgels.push(e(2, 8));
+        edgels.push(e(3, 8));
+
+        let cfg = |min_size: usize| ContourBuildConfig {
+            connectivity: Connectivity::C8,
+            min_component_size: min_size,
+            record_strengths: false,
+            record_geometry: false,
+            ..Default::default()
+        };
+
+        let g_all = build_graph_from_edgels(13, 13, &edgels, &cfg(1));
+        assert_eq!(g_all.edges.len(), 2, "both components traced at size 1");
+
+        let g_filtered = build_graph_from_edgels(13, 13, &edgels, &cfg(5));
+        assert_eq!(g_filtered.edges.len(), 1, "the fleck must be dropped");
+        let edge = &g_filtered.edges[0];
+        // The surviving chain is the long line, not the fleck.
+        assert!(edge.points.iter().all(|p| (p.y - 2.0).abs() < 0.5));
+        assert_eq!(edge.points.len(), 10);
     }
 }

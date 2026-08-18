@@ -39,6 +39,19 @@ fn sdf_ring(p: (f32, f32)) -> f32 {
     (r - 45.0).abs() - 8.0
 }
 
+/// F6: a comb — a bar with fine teeth (4 px pitch). The teeth are exactly the
+/// high-frequency structure a 2×2 box-mean pyramid aliases away by level 2–3,
+/// which is risk R3: the true match can die at the coarse level before the
+/// search ever descends.
+fn sdf_comb(p: (f32, f32)) -> f32 {
+    // Spine: 120×12 bar.
+    let spine = sdf_box((p.0, p.1 + 20.0), (60.0, 6.0));
+    // Teeth: 2 px half-width, 24 px long, every 8 px along the spine.
+    let k = (p.0 / 8.0).round().clamp(-7.0, 7.0);
+    let tooth = sdf_box((p.0 - 8.0 * k, p.1 - 2.0), (2.0, 16.0));
+    spine.min(tooth)
+}
+
 fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
     let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
@@ -749,4 +762,76 @@ fn t20_the_score_survives_a_change_of_illumination() {
         "score fell from {base:.3} to {:.3}",
         m.score
     );
+}
+
+#[test]
+fn r3_fine_toothed_model_survives_the_pyramid() {
+    // R3 probe: the comb's 8 px tooth pitch is 2 px at level 2 and 1 px at
+    // level 3 — right at the box-mean pyramid's aliasing limit. The model
+    // build drops aliased-away points level by level (that part is safe by
+    // construction); the risk is the *scene* side losing the teeth so the
+    // coarse score falls under the descent threshold and the object is never
+    // found.
+    //
+    // Verdict encoded by this test: detection survives because the auto level
+    // count stops where the model runs out of stable coarse points, and the
+    // spine still anchors the coarse levels. If a future pyramid or model
+    // change breaks this, the failure is THIS test, not a customer part.
+    let reference = render(&sdf_comb, 256.0, 256.0, 0.0, 1.0, &Render::default());
+    let roi = Rect2f {
+        x: 180.0,
+        y: 220.0,
+        width: 152.0,
+        height: 72.0,
+    };
+    let model = ShapeModelBuilder::new()
+        .build_u8(&reference.as_view(), roi, &ShapeModelConfig::default())
+        .expect("comb model builds");
+
+    // The comb must yield a genuinely multi-level model for the probe to mean
+    // anything.
+    assert!(
+        model.num_levels() >= 3,
+        "comb model collapsed to {} levels — fixture no longer probes R3",
+        model.num_levels()
+    );
+
+    let angle = 25f32.to_radians();
+    let scene = render(&sdf_comb, 310.0, 240.0, angle, 1.0, &Render::default());
+    let m = find_one(&scene, &model, &ShapeSearchConfig::default())
+        .expect("R3: comb lost at coarse level — box-mean aliasing killed the descent");
+
+    assert!(m.score > 0.8, "score {}", m.score);
+    let expected = expected_position(&model, 310.0, 240.0, angle, 1.0);
+    assert!(
+        (m.position.x - expected.x).abs() < 0.5 && (m.position.y - expected.y).abs() < 0.5,
+        "position ({}, {}) vs expected ({}, {})",
+        m.position.x,
+        m.position.y,
+        expected.x,
+        expected.y
+    );
+    assert!((wrap_angle(m.angle() - angle)).abs() < 0.02);
+}
+
+/// Serialization round-trip: a persisted model must find the object at the
+/// identical pose and score as the original (`serde` feature).
+#[cfg(feature = "serde")]
+#[test]
+fn a_persisted_model_matches_identically() {
+    let model = build_bracket_model(&ShapeModelConfig::default());
+    let json = model.to_json().expect("serializes");
+    let restored = ShapeModel::from_json(&json).expect("deserializes");
+
+    let scene = bracket_at(300.0, 220.0, 0.6, 1.0);
+    let a = find_one(&scene, &model, &ShapeSearchConfig::default()).expect("original finds");
+    let b = find_one(&scene, &restored, &ShapeSearchConfig::default()).expect("restored finds");
+    assert_eq!(a.score, b.score);
+    assert_eq!(a.position, b.position);
+    assert_eq!(a.angle(), b.angle());
+
+    // Version gate: a bumped version must be refused, not mis-read.
+    let bad = json.replacen("\"format_version\":1", "\"format_version\":999", 1);
+    assert!(ShapeModel::from_json(&bad).is_err());
+    assert!(ShapeModel::from_json("{}").is_err());
 }

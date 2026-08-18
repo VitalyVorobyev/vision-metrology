@@ -114,7 +114,9 @@ cargo bench --workspace
 
 # vm-primitives
 cargo bench -p vm-primitives --bench downsample
+cargo bench -p vm-primitives --bench edge1d
 cargo bench -p vm-primitives --bench edge2d
+cargo bench -p vm-primitives --bench morph
 
 # vision-metrology
 cargo bench -p vision-metrology --bench build_graph

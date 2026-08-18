@@ -19,6 +19,7 @@ use vm_primitives::{Edge2DConfig, Point2f, Rect2f};
 /// positives on cluttered scenes: it scores a contour highly even when every
 /// second edge is inverted, which no real object does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Polarity {
     /// Model and scene must agree on the dark-to-bright direction of every edge.
     #[default]

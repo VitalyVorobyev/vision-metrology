@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `serde` feature: versioned `ShapeModel` persistence (`to_json` / `from_json`
+  with an explicit `format_version` gate) and `Serialize`/`Deserialize` on the
+  model and geometry types. Python: `ShapeModel.save(path)` / `ShapeModel.load(path)`.
+- Tests: greedy-bound safety (T13 — greediness 0 is bit-identical to an
+  exhaustive reference at every qualifying pose), fine-toothed-contour pyramid
+  aliasing probe (R3), edge1d Centroid/threshold/typed-entry coverage,
+  contour C4 and `min_component_size` behavior, multiscale config defaults,
+  serialization round-trips (Rust + Python).
+- Benches: `morph` (chamfer distance, Zhang-Suen thinning, open3x3), `edge1d`,
+  `contour_smooth_polyline_5k_sigma2`, and a seeded cluttered scene for
+  `match_shape` (`shape_find_1280x1024_360deg_clutter` — 10.4 ms vs 7.8 ms
+  clean on M4 Pro, the honest baseline for the <5 ms work).
 - Persistent-context documentation: `docs/system-design.md` (architecture,
   invariants, decision record), `docs/roadmap.md` (tracks and acceptance
   criteria), `docs/backlog.md` (known debt). `AGENTS.md`/`CLAUDE.md` now point
@@ -57,6 +69,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `laser/extractor.rs` (1717 lines) split into 8 focused modules; the
+  u8/u16/f32 triplication collapsed into one generic implementation over a
+  private `ScanPixel` trait. Public API unchanged; extract benches within
+  noise of the previous numbers.
+- `contour/build.rs` chain-tracing helpers take a borrowed `GridCtx`;
+  all three `too_many_arguments` allows removed.
 - Workspace MSRV raised from 1.89 to 1.91, ahead of the planned `corrmatch` and
   `box-image-pyramid` dev-dependencies (both declare 1.91). nalgebra 0.35 needs
   only 1.89; the crates were unpublished, so no compatibility promise changed.
