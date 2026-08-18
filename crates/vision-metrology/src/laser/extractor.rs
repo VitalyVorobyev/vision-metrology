@@ -1545,4 +1545,173 @@ mod tests {
             Err(Error::InvalidConfig(_))
         ));
     }
+
+    /// Builds the same anti-aliased stripe used by `rows_mode_basic`, as f32
+    /// in [0, 255].
+    fn stripe_f32(w: usize, h: usize, x_l: f32, x_r: f32) -> Vec<f32> {
+        let mut img_f = vec![0.0f32; w * h];
+        for y in 0..h {
+            for x in 0..w {
+                img_f[y * w + x] = 255.0 * frac_overlap(x, x_l, x_r);
+            }
+        }
+        blur_rows(&mut img_f, w, h, 0.8);
+        img_f
+    }
+
+    #[test]
+    fn u16_and_f32_paths_agree_with_u8() {
+        // `extract_line_u16` and `extract_line_f32` had no test at all, and the
+        // row scanners they call hold the unsafe fast paths. The same stripe
+        // through all three entry points must give the same centre, since the
+        // only difference is the input scalar type.
+        let (w, h) = (64usize, 40usize);
+        let (x_l, x_r) = (20.3f32, 25.7f32);
+        let img_f = stripe_f32(w, h, x_l, x_r);
+
+        let img_u8 = Image::from_vec(
+            w,
+            h,
+            img_f
+                .iter()
+                .map(|&v| v.round().clamp(0.0, 255.0) as u8)
+                .collect::<Vec<u8>>(),
+        )
+        .expect("valid image");
+        // Same signal, scaled to the u16 range, so centres must still match.
+        let img_u16 = Image::from_vec(
+            w,
+            h,
+            img_f
+                .iter()
+                .map(|&v| (v * 257.0).round().clamp(0.0, 65535.0) as u16)
+                .collect::<Vec<u16>>(),
+        )
+        .expect("valid image");
+        let img_f32 = Image::from_vec(w, h, img_f.clone()).expect("valid image");
+
+        let cfg = LaserExtractConfig {
+            axis: ScanAxis::Rows,
+            ..Default::default()
+        };
+        let mut ext = LaserExtractor::new(1.2);
+        let a = ext
+            .extract_line_u8(&img_u8.as_view(), 0..h, &cfg, None)
+            .expect("valid extractor arguments");
+        let b = ext
+            .extract_line_u16(&img_u16.as_view(), 0..h, &cfg, None)
+            .expect("valid extractor arguments");
+        let c = ext
+            .extract_line_f32(&img_f32.as_view(), 0..h, &cfg, None)
+            .expect("valid extractor arguments");
+
+        assert_eq!(a.samples.len(), h);
+        assert_eq!(b.samples.len(), h);
+        assert_eq!(c.samples.len(), h);
+
+        let expected = 0.5 * (x_l + x_r);
+        let mut compared = 0usize;
+        for i in 0..h {
+            assert_eq!(
+                b.samples[i].valid, a.samples[i].valid,
+                "u16 validity must track u8 at row {i}"
+            );
+            assert_eq!(
+                c.samples[i].valid, a.samples[i].valid,
+                "f32 validity must track u8 at row {i}"
+            );
+            if !a.samples[i].valid {
+                continue;
+            }
+            compared += 1;
+            assert!(
+                (a.samples[i].center - expected).abs() < 0.2,
+                "u8 centre at row {i} is {}, expected ~{expected}",
+                a.samples[i].center
+            );
+            // u8 is quantised where u16 and f32 are not, so allow a small gap.
+            assert!(
+                (b.samples[i].center - a.samples[i].center).abs() < 0.05,
+                "u16 centre {} differs from u8 {} at row {i}",
+                b.samples[i].center,
+                a.samples[i].center
+            );
+            assert!(
+                (c.samples[i].center - a.samples[i].center).abs() < 0.05,
+                "f32 centre {} differs from u8 {} at row {i}",
+                c.samples[i].center,
+                a.samples[i].center
+            );
+        }
+        assert!(compared > h / 2, "most rows should yield a valid sample");
+    }
+
+    #[test]
+    fn u16_transposed_access_matches_gather() {
+        // Exercises the u16 transposed path, which reaches the same row scanner
+        // through a different route than column gathering.
+        let (w, h) = (48usize, 32usize);
+        let img_f = stripe_f32(w, h, 18.4f32, 23.1f32);
+        let data: Vec<u16> = img_f
+            .iter()
+            .map(|&v| (v * 257.0).round().clamp(0.0, 65535.0) as u16)
+            .collect();
+        let img = Image::from_vec(w, h, data).expect("valid image");
+
+        // Transpose for the ColAccess::Transposed route.
+        let src = img.data();
+        let mut t = vec![0u16; w * h];
+        for y in 0..h {
+            for x in 0..w {
+                t[x * h + y] = src[y * w + x];
+            }
+        }
+        let img_t = Image::from_vec(h, w, t).expect("valid transposed image");
+
+        let mut ext = LaserExtractor::new(1.2);
+        let gather = ext
+            .extract_line_u16(
+                &img.as_view(),
+                0..w,
+                &LaserExtractConfig {
+                    axis: ScanAxis::Cols {
+                        access: ColAccess::Gather,
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .expect("valid extractor arguments");
+        let transposed = ext
+            .extract_line_u16(
+                &img.as_view(),
+                0..w,
+                &LaserExtractConfig {
+                    axis: ScanAxis::Cols {
+                        access: ColAccess::Transposed,
+                    },
+                    ..Default::default()
+                },
+                Some(&img_t.as_view()),
+            )
+            .expect("valid extractor arguments");
+
+        assert_eq!(gather.samples.len(), transposed.samples.len());
+        for (i, (g, t)) in gather
+            .samples
+            .iter()
+            .zip(transposed.samples.iter())
+            .enumerate()
+        {
+            assert_eq!(g.valid, t.valid, "validity differs at column {i}");
+            if g.valid {
+                assert!(
+                    (g.center - t.center).abs() < 1e-4,
+                    "gather {} vs transposed {} at column {i}",
+                    g.center,
+                    t.center
+                );
+            }
+        }
+    }
 }
