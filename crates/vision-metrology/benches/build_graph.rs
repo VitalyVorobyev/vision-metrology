@@ -50,6 +50,7 @@ fn bench_build_graph(c: &mut Criterion) {
         min_component_size: 2,
         record_strengths: false,
         record_geometry: false,
+        ..Default::default()
     };
 
     c.bench_function("contour_build_graph_50k", |b| {

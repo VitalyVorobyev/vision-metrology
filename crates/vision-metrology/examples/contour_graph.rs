@@ -17,7 +17,7 @@
 use vision_metrology::Image;
 use vision_metrology::edge::edge2d::{Edge2DConfig, Edge2DDetector};
 use vision_metrology::{
-    Connectivity, ContourBuildConfig, build_graph_from_edgels, smooth_polyline,
+    Connectivity, ContourBuildConfig, NodeKind, build_graph_from_edgels, smooth_polyline,
 };
 
 fn main() {
@@ -57,6 +57,7 @@ fn main() {
         min_component_size: 5,
         record_strengths: false,
         record_geometry: false,
+        ..Default::default()
     };
     let graph = build_graph_from_edgels(w, h, &edgels, &contour_cfg);
 
@@ -64,9 +65,20 @@ fn main() {
     println!("  Nodes: {}", graph.nodes.len());
     println!("  Edges: {}", graph.edges.len());
 
+    // A ring has exactly two boundaries -- the inner and the outer circle --
+    // and neither of them branches, so the graph must be two closed loops with
+    // no junctions. Asserting only "at least one edge" would also accept the
+    // shattered 288-node / 432-edge output produced before the edgel mask was
+    // thinned.
+    assert_eq!(
+        graph.edges.len(),
+        2,
+        "a ring must trace as exactly two closed contours, got {}",
+        graph.edges.len()
+    );
     assert!(
-        !graph.edges.is_empty(),
-        "Expected at least one contour edge from the ring"
+        graph.nodes.iter().all(|n| n.kind == NodeKind::LoopAnchor),
+        "a ring has no junctions or endpoints; every node must be a loop anchor"
     );
 
     // --- Step 5: smooth the longest edge's polyline ---
@@ -83,9 +95,12 @@ fn main() {
         "\nLongest contour edge: {pts_before} points before smoothing, {pts_after} after smoothing (sigma=5.0 px)."
     );
 
+    // The outer boundary has circumference ~2*pi*42 = 264 px, so a correctly
+    // traced contour is a couple of hundred points -- not the 15 that the
+    // over-fragmented graph used to yield.
     assert!(
-        pts_before >= 5,
-        "Expected longest edge to have >= 5 points, got {pts_before}"
+        pts_before >= 200,
+        "Expected the longest edge to trace most of a circle, got {pts_before} points"
     );
     assert_eq!(
         pts_before, pts_after,
