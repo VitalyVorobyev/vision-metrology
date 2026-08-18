@@ -1,6 +1,7 @@
 # Pins the toolchain used for local development and CI.
 # The workspace MSRV is declared separately as `rust-version` in Cargo.toml
-# and is currently 1.89 (driven by nalgebra 0.35).
+# and is currently 1.91 (raised ahead of the planned corrmatch and
+# box-image-pyramid dev-dependencies; nalgebra 0.35 itself needs only 1.89).
 [toolchain]
 channel = "stable"
 components = ["rustfmt", "clippy"]

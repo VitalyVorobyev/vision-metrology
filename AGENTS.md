@@ -2,6 +2,12 @@
 
 Guidance for coding agents working in `vision-metrology`. This repo implements high-precision, high-performance image processing for industrial metrology:
 
+**Before changing anything, read the three persistent-context documents:**
+[`docs/system-design.md`](docs/system-design.md) (architecture, invariants, decisions and
+why), [`docs/roadmap.md`](docs/roadmap.md) (current tracks and acceptance criteria), and
+[`docs/backlog.md`](docs/backlog.md) (known debt). They are the project's long-term memory
+across sessions — trust them over reconstructing state from git history.
+
 - Morphology
 - 1D/2D subpixel edges
 - Laser stripe extraction (edge-pair method)
@@ -70,11 +76,13 @@ cargo test --workspace --all-features
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps
 ```
 
-The workspace MSRV is `1.89` (declared in the root `Cargo.toml`, set by
-nalgebra). Clippy enforces it via `incompatible_msrv`. To check it directly:
+The workspace MSRV is `1.91` (declared in the root `Cargo.toml`; raised ahead
+of the planned corrmatch and box-image-pyramid dev-dependencies, while nalgebra
+0.35 itself needs only 1.89). Clippy enforces it via `incompatible_msrv`. To
+check it directly:
 
 ```bash
-cargo +1.89.0 check --workspace --all-targets --all-features
+cargo +1.91.0 check --workspace --all-targets --all-features
 ```
 
 If performance-sensitive code changed, also run benchmarks:
@@ -95,6 +103,10 @@ cargo bench -p vision-metrology
 - Do not revert unrelated user changes.
 - Update `README.md` when crate scope, commands, or benchmark reporting changes.
 - If behavior changes, include/adjust tests in the same commit.
+- If the change alters scope, decisions, or invariants, update `docs/roadmap.md`,
+  `docs/backlog.md`, and/or `docs/system-design.md` in the same commit.
+- If the change adds public Rust API, update `vm-python` bindings and a Python test in
+  the same PR.
 
 ## Quick command reference
 ```bash
