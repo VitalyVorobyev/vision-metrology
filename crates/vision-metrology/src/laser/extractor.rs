@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use vm_primitives::{BorderMode, ImageView, Point2f};
+use vm_primitives::{BorderMode, Error, ImageView, Point2f};
 use vm_primitives::{
     Edge1DConfig, Edge1DDetector, EdgePair1D, EdgePeak, EdgePolarity, SubpixRefine,
 };
@@ -139,6 +139,26 @@ pub struct LaserExtractor {
     col_f32: Vec<f32>,
 }
 
+/// Resolve the transposed view that [`ColAccess::Transposed`] requires.
+///
+/// Both failures here are ordinary API misuse -- forgetting the argument, or
+/// passing a view that is not actually the transpose -- rather than broken
+/// internal invariants, so they are reported instead of asserted.
+fn transposed_view<'t, T>(
+    img: &ImageView<'_, T>,
+    transposed: Option<&'t ImageView<'t, T>>,
+) -> Result<&'t ImageView<'t, T>, Error> {
+    let img_t = transposed.ok_or(Error::InvalidConfig(
+        "ColAccess::Transposed requires a transposed image",
+    ))?;
+    if img_t.width() != img.height() || img_t.height() != img.width() {
+        return Err(Error::InvalidConfig(
+            "transposed image dimensions must be the original's, swapped",
+        ));
+    }
+    Ok(img_t)
+}
+
 impl LaserExtractor {
     /// Create a new extractor with a DoG smoothing sigma.
     pub fn new(sigma: f32) -> Self {
@@ -159,13 +179,18 @@ impl LaserExtractor {
     ///
     /// Pass `transposed` when using `ColAccess::Transposed` (the transposed
     /// image must have dimensions swapped relative to `img`).
+    ///
+    /// # Errors
+    /// Returns [`Error::InvalidConfig`] when `cfg.axis` selects
+    /// `ColAccess::Transposed` but `transposed` is `None`, or when the supplied
+    /// view is not the transpose of `img`. All other axis modes never fail.
     pub fn extract_line_u8(
         &mut self,
         img: &ImageView<'_, u8>,
         scan_range: Range<usize>,
         cfg: &LaserExtractConfig,
         transposed: Option<&ImageView<'_, u8>>,
-    ) -> LaserLine {
+    ) -> Result<LaserLine, Error> {
         self.detector.set_sigma(cfg.edge_cfg.sigma);
         let mut samples = match cfg.axis {
             ScanAxis::Rows => self.extract_rows_u8_samples(img, scan_range.clone(), cfg),
@@ -175,18 +200,7 @@ impl LaserExtractor {
             ScanAxis::Cols {
                 access: ColAccess::Transposed,
             } => {
-                let img_t =
-                    transposed.expect("transposed image is required for ColAccess::Transposed");
-                assert_eq!(
-                    img_t.width(),
-                    img.height(),
-                    "transposed width must match original height"
-                );
-                assert_eq!(
-                    img_t.height(),
-                    img.width(),
-                    "transposed height must match original width"
-                );
+                let img_t = transposed_view(img, transposed)?;
                 self.extract_rows_u8_samples(img_t, scan_range.clone(), cfg)
             }
         };
@@ -196,11 +210,11 @@ impl LaserExtractor {
         }
 
         let points = build_points(&samples, cfg.axis);
-        LaserLine {
+        Ok(LaserLine {
             axis: cfg.axis,
             samples,
             points,
-        }
+        })
     }
 
     /// Extract a laser stripe from a `u16` image over `scan_range` rows or columns.
@@ -212,7 +226,7 @@ impl LaserExtractor {
         scan_range: Range<usize>,
         cfg: &LaserExtractConfig,
         transposed: Option<&ImageView<'_, u16>>,
-    ) -> LaserLine {
+    ) -> Result<LaserLine, Error> {
         self.detector.set_sigma(cfg.edge_cfg.sigma);
         let mut samples = match cfg.axis {
             ScanAxis::Rows => self.extract_rows_u16_samples(img, scan_range.clone(), cfg),
@@ -222,18 +236,7 @@ impl LaserExtractor {
             ScanAxis::Cols {
                 access: ColAccess::Transposed,
             } => {
-                let img_t =
-                    transposed.expect("transposed image is required for ColAccess::Transposed");
-                assert_eq!(
-                    img_t.width(),
-                    img.height(),
-                    "transposed width must match original height"
-                );
-                assert_eq!(
-                    img_t.height(),
-                    img.width(),
-                    "transposed height must match original width"
-                );
+                let img_t = transposed_view(img, transposed)?;
                 self.extract_rows_u16_samples(img_t, scan_range.clone(), cfg)
             }
         };
@@ -243,11 +246,11 @@ impl LaserExtractor {
         }
 
         let points = build_points(&samples, cfg.axis);
-        LaserLine {
+        Ok(LaserLine {
             axis: cfg.axis,
             samples,
             points,
-        }
+        })
     }
 
     /// Extract a laser stripe from an `f32` image over `scan_range` rows or columns.
@@ -259,7 +262,7 @@ impl LaserExtractor {
         scan_range: Range<usize>,
         cfg: &LaserExtractConfig,
         transposed: Option<&ImageView<'_, f32>>,
-    ) -> LaserLine {
+    ) -> Result<LaserLine, Error> {
         self.detector.set_sigma(cfg.edge_cfg.sigma);
         let mut samples = match cfg.axis {
             ScanAxis::Rows => self.extract_rows_f32_samples(img, scan_range.clone(), cfg),
@@ -269,18 +272,7 @@ impl LaserExtractor {
             ScanAxis::Cols {
                 access: ColAccess::Transposed,
             } => {
-                let img_t =
-                    transposed.expect("transposed image is required for ColAccess::Transposed");
-                assert_eq!(
-                    img_t.width(),
-                    img.height(),
-                    "transposed width must match original height"
-                );
-                assert_eq!(
-                    img_t.height(),
-                    img.width(),
-                    "transposed height must match original width"
-                );
+                let img_t = transposed_view(img, transposed)?;
                 self.extract_rows_f32_samples(img_t, scan_range.clone(), cfg)
             }
         };
@@ -290,11 +282,11 @@ impl LaserExtractor {
         }
 
         let points = build_points(&samples, cfg.axis);
-        LaserLine {
+        Ok(LaserLine {
             axis: cfg.axis,
             samples,
             points,
-        }
+        })
     }
 
     fn extract_rows_u8_samples(
@@ -1210,7 +1202,7 @@ mod tests {
     use vm_primitives::Image;
     use vm_primitives::{DoGKernel1D, edge::conv1d::convolve_f32};
 
-    use crate::{ColAccess, LaserExtractConfig, LaserExtractor, ScanAxis};
+    use crate::{ColAccess, Error, LaserExtractConfig, LaserExtractor, ScanAxis};
 
     fn frac_overlap(i: usize, left: f32, right: f32) -> f32 {
         let x0 = i as f32 - 0.5;
@@ -1293,7 +1285,9 @@ mod tests {
             ..LaserExtractConfig::default()
         };
 
-        let line = ext.extract_line_u8(&img.as_view(), 0..h, &cfg, None);
+        let line = ext
+            .extract_line_u8(&img.as_view(), 0..h, &cfg, None)
+            .expect("valid extractor arguments");
 
         let exp_c = 0.5 * (x_l + x_r);
         let exp_w = x_r - x_l;
@@ -1342,7 +1336,9 @@ mod tests {
             ..LaserExtractConfig::default()
         };
 
-        let line = ext.extract_line_u8(&img.as_view(), 0..w, &cfg, None);
+        let line = ext
+            .extract_line_u8(&img.as_view(), 0..w, &cfg, None)
+            .expect("valid extractor arguments");
 
         let exp_c = 0.5 * (y_l + y_r);
         let mut valid = 0usize;
@@ -1398,7 +1394,9 @@ mod tests {
             max_jump_px: 8.0,
             ..LaserExtractConfig::default()
         };
-        let line_r = ext.extract_line_u8(&img_r.as_view(), 0..h, &cfg_rows, None);
+        let line_r = ext
+            .extract_line_u8(&img_r.as_view(), 0..h, &cfg_rows, None)
+            .expect("valid extractor arguments");
 
         let gap_valid = line_r.samples[28..=34].iter().filter(|s| s.valid).count();
         assert!(gap_valid <= 2);
@@ -1453,7 +1451,9 @@ mod tests {
             max_jump_px: 8.0,
             ..LaserExtractConfig::default()
         };
-        let line_c = ext.extract_line_u8(&img_c.as_view(), 0..w, &cfg_cols, None);
+        let line_c = ext
+            .extract_line_u8(&img_c.as_view(), 0..w, &cfg_cols, None)
+            .expect("valid extractor arguments");
 
         let gap_valid_c = line_c.samples[22..=28].iter().filter(|s| s.valid).count();
         assert!(gap_valid_c <= 2);
@@ -1487,7 +1487,9 @@ mod tests {
             },
             ..LaserExtractConfig::default()
         };
-        let out_g = ext.extract_line_u8(&img.as_view(), 0..w, &cfg_g, None);
+        let out_g = ext
+            .extract_line_u8(&img.as_view(), 0..w, &cfg_g, None)
+            .expect("valid extractor arguments");
 
         let cfg_t = LaserExtractConfig {
             axis: ScanAxis::Cols {
@@ -1495,7 +1497,9 @@ mod tests {
             },
             ..LaserExtractConfig::default()
         };
-        let out_t = ext.extract_line_u8(&img.as_view(), 0..w, &cfg_t, Some(&img_t.as_view()));
+        let out_t = ext
+            .extract_line_u8(&img.as_view(), 0..w, &cfg_t, Some(&img_t.as_view()))
+            .expect("valid extractor arguments");
 
         assert_eq!(out_g.samples.len(), out_t.samples.len());
         for (a, b) in out_g.samples.iter().zip(out_t.samples.iter()) {
@@ -1504,5 +1508,41 @@ mod tests {
                 assert!((a.center - b.center).abs() <= 0.05);
             }
         }
+    }
+
+    #[test]
+    fn transposed_access_without_a_transposed_image_is_an_error() {
+        // Forgetting the argument is ordinary API misuse, not a broken internal
+        // invariant, so it is reported rather than asserted.
+        let img = Image::from_vec(8, 4, vec![0u8; 8 * 4]).expect("valid image");
+        let mut ext = LaserExtractor::new(1.0);
+        let cfg = LaserExtractConfig {
+            axis: ScanAxis::Cols {
+                access: ColAccess::Transposed,
+            },
+            ..Default::default()
+        };
+        assert!(matches!(
+            ext.extract_line_u8(&img.as_view(), 0..8, &cfg, None),
+            Err(Error::InvalidConfig(_))
+        ));
+    }
+
+    #[test]
+    fn transposed_image_with_wrong_dimensions_is_an_error() {
+        let img = Image::from_vec(8, 4, vec![0u8; 8 * 4]).expect("valid image");
+        // Correct transpose would be 4x8; this is not.
+        let bad = Image::from_vec(8, 4, vec![0u8; 8 * 4]).expect("valid image");
+        let mut ext = LaserExtractor::new(1.0);
+        let cfg = LaserExtractConfig {
+            axis: ScanAxis::Cols {
+                access: ColAccess::Transposed,
+            },
+            ..Default::default()
+        };
+        assert!(matches!(
+            ext.extract_line_u8(&img.as_view(), 0..8, &cfg, Some(&bad.as_view())),
+            Err(Error::InvalidConfig(_))
+        ));
     }
 }
