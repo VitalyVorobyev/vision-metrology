@@ -15,7 +15,9 @@
 //! This module is intentionally single-scale. Pyramid/multi-scale integration
 //! is done in higher-level crates.
 
-use crate::core::{BorderMode, Image, ImageView, Point2f, Vec2f, sample_bilinear_f32};
+use crate::core::{
+    BorderMode, Image, ImageView, Point2f, Vec2f, parabolic_peak_offset, sample_bilinear_f32,
+};
 
 /// A single subpixel 2-D edge element (edgel).
 ///
@@ -40,7 +42,8 @@ pub enum Subpix2D {
     /// No sub-pixel refinement: edgel position is the NMS peak pixel center.
     None,
     /// Parabolic interpolation along the gradient normal direction using the
-    /// NMS values at `±1` pixel offsets. Offsets are clamped to `[-0.5, 0.5]`.
+    /// NMS values at `±1` pixel offsets. Offsets are clamped to `[-1, 1]`, the
+    /// bracket the three samples span.
     ParabolicAlongNormal,
 }
 
@@ -515,12 +518,8 @@ impl Edge2DDetector {
                         y as f32 - n.y,
                         cfg.border.clone(),
                     );
-                    let denom = sm - 2.0 * s0 + sp;
-                    if denom.abs() > 1e-12 {
-                        let tt = 0.5 * (sm - sp) / denom;
-                        if tt.is_finite() {
-                            t = tt.clamp(-1.0, 1.0);
-                        }
+                    if let Some(tt) = parabolic_peak_offset(sm, s0, sp) {
+                        t = tt.clamp(-1.0, 1.0);
                     }
                 }
 

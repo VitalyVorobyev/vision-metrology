@@ -88,30 +88,61 @@ impl Ellipse {
     }
 }
 
-/// Result of an edge-model match operation.
+/// One located instance of a :class:`ShapeModel`.
 #[pyclass(get_all, skip_from_py_object)]
 #[derive(Debug, Clone)]
-pub struct MatchResult {
-    /// X translation (pixels) that maps model-local to scene coordinates.
-    pub tx: f32,
-    /// Y translation (pixels).
-    pub ty: f32,
-    /// Rotation angle in radians.
+pub struct ShapeMatch {
+    /// X coordinate, in scene pixels, where the model origin landed.
+    pub x: f32,
+    /// Y coordinate, in scene pixels, where the model origin landed.
+    pub y: f32,
+    /// Rotation in radians, wrapped to (-pi, pi].
     pub angle: f32,
-    /// Uniform scale factor (1.0 for rigid matches).
+    /// Uniform scale factor.
     pub scale: f32,
-    /// Inlier fraction in [0, 1]: proportion of model edgels within chamfer threshold.
+    /// Similarity score in [0, 1]; roughly `1 - occluded_fraction`.
     pub score: f32,
-    /// Absolute number of inlier edgels.
-    pub inlier_count: usize,
+    /// Model points that found any gradient at all.
+    pub support: usize,
+    /// Pyramid level the reported score was evaluated at.
+    pub level: usize,
+}
+
+impl From<vision_metrology::ShapeMatch> for ShapeMatch {
+    fn from(m: vision_metrology::ShapeMatch) -> Self {
+        Self {
+            x: m.position.x,
+            y: m.position.y,
+            angle: m.angle(),
+            scale: m.scale(),
+            score: m.score,
+            support: m.support,
+            level: m.level,
+        }
+    }
 }
 
 #[pymethods]
-impl MatchResult {
+impl ShapeMatch {
+    /// The 2x3 similarity `[[a, b, tx], [c, d, ty]]` mapping reference-image
+    /// coordinates to scene coordinates, as nested lists.
+    ///
+    /// Reconstructed from the reported pose parts, so it already includes the
+    /// model origin: `scene = M @ [x, y, 1]`.
+    pub fn matrix(&self, origin: (f32, f32)) -> [[f32; 3]; 2] {
+        let (sn, cs) = self.angle.sin_cos();
+        let (a, b) = (self.scale * cs, -self.scale * sn);
+        let (c, d) = (self.scale * sn, self.scale * cs);
+        [
+            [a, b, self.x - (a * origin.0 + b * origin.1)],
+            [c, d, self.y - (c * origin.0 + d * origin.1)],
+        ]
+    }
+
     fn __repr__(&self) -> String {
         format!(
-            "MatchResult(tx={:.2}, ty={:.2}, angle={:.4}, scale={:.4}, score={:.3}, inliers={})",
-            self.tx, self.ty, self.angle, self.scale, self.score, self.inlier_count
+            "ShapeMatch(x={:.2}, y={:.2}, angle={:.4}, scale={:.4}, score={:.3}, support={})",
+            self.x, self.y, self.angle, self.scale, self.score, self.support
         )
     }
 }

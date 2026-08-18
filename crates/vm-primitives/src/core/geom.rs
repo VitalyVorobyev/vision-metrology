@@ -295,6 +295,115 @@ pub fn from_na_vec(v: nalgebra::Vector2<f32>) -> Vec2f {
     Vec2f { x: v.x, y: v.y }
 }
 
+// ---------------------------------------------------------------------------
+// Vector helpers used by pose estimation and contour orientation
+// ---------------------------------------------------------------------------
+
+impl Vec2f {
+    /// Rotate by +90° (counter-clockwise in a y-down image frame): `(x, y) → (−y, x)`.
+    ///
+    /// Used to turn an edge tangent into a normal and to build the rotational
+    /// column of a similarity Jacobian.
+    #[inline]
+    pub fn perp(self) -> Self {
+        Self {
+            x: -self.y,
+            y: self.x,
+        }
+    }
+
+    /// 2-D cross product `self × rhs = self.x·rhs.y − self.y·rhs.x`.
+    ///
+    /// The signed area of the parallelogram spanned by the two vectors; equal
+    /// to `self.perp().dot(rhs)`.
+    #[inline]
+    pub fn cross(self, rhs: Self) -> f32 {
+        self.x * rhs.y - self.y * rhs.x
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Transform helpers
+// ---------------------------------------------------------------------------
+
+/// Apply a similarity transform to a point: `s·R·p + t`.
+///
+/// # Note
+/// This reads the rotation out of `sim` on every call. It is meant for the
+/// handful of call sites outside inner loops; a scoring loop that transforms
+/// thousands of points per pose must hoist `(cos, sin, tx, ty)` into scalars
+/// itself instead of calling this per point.
+#[inline]
+pub fn transform_point(sim: &Similarity2f, p: Point2f) -> Point2f {
+    from_na_point(sim * to_na_point(p))
+}
+
+/// Apply the linear part of a similarity transform to a displacement: `s·R·v`.
+///
+/// Translation is deliberately not applied — a displacement has no origin.
+#[inline]
+pub fn transform_vec(sim: &Similarity2f, v: Vec2f) -> Vec2f {
+    from_na_vec(sim * to_na_vec(v))
+}
+
+/// Apply a rigid transform to a point: `R·p + t`.
+#[inline]
+pub fn transform_point_iso(iso: &Isometry2f, p: Point2f) -> Point2f {
+    from_na_point(iso * to_na_point(p))
+}
+
+/// Build a [`Similarity2f`] from translation, rotation angle (radians) and
+/// uniform scale.
+///
+/// The resulting map is `p ↦ scale·R(angle)·p + translation`.
+#[inline]
+pub fn similarity_from_parts(translation: Vec2f, angle: f32, scale: f32) -> Similarity2f {
+    Similarity2f::new(to_na_vec(translation), angle, scale)
+}
+
+/// Decompose a [`Similarity2f`] into `(translation, angle, scale)`.
+///
+/// Inverse of [`similarity_from_parts`]; the angle is in `(-π, π]`.
+#[inline]
+pub fn similarity_parts(sim: &Similarity2f) -> (Vec2f, f32, f32) {
+    (
+        from_na_vec(sim.isometry.translation.vector),
+        sim.isometry.rotation.angle(),
+        sim.scaling(),
+    )
+}
+
+/// Vertex offset of the parabola through `(-1, ym)`, `(0, y0)`, `(1, yp)`.
+///
+/// Returns the offset from the centre sample to the extremum, or `None` when
+/// the three samples are collinear (or produce a non-finite result), which is
+/// the degenerate case where no vertex exists.
+///
+/// The offset is **not** clamped: `|offset| > 1` means the true extremum lies
+/// outside the sampled bracket, which callers usually want to reject rather
+/// than saturate.
+///
+/// ```
+/// use vm_primitives::parabolic_peak_offset;
+///
+/// // Symmetric peak: vertex sits exactly on the centre sample.
+/// assert_eq!(parabolic_peak_offset(1.0, 2.0, 1.0), Some(0.0));
+/// // Skewed towards the right sample.
+/// let t = parabolic_peak_offset(0.0, 2.0, 1.0).unwrap();
+/// assert!(t > 0.0 && t < 0.5);
+/// // Collinear samples have no vertex.
+/// assert_eq!(parabolic_peak_offset(0.0, 1.0, 2.0), None);
+/// ```
+#[inline]
+pub fn parabolic_peak_offset(ym: f32, y0: f32, yp: f32) -> Option<f32> {
+    let denom = ym - 2.0 * y0 + yp;
+    if denom.abs() <= 1e-12 {
+        return None;
+    }
+    let t = 0.5 * (ym - yp) / denom;
+    t.is_finite().then_some(t)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{Angle, Point2f, Rect2f, Vec2f, from_na_point, to_na_point};
@@ -380,5 +489,75 @@ mod tests {
         let q = sim * to_na_point(Point2f { x: 1.0, y: 1.0 });
         assert!((q.x - 3.0).abs() < 1e-6); // 2*1 + 1
         assert!((q.y - 2.0).abs() < 1e-6); // 2*1
+    }
+
+    #[test]
+    fn perp_and_cross_agree() {
+        let a = Vec2f { x: 3.0, y: 1.0 };
+        let b = Vec2f { x: -2.0, y: 4.0 };
+        // perp is a +90 degree rotation, so it preserves length and is orthogonal.
+        assert!((a.perp().norm() - a.norm()).abs() < 1e-6);
+        assert!(a.perp().dot(a).abs() < 1e-6);
+        assert_eq!(a.perp(), Vec2f { x: -1.0, y: 3.0 });
+        // cross(a, b) == perp(a) . b by definition.
+        assert!((a.cross(b) - a.perp().dot(b)).abs() < 1e-6);
+        // Antisymmetry.
+        assert!((a.cross(b) + b.cross(a)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn similarity_parts_roundtrip() {
+        use super::{similarity_from_parts, similarity_parts, transform_point, transform_vec};
+
+        let t = Vec2f { x: 12.5, y: -3.25 };
+        let angle = 0.7_f32;
+        let scale = 1.75_f32;
+        let sim = similarity_from_parts(t, angle, scale);
+
+        let (t2, a2, s2) = similarity_parts(&sim);
+        assert!((t2.x - t.x).abs() < 1e-5 && (t2.y - t.y).abs() < 1e-5);
+        assert!((a2 - angle).abs() < 1e-5);
+        assert!((s2 - scale).abs() < 1e-5);
+
+        // transform_point applies scale, then rotation, then translation.
+        let p = Point2f { x: 1.0, y: 0.0 };
+        let q = transform_point(&sim, p);
+        assert!((q.x - (scale * angle.cos() + t.x)).abs() < 1e-4);
+        assert!((q.y - (scale * angle.sin() + t.y)).abs() < 1e-4);
+
+        // A displacement is transformed by the linear part only, so the
+        // difference of two transformed points equals the transformed difference.
+        let r = Point2f { x: 4.0, y: -2.0 };
+        let dv = transform_vec(&sim, r - p);
+        let dq = transform_point(&sim, r) - q;
+        assert!((dv.x - dq.x).abs() < 1e-4 && (dv.y - dq.y).abs() < 1e-4);
+    }
+
+    #[test]
+    fn transform_point_iso_has_unit_scale() {
+        use super::transform_point_iso;
+        use core::f32::consts::FRAC_PI_2;
+
+        let iso = nalgebra::Isometry2::new(nalgebra::Vector2::new(2.0, 3.0), FRAC_PI_2);
+        let q = transform_point_iso(&iso, Point2f { x: 1.0, y: 0.0 });
+        assert!((q.x - 2.0).abs() < 1e-5);
+        assert!((q.y - 4.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn parabolic_peak_offset_locates_a_known_vertex() {
+        use super::parabolic_peak_offset;
+
+        // y = -(x - 0.25)^2 sampled at -1, 0, 1 has its vertex at +0.25.
+        let f = |x: f32| -(x - 0.25) * (x - 0.25);
+        let t = parabolic_peak_offset(f(-1.0), f(0.0), f(1.0)).expect("vertex exists");
+        assert!((t - 0.25).abs() < 1e-5, "got {t}");
+
+        // A flat bracket has no vertex.
+        assert_eq!(parabolic_peak_offset(1.0, 1.0, 1.0), None);
+        // Offsets outside the bracket are reported, not clamped.
+        let g = |x: f32| -(x - 3.0) * (x - 3.0);
+        let far = parabolic_peak_offset(g(-1.0), g(0.0), g(1.0)).expect("vertex exists");
+        assert!(far > 1.0, "got {far}");
     }
 }

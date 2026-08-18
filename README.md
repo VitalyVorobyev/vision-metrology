@@ -6,7 +6,7 @@
 
 High-precision, high-performance image processing for industrial machine-vision
 metrology, in pure Rust. Subpixel edges, laser stripe extraction, contour topology,
-shape fitting, segmentation, and edge-model matching — with Python bindings.
+shape fitting, segmentation, and shape-based object detection — with Python bindings.
 
 No OpenCV, no FFI. All coordinates follow the **pixel-center** convention: integer
 `i` means coordinate `i as f32`.
@@ -25,7 +25,7 @@ No OpenCV, no FFI. All coordinates follow the **pixel-center** convention: integ
 |---|---|
 | `core` | `Image` / `ImageView` / `ImageViewMut`, sampling and interpolation, border modes, geometry primitives and nalgebra type aliases, the shared `Error` type |
 | `pyr` | Ultra-fast 2×2 mean image pyramid |
-| `edge` | Subpixel 1-D/2-D edge detection (DoG, Scharr), edgels with gradient normals, opposite-polarity edge pairs |
+| `edge` | Subpixel 1-D/2-D edge detection (DoG, Scharr), edgels with gradient normals, opposite-polarity edge pairs, dense gradient direction fields |
 | `morph` | Binary morphology with parameterized structuring elements, chamfer distance transform, Zhang–Suen thinning |
 
 ### `vision-metrology` modules
@@ -34,7 +34,7 @@ No OpenCV, no FFI. All coordinates follow the **pixel-center** convention: integ
 |---|---|
 | `contour` | Junction-aware contour graph (T/Y junctions, loops), per-edge tangent and curvature, polyline smoothing |
 | `laser` | Laser stripe extraction using opposite-polarity edge pairs, with ROI and prior tracking |
-| `matching` | Edge-model matching: chamfer map, rigid/similarity grid search, IoU non-maximum suppression, ICP refinement |
+| `matching` | Shape-based object detection: gradient-orientation model, coarse-to-fine search over translation / rotation / scale, subpixel pose refinement — see the [guide](docs/shape-matching.md) |
 | `multiscale` | Multi-scale 2-D edge detection across pyramid levels, merged to level-0 coordinates |
 | `segment` | Otsu and adaptive thresholding, connected-component labeling, watershed, edgel region growing |
 | `shape` | LSD line-segment detection, Bookstein/Fitzgibbon conic fitting, RANSAC ellipse fitting |
@@ -60,7 +60,7 @@ contour       topology graph — T/Y junctions, loops, polyline smoothing
   │
   ├─────►  segment    thresholding, CCL, watershed, per-component stats
   │
-  └─────►  matching   edge-model matching, ICP, NMS
+  └─────►  matching   shape model, coarse-to-fine search, pose refinement
 ```
 
 `laser` consumes `edge` directly — it scans rows or columns for opposite-polarity
@@ -88,8 +88,14 @@ Runnable examples live in [`crates/vision-metrology/examples/`](crates/vision-me
 ```bash
 cargo run -p vision-metrology --example measure_circles
 cargo run -p vision-metrology --example contour_graph
+cargo run -p vision-metrology --example shape_matching
 cargo run -p vision-metrology --example laserline -- --help
 ```
+
+## Guides
+
+- [Shape-based object detection](docs/shape-matching.md) — building a shape
+  model, choosing a polarity, tuning contrast, reading the score.
 
 ## Python
 

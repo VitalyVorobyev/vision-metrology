@@ -5,9 +5,8 @@ use pyo3::prelude::*;
 use pyo3::types::PyList;
 use pyo3::wrap_pyfunction;
 
-use crate::config_py::{ConicFitConfig, EdgeConfig, LsdConfig, MultiScaleConfig, RigidMatchConfig};
+use crate::config_py::{ConicFitConfig, EdgeConfig, LsdConfig, MultiScaleConfig};
 use crate::detector::detect_edges_u8_impl;
-use crate::match_py::match_rigid_model_impl;
 use crate::multiscale::detect_multiscale_edges_u8_impl;
 use crate::segment::{
     component_stats_impl, label_components_impl, otsu_threshold_impl, threshold_binary_impl,
@@ -51,17 +50,6 @@ pub fn fit_ellipse<'py>(
 }
 
 #[pyfunction]
-pub fn match_rigid_model<'py>(
-    py: Python<'py>,
-    model_edgels: PyReadonlyArray2<'py, f32>,
-    scene_img: PyReadonlyArray2<'py, u8>,
-    edge_config: EdgeConfig,
-    match_config: RigidMatchConfig,
-) -> PyResult<Option<Py<PyAny>>> {
-    match_rigid_model_impl(py, model_edgels, scene_img, edge_config, match_config)
-}
-
-#[pyfunction]
 pub fn otsu_threshold(py: Python<'_>, img: PyReadonlyArray2<'_, u8>) -> PyResult<u8> {
     otsu_threshold_impl(py, img)
 }
@@ -101,7 +89,7 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(detect_multiscale_edges_u8, m)?)?;
     m.add_function(wrap_pyfunction!(detect_line_segments_u8, m)?)?;
     m.add_function(wrap_pyfunction!(fit_ellipse, m)?)?;
-    m.add_function(wrap_pyfunction!(match_rigid_model, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::match_py::find_shape_model, m)?)?;
     m.add_function(wrap_pyfunction!(otsu_threshold, m)?)?;
     m.add_function(wrap_pyfunction!(threshold_binary, m)?)?;
     m.add_function(wrap_pyfunction!(label_components, m)?)?;

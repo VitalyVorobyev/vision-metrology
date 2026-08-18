@@ -19,7 +19,7 @@ Three publishable crates with clear layering:
 - `crates/vision-metrology`: high-level algorithms; depends on `vm-primitives`; re-exports it entirely.
   - `contour`: contour graph, junctions, per-edge tangent/curvature geometry, polyline smoothing.
   - `laser`: laser stripe extraction (rows/cols, ROI+prior tracking).
-  - `matching`: `EdgeModel` + chamfer map, rigid/similarity grid search, IoU NMS, ICP refinement.
+  - `matching`: `ShapeModel` + `ShapeMatcher`, gradient-orientation shape-based object detection.
   - `multiscale`: multi-scale edge detection across pyramid levels.
   - `segment`: Otsu/adaptive thresholding, CCL, watershed, edgel region growing.
   - `shape`: LSD, Bookstein/Fitzgibbon conic fitting, RANSAC ellipse fitting.
@@ -107,5 +107,5 @@ cargo bench -p vision-metrology --bench detect_multiscale
 cargo bench -p vision-metrology --bench detect_shape
 cargo bench -p vision-metrology --bench segment
 cargo bench -p vision-metrology --bench build_graph
-cargo bench -p vision-metrology --bench match_
+cargo bench -p vision-metrology --bench match_shape
 ```

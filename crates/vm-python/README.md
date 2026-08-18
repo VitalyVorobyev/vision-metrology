@@ -2,8 +2,8 @@ PyO3 Python bindings for the vision-metrology workspace.
 
 This package is published as `vision-metrology` and imported as `vision_metrology`.
 It provides both:
-- stateful object APIs (`EdgeDetector`, `RigidMatcher`, ...), and
-- declarative free functions (`detect_edges_u8`, `match_rigid_model`, ...).
+- stateful object APIs (`EdgeDetector`, `ShapeMatcher`, ...), and
+- declarative free functions (`detect_edges_u8`, `find_shape_model`, ...).
 
 ## Breaking change (hard break)
 
@@ -13,13 +13,21 @@ Legacy names were removed:
 - `PyMultiScaleDetector` -> `MultiScaleDetector`
 - `PyLsdDetector` -> `LsdDetector`
 - `PyConicFitter` -> `ConicFitter`
-- `PyRigidMatcher` -> `RigidMatcher`
 - `PySegmenter` -> `Segmenter`
 - `PyEdgel` -> `Edgel`
 - `PyLineSegment` -> `LineSegment`
 - `PyEllipse` -> `Ellipse`
-- `PyMatchResult` -> `MatchResult`
 - `PyComponentStats` -> `ComponentStats`
+
+The chamfer-based `RigidMatcher` / `MatchResult` / `RigidMatchConfig` /
+`match_rigid_model` API has been **removed**, not deprecated. Shape-based
+object detection replaces it:
+
+```python
+model = vm.ShapeModel(reference, (x, y, width, height))
+for m in vm.ShapeMatcher(vm.ShapeSearchConfig(min_score=0.6)).find(scene, model):
+    print(m.score, m.x, m.y, m.angle, m.scale)
+```
 
 ## Python version and wheels
 
@@ -53,7 +61,8 @@ edgels_fn = vm.detect_edges_u8(img, vm.EdgeConfig())
 - `MultiScaleConfig`
 - `LsdConfig`
 - `ConicFitConfig`
-- `RigidMatchConfig`
+- `ShapeModelConfig`
+- `ShapeSearchConfig`
 
 ## Free functions
 
@@ -61,7 +70,7 @@ edgels_fn = vm.detect_edges_u8(img, vm.EdgeConfig())
 - `detect_multiscale_edges_u8(img, config)`
 - `detect_line_segments_u8(img, config)`
 - `fit_ellipse(pts, config)`
-- `match_rigid_model(model_edgels, scene_img, edge_config, match_config)`
+- `find_shape_model(model_image, roi, scene_image, model_config=None, search_config=None)`
 - `otsu_threshold(img)`
 - `threshold_binary(img, threshold)`
 - `label_components(img, connectivity=8)`

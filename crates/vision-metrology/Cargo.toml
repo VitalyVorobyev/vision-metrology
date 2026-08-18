@@ -44,7 +44,7 @@ name = "segment"
 harness = false
 
 [[bench]]
-name = "match_"
+name = "match_shape"
 harness = false
 
 [[bench]]

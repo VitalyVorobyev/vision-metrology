@@ -1,143 +1,158 @@
-//! Python binding for `RigidEdgeMatcher`.
+//! Python bindings for shape-based object detection.
 
-use numpy::{PyReadonlyArray2, PyUntypedArrayMethods};
+use numpy::PyReadonlyArray2;
 use pyo3::prelude::*;
-use vision_metrology::{EdgeModel, RigidEdgeMatcher};
-use vm_primitives::edge::edge2d::{Edge2DDetector, Edgel as NativeEdgel};
-use vm_primitives::{Point2f, Rect2f, Vec2f};
+use pyo3::types::PyList;
+use vision_metrology::{
+    ShapeMatcher as NativeShapeMatcher, ShapeModel as NativeShapeModel, ShapeModelBuilder,
+};
+use vm_primitives::Rect2f;
 
-use crate::config_py::{EdgeConfig, RigidMatchConfig};
+use crate::config_py::{ShapeModelConfig, ShapeSearchConfig};
 use crate::convert::image_from_numpy_u8;
-use crate::types::MatchResult;
+use crate::types::ShapeMatch;
 
-fn parse_model_edgels(model_edgels: PyReadonlyArray2<'_, f32>) -> PyResult<Vec<NativeEdgel>> {
-    let shape = model_edgels.shape();
-    if shape.len() != 2 || shape[1] != 5 {
-        return Err(pyo3::exceptions::PyValueError::new_err(
-            "model_edgels must be a (N, 5) float32 array [x, y, nx, ny, strength]",
-        ));
+fn to_rect(roi: (f32, f32, f32, f32)) -> Rect2f {
+    Rect2f {
+        x: roi.0,
+        y: roi.1,
+        width: roi.2,
+        height: roi.3,
     }
-
-    let n = shape[0];
-    let slice = model_edgels.as_slice().map_err(|e| {
-        pyo3::exceptions::PyValueError::new_err(format!("array not C-contiguous: {e}"))
-    })?;
-
-    Ok((0..n)
-        .map(|i| NativeEdgel {
-            p: Point2f {
-                x: slice[i * 5],
-                y: slice[i * 5 + 1],
-            },
-            n: Vec2f {
-                x: slice[i * 5 + 2],
-                y: slice[i * 5 + 3],
-            },
-            strength: slice[i * 5 + 4],
-            idx: (slice[i * 5] as usize, slice[i * 5 + 1] as usize),
-        })
-        .collect())
 }
 
-/// Python-facing rigid edge matcher.
+/// A rotation- and scale-searchable model of an object's edge geometry.
+///
+/// Build it from a reference image and a rectangular ROI, then hand it to
+/// :class:`ShapeMatcher`.
 #[pyclass]
-pub struct RigidMatcher {
-    edge_det: Edge2DDetector,
-    matcher: RigidEdgeMatcher,
-    edge_cfg: EdgeConfig,
-    match_cfg: RigidMatchConfig,
+pub struct ShapeModel {
+    inner: NativeShapeModel,
 }
 
 #[pymethods]
-impl RigidMatcher {
-    /// Create a matcher with optional explicit configs.
+impl ShapeModel {
+    /// Build from a `(H, W)` uint8 array and an `(x, y, width, height)` ROI.
     #[new]
-    #[pyo3(signature = (edge_config=None, match_config=None))]
-    pub fn new(edge_config: Option<EdgeConfig>, match_config: Option<RigidMatchConfig>) -> Self {
-        Self {
-            edge_det: Edge2DDetector::new(),
-            matcher: RigidEdgeMatcher::new(),
-            edge_cfg: edge_config.unwrap_or_default(),
-            match_cfg: match_config.unwrap_or_default(),
-        }
+    #[pyo3(signature = (image, roi, config=None))]
+    pub fn new(
+        py: Python<'_>,
+        image: PyReadonlyArray2<'_, u8>,
+        roi: (f32, f32, f32, f32),
+        config: Option<ShapeModelConfig>,
+    ) -> PyResult<Self> {
+        let cfg = config.unwrap_or_default().to_native()?;
+        let img = image_from_numpy_u8(py, &image)?;
+        let inner = ShapeModelBuilder::new()
+            .build_u8(&img.as_view(), to_rect(roi), &cfg)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+        Ok(Self { inner })
     }
 
-    /// Match `model_edgels` against `scene_img`.
-    ///
-    /// - `model_edgels`: `(N, 5)` float32 array with columns `[x, y, nx, ny, strength]`.
-    /// - `scene_img`: `(H, W)` uint8 numpy array.
-    ///
-    /// Returns a `MatchResult` on success, or `None`.
-    pub fn match_model<'py>(
-        &mut self,
-        py: Python<'py>,
-        model_edgels: PyReadonlyArray2<'py, f32>,
-        scene_img: PyReadonlyArray2<'py, u8>,
-    ) -> PyResult<Option<Py<PyAny>>> {
-        let raw_model_edgels = parse_model_edgels(model_edgels)?;
-        let model = EdgeModel::from_edgels(raw_model_edgels, 5);
-
-        let image = image_from_numpy_u8(py, &scene_img)?;
-        let edge_cfg = self.edge_cfg.to_native()?;
-        let scene_edgels = self.edge_det.detect_u8(&image.as_view(), &edge_cfg);
-
-        let mut match_cfg = self.match_cfg.to_native()?;
-        match_cfg.position_search = Rect2f {
-            x: 0.0,
-            y: 0.0,
-            width: image.width() as f32,
-            height: image.height() as f32,
-        };
-
-        let result = self.matcher.match_model(&model, &scene_edgels, &match_cfg);
-        match result {
-            Some(r) => {
-                let (tx, ty) = r.translation();
-                let obj = Py::new(
-                    py,
-                    MatchResult {
-                        tx,
-                        ty,
-                        angle: r.angle(),
-                        scale: r.scale(),
-                        score: r.score,
-                        inlier_count: r.inlier_count,
-                    },
-                )?;
-                Ok(Some(obj.into()))
-            }
-            None => Ok(None),
-        }
+    /// Number of pyramid levels.
+    #[getter]
+    pub fn num_levels(&self) -> usize {
+        self.inner.num_levels()
     }
 
-    /// Return a copy of the edge-detector config.
-    pub fn edge_config(&self) -> EdgeConfig {
-        self.edge_cfg.clone()
+    /// Reference point in reference-image coordinates, as `(x, y)`.
+    #[getter]
+    pub fn origin(&self) -> (f32, f32) {
+        let o = self.inner.origin();
+        (o.x, o.y)
     }
 
-    /// Return a copy of the match config.
-    pub fn match_config(&self) -> RigidMatchConfig {
-        self.match_cfg.clone()
+    /// Points per pyramid level, finest first.
+    #[getter]
+    pub fn point_counts(&self) -> Vec<usize> {
+        self.inner.levels().iter().map(|l| l.points.len()).collect()
     }
 
-    /// Replace edge-detector config.
-    pub fn set_edge_config(&mut self, config: EdgeConfig) {
-        self.edge_cfg = config;
+    /// Level-0 model points in reference-image coordinates, as a list of `(x, y)`.
+    pub fn reference_points(&self) -> Vec<(f32, f32)> {
+        self.inner
+            .reference_points()
+            .into_iter()
+            .map(|p| (p.x, p.y))
+            .collect()
     }
 
-    /// Replace match config.
-    pub fn set_match_config(&mut self, config: RigidMatchConfig) {
-        self.match_cfg = config;
+    fn __repr__(&self) -> String {
+        format!(
+            "ShapeModel(levels={}, points={:?}, origin=({:.1}, {:.1}))",
+            self.num_levels(),
+            self.point_counts(),
+            self.inner.origin().x,
+            self.inner.origin().y
+        )
     }
 }
 
-pub(crate) fn match_rigid_model_impl<'py>(
+/// Reusable coarse-to-fine shape matcher.
+#[pyclass]
+pub struct ShapeMatcher {
+    matcher: NativeShapeMatcher,
+    cfg: ShapeSearchConfig,
+}
+
+#[pymethods]
+impl ShapeMatcher {
+    /// Create a matcher, optionally with an explicit search config.
+    #[new]
+    #[pyo3(signature = (config=None))]
+    pub fn new(config: Option<ShapeSearchConfig>) -> Self {
+        Self {
+            matcher: NativeShapeMatcher::new(),
+            cfg: config.unwrap_or_default(),
+        }
+    }
+
+    /// Locate `model` in a `(H, W)` uint8 image; returns a list of `ShapeMatch`.
+    pub fn find<'py>(
+        &mut self,
+        py: Python<'py>,
+        image: PyReadonlyArray2<'py, u8>,
+        model: &ShapeModel,
+    ) -> PyResult<Bound<'py, PyList>> {
+        let native = self.cfg.to_native()?;
+        let img = image_from_numpy_u8(py, &image)?;
+        let out = self.matcher.find_u8(&img.as_view(), &model.inner, &native);
+        PyList::new(py, out.into_iter().map(ShapeMatch::from))
+    }
+
+    /// Whether the last search discarded candidates at `max_candidates`.
+    ///
+    /// A truncated search can miss the true instance, which distinguishes
+    /// "not present" from "gave up".
+    #[getter]
+    pub fn truncated(&self) -> bool {
+        self.matcher.truncated()
+    }
+
+    /// Current search configuration.
+    #[getter]
+    pub fn config(&self) -> ShapeSearchConfig {
+        self.cfg.clone()
+    }
+
+    #[setter]
+    pub fn set_config(&mut self, config: ShapeSearchConfig) {
+        self.cfg = config;
+    }
+}
+
+/// One-shot convenience: build a model and search a scene in a single call.
+#[pyfunction]
+#[pyo3(signature = (model_image, roi, scene_image, model_config=None, search_config=None))]
+pub fn find_shape_model<'py>(
     py: Python<'py>,
-    model_edgels: PyReadonlyArray2<'py, f32>,
-    scene_img: PyReadonlyArray2<'py, u8>,
-    edge_config: EdgeConfig,
-    match_config: RigidMatchConfig,
-) -> PyResult<Option<Py<PyAny>>> {
-    let mut matcher = RigidMatcher::new(Some(edge_config), Some(match_config));
-    matcher.match_model(py, model_edgels, scene_img)
+    model_image: PyReadonlyArray2<'py, u8>,
+    roi: (f32, f32, f32, f32),
+    scene_image: PyReadonlyArray2<'py, u8>,
+    model_config: Option<ShapeModelConfig>,
+    search_config: Option<ShapeSearchConfig>,
+) -> PyResult<Bound<'py, PyList>> {
+    let model = ShapeModel::new(py, model_image, roi, model_config)?;
+    let mut matcher = ShapeMatcher::new(search_config);
+    matcher.find(py, scene_image, &model)
 }

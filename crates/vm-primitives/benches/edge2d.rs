@@ -1,6 +1,6 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
-use vm_primitives::{Edge2DConfig, Edge2DDetector, Image};
+use vm_primitives::{DirectionField, Edge2DConfig, Edge2DDetector, Image, SmoothKind};
 
 fn build_slanted_u8(width: usize, height: usize) -> Image<u8> {
     let theta = 20.0f32.to_radians();
@@ -33,5 +33,21 @@ fn bench_edge2d_u8(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, bench_edge2d_u8);
+/// The scene-side cost of shape matching: one dense direction field per
+/// pyramid level. Compare against `edge2d_detect_u8_1280x1024` — this should be
+/// materially cheaper, because it skips NMS, hysteresis and edgel building.
+fn bench_direction_field_u8(c: &mut Criterion) {
+    let img = build_slanted_u8(1280, 1024);
+    let view = img.as_view();
+    let mut field = DirectionField::new();
+
+    c.bench_function("direction_field_1280x1024", |b| {
+        b.iter(|| {
+            field.build_u8(black_box(&view), SmoothKind::Binomial3, 10.0);
+            black_box(field.width());
+        });
+    });
+}
+
+criterion_group!(benches, bench_edge2d_u8, bench_direction_field_u8);
 criterion_main!(benches);
