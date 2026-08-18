@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Persistent-context documentation: `docs/system-design.md` (architecture,
+  invariants, decision record), `docs/roadmap.md` (tracks and acceptance
+  criteria), `docs/backlog.md` (known debt). `AGENTS.md`/`CLAUDE.md` now point
+  to them, and the commit checklist requires keeping them current.
+
 - **Shape-based object detection** (`vision_metrology::matching`). `ShapeModel`
   plus `ShapeMatcher` locate a modelled contour under translation, rotation and
   uniform scale, using the mean dot product of gradient directions (Steger,
@@ -51,6 +56,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ±π. `morph::chamfer_distance_u8` is unaffected and remains public.
 
 ### Changed
+
+- Workspace MSRV raised from 1.89 to 1.91, ahead of the planned `corrmatch` and
+  `box-image-pyramid` dev-dependencies (both declare 1.91). nalgebra 0.35 needs
+  only 1.89; the crates were unpublished, so no compatibility promise changed.
 
 - **Breaking:** `LaserExtractor::extract_line_u8`, `extract_line_u16` and
   `extract_line_f32` return `Result<LaserLine, Error>`. They previously

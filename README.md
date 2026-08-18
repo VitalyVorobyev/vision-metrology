@@ -73,7 +73,7 @@ contour       topology graph — T/Y junctions, loops, polyline smoothing
 vision-metrology = "0.1"
 ```
 
-Requires Rust 1.89 or newer.
+Requires Rust 1.91 or newer.
 
 ```rust
 use vision_metrology::{Edge2DConfig, Edge2DDetector, Image};
@@ -96,6 +96,9 @@ cargo run -p vision-metrology --example laserline -- --help
 
 - [Shape-based object detection](docs/shape-matching.md) — building a shape
   model, choosing a polarity, tuning contrast, reading the score.
+
+Project direction and internals: [system design](docs/system-design.md),
+[roadmap](docs/roadmap.md), [backlog](docs/backlog.md).
 
 ## Python
 

@@ -2,6 +2,10 @@
 
 Please read and follow **@AGENTS.md** (repo-wide conventions and invariants).
 
+Persistent context lives in `docs/system-design.md` (architecture + decisions),
+`docs/roadmap.md` (current tracks), and `docs/backlog.md` (known debt) — read them at the
+start of a session and keep them updated when scope or decisions change.
+
 ## Quick repo map
 
 Three published crates, two layers:
