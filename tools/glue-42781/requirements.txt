@@ -1,0 +1,4 @@
+matplotlib>=3.8
+numpy>=1.26
+pillow>=10.0
+scipy>=1.11
