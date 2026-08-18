@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `match_point_scores` diagnostics API: the individual score term of every
+  level-0 model point at a recovered pose (mean reproduces the match score).
+- `pose_audit` example: per-frame **independent ZNCC** of recovered poses via
+  corrmatch (dev-dependency), three-panel diagnostic overlays (pose /
+  checkerboard registration / per-point contributions), rim-relative
+  repeatability via the RANSAC ellipse fitter, and an `xcheck` subcommand
+  running corrmatch's own rotation search against the shape matcher
+  (measured on canend: |Δpos| p95 0.74 px, |Δangle| p95 0.66°).
+  Conventions of the bridge are pinned by `tests/corrmatch_bridge.rs`.
+- Shared example overlay module; `shape_matching` and `pose_audit` render
+  through the same code.
 - Lazy tiled direction fields: below the top pyramid level the matcher builds
   gradient tiles only around surviving candidates, bit-identical to the full
   build (pinned by tests). Full-360° find on 1280×1024: 7.8 → 3.46 ms clean,

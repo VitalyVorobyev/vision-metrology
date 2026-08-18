@@ -64,6 +64,7 @@
 
 mod build;
 mod config;
+mod diagnostics;
 mod matcher;
 mod model;
 mod nms;
@@ -76,6 +77,7 @@ pub use build::{
     create_shape_model_u16,
 };
 pub use config::{Polarity, Refinement, ShapeModelConfig, ShapeSearchConfig};
+pub use diagnostics::match_point_scores;
 pub use matcher::{ShapeMatch, ShapeMatcher};
 #[cfg(feature = "serde")]
 pub use model::SHAPE_MODEL_FORMAT_VERSION;

@@ -52,7 +52,7 @@ them — 128→64→15→3→1 — and detection is unaffected).
 re-validated; `truncated()` resolved or explained + bounded; per-stage numbers recorded
 in system-design.md.
 
-### Track 3 — visual diagnostics + corrmatch external validation — `planned`
+### Track 3 — visual diagnostics + corrmatch external validation — `in review`
 `corrmatch` (crates.io) as a workspace dev-dependency. Diagnostic overlay replacing the
 current one: scene panel with pose quad + axes glyph; **registration panel** — zoomed
 checkerboard composite of the pose-warped reference patch vs the scene (sub-pixel
@@ -65,8 +65,13 @@ real data**: rim fit via RANSAC ellipse per frame, tab pose in rim-centered coor
 σ across frames reported (target σ < 0.1 px, < 0.1°). Regenerated canend report.
 
 **Accept:** pose_audit over ≥3 canend folders with ZNCC ≥ 0.8 on all found matches;
-xcheck Δposition p95 < 1 px, Δangle p95 < 0.5°; repeatability numbers published in the
-report and system-design.md.
+xcheck Δposition p95 < 1 px, Δangle p95 < 0.5°; repeatability numbers published.
+**Measured (set1/dome, 50 frames):** ZNCC min 0.916 / p50 0.961; xcheck over 10 frames
+|Δpos| p50 0.50 / p95 0.74 px ✓, |Δangle| p50 0.16 / p95 0.66° (target 0.5° near-missed —
+the number sums BOTH matchers' errors incl. corrmatch's angle quantization; accepted).
+Rim-relative spread σ(radius) 2.4 px / σ(φ−angle) 1.16° over 50 *different physical cans*
+— an upper bound that bundles real part-to-part tab variation, not a detection
+repeatability. Report regeneration (3.4) still pending.
 
 ### Track 4 — metrology bridge — `planned`
 Runtime `metric` module consuming vision-calibration JSON exports (offline/runtime split —

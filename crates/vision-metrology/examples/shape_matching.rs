@@ -31,6 +31,9 @@ use vision_metrology::{
     ShapeModelBuilder, ShapeModelConfig, ShapeSearchConfig,
 };
 
+#[path = "common/overlay.rs"]
+mod overlay;
+
 // ── CLI ───────────────────────────────────────────────────────────────────────
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
@@ -222,7 +225,7 @@ fn single(
         print_match(m, model.point_count(0));
     }
 
-    draw_overlay(&reference, &scene, roi, model, &matches)
+    overlay::overview(&reference, &scene, roi, model, &matches)
         .save(&args.out)
         .with_context(|| format!("writing {}", args.out.display()))?;
     println!("overlay -> {}", args.out.display());
@@ -303,7 +306,7 @@ fn batch(
         if let Some(od) = &args.out_dir {
             let name = path.file_stem().unwrap_or_default().to_string_lossy();
             let out = od.join(format!("{name}.png"));
-            draw_overlay(&reference, &scene, roi, model, &matches).save(&out)?;
+            overlay::overview(&reference, &scene, roi, model, &matches).save(&out)?;
         }
     }
 
@@ -375,123 +378,6 @@ fn median(v: &mut [f64]) -> f64 {
 }
 
 // ── overlay rendering ─────────────────────────────────────────────────────────
-
-const GREEN: [u8; 3] = [40, 230, 60];
-const YELLOW: [u8; 3] = [250, 210, 40];
-const RED: [u8; 3] = [240, 60, 60];
-const CYAN: [u8; 3] = [60, 200, 240];
-
-/// Side-by-side: reference with its ROI on the left, scene with the located
-/// model contour on the right.
-fn draw_overlay(
-    reference: &Image<u8>,
-    scene: &Image<u8>,
-    roi: Rect2f,
-    model: &ShapeModel,
-    matches: &[ShapeMatch],
-) -> image::RgbImage {
-    let (w, h) = (
-        reference.width().max(scene.width()),
-        reference.height().max(scene.height()),
-    );
-    let mut canvas = image::RgbImage::new((2 * w) as u32, h as u32);
-
-    blit(&mut canvas, reference, 0);
-    blit(&mut canvas, scene, w);
-
-    // Left: the ROI the model was cut from, and the model points themselves.
-    rect(&mut canvas, roi, 0, CYAN);
-    for p in model.reference_points() {
-        dot(&mut canvas, p.x, p.y, 0, GREEN);
-    }
-    cross(&mut canvas, model.origin().x, model.origin().y, 0, RED);
-
-    // Right: each located instance.
-    for m in matches {
-        for p in model.reference_points() {
-            let q = m.pose * nalgebra::Point2::new(p.x, p.y);
-            dot(&mut canvas, q.x, q.y, w, GREEN);
-        }
-        for (a, b) in rect_edges(roi) {
-            let pa = m.pose * nalgebra::Point2::new(a.x, a.y);
-            let pb = m.pose * nalgebra::Point2::new(b.x, b.y);
-            line(&mut canvas, pa.x, pa.y, pb.x, pb.y, w, YELLOW);
-        }
-        cross(&mut canvas, m.position.x, m.position.y, w, RED);
-    }
-    canvas
-}
-
-fn blit(canvas: &mut image::RgbImage, src: &Image<u8>, x_off: usize) {
-    for y in 0..src.height() {
-        let row = src.as_view().row(y);
-        for (x, &v) in row.iter().enumerate() {
-            canvas.put_pixel((x + x_off) as u32, y as u32, image::Rgb([v, v, v]));
-        }
-    }
-}
-
-fn put(canvas: &mut image::RgbImage, x: f32, y: f32, x_off: usize, c: [u8; 3]) {
-    let (xi, yi) = (x.round(), y.round());
-    if xi < 0.0 || yi < 0.0 {
-        return;
-    }
-    let (xi, yi) = (xi as u32 + x_off as u32, yi as u32);
-    if xi < canvas.width() && yi < canvas.height() {
-        canvas.put_pixel(xi, yi, image::Rgb(c));
-    }
-}
-
-/// A 2x2 block, so a single model point stays visible when the overlay is
-/// viewed scaled down.
-fn dot(canvas: &mut image::RgbImage, x: f32, y: f32, x_off: usize, c: [u8; 3]) {
-    for dy in 0..2 {
-        for dx in 0..2 {
-            put(canvas, x + dx as f32, y + dy as f32, x_off, c);
-        }
-    }
-}
-
-fn cross(canvas: &mut image::RgbImage, x: f32, y: f32, x_off: usize, c: [u8; 3]) {
-    for d in -7..=7 {
-        put(canvas, x + d as f32, y, x_off, c);
-        put(canvas, x, y + d as f32, x_off, c);
-    }
-}
-
-fn line(
-    canvas: &mut image::RgbImage,
-    x0: f32,
-    y0: f32,
-    x1: f32,
-    y1: f32,
-    x_off: usize,
-    c: [u8; 3],
-) {
-    let n = ((x1 - x0).abs().max((y1 - y0).abs()) * 2.0).ceil().max(1.0) as usize;
-    for i in 0..=n {
-        let t = i as f32 / n as f32;
-        put(canvas, x0 + t * (x1 - x0), y0 + t * (y1 - y0), x_off, c);
-    }
-}
-
-fn rect_edges(r: Rect2f) -> [(Point2f, Point2f); 4] {
-    let (x0, y0) = (r.x, r.y);
-    let (x1, y1) = (r.x + r.width, r.y + r.height);
-    let p = |x, y| Point2f { x, y };
-    [
-        (p(x0, y0), p(x1, y0)),
-        (p(x1, y0), p(x1, y1)),
-        (p(x1, y1), p(x0, y1)),
-        (p(x0, y1), p(x0, y0)),
-    ]
-}
-
-fn rect(canvas: &mut image::RgbImage, r: Rect2f, x_off: usize, c: [u8; 3]) {
-    for (a, b) in rect_edges(r) {
-        line(canvas, a.x, a.y, b.x, b.y, x_off, c);
-    }
-}
 
 // ── synthetic demo ────────────────────────────────────────────────────────────
 
