@@ -45,13 +45,16 @@ oversight.
 
 ### MSRV
 
-The workspace declares `rust-version = "1.89"` in the root `Cargo.toml`. It is
-currently set by nalgebra 0.35, not by anything in this repository. `cargo
-clippy` enforces it through `incompatible_msrv`, so a `std` item stabilised
-later than 1.89 fails the lint rather than surfacing as a user's build error.
+The workspace declares `rust-version = "1.91"` in the root `Cargo.toml`. The
+floor was raised from 1.89 ahead of the planned `corrmatch` and
+`box-image-pyramid` dev-dependencies (both declare `rust-version = "1.91"`);
+nalgebra 0.35 itself needs only 1.89, so 1.91 is a deliberate bump, not an
+accident of the dependency tree. `cargo clippy` enforces it
+through `incompatible_msrv`, so a `std` item stabilised later than 1.91 fails
+the lint rather than surfacing as a user's build error.
 
 `rust-toolchain.toml` pins day-to-day work to stable; the MSRV job overrides it
-with `cargo +1.89.0`, which takes precedence over the file.
+with `cargo +1.91.0`, which takes precedence over the file.
 
 ### Python bindings
 

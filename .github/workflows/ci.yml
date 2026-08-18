@@ -50,7 +50,7 @@ jobs:
     env:
       # Keep in step with `rust-version` in the root Cargo.toml. Currently set
       # by nalgebra 0.35 rather than by anything in this workspace.
-      MSRV: 1.89.0
+      MSRV: 1.91.0
     steps:
       - name: Checkout
         uses: actions/checkout@v4
