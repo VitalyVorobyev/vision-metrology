@@ -1,0 +1,33 @@
+# cargo-deny configuration. Run with `cargo deny check`.
+
+[advisories]
+# `cargo audit` already gates advisories in .github/workflows/audit.yml; this
+# section keeps `cargo deny check` consistent with it. No ignores: the tree is
+# currently clean.
+ignore = []
+
+[licenses]
+# Permissive licences only. The workspace itself is MIT OR Apache-2.0.
+# Exactly the licences currently present in the graph, nothing speculative --
+# so a dependency introducing a new one shows up as a deliberate review rather
+# than sliding in under a pre-approved umbrella.
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "Unicode-3.0",
+  "Zlib",
+]
+confidence-threshold = 0.9
+
+[bans]
+multiple-versions = "warn"
+# Path dependencies inside the workspace carry an explicit `version`, so this
+# stays meaningful rather than needing a path exemption.
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

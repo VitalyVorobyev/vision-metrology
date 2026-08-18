@@ -26,3 +26,11 @@ jobs:
 
       - name: Run cargo audit
         run: cargo audit
+
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
+
+      # Licences, duplicate versions, and source registries -- the checks
+      # `cargo audit` does not cover. Configured in deny.toml.
+      - name: Run cargo deny
+        run: cargo deny check
