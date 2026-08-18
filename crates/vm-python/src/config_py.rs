@@ -3,10 +3,13 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use vision_metrology::MultiScaleConfig as NativeMultiScaleConfig;
-use vision_metrology::RigidMatchConfig as NativeRigidMatchConfig;
+use vision_metrology::Polarity as NativePolarity;
+use vision_metrology::Refinement as NativeRefinement;
+use vision_metrology::ShapeModelConfig as NativeShapeModelConfig;
+use vision_metrology::ShapeSearchConfig as NativeShapeSearchConfig;
 use vision_metrology::{ConicFitConfig as NativeConicFitConfig, LsdConfig as NativeLsdConfig};
+use vm_primitives::BorderMode;
 use vm_primitives::edge::edge2d::{Edge2DConfig, SmoothKind, Subpix2D};
-use vm_primitives::{BorderMode, Rect2f};
 
 #[pyclass(get_all, set_all, from_py_object)]
 #[derive(Debug, Clone)]
@@ -349,171 +352,237 @@ impl ConicFitConfig {
     }
 }
 
+/// Python-visible [`ShapeModelConfig`].
 #[pyclass(get_all, set_all, from_py_object)]
 #[derive(Debug, Clone)]
-pub struct RigidMatchConfig {
+pub struct ShapeModelConfig {
+    pub num_levels: usize,
+    pub min_contrast: f32,
+    pub max_points: usize,
     pub angle_min: f32,
     pub angle_max: f32,
-    pub angle_step: f32,
     pub scale_min: f32,
     pub scale_max: f32,
-    pub scale_step: f32,
-    pub position_x: f32,
-    pub position_y: f32,
-    pub position_width: f32,
-    pub position_height: f32,
-    pub chamfer_threshold: f32,
-    pub min_score: f32,
-    pub refine_icp: bool,
-    pub top_k: usize,
-    pub resolution_factor: f32,
+    /// "match", "ignore_global" or "ignore_local".
+    pub polarity: String,
+    pub min_points_per_level: usize,
+}
+
+impl Default for ShapeModelConfig {
+    fn default() -> Self {
+        let n = NativeShapeModelConfig::default();
+        Self {
+            num_levels: n.num_levels,
+            min_contrast: n.min_contrast,
+            max_points: n.max_points,
+            angle_min: n.angle_range.0,
+            angle_max: n.angle_range.1,
+            scale_min: n.scale_range.0,
+            scale_max: n.scale_range.1,
+            polarity: "match".to_string(),
+            min_points_per_level: n.min_points_per_level,
+        }
+    }
 }
 
 #[pymethods]
-impl RigidMatchConfig {
+impl ShapeModelConfig {
     #[new]
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (
+        num_levels=None,
+        min_contrast=None,
+        max_points=None,
         angle_min=None,
         angle_max=None,
-        angle_step=None,
         scale_min=None,
         scale_max=None,
-        scale_step=None,
-        position_x=None,
-        position_y=None,
-        position_width=None,
-        position_height=None,
-        chamfer_threshold=None,
-        min_score=None,
-        refine_icp=None,
-        top_k=None,
-        resolution_factor=None
+        polarity=None,
+        min_points_per_level=None
     ))]
     pub fn new(
+        num_levels: Option<usize>,
+        min_contrast: Option<f32>,
+        max_points: Option<usize>,
         angle_min: Option<f32>,
         angle_max: Option<f32>,
-        angle_step: Option<f32>,
         scale_min: Option<f32>,
         scale_max: Option<f32>,
-        scale_step: Option<f32>,
-        position_x: Option<f32>,
-        position_y: Option<f32>,
-        position_width: Option<f32>,
-        position_height: Option<f32>,
-        chamfer_threshold: Option<f32>,
-        min_score: Option<f32>,
-        refine_icp: Option<bool>,
-        top_k: Option<usize>,
-        resolution_factor: Option<f32>,
+        polarity: Option<String>,
+        min_points_per_level: Option<usize>,
     ) -> Self {
-        let default = Self::default();
+        let d = Self::default();
         Self {
-            angle_min: angle_min.unwrap_or(default.angle_min),
-            angle_max: angle_max.unwrap_or(default.angle_max),
-            angle_step: angle_step.unwrap_or(default.angle_step),
-            scale_min: scale_min.unwrap_or(default.scale_min),
-            scale_max: scale_max.unwrap_or(default.scale_max),
-            scale_step: scale_step.unwrap_or(default.scale_step),
-            position_x: position_x.unwrap_or(default.position_x),
-            position_y: position_y.unwrap_or(default.position_y),
-            position_width: position_width.unwrap_or(default.position_width),
-            position_height: position_height.unwrap_or(default.position_height),
-            chamfer_threshold: chamfer_threshold.unwrap_or(default.chamfer_threshold),
-            min_score: min_score.unwrap_or(default.min_score),
-            refine_icp: refine_icp.unwrap_or(default.refine_icp),
-            top_k: top_k.unwrap_or(default.top_k),
-            resolution_factor: resolution_factor.unwrap_or(default.resolution_factor),
+            num_levels: num_levels.unwrap_or(d.num_levels),
+            min_contrast: min_contrast.unwrap_or(d.min_contrast),
+            max_points: max_points.unwrap_or(d.max_points),
+            angle_min: angle_min.unwrap_or(d.angle_min),
+            angle_max: angle_max.unwrap_or(d.angle_max),
+            scale_min: scale_min.unwrap_or(d.scale_min),
+            scale_max: scale_max.unwrap_or(d.scale_max),
+            polarity: polarity.unwrap_or(d.polarity),
+            min_points_per_level: min_points_per_level.unwrap_or(d.min_points_per_level),
         }
     }
 
     fn __repr__(&self) -> String {
         format!(
-            "RigidMatchConfig(angle=({:.3},{:.3}), angle_step={:.3}, scale=({:.3},{:.3}), scale_step={:.3}, pos=({:.1},{:.1},{:.1},{:.1}), chamfer_threshold={:.3}, min_score={:.3}, refine_icp={}, top_k={}, resolution_factor={:.3})",
+            "ShapeModelConfig(num_levels={}, max_points={}, angle=({:.3},{:.3}), scale=({:.3},{:.3}), polarity='{}')",
+            self.num_levels,
+            self.max_points,
             self.angle_min,
             self.angle_max,
-            self.angle_step,
             self.scale_min,
             self.scale_max,
-            self.scale_step,
-            self.position_x,
-            self.position_y,
-            self.position_width,
-            self.position_height,
-            self.chamfer_threshold,
-            self.min_score,
-            self.refine_icp,
-            self.top_k,
-            self.resolution_factor
+            self.polarity
         )
     }
 }
 
-impl Default for RigidMatchConfig {
+fn parse_polarity(s: &str) -> PyResult<NativePolarity> {
+    match s {
+        "match" => Ok(NativePolarity::Match),
+        "ignore_global" => Ok(NativePolarity::IgnoreGlobal),
+        "ignore_local" => Ok(NativePolarity::IgnoreLocal),
+        other => Err(PyValueError::new_err(format!(
+            "polarity must be 'match', 'ignore_global' or 'ignore_local', got '{other}'"
+        ))),
+    }
+}
+
+impl ShapeModelConfig {
+    pub fn to_native(&self) -> PyResult<NativeShapeModelConfig> {
+        if self.scale_min <= 0.0 || self.scale_max < self.scale_min {
+            return Err(PyValueError::new_err(
+                "scale_min must be > 0 and scale_max >= scale_min",
+            ));
+        }
+        if self.angle_max < self.angle_min {
+            return Err(PyValueError::new_err("angle_max must be >= angle_min"));
+        }
+        Ok(NativeShapeModelConfig {
+            num_levels: self.num_levels,
+            min_contrast: self.min_contrast,
+            max_points: self.max_points,
+            angle_range: (self.angle_min, self.angle_max),
+            scale_range: (self.scale_min, self.scale_max),
+            polarity: parse_polarity(&self.polarity)?,
+            min_points_per_level: self.min_points_per_level,
+            ..NativeShapeModelConfig::default()
+        })
+    }
+}
+
+/// Python-visible [`ShapeSearchConfig`].
+#[pyclass(get_all, set_all, from_py_object)]
+#[derive(Debug, Clone)]
+pub struct ShapeSearchConfig {
+    pub min_score: f32,
+    pub greediness: f32,
+    pub max_matches: usize,
+    pub max_overlap: f32,
+    pub min_contrast: f32,
+    /// "none", "interpolate" or "least_squares".
+    pub refinement: String,
+    pub last_level: usize,
+    pub max_candidates: usize,
+    pub coarse_score_factor: f32,
+}
+
+impl Default for ShapeSearchConfig {
     fn default() -> Self {
-        let native = NativeRigidMatchConfig::default();
+        let n = NativeShapeSearchConfig::default();
         Self {
-            angle_min: native.angle_range.0,
-            angle_max: native.angle_range.1,
-            angle_step: native.angle_step,
-            scale_min: native.scale_range.0,
-            scale_max: native.scale_range.1,
-            scale_step: native.scale_step,
-            position_x: native.position_search.x,
-            position_y: native.position_search.y,
-            position_width: native.position_search.width,
-            position_height: native.position_search.height,
-            chamfer_threshold: native.chamfer_threshold,
-            min_score: native.min_score,
-            refine_icp: native.refine_icp,
-            top_k: native.top_k,
-            resolution_factor: native.resolution_factor,
+            min_score: n.min_score,
+            greediness: n.greediness,
+            max_matches: n.max_matches,
+            max_overlap: n.max_overlap,
+            min_contrast: n.min_contrast,
+            refinement: "interpolate".to_string(),
+            last_level: n.last_level,
+            max_candidates: n.max_candidates,
+            coarse_score_factor: n.coarse_score_factor,
         }
     }
 }
 
-impl RigidMatchConfig {
-    pub fn to_native(&self) -> PyResult<NativeRigidMatchConfig> {
-        if self.angle_step <= 0.0 {
-            return Err(PyValueError::new_err("angle_step must be > 0"));
+#[pymethods]
+impl ShapeSearchConfig {
+    #[new]
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        min_score=None,
+        greediness=None,
+        max_matches=None,
+        max_overlap=None,
+        min_contrast=None,
+        refinement=None,
+        last_level=None,
+        max_candidates=None,
+        coarse_score_factor=None
+    ))]
+    pub fn new(
+        min_score: Option<f32>,
+        greediness: Option<f32>,
+        max_matches: Option<usize>,
+        max_overlap: Option<f32>,
+        min_contrast: Option<f32>,
+        refinement: Option<String>,
+        last_level: Option<usize>,
+        max_candidates: Option<usize>,
+        coarse_score_factor: Option<f32>,
+    ) -> Self {
+        let d = Self::default();
+        Self {
+            min_score: min_score.unwrap_or(d.min_score),
+            greediness: greediness.unwrap_or(d.greediness),
+            max_matches: max_matches.unwrap_or(d.max_matches),
+            max_overlap: max_overlap.unwrap_or(d.max_overlap),
+            min_contrast: min_contrast.unwrap_or(d.min_contrast),
+            refinement: refinement.unwrap_or(d.refinement),
+            last_level: last_level.unwrap_or(d.last_level),
+            max_candidates: max_candidates.unwrap_or(d.max_candidates),
+            coarse_score_factor: coarse_score_factor.unwrap_or(d.coarse_score_factor),
         }
-        if self.scale_min <= 0.0 || self.scale_max <= 0.0 {
-            return Err(PyValueError::new_err("scale_min and scale_max must be > 0"));
-        }
-        if self.scale_step < 0.0 {
-            return Err(PyValueError::new_err("scale_step must be >= 0"));
-        }
-        if self.position_width <= 0.0 || self.position_height <= 0.0 {
-            return Err(PyValueError::new_err(
-                "position_width and position_height must be > 0",
-            ));
-        }
-        if self.chamfer_threshold <= 0.0 {
-            return Err(PyValueError::new_err("chamfer_threshold must be > 0"));
-        }
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "ShapeSearchConfig(min_score={:.3}, greediness={:.2}, max_matches={}, refinement='{}')",
+            self.min_score, self.greediness, self.max_matches, self.refinement
+        )
+    }
+}
+
+impl ShapeSearchConfig {
+    pub fn to_native(&self) -> PyResult<NativeShapeSearchConfig> {
         if !(0.0..=1.0).contains(&self.min_score) {
             return Err(PyValueError::new_err("min_score must be in [0, 1]"));
         }
-        if self.top_k == 0 {
-            return Err(PyValueError::new_err("top_k must be >= 1"));
+        if !(0.0..=1.0).contains(&self.greediness) {
+            return Err(PyValueError::new_err("greediness must be in [0, 1]"));
         }
-
-        Ok(NativeRigidMatchConfig {
-            angle_range: (self.angle_min, self.angle_max),
-            angle_step: self.angle_step,
-            scale_range: (self.scale_min, self.scale_max),
-            scale_step: self.scale_step,
-            position_search: Rect2f {
-                x: self.position_x,
-                y: self.position_y,
-                width: self.position_width,
-                height: self.position_height,
-            },
-            chamfer_threshold: self.chamfer_threshold,
+        let refinement = match self.refinement.as_str() {
+            "none" => NativeRefinement::None,
+            "interpolate" => NativeRefinement::Interpolate,
+            "least_squares" => NativeRefinement::LeastSquares,
+            other => {
+                return Err(PyValueError::new_err(format!(
+                    "refinement must be 'none', 'interpolate' or 'least_squares', got '{other}'"
+                )));
+            }
+        };
+        Ok(NativeShapeSearchConfig {
             min_score: self.min_score,
-            refine_icp: self.refine_icp,
-            top_k: self.top_k,
-            resolution_factor: self.resolution_factor,
+            greediness: self.greediness,
+            max_matches: self.max_matches,
+            max_overlap: self.max_overlap,
+            min_contrast: self.min_contrast,
+            refinement,
+            last_level: self.last_level,
+            max_candidates: self.max_candidates,
+            coarse_score_factor: self.coarse_score_factor,
+            ..NativeShapeSearchConfig::default()
         })
     }
 }

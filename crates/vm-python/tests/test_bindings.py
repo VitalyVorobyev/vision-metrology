@@ -24,6 +24,12 @@ def test_hard_break_namespace():
     assert hasattr(vm, "detect_edges_u8")
     assert not hasattr(vm, "PyEdgeDetector")
     assert not hasattr(vm, "PyEdgel")
+    assert hasattr(vm, "ShapeModel")
+    assert hasattr(vm, "ShapeMatcher")
+    assert hasattr(vm, "find_shape_model")
+    # The chamfer matcher is gone, not deprecated.
+    assert not hasattr(vm, "RigidMatcher")
+    assert not hasattr(vm, "match_rigid_model")
 
 
 def test_edge_detector_object_and_function_parity():
@@ -109,18 +115,126 @@ def test_segmentation_free_functions():
             assert hasattr(s, attr)
 
 
+def make_bracket(w: int = 200, h: int = 160, cx: float = 100.0, cy: float = 80.0,
+                 angle: float = 0.0) -> np.ndarray:
+    """Anti-aliased L-bracket, rendered from its signed distance function."""
+    import math
+
+    ys, xs = np.mgrid[0:h, 0:w]
+    dx, dy = xs - cx, ys - cy
+    cs, sn = math.cos(angle), math.sin(angle)
+    mx, my = cs * dx + sn * dy, -sn * dx + cs * dy
+
+    def sdf_box(px, py, hx, hy):
+        ax, ay = np.abs(px) - hx, np.abs(py) - hy
+        outside = np.sqrt(np.maximum(ax, 0) ** 2 + np.maximum(ay, 0) ** 2)
+        return outside + np.minimum(np.maximum(ax, ay), 0)
+
+    sdf = np.minimum(sdf_box(mx, my + 22, 30, 8), sdf_box(mx + 22, my, 8, 30))
+    t = np.clip((1.0 - sdf) / 2.0, 0.0, 1.0)
+    t = t * t * (3.0 - 2.0 * t)
+    return (40 + 170 * t).astype(np.uint8)
+
+
+BRACKET_ROI = (58.0, 38.0, 84.0, 84.0)
+
+
+def test_shape_model_reports_its_structure():
+    model = vm.ShapeModel(make_bracket(), BRACKET_ROI)
+    assert model.num_levels >= 2
+    assert len(model.point_counts) == model.num_levels
+    assert model.point_counts[0] > 20
+    ox, oy = model.origin
+    # The reference point is the level-0 centroid, so it sits inside the ROI.
+    assert BRACKET_ROI[0] <= ox <= BRACKET_ROI[0] + BRACKET_ROI[2]
+    assert BRACKET_ROI[1] <= oy <= BRACKET_ROI[1] + BRACKET_ROI[3]
+    pts = model.reference_points()
+    assert len(pts) == model.point_counts[0]
+    assert all(len(p) == 2 for p in pts)
+
+
+def test_shape_matcher_recovers_a_rotated_instance():
+    import math
+
+    reference = make_bracket()
+    model = vm.ShapeModel(reference, BRACKET_ROI, vm.ShapeModelConfig(max_points=400))
+
+    truth = math.radians(35.0)
+    scene = make_bracket(cx=115.0, cy=70.0, angle=truth)
+    matcher = vm.ShapeMatcher(
+        vm.ShapeSearchConfig(min_score=0.6, refinement="least_squares")
+    )
+    matches = matcher.find(scene, model)
+
+    assert len(matches) == 1
+    m = matches[0]
+    assert m.score > 0.9
+    assert abs(math.degrees(m.angle) - 35.0) < 1.5
+    assert abs(m.scale - 1.0) < 0.02
+    assert m.support > 0
+    assert isinstance(matcher.truncated, bool)
+
+    # `matrix` bakes in the model origin, so a reference point maps straight in.
+    mat = np.array(m.matrix(model.origin))
+    mapped = mat @ np.array([100.0, 80.0, 1.0])
+    assert abs(mapped[0] - 115.0) < 2.0
+    assert abs(mapped[1] - 70.0) < 2.0
+
+
+def test_find_shape_model_free_function_matches_the_object_api():
+    import math
+
+    reference = make_bracket()
+    scene = make_bracket(cx=115.0, cy=70.0, angle=math.radians(35.0))
+    search = vm.ShapeSearchConfig(min_score=0.6)
+
+    out = vm.find_shape_model(reference, BRACKET_ROI, scene, None, search)
+    assert len(out) == 1
+
+    model = vm.ShapeModel(reference, BRACKET_ROI)
+    obj = vm.ShapeMatcher(search).find(scene, model)
+    assert len(obj) == 1
+    assert abs(out[0].x - obj[0].x) < 1e-3
+    assert abs(out[0].angle - obj[0].angle) < 1e-4
+
+
+def test_polarity_match_rejects_inverted_contrast():
+    reference = make_bracket()
+    inverted = 250 - make_bracket()
+
+    strict = vm.ShapeModel(reference, BRACKET_ROI)
+    lenient = vm.ShapeModel(
+        reference, BRACKET_ROI, vm.ShapeModelConfig(polarity="ignore_global")
+    )
+    matcher = vm.ShapeMatcher(vm.ShapeSearchConfig(min_score=0.6))
+
+    assert matcher.find(inverted, strict) == []
+    found = matcher.find(inverted, lenient)
+    assert len(found) == 1 and found[0].score > 0.85
+
+
 def test_config_validation_errors():
     img = make_step_image()
 
     with pytest.raises(ValueError):
         vm.detect_edges_u8(img, vm.EdgeConfig(smooth_kind="bad"))
 
+    # A zero-extent ROI is invalid config, not an empty result.
     with pytest.raises(ValueError):
-        vm.match_rigid_model(
-            np.array([[0, 0, 1, 0, 1]], dtype=np.float32),
-            img,
-            vm.EdgeConfig(),
-            vm.RigidMatchConfig(min_score=1.5),
+        vm.ShapeModel(img, (0.0, 0.0, 0.0, 10.0))
+
+    # ...and so is an ROI outside the image.
+    with pytest.raises(ValueError):
+        vm.ShapeModel(img, (1000.0, 1000.0, 20.0, 20.0))
+
+    model = vm.ShapeModel(make_bracket(), BRACKET_ROI)
+    with pytest.raises(ValueError):
+        vm.ShapeMatcher(vm.ShapeSearchConfig(min_score=1.5)).find(img, model)
+    with pytest.raises(ValueError):
+        vm.ShapeMatcher(vm.ShapeSearchConfig(refinement="magic")).find(img, model)
+    with pytest.raises(ValueError):
+        vm.ShapeModel(
+            make_bracket(), BRACKET_ROI, vm.ShapeModelConfig(polarity="sideways")
         )
 
 

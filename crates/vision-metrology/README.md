@@ -2,7 +2,7 @@
 
 High-level algorithms for industrial machine-vision metrology: contour topology,
 laser stripe extraction, multi-scale edges, shape fitting, segmentation, and
-edge-model matching. Pure Rust — no OpenCV, no FFI.
+shape-based object detection. Pure Rust — no OpenCV, no FFI.
 
 This crate re-exports [`vm-primitives`](../vm-primitives) in full, so it is the only
 dependency you need.
@@ -18,7 +18,7 @@ vision-metrology = "0.1"
 |---|---|
 | `contour` | `ContourGraph` — junction-aware topology (T/Y junctions, loops) built from edgels, with per-edge tangent, curvature, arc-length parameterization, and Gaussian polyline smoothing |
 | `laser` | `LaserExtractor` — laser stripe centerlines from opposite-polarity 1-D edge pairs, scanning rows or columns, with ROI and prior tracking |
-| `matching` | `EdgeModel` + `RigidEdgeMatcher` — chamfer-distance coarse search over a rigid/similarity grid, IoU non-maximum suppression, ICP refinement |
+| `matching` | `ShapeModel` + `ShapeMatcher` — gradient-orientation similarity, coarse-to-fine search over translation / rotation / uniform scale, occlusion-proportional scoring, subpixel pose refinement |
 | `multiscale` | `MultiScaleEdgeDetector` — 2-D edge detection at every pyramid level, merged back to level-0 coordinates |
 | `segment` | Otsu and adaptive thresholding, connected-component labeling with per-component stats, watershed, edgel region growing |
 | `shape` | `LsdDetector` (line-segment detection with NFA validation), `ConicFitter` (Bookstein / Fitzgibbon), RANSAC ellipse fitting |
@@ -74,7 +74,7 @@ Runnable end-to-end programs in [`examples/`](examples):
 | `line_segments` | LSD line-segment detection |
 | `measure_circles` | End-to-end circle metrology with ellipse fitting |
 | `segmentation` | Thresholding, labeling, component statistics |
-| `edge_matching` | Building an edge model and locating it in a scene |
+| `shape_matching` | Building a shape model and locating it, rotated, in a scene |
 | `laserline` | Laser stripe extraction from a multi-snap image (takes `--input`) |
 
 ```bash

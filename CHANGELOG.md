@@ -9,12 +9,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Shape-based object detection** (`vision_metrology::matching`). `ShapeModel`
+  plus `ShapeMatcher` locate a modelled contour under translation, rotation and
+  uniform scale, using the mean dot product of gradient directions (Steger,
+  DAGM 2001). Invariant to any monotonic illumination change; the score reads as
+  `1 - occluded_fraction` because low-contrast points contribute zero while the
+  sum is still divided by the full point count.
+  - `Polarity::{Match, IgnoreGlobal, IgnoreLocal}` controls which contrast
+    reversals still count as the object.
+  - `Refinement::{None, Interpolate, LeastSquares}`; the least-squares mode is
+    correspondence-free and degrades to fewer degrees of freedom on symmetric
+    parts rather than solving a singular system.
+  - Models can also be built from edgels, from directed points, or from contour
+    polylines (`ShapeModel::from_edgels` / `from_directed_points` /
+    `from_polylines`).
+- `vm_primitives::DirectionField`: a dense unit gradient direction field with a
+  magnitude gate, in the layout an orientation-based scoring loop wants.
+- `vm_primitives` transform helpers: `transform_point`, `transform_vec`,
+  `transform_point_iso`, `similarity_from_parts`, `similarity_parts`,
+  `Vec2f::perp`, `Vec2f::cross`, and `parabolic_peak_offset`.
+- Python bindings for the new API: `ShapeModel`, `ShapeMatcher`, `ShapeMatch`,
+  `ShapeModelConfig`, `ShapeSearchConfig`, and `find_shape_model`.
+- `examples/shape_matching.rs` (synthetic self-asserting mode plus a real-data
+  mode that writes overlay PNGs) and `benches/match_shape.rs`.
+
 - `ContourBuildConfig::thin` (default `true`), which skeletonises the edgel
   occupancy mask before tracing.
 - CI jobs for documentation warnings, the declared MSRV, the self-asserting
   examples, and the Python extension module.
 - `deny.toml` and `.github/dependabot.yml`.
 - `LICENSE-MIT` and `LICENSE-APACHE`, and a `CONTRIBUTING.md`.
+
+### Removed
+
+- **Breaking:** the chamfer-distance matcher — `EdgeModel`, `RigidEdgeMatcher`,
+  `RigidMatchConfig`, `MatchConfig`, `MatchResult`, `RigidMatchResult`,
+  `chamfer_score`, `normal_score`, `build_scene_chamfer`, `transform_points`
+  and `icp_refine`, together with the `RigidMatcher` / `match_rigid_model`
+  Python bindings. Its coarse metric ignored gradient orientation entirely, it
+  had no pyramid and no early termination, and its angle range could not cross
+  ±π. `morph::chamfer_distance_u8` is unaffected and remains public.
 
 ### Changed
 

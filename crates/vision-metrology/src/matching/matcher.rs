@@ -1,755 +1,581 @@
-//! Top-level edge matcher combining coarse grid search and ICP refinement.
-//!
-//! Supports both rigid (R|t) and similarity (sR|t) transforms depending on
-//! [`MatchConfig`] settings. When `scale_range == (1.0, 1.0)` the outer
-//! scale loop executes a single iteration and the runtime is identical to
-//! the original rigid-only implementation.
+//! Coarse-to-fine shape search.
 
-use nalgebra::{Isometry2, Similarity2, Vector2};
-use vm_primitives::edge::edge2d::Edgel;
-use vm_primitives::{Image, Point2f, Rect2f, Similarity2f};
-
-use super::{
-    icp::icp_refine,
-    model::EdgeModel,
-    rigid::MatchConfig,
-    score::{build_scene_chamfer, chamfer_score, normal_score},
+use vm_primitives::{
+    DirectionField, ImageView, Point2f, PyramidF32, Similarity2f, Vec2f, similarity_from_parts,
+    wrap_angle,
 };
 
-// ---------------------------------------------------------------------------
-// Result type
-// ---------------------------------------------------------------------------
+use super::config::{Polarity, Refinement, ShapeSearchConfig};
+use super::model::{ModelPoint, ShapeModel};
+use super::nms::{InstanceMask, suppress};
+use super::refine::{Pose, interpolate, least_squares};
+use super::score::{Bound, RotPoint, rotate_into, score_at, score_pose, score_span};
+use super::search::{Candidate, Grid, Span, cap_candidates, collect_local_maxima};
 
-/// Result of a successful edge match (rigid or similarity).
-#[derive(Debug, Clone)]
-pub struct MatchResult {
-    /// Transform (rotation + uniform scale + translation) that maps
-    /// model-local coordinates to scene coordinates.
+/// One located instance of a [`ShapeModel`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct ShapeMatch {
+    /// Maps reference-image coordinates to scene coordinates.
     ///
-    /// For rigid matches the scale component is 1.0.
-    pub transform: Similarity2f,
-    /// Inlier fraction after ICP refinement: proportion of model edgels within
-    /// `chamfer_threshold` of a scene edgel.
+    /// The model origin is baked in, so a point measured in the reference image
+    /// — a fiducial, a measurement ROI corner — maps into the scene with
+    /// `pose * p` and no offset bookkeeping:
+    /// `Translation(position) ∘ sR ∘ Translation(−model.origin())`.
+    pub pose: Similarity2f,
+    /// Where the model's reference point landed, in level-0 image coordinates.
+    pub position: Point2f,
+    /// Similarity score in `[0, 1]`; roughly `1 − occluded_fraction`.
     pub score: f32,
-    /// Number of inlier edgels.
-    pub inlier_count: usize,
-    /// Mean chamfer distance of inlier edgels (pixels).
-    pub chamfer_mean: f32,
+    /// Model points that found any gradient at all.
+    ///
+    /// `support / point_count` and `score` differ when edges are present but
+    /// misoriented, which is the signature of a wrong pose on a busy scene.
+    pub support: usize,
+    /// Pyramid level the reported score was evaluated at.
+    pub level: usize,
 }
 
-/// Backward-compatible alias for rigid-match result.
-///
-/// Provides `transform: Isometry2f` via [`MatchResult::isometry`].
-/// All code that previously used `RigidMatchResult` should migrate to
-/// [`MatchResult`]; this alias exists for transition.
-pub type RigidMatchResult = MatchResult;
-
-impl MatchResult {
-    /// Return the rigid part of the transform (drops scale).
-    ///
-    /// Equivalent to `nalgebra::Isometry2::new(translation, rotation)` with
-    /// the same translation and rotation as `self.transform`.
-    pub fn isometry(&self) -> vm_primitives::Isometry2f {
-        Isometry2::new(self.transform.isometry.translation.vector, self.angle())
-    }
-
-    /// Rotation angle in radians extracted from `self.transform`.
+impl ShapeMatch {
+    /// Rotation in radians, wrapped to `(-π, π]`.
+    #[inline]
     pub fn angle(&self) -> f32 {
-        self.transform.isometry.rotation.angle()
+        self.pose.isometry.rotation.angle()
     }
 
-    /// Uniform scale extracted from `self.transform`.
+    /// Uniform scale factor.
+    #[inline]
     pub fn scale(&self) -> f32 {
-        self.transform.scaling()
-    }
-
-    /// Translation vector `(tx, ty)`.
-    pub fn translation(&self) -> (f32, f32) {
-        let t = self.transform.isometry.translation.vector;
-        (t.x, t.y)
+        self.pose.scaling()
     }
 }
 
-// ---------------------------------------------------------------------------
-// Internal coarse candidate
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone)]
-struct Candidate {
-    tx: f32,
-    ty: f32,
-    angle: f32,
-    scale: f32,
-    coarse_score: f32, // mean chamfer distance (lower = better)
+/// Score maps for a rolling three-angle window.
+#[derive(Debug, Default)]
+struct MapBuffers {
+    prev: Vec<f32>,
+    cur: Vec<f32>,
+    next: Vec<f32>,
+    first: Vec<f32>,
 }
 
-// ---------------------------------------------------------------------------
-// Axis-aligned bbox of a set of points (after transform)
-// ---------------------------------------------------------------------------
-
-fn bbox_of_points(pts: &[Point2f]) -> Rect2f {
-    if pts.is_empty() {
-        return Rect2f::default();
-    }
-    let mut min_x = pts[0].x;
-    let mut max_x = min_x;
-    let mut min_y = pts[0].y;
-    let mut max_y = min_y;
-    for p in pts {
-        min_x = min_x.min(p.x);
-        max_x = max_x.max(p.x);
-        min_y = min_y.min(p.y);
-        max_y = max_y.max(p.y);
-    }
-    Rect2f {
-        x: min_x,
-        y: min_y,
-        width: max_x - min_x,
-        height: max_y - min_y,
+impl MapBuffers {
+    fn resize(&mut self, n: usize) {
+        for b in [
+            &mut self.prev,
+            &mut self.cur,
+            &mut self.next,
+            &mut self.first,
+        ] {
+            b.clear();
+            b.resize(n, f32::NEG_INFINITY);
+        }
     }
 }
 
-/// Intersection-over-union of two axis-aligned bounding boxes.
-fn iou(a: Rect2f, b: Rect2f) -> f32 {
-    let ix = (a.x + a.width).min(b.x + b.width) - a.x.max(b.x);
-    let iy = (a.y + a.height).min(b.y + b.height) - a.y.max(b.y);
-    if ix <= 0.0 || iy <= 0.0 {
-        return 0.0;
-    }
-    let inter = ix * iy;
-    let union = a.area() + b.area() - inter;
-    if union <= 0.0 { 1.0 } else { inter / union }
-}
-
-// ---------------------------------------------------------------------------
-// RigidEdgeMatcher
-// ---------------------------------------------------------------------------
-
-/// Edge matcher that holds a scene chamfer map scratch buffer.
+/// Reusable coarse-to-fine shape matcher.
 ///
-/// Call [`RigidEdgeMatcher::match_model`] to search for a single best match,
-/// or [`RigidEdgeMatcher::match_all_instances`] for multi-instance NMS search.
-/// The internal chamfer map is rebuilt for each new scene.
+/// Owns the scene pyramid, one [`DirectionField`] per level, and every scratch
+/// buffer the search needs. The only allocation per call is the returned
+/// `Vec<ShapeMatch>`.
 ///
-/// Supports both rigid (R|t) and similarity (sR|t) transforms; the transform
-/// family is controlled by [`MatchConfig::scale_range`] and
-/// [`MatchConfig::scale_step`].
-pub struct RigidEdgeMatcher {
-    scene_chamfer: Image<f32>,
+/// # Example
+/// ```no_run
+/// use vision_metrology::{Image, ShapeMatcher, ShapeModel, ShapeSearchConfig};
+///
+/// # fn run(model: &ShapeModel) {
+/// let scene: Image<u8> = Image::new_fill(1280, 1024, 0);
+/// let mut matcher = ShapeMatcher::new();
+/// let cfg = ShapeSearchConfig { min_score: 0.6, max_matches: 4, ..Default::default() };
+///
+/// for m in matcher.find_u8(&scene.as_view(), model, &cfg) {
+///     println!("{:?} at {:.1} deg, score {:.2}", m.position, m.angle().to_degrees(), m.score);
+/// }
+/// # }
+/// ```
+#[derive(Debug, Default)]
+pub struct ShapeMatcher {
+    pyr: PyramidF32,
+    fields: Vec<DirectionField>,
+    rot: Vec<RotPoint>,
+    cands: Vec<Candidate>,
+    next: Vec<Candidate>,
+    maps: MapBuffers,
+    mask: InstanceMask,
+    nms_scratch: Vec<(i32, i32)>,
+    truncated: bool,
 }
 
-impl RigidEdgeMatcher {
-    /// Create a new matcher with an empty internal buffer.
+impl ShapeMatcher {
+    /// Create a matcher with empty scratch buffers.
     pub fn new() -> Self {
-        Self {
-            scene_chamfer: Image::from_vec(1, 1, vec![0.0f32]).expect("1x1 image"),
-        }
+        Self::default()
     }
 
-    /// Match `model` against `scene_edgels` using the given configuration.
+    /// Whether the last search hit `max_candidates` and discarded candidates.
     ///
-    /// Steps:
-    /// 1. Build the scene chamfer distance map from `scene_edgels`.
-    /// 2. Grid-search over scale × angle × position.
-    /// 3. Keep the top-K candidates by mean chamfer distance.
-    /// 4. Optionally run ICP refinement on each top-K candidate.
-    /// 5. Score with normal coherence; return the best result above `min_score`.
-    ///
-    /// Returns `None` if no candidate exceeds `min_score`.
-    pub fn match_model(
+    /// A truncated search can miss the true instance, so this distinguishes
+    /// "not present" from "gave up" — worth surfacing when a search on a
+    /// cluttered scene comes back empty.
+    #[inline]
+    pub fn truncated(&self) -> bool {
+        self.truncated
+    }
+
+    /// Find instances of `model` in a `u8` scene.
+    pub fn find_u8(
         &mut self,
-        model: &EdgeModel,
-        scene_edgels: &[Edgel],
-        cfg: &MatchConfig,
-    ) -> Option<MatchResult> {
-        let all = self.find_candidates(model, scene_edgels, cfg, 1);
-        all.into_iter().next()
+        img: &ImageView<'_, u8>,
+        model: &ShapeModel,
+        cfg: &ShapeSearchConfig,
+    ) -> Vec<ShapeMatch> {
+        self.pyr.build_from_u8(img, model.num_levels());
+        self.run(model, cfg)
     }
 
-    /// Return all non-overlapping instances above `cfg.min_score`, sorted by
-    /// score descending.
+    /// Find instances of `model` in a `u16` scene.
     ///
-    /// Two results overlap when their model bounding boxes (after transform)
-    /// overlap by more than `overlap_thresh` IoU. Greedy suppression: iterate
-    /// results sorted by score, keep a result only if its transformed bbox
-    /// does not overlap any already-kept result.
-    ///
-    /// `overlap_thresh` is typically 0.5. Values outside [0, 1] are clamped.
-    pub fn match_all_instances(
+    /// Remember that [`ShapeSearchConfig::min_contrast`] is on the input pixel
+    /// scale and needs raising for 16-bit data.
+    pub fn find_u16(
         &mut self,
-        model: &EdgeModel,
-        scene_edgels: &[Edgel],
-        cfg: &MatchConfig,
-        overlap_thresh: f32,
-    ) -> Vec<MatchResult> {
-        let overlap_thresh = overlap_thresh.clamp(0.0, 1.0);
-        // Collect all candidates (no per-instance top_k cap here; use cfg.top_k
-        // as max candidates per scale×angle bucket to limit work).
-        let mut all = self.find_candidates(model, scene_edgels, cfg, usize::MAX);
-
-        // Sort best-score first.
-        all.sort_unstable_by(|a, b| {
-            b.score
-                .partial_cmp(&a.score)
-                .unwrap_or(core::cmp::Ordering::Equal)
-        });
-
-        // Pre-compute model bounding box corners for transform.
-        let model_pts: Vec<Point2f> = model.edgels.iter().map(|e| e.p).collect();
-
-        // Greedy NMS.
-        let mut kept: Vec<MatchResult> = Vec::new();
-        let mut kept_bboxes: Vec<Rect2f> = Vec::new();
-
-        for result in all {
-            let (tx, ty) = result.translation();
-            let angle = result.angle();
-            let scale = result.scale();
-            let cos_a = angle.cos() * scale;
-            let sin_a = angle.sin() * scale;
-
-            let transformed: Vec<Point2f> = model_pts
-                .iter()
-                .map(|p| Point2f {
-                    x: cos_a * p.x - sin_a * p.y + tx,
-                    y: sin_a * p.x + cos_a * p.y + ty,
-                })
-                .collect();
-            let bbox = bbox_of_points(&transformed);
-
-            let overlaps = kept_bboxes.iter().any(|&kb| iou(bbox, kb) > overlap_thresh);
-            if !overlaps {
-                kept_bboxes.push(bbox);
-                kept.push(result);
-            }
-        }
-
-        kept
+        img: &ImageView<'_, u16>,
+        model: &ShapeModel,
+        cfg: &ShapeSearchConfig,
+    ) -> Vec<ShapeMatch> {
+        self.pyr.build_from_u16(img, model.num_levels());
+        self.run(model, cfg)
     }
 
-    // -----------------------------------------------------------------------
-    // Internal: grid search + ICP + scoring → Vec<MatchResult>
-    // -----------------------------------------------------------------------
-
-    fn build_scene_chamfer_map(&mut self, scene_edgels: &[Edgel], cfg: &MatchConfig) {
-        let scene_w = scene_edgels.iter().map(|e| e.idx.0).max().unwrap_or(0) + 1;
-        let scene_h = scene_edgels.iter().map(|e| e.idx.1).max().unwrap_or(0) + 1;
-        let scene_w =
-            scene_w.max((cfg.position_search.x + cfg.position_search.width).ceil() as usize + 1);
-        let scene_h =
-            scene_h.max((cfg.position_search.y + cfg.position_search.height).ceil() as usize + 1);
-        self.scene_chamfer = build_scene_chamfer(scene_edgels, scene_w, scene_h);
+    /// Find instances of `model` in an `f32` scene.
+    pub fn find_f32(
+        &mut self,
+        img: &ImageView<'_, f32>,
+        model: &ShapeModel,
+        cfg: &ShapeSearchConfig,
+    ) -> Vec<ShapeMatch> {
+        self.pyr.build_from_f32(img, model.num_levels());
+        self.run(model, cfg)
     }
 
-    fn find_candidates(
-        &mut self,
-        model: &EdgeModel,
-        scene_edgels: &[Edgel],
-        cfg: &MatchConfig,
-        max_results: usize,
-    ) -> Vec<MatchResult> {
-        if model.edgels.is_empty() || scene_edgels.is_empty() {
+    fn run(&mut self, model: &ShapeModel, cfg: &ShapeSearchConfig) -> Vec<ShapeMatch> {
+        self.truncated = false;
+        let n_lv = model.num_levels().min(self.pyr.num_levels());
+        if n_lv == 0 || cfg.min_score > 1.0 {
             return Vec::new();
         }
 
-        // --- Step 1: scene chamfer map ---
-        self.build_scene_chamfer_map(scene_edgels, cfg);
-        let chamfer_view = self.scene_chamfer.as_view();
-
-        // --- Step 2: grid search ---
-        let t_step = (cfg.chamfer_threshold / 2.0).max(1.0);
-        let angle_min = cfg.angle_range.0.min(cfg.angle_range.1);
-        let angle_max = cfg.angle_range.0.max(cfg.angle_range.1);
-        let angle_step = cfg.angle_step.max(1e-4);
-
-        let n_angles = ((angle_max - angle_min) / angle_step).ceil() as usize + 1;
-        let n_tx = ((cfg.position_search.width) / t_step).ceil() as usize + 1;
-        let n_ty = ((cfg.position_search.height) / t_step).ceil() as usize + 1;
-
-        let top_k = cfg.top_k.max(1);
-        let mut candidates: Vec<Candidate> = Vec::new();
-
-        for scale in cfg.scale_iter() {
-            for ai in 0..n_angles {
-                let angle = angle_min + ai as f32 * angle_step;
-                let cos_a = angle.cos();
-                let sin_a = angle.sin();
-
-                for tyi in 0..n_ty {
-                    let ty = cfg.position_search.y + tyi as f32 * t_step;
-                    for txi in 0..n_tx {
-                        let tx = cfg.position_search.x + txi as f32 * t_step;
-
-                        // For similarity: scale the model points before lookup.
-                        // chamfer_score applies (cos_a, sin_a) rotation; we
-                        // bake scale into the lookup by passing a scaled model.
-                        let score = if (scale - 1.0).abs() < 1e-6 {
-                            chamfer_score(model, &chamfer_view, tx, ty, cos_a, sin_a)
-                        } else {
-                            // Scale-aware chamfer: compute manually.
-                            scaled_chamfer_score(
-                                model,
-                                &chamfer_view,
-                                tx,
-                                ty,
-                                cos_a * scale,
-                                sin_a * scale,
-                            )
-                        };
-
-                        // Maintain top-K by lowest chamfer score.
-                        if candidates.len() < top_k {
-                            candidates.push(Candidate {
-                                tx,
-                                ty,
-                                angle,
-                                scale,
-                                coarse_score: score,
-                            });
-                            if candidates.len() == top_k {
-                                candidates.sort_unstable_by(|a, b| {
-                                    b.coarse_score
-                                        .partial_cmp(&a.coarse_score)
-                                        .unwrap_or(core::cmp::Ordering::Equal)
-                                });
-                            }
-                        } else if score < candidates[0].coarse_score {
-                            candidates[0] = Candidate {
-                                tx,
-                                ty,
-                                angle,
-                                scale,
-                                coarse_score: score,
-                            };
-                            candidates.sort_unstable_by(|a, b| {
-                                b.coarse_score
-                                    .partial_cmp(&a.coarse_score)
-                                    .unwrap_or(core::cmp::Ordering::Equal)
-                            });
-                        }
-                    }
-                }
-            }
+        if self.fields.len() < n_lv {
+            self.fields.resize_with(n_lv, DirectionField::new);
+        }
+        for level in 0..n_lv {
+            let img = self.pyr.level(level).expect("level < n_lv");
+            self.fields[level].build_image_f32(img, model.smooth(), cfg.min_contrast);
         }
 
-        if candidates.is_empty() {
+        let top = n_lv - 1;
+        let last = cfg.last_level.min(top);
+        let angles = intersect(
+            cfg.angle_range.unwrap_or(model.angle_range()),
+            model.angle_range(),
+        );
+        let scales = intersect(
+            cfg.scale_range.unwrap_or(model.scale_range()),
+            model.scale_range(),
+        );
+
+        let Self {
+            fields,
+            rot,
+            cands,
+            next,
+            maps,
+            mask,
+            nms_scratch,
+            truncated,
+            ..
+        } = self;
+        let polarity = model.polarity();
+
+        // ---- exhaustive top level -----------------------------------------
+        let field = &fields[top];
+        let span = Span::for_level(cfg.roi, top, field.width(), field.height());
+        if span.is_empty() {
             return Vec::new();
         }
+        let lvl = model.level(top).expect("top < num_levels");
+        let coarse = if top > last {
+            cfg.min_score * cfg.coarse_score_factor
+        } else {
+            cfg.min_score
+        };
+        let bound = Bound::new(lvl.points.len(), cfg.greediness, coarse);
+        let ang = Grid::angles(angles, step_at(cfg.angle_step, lvl.angle_step, top));
+        let sca = Grid::scales(scales, step_at(cfg.scale_step, lvl.scale_step, top));
 
-        // Sort best-first (lowest chamfer score).
-        candidates.sort_unstable_by(|a, b| {
-            a.coarse_score
-                .partial_cmp(&b.coarse_score)
-                .unwrap_or(core::cmp::Ordering::Equal)
-        });
+        cands.clear();
+        maps.resize(span.width() * span.height());
+        for si in 0..sca.len() {
+            sweep_angles(
+                field,
+                &lvl.points,
+                span,
+                &ang,
+                sca.scale_at(si),
+                polarity,
+                bound,
+                coarse,
+                rot,
+                maps,
+                cands,
+            );
+        }
+        *truncated = cap_candidates(cands, cfg.max_candidates);
 
-        // --- Steps 3+4: optional ICP refinement and final scoring ---
-        let scene_pts: Vec<_> = scene_edgels.iter().map(|e| e.p).collect();
-        let mut results: Vec<MatchResult> = Vec::new();
-
-        for cand in &candidates {
-            let scale = cand.scale;
-            let (tx, ty, angle) = if cfg.refine_icp {
-                let cos_a = cand.angle.cos() * scale;
-                let sin_a = cand.angle.sin() * scale;
-                let transformed = transform_points_scaled(model, cand.tx, cand.ty, cos_a, sin_a);
-                let (dtx, dty, da) = icp_refine(&transformed, &scene_pts, 20);
-                (cand.tx + dtx, cand.ty + dty, cand.angle + da)
+        // ---- propagate down ------------------------------------------------
+        for level in (last..top).rev() {
+            let field = &fields[level];
+            let lvl = model.level(level).expect("level < num_levels");
+            let span = Span::for_level(cfg.roi, level, field.width(), field.height());
+            let thresh = if level > last {
+                cfg.min_score * cfg.coarse_score_factor
             } else {
-                (cand.tx, cand.ty, cand.angle)
+                cfg.min_score
             };
-
-            let cos_a = angle.cos() * scale;
-            let sin_a = angle.sin() * scale;
-
-            // Count inliers and compute mean chamfer.
-            let mut inlier_count = 0usize;
-            let mut chamfer_sum = 0.0f32;
-            for e in &model.edgels {
-                let px = cos_a * e.p.x - sin_a * e.p.y + tx;
-                let py = sin_a * e.p.x + cos_a * e.p.y + ty;
-                let ix = px.round() as isize;
-                let iy = py.round() as isize;
-                let sw = self.scene_chamfer.width();
-                let sh = self.scene_chamfer.height();
-                let d = if ix >= 0 && iy >= 0 && (ix as usize) < sw && (iy as usize) < sh {
-                    *self
-                        .scene_chamfer
-                        .as_view()
-                        .get(ix as usize, iy as usize)
-                        .expect("in-bounds")
-                } else {
-                    f32::MAX
-                };
-                if d <= cfg.chamfer_threshold {
-                    inlier_count += 1;
-                    chamfer_sum += d;
+            let bound = Bound::new(lvl.points.len(), cfg.greediness, thresh);
+            next.clear();
+            for cand in cands.iter() {
+                if let Some(best) = refine_candidate(
+                    field,
+                    &lvl.points,
+                    span,
+                    *cand,
+                    step_at(cfg.angle_step, lvl.angle_step, level),
+                    step_at(cfg.scale_step, lvl.scale_step, level),
+                    angles,
+                    scales,
+                    polarity,
+                    bound,
+                    rot,
+                ) && best.score >= thresh
+                {
+                    next.push(best);
                 }
             }
+            core::mem::swap(cands, next);
+        }
 
-            let score = inlier_count as f32 / model.edgels.len() as f32;
+        // ---- refine, score, suppress ---------------------------------------
+        let field = &fields[last];
+        let lvl = model.level(last).expect("last < num_levels");
+        let up = (1usize << last) as f32;
+        let shift = 0.5 * (up - 1.0);
+
+        let mut out: Vec<ShapeMatch> = Vec::new();
+        for cand in cands.iter() {
+            let mut pose = Pose {
+                x: cand.x as f32,
+                y: cand.y as f32,
+                angle: cand.angle,
+                scale: cand.scale,
+            };
+            if cfg.refinement != Refinement::None {
+                pose = interpolate(
+                    field,
+                    &lvl.points,
+                    pose,
+                    step_at(cfg.angle_step, lvl.angle_step, last),
+                    step_at(cfg.scale_step, lvl.scale_step, last),
+                    polarity,
+                    rot,
+                );
+            }
+            if cfg.refinement == Refinement::LeastSquares {
+                pose = least_squares(
+                    field,
+                    &lvl.points,
+                    pose,
+                    lvl.radius,
+                    cfg.min_contrast,
+                    polarity,
+                );
+            }
+
+            let (score, support) = score_pose(
+                field,
+                &lvl.points,
+                pose.x,
+                pose.y,
+                pose.angle,
+                pose.scale,
+                polarity,
+            );
             if score < cfg.min_score {
                 continue;
             }
 
-            let chamfer_mean = if inlier_count > 0 {
-                chamfer_sum / inlier_count as f32
-            } else {
-                f32::MAX
+            let position = Point2f {
+                x: up * pose.x + shift,
+                y: up * pose.y + shift,
             };
-
-            // Normal coherence filter: reject if score < 0 (flipped normals).
-            let cos_a_unit = angle.cos();
-            let sin_a_unit = angle.sin();
-            let ns = normal_score(
-                model,
-                scene_edgels,
-                tx,
-                ty,
-                cos_a_unit,
-                sin_a_unit,
-                cfg.chamfer_threshold * 2.0,
-            );
-            if ns < 0.0 {
-                continue;
-            }
-
-            let transform =
-                Similarity2::from_isometry(Isometry2::new(Vector2::new(tx, ty), angle), scale);
-
-            results.push(MatchResult {
-                transform,
+            out.push(ShapeMatch {
+                pose: pose_from(position, pose.angle, pose.scale, model.origin()),
+                position,
                 score,
-                inlier_count,
-                chamfer_mean,
+                support,
+                level: last,
             });
-
-            if results.len() >= max_results {
-                break;
-            }
         }
 
-        // Sort best-score first.
-        results.sort_unstable_by(|a, b| {
-            b.score
-                .partial_cmp(&a.score)
-                .unwrap_or(core::cmp::Ordering::Equal)
-        });
-
-        results
+        let (w0, h0) = (fields[0].width(), fields[0].height());
+        suppress(
+            mask,
+            (w0, h0),
+            &model.level(0).expect("level 0 exists").points,
+            out,
+            cfg.max_overlap,
+            cfg.max_matches,
+            nms_scratch,
+        )
     }
 }
 
-impl Default for RigidEdgeMatcher {
-    fn default() -> Self {
-        Self::new()
+/// `Translation(position) ∘ sR ∘ Translation(−origin)`, as a similarity.
+fn pose_from(position: Point2f, angle: f32, scale: f32, origin: Point2f) -> Similarity2f {
+    let (sn, cs) = wrap_angle(angle).sin_cos();
+    let t = Vec2f {
+        x: position.x - scale * (cs * origin.x - sn * origin.y),
+        y: position.y - scale * (sn * origin.x + cs * origin.y),
+    };
+    similarity_from_parts(t, wrap_angle(angle), scale)
+}
+
+/// A level-0 step scaled to level `l`, or the model's own derived step.
+///
+/// The model radius halves per level, so one pixel of tip motion corresponds to
+/// twice the angle: an explicitly configured level-0 step doubles per level.
+#[inline]
+fn step_at(configured: f32, derived: f32, level: usize) -> f32 {
+    if configured > 0.0 {
+        configured * (1usize << level) as f32
+    } else {
+        derived
     }
 }
 
-// ---------------------------------------------------------------------------
-// Scale-aware helpers
-// ---------------------------------------------------------------------------
+/// Narrow `want` to what `allowed` permits, keeping the result ordered.
+fn intersect(want: (f32, f32), allowed: (f32, f32)) -> (f32, f32) {
+    let lo = want.0.max(allowed.0);
+    let hi = want.1.min(allowed.1);
+    if hi < lo { (lo, lo) } else { (lo, hi) }
+}
 
-/// Chamfer score with scale baked into cos/sin (i.e. `cos_a = cos*scale`).
-fn scaled_chamfer_score(
-    model: &EdgeModel,
-    scene_chamfer: &vm_primitives::ImageView<'_, f32>,
-    tx: f32,
-    ty: f32,
-    cos_a_s: f32, // cos(angle) * scale
-    sin_a_s: f32, // sin(angle) * scale
-) -> f32 {
-    if model.edgels.is_empty() {
-        return 0.0;
+#[allow(clippy::too_many_arguments)]
+fn sweep_angles(
+    field: &DirectionField,
+    points: &[ModelPoint],
+    span: Span,
+    ang: &Grid,
+    scale: f32,
+    polarity: Polarity,
+    bound: Bound,
+    threshold: f32,
+    rot: &mut Vec<RotPoint>,
+    maps: &mut MapBuffers,
+    out: &mut Vec<Candidate>,
+) {
+    let n = ang.len();
+    // The angle dimension of the local-maximum test needs the map before and
+    // after the one being tested. For a full circle the ring is closed by
+    // evaluating the last angle up front and keeping a copy of the first.
+    if ang.cyclic && n > 2 {
+        fill_map(
+            field,
+            points,
+            ang.angle_at(n - 1),
+            scale,
+            span,
+            polarity,
+            bound,
+            rot,
+            &mut maps.prev,
+        );
+    } else {
+        maps.prev.fill(f32::NEG_INFINITY);
     }
-    let w = scene_chamfer.width() as f32;
-    let h = scene_chamfer.height() as f32;
-    let penalty = (w * w + h * h).sqrt();
-    let sw = scene_chamfer.width();
-    let sh = scene_chamfer.height();
-    let mut sum = 0.0f32;
-    for e in &model.edgels {
-        let px = cos_a_s * e.p.x - sin_a_s * e.p.y + tx;
-        let py = sin_a_s * e.p.x + cos_a_s * e.p.y + ty;
-        let ix = px.round() as isize;
-        let iy = py.round() as isize;
-        let d = if ix >= 0 && iy >= 0 && (ix as usize) < sw && (iy as usize) < sh {
-            *scene_chamfer
-                .get(ix as usize, iy as usize)
-                .expect("in-bounds")
+    fill_map(
+        field,
+        points,
+        ang.angle_at(0),
+        scale,
+        span,
+        polarity,
+        bound,
+        rot,
+        &mut maps.cur,
+    );
+    if ang.cyclic && n > 2 {
+        maps.first.copy_from_slice(&maps.cur);
+    }
+
+    for ai in 0..n {
+        if ai + 1 < n {
+            fill_map(
+                field,
+                points,
+                ang.angle_at(ai + 1),
+                scale,
+                span,
+                polarity,
+                bound,
+                rot,
+                &mut maps.next,
+            );
+        } else if ang.cyclic && n > 2 {
+            maps.next.copy_from_slice(&maps.first);
         } else {
-            penalty
-        };
-        sum += d;
+            maps.next.fill(f32::NEG_INFINITY);
+        }
+
+        collect_local_maxima(
+            &maps.prev,
+            &maps.cur,
+            &maps.next,
+            span,
+            ang.angle_at(ai),
+            scale,
+            threshold,
+            out,
+        );
+
+        core::mem::swap(&mut maps.prev, &mut maps.cur);
+        core::mem::swap(&mut maps.cur, &mut maps.next);
     }
-    sum / model.edgels.len() as f32
 }
 
-/// Project model points through a transform where cos/sin already includes scale.
-fn transform_points_scaled(
-    model: &EdgeModel,
-    tx: f32,
-    ty: f32,
-    cos_a_s: f32,
-    sin_a_s: f32,
-) -> Vec<Point2f> {
-    model
-        .edgels
-        .iter()
-        .map(|e| Point2f {
-            x: cos_a_s * e.p.x - sin_a_s * e.p.y + tx,
-            y: sin_a_s * e.p.x + cos_a_s * e.p.y + ty,
-        })
-        .collect()
+#[allow(clippy::too_many_arguments)]
+fn fill_map(
+    field: &DirectionField,
+    points: &[ModelPoint],
+    angle: f32,
+    scale: f32,
+    span: Span,
+    polarity: Polarity,
+    bound: Bound,
+    rot: &mut Vec<RotPoint>,
+    buf: &mut [f32],
+) {
+    rotate_into(points, angle, scale, rot);
+    let mw = span.width();
+    for iy in 0..span.height() {
+        let row = &mut buf[iy * mw..(iy + 1) * mw];
+        score_span(
+            field,
+            rot,
+            span.y0 + iy as i32,
+            span.x0,
+            polarity,
+            bound,
+            row,
+        );
+    }
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+/// Track one candidate from level `l+1` into level `l`.
+///
+/// The position window is 5×5 because two independent errors stack: the halving
+/// itself is ambiguous by ±1, and the coarse localisation is good to about ±1.
+/// Angle and scale get 5 steps each for the same reason — the model radius
+/// doubles when descending a level, so the coarse winner lands within ±1 of the
+/// fine step, and 5 leaves a margin for noise.
+#[allow(clippy::too_many_arguments)]
+fn refine_candidate(
+    field: &DirectionField,
+    points: &[ModelPoint],
+    span: Span,
+    cand: Candidate,
+    angle_step: f32,
+    scale_step: f32,
+    angles: (f32, f32),
+    scales: (f32, f32),
+    polarity: Polarity,
+    bound: Bound,
+    rot: &mut Vec<RotPoint>,
+) -> Option<Candidate> {
+    let (bx, by) = (2 * cand.x, 2 * cand.y);
+    let mut best: Option<Candidate> = None;
+
+    for si in -2i32..=2 {
+        let scale = cand.scale * (1.0 + scale_step).powi(si);
+        if scale < scales.0 * 0.99 || scale > scales.1 * 1.01 {
+            continue;
+        }
+        for ai in -2i32..=2 {
+            let angle = cand.angle + ai as f32 * angle_step;
+            if angle < angles.0 - angle_step || angle > angles.1 + angle_step {
+                continue;
+            }
+            rotate_into(points, angle, scale, rot);
+            for dy in -2i32..=2 {
+                for dx in -2i32..=2 {
+                    let (qx, qy) = (bx + dx, by + dy);
+                    if !span.contains(qx, qy) {
+                        continue;
+                    }
+                    let Some(score) = score_at(field, rot, qx, qy, polarity, bound) else {
+                        continue;
+                    };
+                    if best.is_none_or(|b| score > b.score) {
+                        best = Some(Candidate {
+                            x: qx,
+                            y: qy,
+                            angle,
+                            scale,
+                            score,
+                        });
+                    }
+                }
+            }
+        }
+    }
+    best
+}
 
 #[cfg(test)]
 mod tests {
-    use vm_primitives::edge::edge2d::Edgel;
-    use vm_primitives::{Point2f, Rect2f, Vec2f};
+    use super::{intersect, pose_from, step_at};
+    use vm_primitives::Point2f;
 
-    use crate::matching::model::EdgeModel;
-    use crate::matching::rigid::{MatchConfig, RigidMatchConfig};
-
-    use super::{RigidEdgeMatcher, iou};
-
-    fn make_edgel(x: f32, y: f32, nx: f32, ny: f32) -> Edgel {
-        Edgel {
-            p: Point2f { x, y },
-            n: Vec2f { x: nx, y: ny },
-            strength: 1.0,
-            idx: (x as usize, y as usize),
-        }
-    }
-
-    /// Build a rectangular ring of edgels (perimeter pixels of a w×h box at (ox, oy)).
-    fn rect_edgels(ox: f32, oy: f32, w: f32, h: f32) -> Vec<Edgel> {
-        let mut v = Vec::new();
-        let steps = ((w + h) * 2.0) as usize;
-        for i in 0..steps {
-            let t = i as f32 / steps as f32;
-            let (x, y, nx, ny): (f32, f32, f32, f32) = if t < 0.25 {
-                (ox + t * 4.0 * w, oy, 0.0, -1.0)
-            } else if t < 0.5 {
-                (ox + w, oy + (t - 0.25) * 4.0 * h, 1.0, 0.0)
-            } else if t < 0.75 {
-                (ox + w - (t - 0.5) * 4.0 * w, oy + h, 0.0, 1.0)
-            } else {
-                (ox, oy + h - (t - 0.75) * 4.0 * h, -1.0, 0.0)
-            };
-            let nn = (nx * nx + ny * ny).sqrt();
-            v.push(make_edgel(x, y, nx / nn, ny / nn));
-        }
-        v
+    #[test]
+    fn pose_maps_the_model_origin_onto_the_reported_position() {
+        let origin = Point2f { x: 30.0, y: -12.0 };
+        let position = Point2f { x: 640.0, y: 512.0 };
+        let pose = pose_from(position, 0.7, 1.3, origin);
+        let q = pose * nalgebra::Point2::new(origin.x, origin.y);
+        assert!((q.x - position.x).abs() < 1e-3, "{q}");
+        assert!((q.y - position.y).abs() < 1e-3, "{q}");
     }
 
     #[test]
-    fn match_model_finds_translated_rectangle() {
-        // Model: 20×10 rectangle centred at origin (will be centred by from_edgels).
-        let model_raw = rect_edgels(0.0, 0.0, 20.0, 10.0);
-        let model = EdgeModel::from_edgels(model_raw, 5);
-
-        // Scene: same rectangle translated to (50, 40).
-        let scene_edgels = rect_edgels(50.0, 40.0, 20.0, 10.0);
-        let scene_edgels_with_idx: Vec<Edgel> = scene_edgels
-            .iter()
-            .map(|e| Edgel {
-                p: e.p,
-                n: e.n,
-                strength: e.strength,
-                idx: (e.p.x.round() as usize, e.p.y.round() as usize),
-            })
-            .collect();
-
-        let cfg = RigidMatchConfig {
-            angle_range: (-0.1, 0.1),
-            angle_step: 0.05,
-            position_search: Rect2f {
-                x: 30.0,
-                y: 20.0,
-                width: 50.0,
-                height: 50.0,
-            },
-            chamfer_threshold: 5.0,
-            min_score: 0.3,
-            refine_icp: true,
-            top_k: 5,
-            ..RigidMatchConfig::default()
-        };
-
-        let mut matcher = RigidEdgeMatcher::new();
-        let result = matcher.match_model(&model, &scene_edgels_with_idx, &cfg);
-        assert!(result.is_some(), "should find the rectangle in the scene");
-        let r = result.unwrap();
-        assert!(
-            r.score >= 0.3,
-            "inlier fraction should be >= 0.3, got {}",
-            r.score
-        );
-        // Rigid match: scale should be 1.0.
-        assert!(
-            (r.scale() - 1.0).abs() < 1e-5,
-            "rigid match scale should be 1.0"
-        );
+    fn pose_carries_the_requested_angle_and_scale() {
+        let pose = pose_from(Point2f { x: 5.0, y: 5.0 }, -0.4, 0.75, Point2f::default());
+        assert!((pose.isometry.rotation.angle() + 0.4).abs() < 1e-5);
+        assert!((pose.scaling() - 0.75).abs() < 1e-5);
     }
 
     #[test]
-    fn flipped_normals_rejected() {
-        // Model with all normals pointing +x.
-        let model_edgels: Vec<Edgel> = (0..10)
-            .map(|i| make_edgel(i as f32, 0.0, 1.0, 0.0))
-            .collect();
-        let model = EdgeModel::from_edgels(model_edgels, 3);
-
-        // Scene with all normals pointing -x (flipped).
-        let scene_edgels: Vec<Edgel> = (0..10)
-            .map(|i| Edgel {
-                p: Point2f {
-                    x: i as f32,
-                    y: 0.0,
-                },
-                n: Vec2f { x: -1.0, y: 0.0 },
-                strength: 1.0,
-                idx: (i, 0),
-            })
-            .collect();
-
-        let cfg = MatchConfig {
-            angle_range: (-0.01, 0.01),
-            angle_step: 0.01,
-            position_search: Rect2f {
-                x: 0.0,
-                y: 0.0,
-                width: 5.0,
-                height: 5.0,
-            },
-            chamfer_threshold: 3.0,
-            min_score: 0.5,
-            refine_icp: false,
-            top_k: 3,
-            ..MatchConfig::default()
-        };
-
-        let mut matcher = RigidEdgeMatcher::new();
-        let result = matcher.match_model(&model, &scene_edgels, &cfg);
-        assert!(
-            result.is_none(),
-            "flipped normals should be rejected by normal-coherence filter"
-        );
+    fn step_scaling_follows_the_halving_radius() {
+        assert!((step_at(0.01, 9.9, 0) - 0.01).abs() < 1e-9);
+        assert!((step_at(0.01, 9.9, 3) - 0.08).abs() < 1e-9);
+        // Zero means "use the model's own derived step".
+        assert!((step_at(0.0, 9.9, 3) - 9.9).abs() < 1e-9);
     }
 
     #[test]
-    fn match_config_rigid_is_single_scale_iter() {
-        let cfg = MatchConfig::default(); // scale_range = (1.0, 1.0)
-        let scales: Vec<f32> = cfg.scale_iter().collect();
-        assert_eq!(scales.len(), 1);
-        assert!((scales[0] - 1.0).abs() < 1e-6);
-    }
-
-    #[test]
-    fn match_config_similarity_iter_count() {
-        let cfg = MatchConfig {
-            scale_range: (0.8, 1.2),
-            scale_step: 0.1,
-            ..MatchConfig::default()
-        };
-        let scales: Vec<f32> = cfg.scale_iter().collect();
-        // (1.2 - 0.8) / 0.1 = 4, +1 → 5 steps
-        assert_eq!(scales.len(), 5, "expected 5 scale steps, got {:?}", scales);
-        assert!((scales[0] - 0.8).abs() < 1e-5);
-        assert!(scales.last().copied().unwrap() <= 1.2 + 1e-5);
-    }
-
-    #[test]
-    fn match_result_isometry_extracts_correct_angle() {
-        use nalgebra::{Isometry2, Similarity2, Vector2};
-        let angle = 0.5f32;
-        let sim = Similarity2::from_isometry(Isometry2::new(Vector2::new(3.0, 4.0), angle), 1.5);
-        let result = super::MatchResult {
-            transform: sim,
-            score: 1.0,
-            inlier_count: 10,
-            chamfer_mean: 0.1,
-        };
-        assert!((result.angle() - angle).abs() < 1e-5, "angle mismatch");
-        assert!((result.scale() - 1.5).abs() < 1e-5, "scale mismatch");
-        let (tx, ty) = result.translation();
-        assert!((tx - 3.0).abs() < 1e-5);
-        assert!((ty - 4.0).abs() < 1e-5);
-    }
-
-    #[test]
-    fn iou_non_overlapping_is_zero() {
-        use vm_primitives::Rect2f;
-        let a = Rect2f {
-            x: 0.0,
-            y: 0.0,
-            width: 10.0,
-            height: 10.0,
-        };
-        let b = Rect2f {
-            x: 20.0,
-            y: 0.0,
-            width: 10.0,
-            height: 10.0,
-        };
-        assert_eq!(iou(a, b), 0.0);
-    }
-
-    #[test]
-    fn iou_identical_is_one() {
-        use vm_primitives::Rect2f;
-        let a = Rect2f {
-            x: 0.0,
-            y: 0.0,
-            width: 10.0,
-            height: 10.0,
-        };
-        assert!((iou(a, a) - 1.0).abs() < 1e-5);
-    }
-
-    #[test]
-    fn match_all_instances_finds_two_rectangles() {
-        // Scene: two 20×10 rectangles at (50, 40) and (150, 40) — well separated.
-        let model_raw = rect_edgels(0.0, 0.0, 20.0, 10.0);
-        let model = EdgeModel::from_edgels(model_raw, 5);
-
-        let mut scene = rect_edgels(50.0, 40.0, 20.0, 10.0);
-        scene.extend(rect_edgels(150.0, 40.0, 20.0, 10.0));
-        let scene_with_idx: Vec<Edgel> = scene
-            .iter()
-            .map(|e| Edgel {
-                idx: (e.p.x.round() as usize, e.p.y.round() as usize),
-                ..*e
-            })
-            .collect();
-
-        let cfg = MatchConfig {
-            angle_range: (-0.1, 0.1),
-            angle_step: 0.05,
-            position_search: Rect2f {
-                x: 30.0,
-                y: 20.0,
-                width: 160.0,
-                height: 60.0,
-            },
-            chamfer_threshold: 5.0,
-            min_score: 0.3,
-            refine_icp: true,
-            top_k: 10,
-            ..MatchConfig::default()
-        };
-
-        let mut matcher = RigidEdgeMatcher::new();
-        let results = matcher.match_all_instances(&model, &scene_with_idx, &cfg, 0.5);
-        assert!(
-            !results.is_empty(),
-            "should find at least 1 instance, got {}",
-            results.len()
-        );
+    fn range_intersection_never_widens_and_never_inverts() {
+        assert_eq!(intersect((-1.0, 1.0), (-0.5, 0.5)), (-0.5, 0.5));
+        assert_eq!(intersect((0.1, 0.2), (-1.0, 1.0)), (0.1, 0.2));
+        // Disjoint ranges collapse to a single value rather than inverting.
+        let r = intersect((2.0, 3.0), (-1.0, 1.0));
+        assert!(r.0 <= r.1);
     }
 }
