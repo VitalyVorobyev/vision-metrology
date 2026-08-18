@@ -27,6 +27,10 @@ trace-cands = []
 
 [dev-dependencies]
 anyhow = "1"
+# Independent second opinion for pose auditing: masked ZNCC at a given pose
+# (examples/pose_audit) and a full cross-check search. Dev-only — the library
+# itself never depends on it.
+corrmatch = { version = "0.2", features = ["simd"] }
 clap = { version = "4", features = ["derive"] }
 criterion = { workspace = true }
 # Examples read .png fixtures and .bmp frames from industrial cameras. BMP
