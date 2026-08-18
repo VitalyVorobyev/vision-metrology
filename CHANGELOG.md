@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Manually triggered `Benchmarks` workflow (`workflow_dispatch`): runs criterion
+  for a selectable crate (optionally filtered by bench name), renders the
+  results table into the job summary, and uploads the raw estimates as an
+  artifact. Shared-runner numbers are indicative only; M4 Pro reference numbers
+  stay in `docs/system-design.md`.
 - `match_point_scores` diagnostics API: the individual score term of every
   level-0 model point at a recovered pose (mean reproduces the match score).
 - `pose_audit` example: per-frame **independent ZNCC** of recovered poses via

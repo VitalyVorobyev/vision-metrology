@@ -1,0 +1,83 @@
+name: Benchmarks
+
+# Manually triggered: criterion numbers from shared CI runners are too noisy
+# for a hard perf gate, but a on-demand run with the table in the job summary
+# is useful for spotting order-of-magnitude regressions and for comparing
+# branches. Reference numbers (M4 Pro) live in docs/system-design.md.
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: Bench crate to run
+        type: choice
+        default: all
+        options: [all, vm-primitives, vision-metrology]
+      filter:
+        description: Optional criterion filter (bench name substring)
+        type: string
+        default: ''
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  bench:
+    name: Criterion (ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run benchmarks
+        run: |
+          set -euo pipefail
+          pkg='${{ inputs.package }}'
+          if [ "$pkg" = all ]; then scope=(--workspace); else scope=(-p "$pkg"); fi
+          cargo bench "${scope[@]}" -- '${{ inputs.filter }}' 2>&1 | tee bench.log
+
+      - name: Write summary table
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import re
+
+          lines = open("bench.log", errors="replace").read().splitlines()
+          print("## Criterion results")
+          print()
+          print("Runner: `ubuntu-latest` (shared; treat as indicative, not as a")
+          print("reference — M4 Pro reference numbers are in docs/system-design.md).")
+          print()
+          print("| Benchmark | Low | Median | High |")
+          print("|---|---|---|---|")
+          name = None
+          for line in lines:
+              m = re.match(r"^(\S.*?)\s*$", line)
+              t = re.search(
+                  r"time:\s*\[([\d.]+ \S+) ([\d.]+ \S+) ([\d.]+ \S+)\]", line
+              )
+              if t:
+                  print(f"| `{name}` | {t.group(1)} | **{t.group(2)}** | {t.group(3)} |")
+              elif m and "time:" not in line and not line.startswith((" ", "\t")):
+                  # criterion prints the bench id on its own line above `time:`
+                  candidate = line.strip()
+                  if candidate and not candidate.startswith(
+                      ("Compiling", "Finished", "Running", "Benchmarking",
+                       "Gnuplot", "warning", "Warning", "Found", "Testing")
+                  ):
+                      name = candidate
+          PY
+
+      - name: Upload raw criterion data
+        uses: actions/upload-artifact@v7
+        with:
+          name: criterion-${{ github.run_id }}
+          path: |
+            bench.log
+            target/criterion/**/new/estimates.json
+          if-no-files-found: warn
