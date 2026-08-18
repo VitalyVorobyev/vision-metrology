@@ -66,7 +66,7 @@ use super::edge2d::SmoothKind;
 /// // ...and in the flat interior it is gated to exactly zero.
 /// assert_eq!(field.dir_at(4, 8), (0.0, 0.0));
 /// ```
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct DirectionField {
     dir: Vec<f32>,
     mag: Vec<f32>,
@@ -75,12 +75,42 @@ pub struct DirectionField {
     width: usize,
     height: usize,
     min_mag: f32,
+    // ── lazy tiled mode ────────────────────────────────────────────────────
+    /// Smoothing recorded by `begin_tiled_f32`, applied per tile.
+    smooth: SmoothKind,
+    /// Per-tile build stamp; a tile is current iff `tile_stamp[i] == generation`.
+    tile_stamp: Vec<u32>,
+    /// Tiles built in the current generation (for O(built) cleanup).
+    built_tiles: Vec<u32>,
+    tiles_x: usize,
+    tiles_y: usize,
+    generation: u32,
+}
+
+impl Default for DirectionField {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl DirectionField {
     /// Create an empty field. Buffers are allocated on the first `build_*` call.
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            dir: Vec::new(),
+            mag: Vec::new(),
+            tmp: Vec::new(),
+            scratch: Vec::new(),
+            width: 0,
+            height: 0,
+            min_mag: 0.0,
+            smooth: SmoothKind::None,
+            tile_stamp: Vec::new(),
+            built_tiles: Vec::new(),
+            tiles_x: 0,
+            tiles_y: 0,
+            generation: 0,
+        }
     }
 
     /// Image width in pixels (0 before the first build).
@@ -298,6 +328,201 @@ impl DirectionField {
             }
         }
     }
+
+    // ── lazy tiled mode ─────────────────────────────────────────────────────
+    //
+    // The full builds above touch every pixel; a coarse-to-fine matcher reads
+    // the fine pyramid levels only in small windows around its candidates. In
+    // tiled mode the field is built on demand, one TILE×TILE block at a time,
+    // and every built pixel is **bit-identical** to what the full build would
+    // have produced: the per-pixel smoothing and Scharr expressions below are
+    // the same expression trees as `smooth_binomial3` / `scharr_normalised`,
+    // evaluated with image-border clamping in absolute coordinates.
+    //
+    // Safety net: `begin_tiled_f32` zeroes exactly the tiles the previous
+    // generation built (O(built), not O(frame)), so a read that a caller
+    // forgot to `ensure_rect_f32` sees deterministic zeros — "no evidence",
+    // the same contribution as an out-of-image point — never stale data from
+    // another frame.
+
+    /// Enter lazy tiled mode for `img`: record the smoothing/gate parameters,
+    /// invalidate all tiles, and zero the ones the previous generation built.
+    ///
+    /// After this call the field's buffers are current only where
+    /// [`ensure_rect_f32`](Self::ensure_rect_f32) has been called with a
+    /// covering rectangle; everywhere else `dir` reads as zero.
+    pub fn begin_tiled_f32(&mut self, img: &Image<f32>, smooth: SmoothKind, min_mag: f32) {
+        let (w, h) = (img.width(), img.height());
+        let dims_changed = self.width != w || self.height != h;
+        self.ensure(w, h);
+        self.smooth = smooth;
+        self.min_mag = min_mag;
+
+        let tx = w.div_ceil(Self::TILE);
+        let ty = h.div_ceil(Self::TILE);
+        if dims_changed || self.tiles_x != tx || self.tiles_y != ty {
+            self.tiles_x = tx;
+            self.tiles_y = ty;
+            self.tile_stamp = vec![0; tx * ty];
+            self.built_tiles.clear();
+            // `ensure` zero-fills fresh buffers, so nothing stale can survive
+            // a reallocation.
+        } else {
+            // Zero only what the last generation actually built.
+            let built = core::mem::take(&mut self.built_tiles);
+            for &t in &built {
+                self.zero_tile(t as usize);
+            }
+            self.built_tiles = built;
+            self.built_tiles.clear();
+        }
+        self.generation = self.generation.wrapping_add(1);
+        if self.generation == 0 {
+            // A wrapped counter would make stale stamps look current.
+            self.tile_stamp.fill(0);
+            self.generation = 1;
+        }
+    }
+
+    /// Build every tile intersecting the half-open pixel rectangle
+    /// `[x0, x1) × [y0, y1)` (clamped to the image; already-built tiles are
+    /// skipped). `img` must be the image passed to
+    /// [`begin_tiled_f32`](Self::begin_tiled_f32).
+    ///
+    /// # Panics
+    /// Panics if `img`'s dimensions differ from the `begin_tiled_f32` image.
+    pub fn ensure_rect_f32(&mut self, img: &Image<f32>, x0: i32, y0: i32, x1: i32, y1: i32) {
+        assert!(
+            img.width() == self.width && img.height() == self.height,
+            "ensure_rect_f32: image does not match begin_tiled_f32 dimensions"
+        );
+        if self.width == 0 || self.height == 0 {
+            return;
+        }
+        let x0 = x0.clamp(0, self.width as i32 - 1) as usize / Self::TILE;
+        let y0 = y0.clamp(0, self.height as i32 - 1) as usize / Self::TILE;
+        let x1 = (x1 - 1).clamp(0, self.width as i32 - 1) as usize / Self::TILE;
+        let y1 = (y1 - 1).clamp(0, self.height as i32 - 1) as usize / Self::TILE;
+
+        for ty in y0..=y1 {
+            for tx in x0..=x1 {
+                let t = ty * self.tiles_x + tx;
+                if self.tile_stamp[t] != self.generation {
+                    self.build_tile(img, tx, ty);
+                    self.tile_stamp[t] = self.generation;
+                    self.built_tiles.push(t as u32);
+                }
+            }
+        }
+    }
+
+    const TILE: usize = 64;
+
+    fn zero_tile(&mut self, t: usize) {
+        let (tx, ty) = (t % self.tiles_x, t / self.tiles_x);
+        let px0 = tx * Self::TILE;
+        let py0 = ty * Self::TILE;
+        let px1 = (px0 + Self::TILE).min(self.width);
+        let py1 = (py0 + Self::TILE).min(self.height);
+        for y in py0..py1 {
+            let row = y * self.width;
+            self.dir[2 * (row + px0)..2 * (row + px1)].fill(0.0);
+            self.mag[row + px0..row + px1].fill(0.0);
+        }
+    }
+
+    /// Smoothed source value at absolute pixel `(x, y)`, clamped at the image
+    /// border — the same expression tree as `smooth_binomial3`, so the result
+    /// is bit-identical to the full build.
+    #[inline]
+    fn smoothed_at(img: &Image<f32>, x: usize, y: usize, w: usize, h: usize) -> f32 {
+        let data = img.data();
+        let hs = |yy: usize| {
+            let row = yy * w;
+            let xm1 = x.saturating_sub(1);
+            let xp1 = (x + 1).min(w - 1);
+            0.25 * (data[row + xm1] + 2.0 * data[row + x] + data[row + xp1])
+        };
+        let ym1 = y.saturating_sub(1);
+        let yp1 = (y + 1).min(h - 1);
+        0.25 * (hs(ym1) + 2.0 * hs(y) + hs(yp1))
+    }
+
+    fn build_tile(&mut self, img: &Image<f32>, tx: usize, ty: usize) {
+        let (w, h) = (self.width, self.height);
+        let px0 = tx * Self::TILE;
+        let py0 = ty * Self::TILE;
+        let px1 = (px0 + Self::TILE).min(w);
+        let py1 = (py0 + Self::TILE).min(h);
+
+        // Smoothed values for the tile plus a 1-pixel apron, in absolute
+        // clamped coordinates. `sw × sh` is at most (TILE+2)².
+        let ax0 = px0.saturating_sub(1);
+        let ay0 = py0.saturating_sub(1);
+        let ax1 = (px1 + 1).min(w);
+        let ay1 = (py1 + 1).min(h);
+        let (sw, sh) = (ax1 - ax0, ay1 - ay0);
+
+        self.scratch.resize(self.scratch.len().max(sw * sh), 0.0);
+        let smoothed = &mut self.scratch[..sw * sh];
+        match self.smooth {
+            SmoothKind::Binomial3 => {
+                for y in ay0..ay1 {
+                    for x in ax0..ax1 {
+                        smoothed[(y - ay0) * sw + (x - ax0)] = Self::smoothed_at(img, x, y, w, h);
+                    }
+                }
+            }
+            SmoothKind::None => {
+                let data = img.data();
+                for y in ay0..ay1 {
+                    let src = &data[y * w + ax0..y * w + ax1];
+                    smoothed[(y - ay0) * sw..(y - ay0) * sw + sw].copy_from_slice(src);
+                }
+            }
+        }
+
+        let min_mag = self.min_mag;
+        for y in py0..py1 {
+            // Clamped absolute rows, translated into the apron buffer.
+            let ym1 = y.saturating_sub(1).max(ay0) - ay0;
+            let yc = y - ay0;
+            let yp1 = ((y + 1).min(h - 1)).min(ay1 - 1) - ay0;
+            let (rm, rc, rp) = (ym1 * sw, yc * sw, yp1 * sw);
+            for x in px0..px1 {
+                let xm1 = x.saturating_sub(1).max(ax0) - ax0;
+                let xc = x - ax0;
+                let xp1 = ((x + 1).min(w - 1)).min(ax1 - 1) - ax0;
+
+                let p00 = smoothed[rm + xm1];
+                let p01 = smoothed[rm + xc];
+                let p02 = smoothed[rm + xp1];
+                let p10 = smoothed[rc + xm1];
+                let p12 = smoothed[rc + xp1];
+                let p20 = smoothed[rp + xm1];
+                let p21 = smoothed[rp + xc];
+                let p22 = smoothed[rp + xp1];
+
+                let gx =
+                    (3.0 * p02 + 10.0 * p12 + 3.0 * p22) - (3.0 * p00 + 10.0 * p10 + 3.0 * p20);
+                let gy =
+                    (3.0 * p20 + 10.0 * p21 + 3.0 * p22) - (3.0 * p00 + 10.0 * p01 + 3.0 * p02);
+
+                let idx = y * w + x;
+                let m = (gx * gx + gy * gy).sqrt();
+                self.mag[idx] = m;
+                let k = 2 * idx;
+                if m >= min_mag && m > 0.0 {
+                    let inv = 1.0 / m;
+                    self.dir[k] = gx * inv;
+                    self.dir[k + 1] = gy * inv;
+                } else {
+                    self.dir[k] = 0.0;
+                    self.dir[k + 1] = 0.0;
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -469,5 +694,90 @@ mod tests {
         assert_eq!((f.width(), f.height()), (16, 16));
         assert_eq!(f.dir().len(), 2 * 16 * 16);
         assert_eq!(f.mag().len(), 16 * 16);
+    }
+
+    /// Deterministic textured image exercising smooth borders and the gate.
+    fn textured(w: usize, h: usize) -> Image<f32> {
+        let mut data = vec![0.0f32; w * h];
+        let mut state = 0xdead_beef_cafe_f00du64;
+        for y in 0..h {
+            for x in 0..w {
+                state = state
+                    .wrapping_mul(6_364_136_223_846_793_005)
+                    .wrapping_add(1_442_695_040_888_963_407);
+                let noise = ((state >> 33) & 0x3f) as f32;
+                let step = if x >= w / 2 { 150.0 } else { 0.0 };
+                data[y * w + x] = 40.0 + step + noise + 20.0 * (0.3 * y as f32).sin();
+            }
+        }
+        Image::from_vec(w, h, data).unwrap()
+    }
+
+    #[test]
+    fn tiled_build_is_bit_identical_to_the_full_build() {
+        // Odd dimensions so the last tile row/column is partial, and both
+        // smoothing modes, since each has its own tile path.
+        for smooth in [SmoothKind::None, SmoothKind::Binomial3] {
+            let img = textured(157, 101);
+
+            let mut full = DirectionField::new();
+            full.build_image_f32(&img, smooth, 25.0);
+
+            let mut tiled = DirectionField::new();
+            tiled.begin_tiled_f32(&img, smooth, 25.0);
+            tiled.ensure_rect_f32(&img, 0, 0, img.width() as i32, img.height() as i32);
+
+            assert_eq!(full.dir(), tiled.dir(), "dir differs ({smooth:?})");
+            assert_eq!(full.mag(), tiled.mag(), "mag differs ({smooth:?})");
+        }
+    }
+
+    #[test]
+    fn unensured_tiles_read_as_deterministic_zero() {
+        let img = textured(157, 101);
+        let mut tiled = DirectionField::new();
+
+        // Build everything once (generation 1)...
+        tiled.begin_tiled_f32(&img, SmoothKind::Binomial3, 25.0);
+        tiled.ensure_rect_f32(&img, 0, 0, 157, 101);
+        assert!(tiled.dir().iter().any(|&v| v != 0.0));
+
+        // ...then begin a new generation and ensure only a corner window.
+        tiled.begin_tiled_f32(&img, SmoothKind::Binomial3, 25.0);
+        tiled.ensure_rect_f32(&img, 0, 0, 40, 40);
+
+        // Inside the window: identical to a full build. Outside: exact zeros,
+        // never a stale value from the previous generation.
+        let mut full = DirectionField::new();
+        full.build_image_f32(&img, SmoothKind::Binomial3, 25.0);
+        let w = img.width();
+        for y in 0..img.height() {
+            for x in 0..w {
+                let k = 2 * (y * w + x);
+                if x < 64 && y < 64 {
+                    assert_eq!(tiled.dir()[k], full.dir()[k]);
+                    assert_eq!(tiled.dir()[k + 1], full.dir()[k + 1]);
+                } else {
+                    assert_eq!(tiled.dir()[k], 0.0, "stale nx at ({x},{y})");
+                    assert_eq!(tiled.dir()[k + 1], 0.0, "stale ny at ({x},{y})");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn tiled_mode_reuses_cleanly_across_generations_and_sizes() {
+        let a = textured(157, 101);
+        let b = textured(96, 64);
+        let mut tiled = DirectionField::new();
+        let mut full = DirectionField::new();
+
+        for img in [&a, &b, &a] {
+            tiled.begin_tiled_f32(img, SmoothKind::Binomial3, 25.0);
+            tiled.ensure_rect_f32(img, 0, 0, img.width() as i32, img.height() as i32);
+            full.build_image_f32(img, SmoothKind::Binomial3, 25.0);
+            assert_eq!(full.dir(), tiled.dir());
+            assert_eq!(full.mag(), tiled.mag());
+        }
     }
 }

@@ -30,16 +30,23 @@ versioned `ShapeModel` save/load, Python parity.
 **Accept:** all quality gates green; extractor files ≤ ~400 lines; no
 `too_many_arguments` allows in contour; extract bench within 2% of baseline.
 
-### Track 2 — detection below 5 ms — `planned`
-Target: `shape_find_1280x1024_360deg` < 5.0 ms median (M4 Pro, single thread, full 360°,
-no prior, preprocessing included), on clean **and** cluttered fixtures.
+### Track 2 — detection performance — `in review`
+Direction (per user): pay serious attention to performance; ~5 ms full-360° detection is
+the aspiration, and the hard context is a ~30 ms budget for the *whole* multi-stage
+analysis of a frame, of which detection is stage 1.
+Landed: clean 360° 7.8 → 3.46 ms, clutter 10.4 → 6.57 ms, tracked (ROI + angle prior)
+1.49 ms, canend medians 5.6–25.5 ms at 256/256 with bit-identical scores.
 Levers in order, each gated on measurement: (1) lazy 64×64-tiled direction fields —
 full field only at the top level, tiles on demand around candidates below it;
-(2) integer Scharr directly on u8 (skip the f32 detour), adopting `box-image-pyramid`
-for the u8 scene+model path (same-aliasing rule!); (3) quantized directions + SIMD —
-backlog unless still needed. Plus: `PreparedScene` API (amortize preprocessing across
-several models on one image), tile-determinism test (bit-identical to full build),
-root-cause of `truncated()` firing on canend, `workflow_dispatch` bench workflow.
+(2) integer Scharr directly on u8 — dropped: measurement showed the pyramid+conversion
+at 0.13 ms, not worth it; (3) quantized directions + SIMD — deferred to backlog with
+measured numbers. Landed instead: blocked span scoring (bit-identical, vector-friendly),
+degenerate scale/angle collapse in candidate refinement, tile-determinism tests,
+tracked-ROI bench, `trace-cands` diagnostics feature. PreparedScene moved to backlog
+(lazy tiles removed most of the amortization win). Remaining in this track:
+`workflow_dispatch` bench workflow; `truncated()` root-cause is understood (adversarial
+fixture genuinely has >128 spatially distinct coarse hypotheses; the funnel handles
+them — 128→64→15→3→1 — and detection is unaffected).
 
 **Accept:** <5 ms on both fixtures; tile-determinism + T13 green; canend 256/256
 re-validated; `truncated()` resolved or explained + bounded; per-stage numbers recorded

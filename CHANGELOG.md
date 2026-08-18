@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Lazy tiled direction fields: below the top pyramid level the matcher builds
+  gradient tiles only around surviving candidates, bit-identical to the full
+  build (pinned by tests). Full-360° find on 1280×1024: 7.8 → 3.46 ms clean,
+  10.4 → 6.57 ms cluttered; canend medians 5.6–25.5 ms at unchanged 256/256
+  detection and bit-identical scores. New `shape_find_1280x1024_tracked_roi`
+  bench: 1.49 ms with a previous-frame pose prior.
+- Blocked span scoring (point-major over 32-position blocks, identical greedy
+  abort semantics) and degenerate scale/angle collapse in candidate
+  refinement (a fixed `scale_range` no longer sweeps five scales per level).
+- `trace-cands` dev feature: per-level candidate counts and stage timings on
+  stderr; `examples/stage_timing.rs` per-stage probe.
 - `serde` feature: versioned `ShapeModel` persistence (`to_json` / `from_json`
   with an explicit `format_version` gate) and `Serialize`/`Deserialize` on the
   model and geometry types. Python: `ShapeModel.save(path)` / `ShapeModel.load(path)`.

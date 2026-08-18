@@ -22,6 +22,8 @@ serde_json = { version = "1", optional = true }
 ## Serialize/Deserialize derives on the model types. Enables the same feature
 ## in vm-primitives for the geometry types the model embeds.
 serde = ["dep:serde", "dep:serde_json", "vm-primitives/serde"]
+## Internal diagnostics: per-level candidate counts on stderr. Dev only.
+trace-cands = []
 
 [dev-dependencies]
 anyhow = "1"

@@ -196,6 +196,18 @@ pub(crate) fn score_span(
     }
 }
 
+/// Positions per block in the blocked span scorer.
+///
+/// Inside a block the loop runs point-major: one model point is applied to all
+/// `BLOCK` consecutive positions before the next point. For an in-bounds run
+/// the reads are `dir[2k], dir[2k+1], dir[2k+2], …` — a contiguous
+/// interleaved pattern the autovectorizer turns into deinterleaving loads and
+/// FMAs. Per-lane sums accumulate in the identical order as the scalar
+/// `score_impl` (point 0, 1, 2, …), and the greedy bound is checked at the
+/// same 8-point boundaries, so the output is **bit-identical** to the scalar
+/// path — the blocking changes only how much work aborted positions cost.
+const BLOCK: usize = 32;
+
 fn span_impl<const POL: u8>(
     field: &DirectionField,
     rot: &[RotPoint],
@@ -204,10 +216,152 @@ fn span_impl<const POL: u8>(
     bound: Bound,
     out: &mut [f32],
 ) {
-    for (i, slot) in out.iter_mut().enumerate() {
-        *slot =
-            score_impl::<POL>(field, rot, x0 + i as i32, qy, bound).unwrap_or(f32::NEG_INFINITY);
+    let n = rot.len();
+    if n == 0 {
+        out.fill(f32::NEG_INFINITY);
+        return;
     }
+    let (w, h) = (field.width(), field.height());
+    let dir = field.dir();
+
+    let mut i = 0usize;
+    while i < out.len() {
+        let bw = (out.len() - i).min(BLOCK);
+        span_block::<POL>(
+            dir,
+            w,
+            h,
+            rot,
+            x0 + i as i32,
+            qy,
+            bound,
+            &mut out[i..i + bw],
+        );
+        i += bw;
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn span_block<const POL: u8>(
+    dir: &[f32],
+    w: usize,
+    h: usize,
+    rot: &[RotPoint],
+    bx: i32,
+    qy: i32,
+    bound: Bound,
+    out: &mut [f32],
+) {
+    let bw = out.len();
+    let n = rot.len();
+    let mut sums = [0.0f32; BLOCK];
+    let mut dead = [false; BLOCK];
+    let mut alive = bw;
+
+    let mut j = 0usize;
+    while j < n {
+        let end = (j + CHUNK).min(n);
+        for p in &rot[j..end] {
+            let py = qy + p.oy;
+            let xs = bx + p.ox;
+            // Fast path: the whole block row is inside the image.
+            if (py as usize) < h && xs >= 0 && xs as usize + bw <= w {
+                let base = 2 * (py as usize * w + xs as usize);
+                let row = &dir[base..base + 2 * bw];
+                for (l, s) in sums[..bw].iter_mut().enumerate() {
+                    let c = p.tx * row[2 * l] + p.ty * row[2 * l + 1];
+                    *s += if POL == POL_LOCAL { c.abs() } else { c };
+                }
+            } else {
+                for (l, s) in sums[..bw].iter_mut().enumerate() {
+                    *s += accumulate::<POL>(dir, w, h, bx + l as i32, qy, *p);
+                }
+            }
+        }
+        j = end;
+
+        let thr = bound.a + bound.b * j as f32;
+        for l in 0..bw {
+            if !dead[l] {
+                let partial = if POL == POL_GLOBAL {
+                    sums[l].abs()
+                } else {
+                    sums[l]
+                };
+                if partial < thr {
+                    dead[l] = true;
+                    alive -= 1;
+                }
+            }
+        }
+        if alive == 0 {
+            break;
+        }
+        // Once only a few positions survive, the block-wide vector work costs
+        // more than it saves: one deep survivor would drag all lanes to the
+        // end. Finish the survivors lane by lane instead — same chunk
+        // boundaries, same order, same results.
+        if alive <= bw / 2 && j < n {
+            for l in 0..bw {
+                if !dead[l] {
+                    dead[l] = !finish_lane::<POL>(
+                        dir,
+                        w,
+                        h,
+                        bx + l as i32,
+                        qy,
+                        rot,
+                        j,
+                        bound,
+                        &mut sums[l],
+                    );
+                }
+            }
+            break;
+        }
+    }
+
+    for (l, slot) in out.iter_mut().enumerate() {
+        *slot = if dead[l] {
+            f32::NEG_INFINITY
+        } else {
+            let total = if POL == POL_GLOBAL {
+                sums[l].abs()
+            } else {
+                sums[l]
+            };
+            total / n as f32
+        };
+    }
+}
+
+/// Continue one lane from point `j` to the end with the standard chunked
+/// bound checks. Returns `false` if the bound fired.
+#[allow(clippy::too_many_arguments)]
+fn finish_lane<const POL: u8>(
+    dir: &[f32],
+    w: usize,
+    h: usize,
+    qx: i32,
+    qy: i32,
+    rot: &[RotPoint],
+    mut j: usize,
+    bound: Bound,
+    sum: &mut f32,
+) -> bool {
+    let n = rot.len();
+    while j < n {
+        let end = (j + CHUNK).min(n);
+        for p in &rot[j..end] {
+            *sum += accumulate::<POL>(dir, w, h, qx, qy, *p);
+        }
+        j = end;
+        let partial = if POL == POL_GLOBAL { sum.abs() } else { *sum };
+        if partial < bound.a + bound.b * j as f32 {
+            return false;
+        }
+    }
+    true
 }
 
 /// Score a subpixel pose exhaustively, also reporting how many model points

@@ -119,6 +119,32 @@ fn bench_create(c: &mut Criterion) {
     });
 }
 
+/// Tracking mode: the pose from the previous frame bounds both the position
+/// (±60 px ROI) and the angle (±10°). This is the production steady state on
+/// a conveyor line — the full-360° benches are the cold-start case.
+fn bench_find_tracked(c: &mut Criterion) {
+    let (model, scene) = model_and_scene();
+    let view = scene.as_view();
+    let cfg = ShapeSearchConfig {
+        roi: Some(Rect2f {
+            x: 640.0,
+            y: 410.0,
+            width: 120.0,
+            height: 120.0,
+        }),
+        angle_range: Some((0.9 - 0.17, 0.9 + 0.17)),
+        ..Default::default()
+    };
+    let mut matcher = ShapeMatcher::new();
+    assert!(!matcher.find_u8(&view, &model, &cfg).is_empty());
+    c.bench_function("shape_find_1280x1024_tracked_roi", |b| {
+        b.iter(|| {
+            let out = matcher.find_u8(black_box(&view), black_box(&model), black_box(&cfg));
+            black_box(out.len());
+        });
+    });
+}
+
 fn bench_find_360_clutter(c: &mut Criterion) {
     let (model, _) = model_and_scene();
     let scene = cluttered_scene();
@@ -202,6 +228,7 @@ criterion_group!(
     bench_create,
     bench_find_360,
     bench_find_360_clutter,
+    bench_find_tracked,
     bench_find_greedy0,
     bench_find_scale
 );
