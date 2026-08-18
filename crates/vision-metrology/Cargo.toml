@@ -3,15 +3,51 @@ name = "vision-metrology"
 version = "0.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
-description = "Industrial machine-vision metrology library"
+description = "Industrial machine-vision metrology: contour graphs, laser stripe extraction, multi-scale edges, shape fitting, segmentation, edge-model matching"
+keywords = ["machine-vision", "metrology", "laser", "contour", "segmentation"]
+categories = ["computer-vision", "science"]
+
+[features]
+default = []
+rayon = ["dep:rayon"]
 
 [dependencies]
-vm-contour = { path = "../vm-contour" }
-vm-core = { path = "../vm-core" }
-vm-edge = { path = "../vm-edge" }
-vm-laser = { path = "../vm-laser" }
-vm-morph = { path = "../vm-morph" }
-vm-pyr = { path = "../vm-pyr" }
+vm-primitives = { path = "../vm-primitives" }
+nalgebra = { workspace = true }
+libm = "0.2"
+rayon = { version = "1", optional = true }
+
+[dev-dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+criterion = "0.5"
+image = { version = "0.25", default-features = true, features = ["png"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[[bench]]
+name = "build_graph"
+harness = false
+
+[[bench]]
+name = "detect_multiscale"
+harness = false
+
+[[bench]]
+name = "detect_shape"
+harness = false
+
+[[bench]]
+name = "segment"
+harness = false
+
+[[bench]]
+name = "match_"
+harness = false
+
+[[bench]]
+name = "extract"
+harness = false
 
 [lints]
 workspace = true

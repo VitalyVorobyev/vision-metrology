@@ -1,0 +1,25 @@
+[package]
+name = "vm-python"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "PyO3 Python bindings for the vision-metrology workspace"
+
+[lib]
+name = "vision_metrology"
+crate-type = ["cdylib", "rlib"]
+# The lib name intentionally matches the `vision-metrology` package's own lib
+# name so the Python extension module is importable as `vision_metrology`.
+# That collision makes rustdoc see two candidate rlibs for the same extern
+# name, so both rustdoc targets must be disabled for this crate.
+doc = false
+doctest = false
+
+[dependencies]
+vm-primitives    = { path = "../vm-primitives" }
+vision-metrology = { path = "../vision-metrology" }
+pyo3             = { version = "0.28", features = ["extension-module", "abi3-py310"] }
+numpy            = "0.28"
+
+[build-dependencies]
+pyo3-build-config = "0.28"

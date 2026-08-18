@@ -8,11 +8,22 @@ Guidance for coding agents working in `vision-metrology`. This repo implements h
 - Subpixel contours with junctions (T/Y)
 
 ## Project layout
-- `crates/vm-core`: core image/geometry/sampling primitives.
-- `crates/vm-pyr`: 2x2 mean pyramid (no Gaussian downsample).
-- `crates/vm-edge`: 1D DoG kernels/convolution/edge + edge-pair primitives.
-- `crates/vm-laser`: laser line extraction (rows/cols, ROI+prior tracking).
-- `crates/vision-metrology`: umbrella re-export crate.
+
+Three publishable crates with clear layering:
+
+- `crates/vm-primitives`: low-level building blocks.
+  - `core`: image views, sampling, border modes, geometry + nalgebra type aliases.
+  - `pyr`: 2×2 mean pyramid (no Gaussian downsample).
+  - `edge`: 1D/2D subpixel edges (DoG), edgels, edge-pairs.
+  - `morph`: binary morphology (parameterized SE), chamfer distance, Zhang-Suen thinning.
+- `crates/vision-metrology`: high-level algorithms; depends on `vm-primitives`; re-exports it entirely.
+  - `contour`: contour graph, junctions, per-edge tangent/curvature geometry, polyline smoothing.
+  - `laser`: laser stripe extraction (rows/cols, ROI+prior tracking).
+  - `matching`: `EdgeModel` + chamfer map, rigid/similarity grid search, IoU NMS, ICP refinement.
+  - `multiscale`: multi-scale edge detection across pyramid levels.
+  - `segment`: Otsu/adaptive thresholding, CCL, watershed, edgel region growing.
+  - `shape`: LSD, Bookstein/Fitzgibbon conic fitting, RANSAC ellipse fitting.
+- `crates/vm-python`: PyO3 extension module; depends on both above crates.
 
 ## Invariants and conventions
 - Pixel coordinate convention: **pixel centers** (`i` means coordinate `i as f32`).
@@ -67,8 +78,8 @@ cargo bench --workspace
 At minimum, run affected bench crate(s):
 
 ```bash
-cargo bench -p vm-pyr
-cargo bench -p vm-laser
+cargo bench -p vm-primitives
+cargo bench -p vision-metrology
 ```
 
 ## Commit checklist
@@ -79,10 +90,14 @@ cargo bench -p vm-laser
 
 ## Quick command reference
 ```bash
-cargo test -p vm-core
-cargo test -p vm-edge
-cargo test -p vm-laser
-cargo test -p vm-pyr
-cargo bench -p vm-pyr --bench downsample
-cargo bench -p vm-laser --bench extract
+cargo test -p vm-primitives
+cargo test -p vision-metrology
+cargo bench -p vm-primitives --bench downsample
+cargo bench -p vm-primitives --bench edge2d
+cargo bench -p vision-metrology --bench extract
+cargo bench -p vision-metrology --bench detect_multiscale
+cargo bench -p vision-metrology --bench detect_shape
+cargo bench -p vision-metrology --bench segment
+cargo bench -p vision-metrology --bench build_graph
+cargo bench -p vision-metrology --bench match_
 ```
