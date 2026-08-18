@@ -1,4 +1,5 @@
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
+use std::hint::black_box;
 use vm_primitives::{Image, PyramidF32, downsample2x2_mean_u8_to_f32};
 
 fn bench_downsample_u8_to_f32(c: &mut Criterion) {

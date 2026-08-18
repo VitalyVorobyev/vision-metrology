@@ -187,10 +187,7 @@ mod tests {
     fn disk_se_larger_than_square() {
         // A single foreground pixel eroded by a disk(2) should vanish
         // (it does not have enough surrounding foreground).
-        let mut data = vec![255u8; 7 * 7];
-        // Clear border so the inner pixels survive a conservative erosion,
-        // then put a lone pixel and confirm it vanishes.
-        data = vec![0u8; 7 * 7];
+        let mut data = vec![0u8; 7 * 7];
         data[3 * 7 + 3] = 255;
         let img = Image::from_vec(7, 7, data).unwrap();
         let out = erode_binary_u8(&img.as_view(), &StructuringElement::Disk(2));

@@ -24,7 +24,7 @@ Both `vm-primitives` and `vision-metrology` provide flat crate-root re-exports i
 
 ## Key decisions
 
-* `nalgebra 0.33` is a workspace dependency; use type aliases `Isometry2f / Similarity2f / Affine2f / Projective2f` from `vm_primitives` — do **not** re-implement linear algebra.
+* `nalgebra 0.35` is a workspace dependency; use type aliases `Isometry2f / Similarity2f / Affine2f / Projective2f` from `vm_primitives` — do **not** re-implement linear algebra.
 * Error type: `vm_primitives::Error` across all crates.
 * All public output types must be `'static` / lifetime-free (PyO3 compatibility).
 * Config-struct + reusable-detector API pattern throughout.

@@ -1,27 +1,29 @@
 [package]
 name = "vision-metrology"
-version = "0.1.0"
-edition = "2024"
-license = "MIT OR Apache-2.0"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
 description = "Industrial machine-vision metrology: contour graphs, laser stripe extraction, multi-scale edges, shape fitting, segmentation, edge-model matching"
 keywords = ["machine-vision", "metrology", "laser", "contour", "segmentation"]
 categories = ["computer-vision", "science"]
 
-[features]
-default = []
-rayon = ["dep:rayon"]
-
 [dependencies]
-vm-primitives = { path = "../vm-primitives" }
+vm-primitives = { path = "../vm-primitives", version = "0.1.0" }
 nalgebra = { workspace = true }
 libm = "0.2"
-rayon = { version = "1", optional = true }
 
 [dev-dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
-criterion = "0.5"
-image = { version = "0.25", default-features = true, features = ["png"] }
+criterion = { workspace = true }
+# Examples read .png fixtures and .bmp frames from industrial cameras. BMP
+# costs zero extra transitive crates; the default feature set would add 58
+# (rav1e, exr, gif, avif-serialize, ...) to the dev tree for formats no
+# example or bench uses.
+image = { version = "0.25", default-features = false, features = ["png", "bmp"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
@@ -48,6 +50,10 @@ harness = false
 [[bench]]
 name = "extract"
 harness = false
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [lints]
 workspace = true
