@@ -1,5 +1,5 @@
 use vm_primitives::edge::edge2d::{Edge2DConfig, Edge2DDetector, Edgel};
-use vm_primitives::{ImageView, Point2f};
+use vm_primitives::{Image, ImageView, Point2f, thin_binary_u8};
 
 use super::graph::{ContourGraph, EdgeId, GraphEdge, Node, NodeId, NodeKind};
 
@@ -36,6 +36,23 @@ pub struct ContourBuildConfig {
     /// When `true`, call [`GraphEdge::compute_geometry`] on every edge after
     /// building the graph, populating `tangents`, `curvatures`, and `arc_params`.
     pub record_geometry: bool,
+    /// Thin the edgel occupancy mask (Zhang-Suen) before tracing. Default: `true`.
+    ///
+    /// Graph construction classifies a pixel by its crossing number, which is
+    /// only a meaningful degree on a set that is already one pixel wide.
+    /// [`Edge2DDetector`] does not guarantee that: non-maximum suppression runs
+    /// on the 8-neighbourhood grid, so curved and diagonal edges come out as a
+    /// band 1-2 px thick. Fed such a band, nearly every pixel looks like a
+    /// junction and contours shatter into fragments a few points long.
+    ///
+    /// Thinning reduces the mask to a true skeleton first. Only the occupancy
+    /// mask is thinned -- surviving edgels keep their original subpixel
+    /// positions and normals, so precision is unaffected.
+    ///
+    /// Set to `false` only when the input is already one pixel wide (for
+    /// example an edgel set derived from a skeleton or from vector geometry),
+    /// in which case thinning is wasted work.
+    pub thin: bool,
 }
 
 impl Default for ContourBuildConfig {
@@ -45,6 +62,7 @@ impl Default for ContourBuildConfig {
             min_component_size: 2,
             record_strengths: false,
             record_geometry: false,
+            thin: true,
         }
     }
 }
@@ -124,6 +142,24 @@ pub fn build_graph_from_edgels(
     for i in 0..n {
         if edgel_at[i] >= 0 {
             raw_edge[i] = 1;
+        }
+    }
+
+    if cfg.thin {
+        // `thin_binary_u8` treats any non-zero value as foreground, so the 0/1
+        // occupancy mask can go in directly; it comes back as 0/255.
+        let mask = Image::from_vec(width, height, raw_edge).expect("dimensions ok");
+        let skeleton = thin_binary_u8(&mask.as_view());
+        raw_edge = skeleton.data().iter().map(|&v| u8::from(v > 0)).collect();
+
+        // Keep `edgel_at` consistent with the thinned mask. Helpers such as
+        // `end_pixel_from_points` consult it directly rather than going through
+        // the active mask, so an edgel whose pixel did not survive must be
+        // cleared here as well.
+        for (p, &keep) in raw_edge.iter().enumerate() {
+            if keep == 0 {
+                edgel_at[p] = -1;
+            }
         }
     }
 
@@ -810,6 +846,7 @@ mod tests {
             min_component_size: 2,
             record_strengths: false,
             record_geometry: false,
+            ..Default::default()
         };
         let g = build_graph_from_edgels(9, 9, &edgels, &cfg);
 
@@ -845,6 +882,7 @@ mod tests {
             min_component_size: 2,
             record_strengths: false,
             record_geometry: false,
+            ..Default::default()
         };
         let g = build_graph_from_edgels(9, 9, &edgels, &cfg);
 
@@ -873,6 +911,7 @@ mod tests {
             min_component_size: 2,
             record_strengths: false,
             record_geometry: false,
+            ..Default::default()
         };
         let g = build_graph_from_edgels(9, 9, &edgels, &cfg);
 
@@ -920,6 +959,7 @@ mod tests {
             min_component_size: 2,
             record_strengths: false,
             record_geometry: false,
+            ..Default::default()
         };
         let g = build_graph_from_edgels(10, 8, &edgels, &cfg);
 
@@ -927,5 +967,137 @@ mod tests {
         assert_eq!(g.num_ends(), 2);
         assert_eq!(g.edges.len(), 1);
         assert!(g.edges[0].points.len() >= 2);
+    }
+
+    /// Renders a filled ring, the canonical two-boundary shape.
+    fn ring_image(size: usize, radius: f32, half_width: f32) -> Image<u8> {
+        let c = size as f32 / 2.0;
+        let data: Vec<u8> = (0..size * size)
+            .map(|i| {
+                let dx = (i % size) as f32 - c;
+                let dy = (i / size) as f32 - c;
+                let r = (dx * dx + dy * dy).sqrt();
+                if (r - radius).abs() <= half_width {
+                    255
+                } else {
+                    0
+                }
+            })
+            .collect();
+        Image::from_vec(size, size, data).expect("valid image")
+    }
+
+    #[test]
+    fn ring_traces_as_two_closed_contours() {
+        // A ring has an inner and an outer boundary and nothing else, so the
+        // only correct graph is two loops with no junctions.
+        //
+        // `Edge2DDetector` emits a band 1-2 px thick here (772 edgels against
+        // ~503 for a true 1-px outline). Before the mask was thinned, the
+        // crossing number saw junctions everywhere and this produced 288 nodes
+        // and 432 edges whose longest run was 15 points.
+        let img = ring_image(128, 40.0, 2.0);
+        let mut det = Edge2DDetector::new();
+        let edgels = det.detect_u8(&img.as_view(), &Edge2DConfig::default());
+        assert!(
+            edgels.len() > 500,
+            "fixture should produce a rich edgel set"
+        );
+
+        let g = build_graph_from_edgels(
+            128,
+            128,
+            &edgels,
+            &ContourBuildConfig {
+                min_component_size: 5,
+                ..Default::default()
+            },
+        );
+
+        assert_eq!(g.edges.len(), 2, "a ring must trace as two contours");
+        assert_eq!(g.nodes.len(), 2, "two closed loops need one anchor each");
+        assert!(
+            g.nodes.iter().all(|n| n.kind == NodeKind::LoopAnchor),
+            "a ring has no junctions or endpoints"
+        );
+
+        let longest = g.edges.iter().map(|e| e.points.len()).max().unwrap_or(0);
+        assert!(
+            longest >= 200,
+            "the outer boundary is ~264 px around; got a longest run of {longest}"
+        );
+    }
+
+    #[test]
+    fn thinning_is_what_prevents_fragmentation() {
+        // Pins the meaning of the flag: same edgels, same everything else, and
+        // the only difference is whether the occupancy mask is skeletonised
+        // first. Without it the thick band is read as a mesh of junctions.
+        let img = ring_image(128, 40.0, 2.0);
+        let mut det = Edge2DDetector::new();
+        let edgels = det.detect_u8(&img.as_view(), &Edge2DConfig::default());
+
+        let thinned = build_graph_from_edgels(
+            128,
+            128,
+            &edgels,
+            &ContourBuildConfig {
+                min_component_size: 5,
+                thin: true,
+                ..Default::default()
+            },
+        );
+        let raw = build_graph_from_edgels(
+            128,
+            128,
+            &edgels,
+            &ContourBuildConfig {
+                min_component_size: 5,
+                thin: false,
+                ..Default::default()
+            },
+        );
+
+        assert_eq!(thinned.edges.len(), 2);
+        assert!(
+            raw.edges.len() > 100,
+            "an unthinned 1.5-px-thick band should over-fragment; got {} edges",
+            raw.edges.len()
+        );
+        assert!(
+            raw.nodes.iter().all(|n| n.kind == NodeKind::Junction),
+            "every node of the unthinned graph is a spurious junction"
+        );
+    }
+
+    #[test]
+    fn thinning_preserves_subpixel_positions() {
+        // Only the occupancy mask is thinned. Every point that survives must be
+        // an unmodified edgel position, not a snapped or averaged one.
+        let img = ring_image(128, 40.0, 2.0);
+        let mut det = Edge2DDetector::new();
+        let edgels = det.detect_u8(&img.as_view(), &Edge2DConfig::default());
+        let g = build_graph_from_edgels(
+            128,
+            128,
+            &edgels,
+            &ContourBuildConfig {
+                min_component_size: 5,
+                ..Default::default()
+            },
+        );
+
+        for edge in &g.edges {
+            for p in &edge.points {
+                assert!(
+                    edgels
+                        .iter()
+                        .any(|e| (e.p.x - p.x).abs() < 1e-6 && (e.p.y - p.y).abs() < 1e-6),
+                    "contour point ({}, {}) is not an original edgel position",
+                    p.x,
+                    p.y
+                );
+            }
+        }
     }
 }

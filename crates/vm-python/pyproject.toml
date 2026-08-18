@@ -4,11 +4,38 @@ build-backend = "maturin"
 
 [project]
 name = "vision-metrology"
+# Kept in step with `version` in the workspace Cargo.toml by hand; maturin does
+# not read the Rust version, and a mismatch would ship a wheel labelled wrongly.
 version = "0.1.0"
-description = "Python bindings for the vision-metrology workspace"
+description = "Industrial machine-vision metrology: subpixel edges, laser stripe extraction, contour graphs, shape fitting and segmentation"
+readme = "README.md"
+# SPDX expression only: `license-files` cannot reach the repo-root LICENSE-*
+# files because `..` is rejected in its globs.
+license = "MIT OR Apache-2.0"
 requires-python = ">=3.10"
+keywords = ["machine-vision", "metrology", "image-processing", "edge-detection", "laser"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Rust",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Scientific/Engineering :: Image Processing",
+]
+# Every example and test builds its input with numpy and reads results back as
+# numpy arrays, so it is a hard runtime requirement, not an extra.
+dependencies = ["numpy>=1.23"]
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[project.urls]
+Repository = "https://github.com/VitalyVorobyev/vision-metrology"
 
 [tool.maturin]
 manifest-path = "Cargo.toml"
+# The Rust lib target is `vm_python` (renaming it avoids an output-filename
+# collision with the `vision-metrology` crate). The importable Python name is
+# set here and by the `#[pymodule] fn vision_metrology`, which decides the
+# `PyInit_` symbol.
 module-name = "vision_metrology"
 features = ["pyo3/extension-module", "pyo3/abi3-py310"]

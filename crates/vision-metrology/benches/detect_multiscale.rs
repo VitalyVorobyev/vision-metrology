@@ -1,4 +1,5 @@
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
+use std::hint::black_box;
 use vision_metrology::Image;
 use vision_metrology::{MultiScaleConfig, MultiScaleEdgeDetector};
 

@@ -185,6 +185,7 @@ mod tests {
             min_component_size: 2,
             record_geometry: false,
             record_strengths: false,
+            ..Default::default()
         };
         let graph = build_graph_from_edgels(w, h, &edgels, &cfg_build);
 

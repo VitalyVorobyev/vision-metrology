@@ -1,8 +1,11 @@
 [package]
 name = "vm-primitives"
-version = "0.1.0"
-edition = "2024"
-license = "MIT OR Apache-2.0"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
 description = "Core image, geometry, edge, pyramid, and morphology primitives for vision metrology"
 keywords = ["machine-vision", "metrology", "image-processing", "edge-detection"]
 categories = ["computer-vision", "science"]
@@ -11,7 +14,7 @@ categories = ["computer-vision", "science"]
 nalgebra = { workspace = true }
 
 [dev-dependencies]
-criterion = "0.5"
+criterion = { workspace = true }
 
 [[bench]]
 name = "downsample"
@@ -20,6 +23,10 @@ harness = false
 [[bench]]
 name = "edge2d"
 harness = false
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [lints]
 workspace = true

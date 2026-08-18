@@ -73,6 +73,8 @@ contour       topology graph — T/Y junctions, loops, polyline smoothing
 vision-metrology = "0.1"
 ```
 
+Requires Rust 1.89 or newer.
+
 ```rust
 use vision_metrology::{Edge2DConfig, Edge2DDetector, Image};
 

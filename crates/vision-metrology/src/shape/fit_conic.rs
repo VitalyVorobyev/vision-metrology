@@ -37,6 +37,19 @@ use super::conic::Conic2f;
 /// have zero mean and RMS distance ≈ 1 from the origin.
 ///
 /// Returns `(cx, cy, scale)`. Apply as: `x' = (x - cx) / scale`, `y' = (y - cy) / scale`.
+/// Reject inputs that cannot produce a meaningful fit.
+///
+/// One non-finite coordinate contaminates the centroid, hence every normalised
+/// coordinate, hence the whole scatter matrix. Past that point the eigenvalues
+/// are all NaN and any ordering of them is meaningless, so catch it at the
+/// boundary and return an error rather than panicking inside the solver.
+fn ensure_finite(pts: &[Point2f]) -> Result<(), Error> {
+    if pts.iter().any(|p| !p.x.is_finite() || !p.y.is_finite()) {
+        return Err(Error::Degenerate("conic fit: input points must be finite"));
+    }
+    Ok(())
+}
+
 fn normalise_params(pts: &[Point2f]) -> (f64, f64, f64) {
     let n = pts.len() as f64;
     let cx: f64 = pts.iter().map(|p| p.x as f64).sum::<f64>() / n;
@@ -136,6 +149,8 @@ pub(crate) fn fit_bookstein(pts: &[Point2f]) -> Result<Conic2f, Error> {
         });
     }
 
+    ensure_finite(pts)?;
+
     let (cx, cy, scale) = normalise_params(pts);
     let xs: Vec<f64> = pts.iter().map(|p| (p.x as f64 - cx) / scale).collect();
     let ys: Vec<f64> = pts.iter().map(|p| (p.y as f64 - cy) / scale).collect();
@@ -144,13 +159,21 @@ pub(crate) fn fit_bookstein(pts: &[Point2f]) -> Result<Conic2f, Error> {
     // Smallest-eigenvalue eigenvector of DᵀD = Bookstein solution.
     let eig = SymmetricEigen::new(s);
     // nalgebra does NOT guarantee sorted eigenvalues — find the minimum explicitly.
+    // Skip non-finite eigenvalues rather than ordering against them: `partial_cmp`
+    // returns `None` for NaN, so comparing them at all is a panic. `ensure_finite`
+    // rules out the common cause, but a finite input can still be rank-deficient
+    // enough for the decomposition to produce NaN, and there is no sensible
+    // "smallest" among them.
     let min_col = eig
         .eigenvalues
         .iter()
         .enumerate()
-        .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+        .filter(|(_, v)| v.is_finite())
+        .min_by(|(_, a), (_, b)| a.partial_cmp(b).expect("finite compare"))
         .map(|(i, _)| i)
-        .unwrap_or(0);
+        .ok_or(Error::Degenerate(
+            "Bookstein fit: scatter matrix has no finite eigenvalue",
+        ))?;
     let v = eig.eigenvectors.column(min_col);
     let raw: [f64; 6] = [v[0], v[1], v[2], v[3], v[4], v[5]];
 
@@ -184,6 +207,8 @@ pub(crate) fn fit_fitzgibbon(pts: &[Point2f]) -> Result<Conic2f, Error> {
             got: pts.len(),
         });
     }
+
+    ensure_finite(pts)?;
 
     // Normalise coordinates for numerical stability.
     let (cx, cy, scale) = normalise_params(pts);
@@ -372,5 +397,49 @@ mod tests {
         let pts = vec![Point2f { x: 1.0, y: 2.0 }; 3];
         assert!(fit_bookstein(&pts).is_err());
         assert!(fit_fitzgibbon(&pts).is_err());
+    }
+
+    #[test]
+    fn non_finite_points_report_degenerate_not_panic() {
+        // A NaN coordinate propagates into the scatter matrix and makes every
+        // eigenvalue NaN. `partial_cmp` returns None for NaN, so ranking them
+        // with `.unwrap()` used to panic inside library code on ordinary bad
+        // input rather than returning an error.
+        let pts = vec![
+            Point2f { x: 0.0, y: 0.0 },
+            Point2f { x: 1.0, y: 0.0 },
+            Point2f { x: 2.0, y: 1.0 },
+            Point2f {
+                x: f32::NAN,
+                y: 2.0,
+            },
+            Point2f { x: 0.0, y: 3.0 },
+            Point2f { x: -1.0, y: 1.0 },
+        ];
+        assert!(
+            matches!(fit_bookstein(&pts), Err(Error::Degenerate(_))),
+            "non-finite input must be reported as degenerate"
+        );
+        assert!(
+            matches!(fit_fitzgibbon(&pts), Err(Error::Degenerate(_))),
+            "non-finite input must be reported as degenerate"
+        );
+    }
+
+    #[test]
+    fn infinite_points_report_degenerate_not_panic() {
+        let pts = vec![
+            Point2f { x: 0.0, y: 0.0 },
+            Point2f { x: 1.0, y: 0.0 },
+            Point2f {
+                x: f32::INFINITY,
+                y: 1.0,
+            },
+            Point2f { x: 1.0, y: 2.0 },
+            Point2f { x: 0.0, y: 3.0 },
+            Point2f { x: -1.0, y: 1.0 },
+        ];
+        assert!(matches!(fit_bookstein(&pts), Err(Error::Degenerate(_))));
+        assert!(matches!(fit_fitzgibbon(&pts), Err(Error::Degenerate(_))));
     }
 }

@@ -188,6 +188,7 @@ fn main() {
         min_component_size: 5,
         record_strengths: false,
         record_geometry: false,
+        ..Default::default()
     };
     let graph = build_graph_from_edgels(w, h, &edgels, &contour_cfg);
     println!(

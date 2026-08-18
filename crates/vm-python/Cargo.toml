@@ -1,25 +1,37 @@
 [package]
 name = "vm-python"
-version = "0.1.0"
-edition = "2024"
-license = "MIT OR Apache-2.0"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
 description = "PyO3 Python bindings for the vision-metrology workspace"
+# Distributed as a PyPI wheel via maturin, not as a crates.io crate. Publishing
+# it would also put a second `vision_metrology` lib name on the registry.
+publish = false
 
 [lib]
-name = "vision_metrology"
+# Deliberately NOT `vision_metrology`: that would collide with the
+# `vision-metrology` package's own lib target, which makes cargo emit an
+# "output filename collision" warning it says may become a hard error, and
+# makes rustdoc see two candidate rlibs for the same extern name.
+#
+# The Python-visible name is set independently: the extension module is
+# importable as `vision_metrology` because the `#[pymodule]` function has that
+# name (it decides the `PyInit_` symbol) and `pyproject.toml` sets
+# `module-name = "vision_metrology"`.
+name = "vm_python"
 crate-type = ["cdylib", "rlib"]
-# The lib name intentionally matches the `vision-metrology` package's own lib
-# name so the Python extension module is importable as `vision_metrology`.
-# That collision makes rustdoc see two candidate rlibs for the same extern
-# name, so both rustdoc targets must be disabled for this crate.
-doc = false
-doctest = false
 
 [dependencies]
-vm-primitives    = { path = "../vm-primitives" }
-vision-metrology = { path = "../vision-metrology" }
-pyo3             = { version = "0.28", features = ["extension-module", "abi3-py310"] }
-numpy            = "0.28"
+vm-primitives    = { path = "../vm-primitives", version = "0.1.0" }
+vision-metrology = { path = "../vision-metrology", version = "0.1.0" }
+pyo3             = { version = "0.29", features = ["extension-module", "abi3-py310"] }
+numpy            = "0.29"
 
 [build-dependencies]
-pyo3-build-config = "0.28"
+pyo3-build-config = "0.29"
+
+[lints]
+workspace = true

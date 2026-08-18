@@ -9,6 +9,9 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
   rust-quality:
     name: Rust Quality (ubuntu)
@@ -34,10 +37,40 @@ jobs:
       - name: Test
         run: cargo test --workspace --all-features
 
-  synth-smoke:
-    name: Synthetic Smoke Eval (ubuntu)
+      # Also runs on push-to-main in publish-docs.yml, but a broken intra-doc
+      # link must fail the PR rather than the deploy that follows the merge.
+      - name: Docs
+        run: cargo doc --workspace --all-features --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+  msrv:
+    name: MSRV
     runs-on: ubuntu-latest
-    needs: rust-quality
+    env:
+      # Keep in step with `rust-version` in the root Cargo.toml. Currently set
+      # by nalgebra 0.35 rather than by anything in this workspace.
+      MSRV: 1.89.0
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust ${{ env.MSRV }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.MSRV }}
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      # `+toolchain` takes precedence over rust-toolchain.toml, which otherwise
+      # pins this step back to stable and silently defeats the check.
+      - name: Check
+        run: cargo +${{ env.MSRV }} check --workspace --all-targets --all-features
+
+  examples:
+    name: Examples (ubuntu)
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -48,8 +81,48 @@ jobs:
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
 
-      - name: Build CLI
-        run: cargo build --workspace
+      # Every example below asserts its own output, so this is a real
+      # end-to-end check of the algorithms rather than a build smoke test.
+      # `laserline` is excluded: it takes a path to an image that is not in
+      # the repository.
+      - name: Run self-asserting examples
+        run: |
+          set -euo pipefail
+          for ex in contour_graph edge_1d edge_2d edge_matching line_segments \
+                    measure_circles morphology multiscale_edges pyramid segmentation; do
+            echo "::group::$ex"
+            cargo run --release -p vision-metrology --example "$ex"
+            echo "::endgroup::"
+          done
+
+  python:
+    name: Python bindings (ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build and test dependencies
+        run: pip install --upgrade maturin pytest numpy
+
+      # python-wheels.yml publishes to PyPI without ever importing what it
+      # built. This is the job that actually exercises the extension module.
+      - name: Build and install the extension module
+        run: pip install crates/vm-python
+
+      - name: Test
+        run: pytest crates/vm-python/tests -q
 
   cross-build:
     name: Cross-platform Build/Test
@@ -69,7 +142,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Build
-        run: cargo build --workspace
+        run: cargo build --workspace --all-features
 
       - name: Test
-        run: cargo test --workspace
+        run: cargo test --workspace --all-features

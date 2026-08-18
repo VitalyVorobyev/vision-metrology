@@ -1,4 +1,5 @@
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
+use std::hint::black_box;
 use vision_metrology::edge::edge2d::Edgel;
 use vision_metrology::{EdgeModel, RigidEdgeMatcher, RigidMatchConfig};
 use vision_metrology::{Point2f, Rect2f, Vec2f};

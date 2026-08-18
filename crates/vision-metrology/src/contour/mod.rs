@@ -53,6 +53,7 @@ mod geom_tests {
             min_component_size: 2,
             record_strengths: false,
             record_geometry: true,
+            ..Default::default()
         };
         let g = build_graph_from_edgels(10, 5, &edgels, &cfg);
         assert_eq!(g.edges.len(), 1);
@@ -105,6 +106,7 @@ mod geom_tests {
             min_component_size: 2,
             record_geometry: false,
             record_strengths: false,
+            ..Default::default()
         };
         let g = build_graph_from_edgels(10, 6, &edgels, &cfg);
         let long_edges: Vec<_> = g.filter_edges_min_length(5.0).collect();
@@ -122,6 +124,7 @@ mod geom_tests {
             min_component_size: 2,
             record_geometry: false,
             record_strengths: false,
+            ..Default::default()
         };
         let g = build_graph_from_edgels(10, 6, &edgels, &cfg);
         let sorted: Vec<_> = g.iter_edges_by_length().collect();

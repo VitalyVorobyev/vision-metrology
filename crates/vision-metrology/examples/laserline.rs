@@ -163,7 +163,7 @@ fn main() -> Result<()> {
         let snap = extract_snap(pixels, full_width, height, snap_w, snap_idx)?;
 
         let t0 = Instant::now();
-        let line = extractor.extract_line_u8(&snap.as_view(), 0..snap_w, &cfg, None);
+        let line = extractor.extract_line_u8(&snap.as_view(), 0..snap_w, &cfg, None)?;
         let elapsed_ms = t0.elapsed().as_secs_f64() * 1e3;
 
         let valid_count = line.samples.iter().filter(|s| s.valid).count();

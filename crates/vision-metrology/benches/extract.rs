@@ -1,4 +1,5 @@
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
+use std::hint::black_box;
 use vision_metrology::Image;
 use vision_metrology::{ColAccess, LaserExtractConfig, LaserExtractor, ScanAxis};
 
@@ -33,7 +34,9 @@ fn bench_rows(c: &mut Criterion) {
 
     c.bench_function("laser_extract_rows_1280x512", |b| {
         b.iter(|| {
-            let line = ext.extract_line_u8(black_box(&view), 0..512, black_box(&cfg), None);
+            let line = ext
+                .extract_line_u8(black_box(&view), 0..512, black_box(&cfg), None)
+                .expect("valid extractor arguments");
             black_box(line.points.len());
         });
     });
@@ -52,7 +55,9 @@ fn bench_cols_gather(c: &mut Criterion) {
 
     c.bench_function("laser_extract_cols_gather_512x1280", |b| {
         b.iter(|| {
-            let line = ext.extract_line_u8(black_box(&view), 0..512, black_box(&cfg), None);
+            let line = ext
+                .extract_line_u8(black_box(&view), 0..512, black_box(&cfg), None)
+                .expect("valid extractor arguments");
             black_box(line.points.len());
         });
     });

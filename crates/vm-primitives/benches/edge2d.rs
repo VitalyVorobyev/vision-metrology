@@ -1,4 +1,5 @@
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
+use std::hint::black_box;
 use vm_primitives::{Edge2DConfig, Edge2DDetector, Image};
 
 fn build_slanted_u8(width: usize, height: usize) -> Image<u8> {

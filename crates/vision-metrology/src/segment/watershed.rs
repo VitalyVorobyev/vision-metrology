@@ -1,13 +1,25 @@
 //! Marker-based watershed segmentation on a gradient magnitude image.
 //!
 //! Uses a priority-queue flood-fill (Beucher-Meyer algorithm):
-//! 1. Initialise: push all seed markers into the heap.
+//! 1. Initialise: label each seed and push its unlabelled 4-neighbours.
 //! 2. Pop the lowest-gradient pixel from the heap.
-//!    - If already labelled, skip.
-//!    - Otherwise label it with the source label from the heap entry.
-//! 3. For each unlabelled 4-connected neighbour:
-//!    - Push it with the current pixel's label if unlabelled.
-//!    - Mark it as boundary if it carries a different label from a competing front.
+//!    - If it is a seed or already a boundary, skip it.
+//!    - If a *different* label already claimed it, it is where two fronts met:
+//!      mark it a boundary and stop.
+//!    - If the *same* label already claimed it, the entry is a stale duplicate:
+//!      drop it.
+//!    - Otherwise label it and push its unlabelled 4-neighbours.
+//!
+//! Two properties of the ordering matter and are easy to get wrong:
+//!
+//! - **Ties break FIFO, not by pixel index.** Within a plateau every pixel has
+//!   the same priority, so the tiebreak alone decides how the fronts advance.
+//!   FIFO advances them in lock-step and partitions the plateau by geodesic
+//!   distance from the seeds. Ordering by raster index instead lets the
+//!   lowest-index seed run away and swallow the plateau.
+//! - **A pixel propagates exactly once**, when it leaves `UNLABELLED`.
+//!   Re-propagating on stale pops compounds heap entries along the front and
+//!   makes the runtime exponential in the image size.
 //!
 //! Output:
 //! - `≥ 0` — region label (0-based index into the `markers` slice).
@@ -18,22 +30,38 @@ use std::collections::BinaryHeap;
 
 use vm_primitives::{Image, ImageView};
 
-/// Heap entry: `(Reverse(priority_bits), pixel_idx, label)`.
+/// Heap entry: `(Reverse(priority_bits), insertion_seq, pixel_idx, label)`.
 /// Lower gradient = higher priority.
 #[derive(Eq, PartialEq)]
 struct Entry {
     priority: Reverse<u32>,
+    /// Monotonic insertion counter, used to break priority ties in FIFO order.
+    seq: u64,
     idx: usize,
     label: i32,
 }
 
 impl Ord for Entry {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        // Primary: lower gradient first (Reverse order).
-        // Secondary (tiebreak): lower pixel index first for determinism.
+        // `BinaryHeap` is a max-heap, so "greater" means "popped sooner".
+        //
+        // Primary: lower gradient first (hence `Reverse`).
+        //
+        // Secondary: **FIFO** among equal gradients, i.e. smaller `seq` is
+        // greater. This is what makes plateaus come out right. On a flat
+        // region every pixel has the same priority, so the tiebreak alone
+        // decides the order the fronts advance in. FIFO advances every front
+        // in lock-step, which partitions a plateau by geodesic distance from
+        // the seeds -- the defining property of the Beucher-Meyer flood.
+        // Breaking ties on `idx` instead would order the frontier by raster
+        // position, letting the lowest-index seed run away and swallow the
+        // whole plateau.
+        //
+        // `seq` is unique per push, so this is a total order and the output is
+        // deterministic.
         self.priority
             .cmp(&other.priority)
-            .then(self.idx.cmp(&other.idx).reverse())
+            .then_with(|| other.seq.cmp(&self.seq))
     }
 }
 
@@ -88,6 +116,8 @@ pub fn watershed(gradient: &ImageView<'_, f32>, markers: &[(usize, usize)]) -> I
     // `is_seed[idx]` prevents seed pixels from being overwritten by competing fronts.
     let mut is_seed = vec![false; n];
     let mut heap: BinaryHeap<Entry> = BinaryHeap::new();
+    // Monotonic push counter backing the FIFO tiebreak in `Entry::cmp`.
+    let mut seq: u64 = 0;
 
     // 4-connected offsets: (dx, dy).
     let offsets: [(isize, isize); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
@@ -113,10 +143,19 @@ pub fn watershed(gradient: &ImageView<'_, f32>, markers: &[(usize, usize)]) -> I
                 let g = gradient.get(nx as usize, ny as usize).expect("in-bounds");
                 heap.push(Entry {
                     priority: Reverse(g.to_bits()),
+                    seq,
                     idx: nidx,
                     label: seed_label as i32,
                 });
+                seq += 1;
             }
+            // A neighbour that is already labelled is deliberately left alone.
+            // It becomes a watershed pixel only if a competing front pops it
+            // with a different label (handled at the top of this loop), which
+            // is the Beucher-Meyer rule. Retroactively converting an already
+            // claimed neighbour to BOUNDARY here instead would steal a pixel
+            // from the front that legitimately reached it first, widening every
+            // boundary to 2 px and biasing it toward the lower-numbered seed.
         }
     }
 
@@ -126,15 +165,26 @@ pub fn watershed(gradient: &ImageView<'_, f32>, markers: &[(usize, usize)]) -> I
         if is_seed[idx] || cur == BOUNDARY {
             continue;
         }
-        if cur == UNLABELLED {
-            // First time we visit this pixel: label it.
-            labels[idx] = label;
-        } else if cur != label {
-            // A different label already claimed it: boundary collision.
-            labels[idx] = BOUNDARY;
+        if cur != UNLABELLED {
+            // Already claimed. A competing front turns it into a boundary; a
+            // stale duplicate entry from our own front is simply dropped.
+            //
+            // Dropping it is what keeps the algorithm near-linear. A pixel's
+            // neighbours are pushed exactly once, at the moment it transitions
+            // out of UNLABELLED. Labels only ever move
+            // UNLABELLED -> label -> BOUNDARY and never back, so re-scanning on
+            // a stale pop can never find a neighbour the first pop missed --
+            // it only re-pushes entries, which compounds along the front and
+            // makes the runtime exponential on plateaus (see the flat-image
+            // regression test below).
+            if cur != label {
+                labels[idx] = BOUNDARY;
+            }
             continue;
         }
-        // cur == label: pixel already claimed by same front (stale entry) → still propagate.
+
+        // First time we visit this pixel: label it, then propagate.
+        labels[idx] = label;
 
         // Push unlabelled 4-connected neighbours.
         let x = (idx % w) as isize;
@@ -151,12 +201,11 @@ pub fn watershed(gradient: &ImageView<'_, f32>, markers: &[(usize, usize)]) -> I
                 let g = gradient.get(nx as usize, ny as usize).expect("in-bounds");
                 heap.push(Entry {
                     priority: Reverse(g.to_bits()),
+                    seq,
                     idx: nidx,
                     label,
                 });
-            } else if !is_seed[nidx] && nlbl != BOUNDARY && nlbl != label {
-                // Different label claims this neighbour: mark it boundary.
-                labels[nidx] = BOUNDARY;
+                seq += 1;
             }
         }
     }
@@ -199,11 +248,117 @@ mod tests {
             1,
             "seed pixel must keep label 1"
         );
-        // There must be exactly one boundary pixel somewhere in the middle.
-        assert!(
-            labels.data().contains(&-1),
-            "two meeting fronts must create at least one boundary pixel"
+        // On a flat gradient the fronts advance at equal speed, so the split
+        // must land exactly on the geodesic midline: 0..=4 | boundary | 6..=10.
+        assert_eq!(
+            labels.data(),
+            &[0, 0, 0, 0, 0, -1, 1, 1, 1, 1, 1],
+            "flat 11x1 with seeds at both ends must split at the midline"
         );
+    }
+
+    /// Renders a label image as one char per pixel: `#` for boundary, else the
+    /// label digit. Keeps the plateau expectations below readable.
+    fn render(labels: &Image<i32>, w: usize, h: usize) -> Vec<String> {
+        (0..h)
+            .map(|y| {
+                (0..w)
+                    .map(|x| match labels.data()[y * w + x] {
+                        -1 => '#',
+                        v => char::from(b'0' + v as u8),
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn flat_plateau_splits_at_geodesic_midline() {
+        // Every pixel of a flat image has the same priority, so the tiebreak
+        // alone decides how the fronts advance. FIFO order makes them advance
+        // in lock-step, putting the boundary exactly halfway between the seeds.
+        let grad = Image::from_vec(7, 7, vec![0.0f32; 7 * 7]).unwrap();
+
+        let left_right = watershed(&grad.as_view(), &[(0, 3), (6, 3)]);
+        assert_eq!(
+            render(&left_right, 7, 7),
+            vec!["000#111"; 7],
+            "seeds left and right of a plateau must give a vertical midline"
+        );
+
+        let top_bottom = watershed(&grad.as_view(), &[(3, 0), (3, 6)]);
+        assert_eq!(
+            render(&top_bottom, 7, 7),
+            vec![
+                "0000000", "0000000", "0000000", "#######", "1111111", "1111111", "1111111"
+            ],
+            "seeds above and below a plateau must give a horizontal midline"
+        );
+    }
+
+    #[test]
+    fn flat_plateau_four_seeds_form_a_cross() {
+        // Four corner seeds on a plateau partition it into four equal quadrants
+        // separated by a one-pixel cross.
+        let grad = Image::from_vec(9, 9, vec![0.0f32; 9 * 9]).unwrap();
+        let labels = watershed(&grad.as_view(), &[(0, 0), (8, 0), (0, 8), (8, 8)]);
+        assert_eq!(
+            render(&labels, 9, 9),
+            vec![
+                "0000#1111",
+                "0000#1111",
+                "0000#1111",
+                "0000#1111",
+                "#########",
+                "2222#3333",
+                "2222#3333",
+                "2222#3333",
+                "2222#3333",
+            ],
+            "four corner seeds must produce four equal quadrants and a 1-px cross"
+        );
+    }
+
+    #[test]
+    fn large_flat_image_is_not_exponential() {
+        // Regression guard. A stale heap entry must not re-propagate: a pixel's
+        // neighbours are pushed exactly once, when it leaves UNLABELLED.
+        // Re-pushing on every stale pop compounds along the front and made this
+        // exponential in the image size -- a 14x14 plateau took 1.6 s and
+        // 1280x1024 never finished. A regression here manifests as a hang, so
+        // this test is deliberately large enough that the old code could not
+        // complete it.
+        let (w, h) = (128, 128);
+        let grad = Image::from_vec(w, h, vec![0.0f32; w * h]).unwrap();
+        let labels = watershed(&grad.as_view(), &[(0, 64), (127, 64)]);
+
+        // Same midline property as the 7x7 case, at a size the old code could
+        // not reach. With an even width the exact midpoint (63.5) falls between
+        // pixels, so the front that arrives first claims through column 63 and
+        // the collision lands on the single column 64.
+        for y in 0..h {
+            for x in 0..w {
+                let got = labels.data()[y * w + x];
+                let want = match x {
+                    0..=63 => 0,
+                    64 => -1,
+                    _ => 1,
+                };
+                assert_eq!(got, want, "pixel ({x},{y}) on a 128x128 plateau");
+            }
+        }
+    }
+
+    #[test]
+    fn output_is_deterministic() {
+        // `seq` is unique per push, so `Entry::cmp` is a total order and repeated
+        // runs must agree bit for bit.
+        let w = 24;
+        let grad = Image::from_vec(w, w, vec![0.0f32; w * w]).unwrap();
+        let seeds = [(0, 0), (w - 1, 0), (w / 2, w - 1)];
+        let a = watershed(&grad.as_view(), &seeds);
+        let b = watershed(&grad.as_view(), &seeds);
+        assert_eq!(a.data(), b.data(), "watershed output must be deterministic");
     }
 
     #[test]
