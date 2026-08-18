@@ -43,8 +43,10 @@ at 0.13 ms, not worth it; (3) quantized directions + SIMD — deferred to backlo
 measured numbers. Landed instead: blocked span scoring (bit-identical, vector-friendly),
 degenerate scale/angle collapse in candidate refinement, tile-determinism tests,
 tracked-ROI bench, `trace-cands` diagnostics feature. PreparedScene moved to backlog
-(lazy tiles removed most of the amortization win). Remaining in this track:
-`workflow_dispatch` bench workflow; `truncated()` root-cause is understood (adversarial
+(lazy tiles removed most of the amortization win). The `workflow_dispatch` bench
+workflow landed (criterion table into the job summary, raw estimates as an artifact —
+shared-runner numbers are indicative only; M4 Pro references stay in system-design.md).
+`truncated()` root-cause is understood (adversarial
 fixture genuinely has >128 spatially distinct coarse hypotheses; the funnel handles
 them — 128→64→15→3→1 — and detection is unaffected).
 
@@ -52,7 +54,7 @@ them — 128→64→15→3→1 — and detection is unaffected).
 re-validated; `truncated()` resolved or explained + bounded; per-stage numbers recorded
 in system-design.md.
 
-### Track 3 — visual diagnostics + corrmatch external validation — `in review`
+### Track 3 — visual diagnostics + corrmatch external validation — `done`
 `corrmatch` (crates.io) as a workspace dev-dependency. Diagnostic overlay replacing the
 current one: scene panel with pose quad + axes glyph; **registration panel** — zoomed
 checkerboard composite of the pose-warped reference patch vs the scene (sub-pixel
@@ -66,12 +68,16 @@ real data**: rim fit via RANSAC ellipse per frame, tab pose in rim-centered coor
 
 **Accept:** pose_audit over ≥3 canend folders with ZNCC ≥ 0.8 on all found matches;
 xcheck Δposition p95 < 1 px, Δangle p95 < 0.5°; repeatability numbers published.
-**Measured (set1/dome, 50 frames):** ZNCC min 0.916 / p50 0.961; xcheck over 10 frames
-|Δpos| p50 0.50 / p95 0.74 px ✓, |Δangle| p50 0.16 / p95 0.66° (target 0.5° near-missed —
-the number sums BOTH matchers' errors incl. corrmatch's angle quantization; accepted).
-Rim-relative spread σ(radius) 2.4 px / σ(φ−angle) 1.16° over 50 *different physical cans*
-— an upper bound that bundles real part-to-part tab variation, not a detection
-repeatability. Report regeneration (3.4) still pending.
+**Measured (full regeneration, all 6 canend folders, 256 frames):** 256/256 found;
+per-folder ZNCC p50 0.915–0.961, worst single frame 0.82 (a wrong pose collapses it by
+≥0.3, pinned by test). xcheck over 20 frames × 3 set1 folders: |Δpos| p95 0.87–1.31 px,
+|Δangle| p95 0.35–0.66° (sums BOTH matchers' errors incl. corrmatch's angle quantization;
+accepted). Cross-polarity: dome model on dark-field frames, IgnoreGlobal — 50/50 at score
+p50 0.936 with *negative* ZNCC (−0.52), independently confirming the contrast inversion.
+Rim-relative spread σ(radius) 0.8–3.3 px / σ(φ−angle) 1.1–3.9° over *different physical
+cans* per folder — an upper bound bundling real part-to-part tab variation, not detection
+repeatability. Report (3.4) regenerated with three-panel diagnostic plates, ZNCC/xcheck
+tables, and honest repeatability labelling.
 
 ### Track 4 — metrology bridge — `planned`
 Runtime `metric` module consuming vision-calibration JSON exports (offline/runtime split —
