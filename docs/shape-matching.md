@@ -116,19 +116,25 @@ samples the whole contour rather than one arc.
 
 ### Where the time actually goes
 
-On a 1280×1024 scene with an 800-point model and a full 360° search:
+On a 1280×1024 scene with an 800-point model (M4 Pro, single thread):
 
 | | Time |
 |---|---|
-| whole `find_u8` call | 7.8 ms |
-| ...of which: building the direction-field pyramid | ~5.3 ms |
-| ...of which: the pose search itself | ~2.5 ms |
-| same call at `greediness = 0.0` | 11.2 ms |
+| full 360° `find_u8`, clean scene | 3.5 ms |
+| full 360° `find_u8`, heavily cluttered scene | 6.6 ms |
+| tracked mode (±60 px ROI + ±10° prior from the previous frame) | 1.5 ms |
+| same clean call at `greediness = 0.0` | 5.5 ms |
 | model creation | 0.49 ms |
 
-**Scene preprocessing dominates, not the search.** Micro-optimising the scoring
-loop is the wrong move here; restricting the level-0 and level-1 fields to the
-bounding boxes of surviving candidates is the one that would pay.
+Below the top pyramid level the gradient field is built **lazily, tile by
+tile**, only where surviving candidates actually look — a full-frame fine-level
+field (which alone costs ~4.6 ms) is never computed during a find. Tile
+contents are bit-identical to a full build, so results do not depend on which
+tiles happen to be materialised.
+
+On heavily textured scenes the remaining cost is split between the exhaustive
+coarse sweep and refining candidates that score well enough to escape the
+greedy abort — that part is proportional to genuine structure in the scene.
 
 `max_candidates` (default 128) bounds how many coarse-level candidates descend
 the pyramid. On a textured scene the cap can bite; `ShapeMatcher::truncated()`

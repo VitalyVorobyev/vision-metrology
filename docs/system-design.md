@@ -129,13 +129,28 @@ directions + SIMD only if still needed — in that order, each gated on measurem
 
 ## Performance numbers (M4 Pro, single thread, release)
 
-Record per release; update when Track 2 lands.
+Record per release. The target use case budgets ~30 ms for a full multi-stage
+image analysis; detection is stage 1 and must leave room for the rest.
 
-| Bench | 2026-08-18 (post-#18) |
-|---|---|
-| `shape_model_create_1280x1024` | 0.49 ms |
-| `shape_find_1280x1024_360deg` | 7.8 ms |
-| `shape_find_1280x1024_360deg_greedy0` | 11.2 ms |
-| `shape_find_1280x1024_scale_0p8_1p25` | 23.1 ms |
-| `direction_field_1280x1024` | 4.0 ms |
-| `edge2d_detect_u8_1280x1024` | 5.6 ms |
+| Bench | post-#18 | post-tiling (Track 2) |
+|---|---|---|
+| `shape_model_create_1280x1024` | 0.49 ms | 0.49 ms |
+| `shape_find_1280x1024_360deg` | 7.8 ms | **3.46 ms** |
+| `shape_find_1280x1024_360deg_clutter` | 10.4 ms | **6.57 ms** |
+| `shape_find_1280x1024_tracked_roi` | — | **1.49 ms** |
+| `shape_find_1280x1024_360deg_greedy0` | 11.2 ms | 5.47 ms |
+| `shape_find_1280x1024_scale_0p8_1p25` | 23.1 ms | 16.95 ms |
+| `direction_field_1280x1024` (full frame) | 4.0 ms | 4.0 ms (lazily skipped in find) |
+| `edge2d_detect_u8_1280x1024` | 5.6 ms | 5.6 ms |
+
+Canend real data, full 360°, median per frame: set1 dome 15 → **5.6 ms**,
+bright 16.9 → 9.2 ms, dark 15 → 11.5 ms, set2 dome 63 → **25.5 ms**, conveyor
+10.6 ms, CP34 9.2 ms. Detection 256/256 preserved; per-frame scores
+bit-identical to the pre-tiling code (verified against `main` on identical
+flags).
+
+Where the remaining time goes (cluttered fixture, per stage): top-level sweep
+2.3 ms, candidate descent 4.2 ms, everything else <0.5 ms. The descent cost is
+dominated by well-scoring candidates that legitimately never trigger the
+greedy abort — reducing it further means quantized/SIMD scoring
+(see backlog).

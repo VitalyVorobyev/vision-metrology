@@ -9,7 +9,7 @@ use super::config::{Polarity, Refinement, ShapeSearchConfig};
 use super::model::{ModelPoint, ShapeModel};
 use super::nms::{InstanceMask, suppress};
 use super::refine::{Pose, interpolate, least_squares};
-use super::score::{Bound, RotPoint, rotate_into, score_at, score_pose, score_span};
+use super::score::{Bound, RotPoint, rotate_into, score_pose, score_span};
 use super::search::{Candidate, Grid, Span, cap_candidates, collect_local_maxima};
 
 /// One located instance of a [`ShapeModel`].
@@ -128,7 +128,14 @@ impl ShapeMatcher {
         model: &ShapeModel,
         cfg: &ShapeSearchConfig,
     ) -> Vec<ShapeMatch> {
+        #[cfg(feature = "trace-cands")]
+        let t = std::time::Instant::now();
         self.pyr.build_from_u8(img, model.num_levels());
+        #[cfg(feature = "trace-cands")]
+        eprintln!(
+            "pyr build_from_u8: {:.3} ms",
+            t.elapsed().as_secs_f64() * 1e3
+        );
         self.run(model, cfg)
     }
 
@@ -158,6 +165,8 @@ impl ShapeMatcher {
     }
 
     fn run(&mut self, model: &ShapeModel, cfg: &ShapeSearchConfig) -> Vec<ShapeMatch> {
+        #[cfg(feature = "trace-cands")]
+        let t_run = std::time::Instant::now();
         self.truncated = false;
         let n_lv = model.num_levels().min(self.pyr.num_levels());
         if n_lv == 0 || cfg.min_score > 1.0 {
@@ -167,12 +176,25 @@ impl ShapeMatcher {
         if self.fields.len() < n_lv {
             self.fields.resize_with(n_lv, DirectionField::new);
         }
+        let top = n_lv - 1;
+        // Only the top level is swept exhaustively; every finer level is read
+        // in small windows around surviving candidates, so those fields are
+        // built lazily, tile by tile, as the descent asks for them. On a
+        // 1280×1024 scene this removes ~5 ms of gradient work per call.
         for level in 0..n_lv {
             let img = self.pyr.level(level).expect("level < n_lv");
-            self.fields[level].build_image_f32(img, model.smooth(), cfg.min_contrast);
+            if level == top {
+                self.fields[level].build_image_f32(img, model.smooth(), cfg.min_contrast);
+            } else {
+                self.fields[level].begin_tiled_f32(img, model.smooth(), cfg.min_contrast);
+            }
         }
+        #[cfg(feature = "trace-cands")]
+        eprintln!(
+            "fields setup: {:.3} ms",
+            t_run.elapsed().as_secs_f64() * 1e3
+        );
 
-        let top = n_lv - 1;
         let last = cfg.last_level.min(top);
         let angles = intersect(
             cfg.angle_range.unwrap_or(model.angle_range()),
@@ -184,6 +206,7 @@ impl ShapeMatcher {
         );
 
         let Self {
+            pyr,
             fields,
             rot,
             cands,
@@ -214,6 +237,8 @@ impl ShapeMatcher {
 
         cands.clear();
         maps.resize(span.width() * span.height());
+        #[cfg(feature = "trace-cands")]
+        let t_sweep = std::time::Instant::now();
         for si in 0..sca.len() {
             sweep_angles(
                 field,
@@ -230,12 +255,27 @@ impl ShapeMatcher {
             );
         }
         *truncated = cap_candidates(cands, cfg.max_candidates);
+        #[cfg(feature = "trace-cands")]
+        {
+            let mut pos: Vec<(i32, i32)> = cands.iter().map(|c| (c.x, c.y)).collect();
+            pos.sort_unstable();
+            pos.dedup();
+            eprintln!(
+                "top level {top}: sweep {:.3} ms, {} candidates at {} distinct positions (truncated {})",
+                t_sweep.elapsed().as_secs_f64() * 1e3,
+                cands.len(),
+                pos.len(),
+                *truncated
+            );
+        }
 
         // ---- propagate down ------------------------------------------------
         for level in (last..top).rev() {
-            let field = &fields[level];
+            #[cfg(feature = "trace-cands")]
+            let t_level = std::time::Instant::now();
             let lvl = model.level(level).expect("level < num_levels");
-            let span = Span::for_level(cfg.roi, level, field.width(), field.height());
+            let img = pyr.level(level).expect("level < n_lv");
+            let span = Span::for_level(cfg.roi, level, img.width(), img.height());
             let thresh = if level > last {
                 cfg.min_score * cfg.coarse_score_factor
             } else {
@@ -244,8 +284,18 @@ impl ShapeMatcher {
             let bound = Bound::new(lvl.points.len(), cfg.greediness, thresh);
             next.clear();
             for cand in cands.iter() {
+                // Candidates arrive in the coarser level's coordinates;
+                // `refine_candidate` evaluates around the doubled position.
+                ensure_tiles_at(
+                    &mut fields[level],
+                    img,
+                    lvl.radius,
+                    2 * cand.x,
+                    2 * cand.y,
+                    cand.scale,
+                );
                 if let Some(best) = refine_candidate(
-                    field,
+                    &fields[level],
                     &lvl.points,
                     span,
                     *cand,
@@ -262,16 +312,36 @@ impl ShapeMatcher {
                 }
             }
             core::mem::swap(cands, next);
+            #[cfg(feature = "trace-cands")]
+            eprintln!(
+                "level {level}: {:.3} ms, {} candidates survive",
+                t_level.elapsed().as_secs_f64() * 1e3,
+                cands.len()
+            );
         }
 
         // ---- refine, score, suppress ---------------------------------------
-        let field = &fields[last];
         let lvl = model.level(last).expect("last < num_levels");
+        let img_last = pyr.level(last).expect("last < n_lv");
         let up = (1usize << last) as f32;
         let shift = 0.5 * (up - 1.0);
 
+        #[cfg(feature = "trace-cands")]
+        let t_final = std::time::Instant::now();
         let mut out: Vec<ShapeMatch> = Vec::new();
         for cand in cands.iter() {
+            if last < top {
+                // These candidates are already in level-`last` coordinates.
+                ensure_tiles_at(
+                    &mut fields[last],
+                    img_last,
+                    lvl.radius,
+                    cand.x,
+                    cand.y,
+                    cand.scale,
+                );
+            }
+            let field = &fields[last];
             let mut pose = Pose {
                 x: cand.x as f32,
                 y: cand.y as f32,
@@ -326,8 +396,14 @@ impl ShapeMatcher {
             });
         }
 
+        #[cfg(feature = "trace-cands")]
+        eprintln!(
+            "final: {:.3} ms; run so far {:.3} ms",
+            t_final.elapsed().as_secs_f64() * 1e3,
+            t_run.elapsed().as_secs_f64() * 1e3
+        );
         let (w0, h0) = (fields[0].width(), fields[0].height());
-        suppress(
+        let result = suppress(
             mask,
             (w0, h0),
             &model.level(0).expect("level 0 exists").points,
@@ -335,8 +411,32 @@ impl ShapeMatcher {
             cfg.max_overlap,
             cfg.max_matches,
             nms_scratch,
-        )
+        );
+        #[cfg(feature = "trace-cands")]
+        eprintln!("run total: {:.3} ms", t_run.elapsed().as_secs_f64() * 1e3);
+        result
     }
+}
+
+/// Build the lazy tiles a candidate's refinement will read.
+///
+/// The window is the model's reach at this candidate's scale plus the
+/// refinement's worst-case wander: ±2 px of grid refinement, up to ~6 px of
+/// least-squares drift (2 outer iterations × `MAX_STEP_PX`), ±1 px sampling
+/// along the normal, and integer rounding. Tiles are 64 px, so the margin
+/// rarely adds tiles — it only guards the boundary case.
+fn ensure_tiles_at(
+    field: &mut DirectionField,
+    img: &vm_primitives::Image<f32>,
+    radius: f32,
+    cx: i32,
+    cy: i32,
+    scale: f32,
+) {
+    const MARGIN: f32 = 12.0;
+    let reach = radius * scale.max(0.1) * 1.1 + MARGIN;
+    let r = reach.ceil() as i32;
+    field.ensure_rect_f32(img, cx - r, cy - r, cx + r + 1, cy + r + 1);
 }
 
 /// `Translation(position) ∘ sR ∘ Translation(−origin)`, as a similarity.
@@ -504,26 +604,37 @@ fn refine_candidate(
     let (bx, by) = (2 * cand.x, 2 * cand.y);
     let mut best: Option<Candidate> = None;
 
-    for si in -2i32..=2 {
+    // A degenerate search dimension collapses to the single admissible value:
+    // with `scale_range = (1, 1)` the five (1 + step)^si values all sit inside
+    // the ±1% tolerance below, and sweeping them quintuples the cost of
+    // refining every candidate at every level for poses that cannot differ.
+    let si_range = if scales.1 <= scales.0 { 0..=0 } else { -2..=2 };
+    let ai_range = if angles.1 <= angles.0 { 0..=0 } else { -2..=2 };
+
+    for si in si_range {
         let scale = cand.scale * (1.0 + scale_step).powi(si);
         if scale < scales.0 * 0.99 || scale > scales.1 * 1.01 {
             continue;
         }
-        for ai in -2i32..=2 {
+        for ai in ai_range.clone() {
             let angle = cand.angle + ai as f32 * angle_step;
             if angle < angles.0 - angle_step || angle > angles.1 + angle_step {
                 continue;
             }
             rotate_into(points, angle, scale, rot);
+            // Each 5-position row goes through the blocked span scorer — the
+            // same per-lane sums, chunk boundaries and abort thresholds as
+            // `score_at`, so the scores (and therefore the selected best) are
+            // bit-identical to the pose-at-a-time loop this replaces.
+            let mut row = [f32::NEG_INFINITY; 5];
             for dy in -2i32..=2 {
-                for dx in -2i32..=2 {
-                    let (qx, qy) = (bx + dx, by + dy);
-                    if !span.contains(qx, qy) {
+                let qy = by + dy;
+                score_span(field, rot, qy, bx - 2, polarity, bound, &mut row);
+                for (i, &score) in row.iter().enumerate() {
+                    let qx = bx - 2 + i as i32;
+                    if !span.contains(qx, qy) || score == f32::NEG_INFINITY {
                         continue;
                     }
-                    let Some(score) = score_at(field, rot, qx, qy, polarity, bound) else {
-                        continue;
-                    };
                     if best.is_none_or(|b| score > b.score) {
                         best = Some(Candidate {
                             x: qx,

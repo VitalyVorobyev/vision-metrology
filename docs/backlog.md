@@ -15,9 +15,20 @@ agent) can pick it up cold. When an item is scheduled it moves into
 - **Anisotropic scale.** 5-DOF search with a different refinement Jacobian; deliberately
   excluded from v1. Design from scratch when a use case exists — do not bolt onto the
   4-DOF pose structs.
-- **Quantized directions + SIMD score loop** (Track 2 lever 3). i8 (nx, ny), i8×i8→i32
-  dot via `wide`; 4× less field memory traffic. Only if tiled fields + u8 Scharr leave
-  the <5 ms target unmet — record the measured numbers here if skipped.
+- **Quantized directions + SIMD score loop** (Track 2 lever 3, deferred with numbers).
+  After lazy tiles + blocked span scoring, the cluttered fixture sits at 6.6 ms:
+  top sweep 2.3 ms + candidate descent 4.2 ms, and the descent is dominated by
+  well-scoring candidates that never abort — per-pose cost is the floor. i8 (nx, ny)
+  with i16 dot products would cut that floor ~3–4× but changes score arithmetic
+  (no longer bit-comparable to f32) — do it as its own PR with a documented
+  tolerance policy. Clean-scene and real canend numbers are already 3.5–11 ms,
+  inside the 30 ms full-pipeline budget, which is why this was deferred.
+- **`PreparedScene` multi-model API** (was Track 2.5). With lazy tiled fields, the
+  shareable per-scene work is only the pyramid (0.13 ms) + top field (0.02 ms) —
+  the amortization argument mostly evaporated. Revisit only if a multi-model
+  station measures the per-model overhead as material; the API carries real
+  maintenance cost for a ~0.3 ms/model win. Tiles could additionally be shared
+  across models with equal (smooth, min_contrast).
 - **`rayon` parallel feature.** Top-level angle sweep is the natural fan-out. Single-thread
   performance comes first (Track 2); parallelism is a multiplier, not a fix. Keep results
   deterministic (stable reduction order) if added.
