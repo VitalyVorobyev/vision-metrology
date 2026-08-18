@@ -7,6 +7,7 @@ use core::{
 ///
 /// By convention, integer coordinate `i` refers to the **center** of pixel `i`.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Point2f {
     /// Horizontal (column) coordinate in pixels.
     pub x: f32,
@@ -16,6 +17,7 @@ pub struct Point2f {
 
 /// A 2-D displacement vector (difference of two [`Point2f`] values).
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Vec2f {
     /// Horizontal component in pixels.
     pub x: f32,
@@ -144,6 +146,7 @@ pub struct Polyline2f {
 /// `(x, y)` is the top-left corner; the box spans
 /// `[x, x + width) × [y, y + height)`.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Rect2f {
     /// Left edge (column) of the rectangle.
     pub x: f32,

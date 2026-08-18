@@ -14,6 +14,14 @@ categories = ["computer-vision", "science"]
 vm-primitives = { path = "../vm-primitives", version = "0.1.0" }
 nalgebra = { workspace = true }
 libm = "0.2"
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+
+[features]
+## Versioned ShapeModel persistence (`ShapeModel::to_json` / `from_json`) plus
+## Serialize/Deserialize derives on the model types. Enables the same feature
+## in vm-primitives for the geometry types the model embeds.
+serde = ["dep:serde", "dep:serde_json", "vm-primitives/serde"]
 
 [dev-dependencies]
 anyhow = "1"

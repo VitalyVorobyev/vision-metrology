@@ -9,6 +9,7 @@ use super::config::Polarity;
 /// 16 bytes, array-of-structs: all four floats are consumed by a single
 /// inner-loop iteration, so keeping them adjacent is what the cache wants.
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ModelPoint {
     /// Offset from this level's reference point, in this level's pixel units.
     pub d: Vec2f,
@@ -19,6 +20,7 @@ pub struct ModelPoint {
 
 /// One pyramid level of a [`ShapeModel`].
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ShapeModelLevel {
     /// Model points, in spatially stratified order.
     ///
@@ -50,6 +52,7 @@ pub struct ShapeModelLevel {
 /// agree; decimated level-0 points would give the model a sharpness the scene
 /// does not have, systematically depressing the coarse score.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ShapeModel {
     levels: Vec<ShapeModelLevel>,
     origin: Point2f,
@@ -149,3 +152,60 @@ impl ShapeModel {
         })
     }
 }
+
+/// Versioned persistence for [`ShapeModel`] (`serde` feature).
+///
+/// The JSON document carries an explicit `format_version` so a model built
+/// offline and shipped to a machine fails loudly — not by silently
+/// mis-deserializing — when the format evolves.
+#[cfg(feature = "serde")]
+mod persist {
+    use vm_primitives::Error;
+
+    use super::ShapeModel;
+
+    /// Bumped whenever the serialized layout of [`ShapeModel`] changes.
+    pub const SHAPE_MODEL_FORMAT_VERSION: u32 = 1;
+
+    #[derive(serde::Serialize, serde::Deserialize)]
+    struct Envelope {
+        format_version: u32,
+        model: ShapeModel,
+    }
+
+    impl ShapeModel {
+        /// Serialize the model to a versioned JSON string.
+        ///
+        /// # Errors
+        /// Returns [`Error::InvalidConfig`] if serialization fails (which
+        /// only happens for non-finite floats with some serializers; models
+        /// built by this crate contain none).
+        pub fn to_json(&self) -> Result<String, Error> {
+            let env = Envelope {
+                format_version: SHAPE_MODEL_FORMAT_VERSION,
+                model: self.clone(),
+            };
+            serde_json::to_string(&env)
+                .map_err(|_| Error::InvalidConfig("shape model serialization failed"))
+        }
+
+        /// Deserialize a model from [`Self::to_json`] output.
+        ///
+        /// # Errors
+        /// Returns [`Error::InvalidConfig`] when the document is not valid
+        /// model JSON or its `format_version` is not supported.
+        pub fn from_json(json: &str) -> Result<Self, Error> {
+            let env: Envelope = serde_json::from_str(json)
+                .map_err(|_| Error::InvalidConfig("not a valid shape model document"))?;
+            if env.format_version != SHAPE_MODEL_FORMAT_VERSION {
+                return Err(Error::InvalidConfig(
+                    "unsupported shape model format version",
+                ));
+            }
+            Ok(env.model)
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+pub use persist::SHAPE_MODEL_FORMAT_VERSION;

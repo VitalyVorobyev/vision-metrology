@@ -11,7 +11,7 @@
 //! - [`ScanAxis::Cols`] with [`ColAccess::Transposed`] reuses row scanning
 //!   when caller supplies a transposed image view.
 //!
-//! Module layout: [`types`] holds the public data types, `extractor` the
+//! Module layout: `types` holds the public data types, `extractor` the
 //! reusable entry points, and the private `scan` / `pairing` / `coarse` /
 //! `gather` / `postprocess` modules each own one stage of the pipeline. The
 //! u8/u16/f32 paths share one generic implementation via the `ScanPixel`

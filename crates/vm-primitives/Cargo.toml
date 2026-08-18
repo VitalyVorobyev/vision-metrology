@@ -12,6 +12,12 @@ categories = ["computer-vision", "science"]
 
 [dependencies]
 nalgebra = { workspace = true }
+serde = { version = "1", features = ["derive"], optional = true }
+
+[features]
+## Serde derives on the plain geometry/config types (Point2f, Vec2f,
+## Rect2f, SmoothKind) so downstream model types can persist them.
+serde = ["dep:serde"]
 
 [dev-dependencies]
 criterion = { workspace = true }
@@ -23,6 +29,14 @@ harness = false
 [[bench]]
 name = "edge2d"
 harness = false
+[[bench]]
+name = "edge1d"
+harness = false
+
+[[bench]]
+name = "morph"
+harness = false
+
 
 [package.metadata.docs.rs]
 all-features = true

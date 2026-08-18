@@ -49,6 +49,7 @@ pub enum Subpix2D {
 
 /// Pre-smoothing kernel applied before Scharr gradient computation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum SmoothKind {
     /// No pre-smoothing.
     None,

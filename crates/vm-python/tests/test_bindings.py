@@ -240,3 +240,33 @@ def test_config_validation_errors():
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+def test_shape_model_save_load_roundtrip(tmp_path):
+    """A persisted model must match at the identical pose and score."""
+    model = vm.ShapeModel(make_bracket(), BRACKET_ROI)
+
+    path = str(tmp_path / "bracket_model.json")
+    model.save(path)
+    restored = vm.ShapeModel.load(path)
+    assert restored.num_levels == model.num_levels
+    assert restored.point_counts == model.point_counts
+
+    scene = make_bracket(cx=115.0, cy=70.0)
+    matcher = vm.ShapeMatcher()
+    a = matcher.find(scene, model)
+    b = matcher.find(scene, restored)
+    assert len(a) == len(b) == 1
+    assert a[0].score == b[0].score
+    assert (a[0].x, a[0].y) == (b[0].x, b[0].y)
+
+    # A tampered format_version must be refused.
+    doc = open(path).read().replace('"format_version":1', '"format_version":999', 1)
+    bad = str(tmp_path / "bad.json")
+    open(bad, "w").write(doc)
+    try:
+        vm.ShapeModel.load(bad)
+        assert False, "expected ValueError for unsupported format version"
+    except ValueError:
+        pass
+

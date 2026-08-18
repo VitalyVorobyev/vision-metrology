@@ -67,7 +67,7 @@ pub enum CoarseMethod {
     },
 }
 
-/// Configuration for [`LaserExtractor`].
+/// Configuration for [`LaserExtractor`](super::LaserExtractor).
 #[derive(Debug, Clone)]
 pub struct LaserExtractConfig {
     /// Which image axis to scan along (rows or columns).

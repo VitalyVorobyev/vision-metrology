@@ -1,7 +1,9 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 use vision_metrology::edge::edge2d::Edgel;
-use vision_metrology::{Connectivity, ContourBuildConfig, build_graph_from_edgels};
+use vision_metrology::{
+    Connectivity, ContourBuildConfig, build_graph_from_edgels, smooth_polyline,
+};
 use vision_metrology::{Point2f, Vec2f};
 
 fn synthetic_edgels(width: usize, height: usize) -> Vec<Edgel> {
@@ -61,5 +63,26 @@ fn bench_build_graph(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, bench_build_graph);
+fn bench_smooth_polyline(c: &mut Criterion) {
+    // A 5k-point wiggly contour, the size a full-resolution part outline
+    // reaches on a 1280x1024 frame.
+    let points: Vec<Point2f> = (0..5000)
+        .map(|i| {
+            let t = i as f32 * 0.02;
+            Point2f {
+                x: 640.0 + (300.0 + 5.0 * (13.0 * t).sin()) * t.cos(),
+                y: 512.0 + (300.0 + 5.0 * (13.0 * t).sin()) * t.sin(),
+            }
+        })
+        .collect();
+
+    c.bench_function("contour_smooth_polyline_5k_sigma2", |b| {
+        b.iter(|| {
+            let out = smooth_polyline(black_box(&points), black_box(2.0));
+            black_box(out.len());
+        });
+    });
+}
+
+criterion_group!(benches, bench_build_graph, bench_smooth_polyline);
 criterion_main!(benches);

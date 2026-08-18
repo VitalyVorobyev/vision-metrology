@@ -15,7 +15,7 @@ deferred items and known debt in [`backlog.md`](backlog.md).
 
 ## Current tracks
 
-### Track 1 — B-track closure + de-spaghettification — `planned`
+### Track 1 — B-track closure + de-spaghettification — `in review`
 Split `laser/extractor.rs` (1717 lines) into `laser/{types, extractor, scan, pairing,
 coarse, gather, postprocess, tests}` with a private `ScanPixel` trait collapsing the
 u8/u16/f32 triplication (public API unchanged, extract bench regression gate ≤2%).

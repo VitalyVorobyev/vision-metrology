@@ -77,6 +77,29 @@ impl ShapeModel {
             .collect()
     }
 
+    /// Persist the model to a versioned JSON file.
+    ///
+    /// The file carries a ``format_version`` field; :meth:`load` refuses
+    /// documents written by an incompatible future format instead of
+    /// silently mis-reading them.
+    pub fn save(&self, path: &str) -> PyResult<()> {
+        let json = self
+            .inner
+            .to_json()
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+        std::fs::write(path, json).map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))
+    }
+
+    /// Load a model previously written by :meth:`save`.
+    #[staticmethod]
+    pub fn load(path: &str) -> PyResult<Self> {
+        let json = std::fs::read_to_string(path)
+            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+        let inner = NativeShapeModel::from_json(&json)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+        Ok(Self { inner })
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "ShapeModel(levels={}, points={:?}, origin=({:.1}, {:.1}))",

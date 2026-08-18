@@ -1091,4 +1091,85 @@ mod tests {
             }
         }
     }
+
+    /// C4 must refuse the diagonal step that C8 accepts: a staircase chain is
+    /// one connected path under C8 but falls apart into isolated pixels under
+    /// C4, where each diagonal neighbor is not a neighbor at all.
+    #[test]
+    fn c4_disconnects_a_diagonal_staircase_that_c8_connects() {
+        let mut edgels = Vec::new();
+        for i in 1..=6 {
+            edgels.push(e(i, i)); // pure diagonal
+        }
+
+        let base = ContourBuildConfig {
+            min_component_size: 1,
+            record_strengths: false,
+            record_geometry: false,
+            ..Default::default()
+        };
+
+        let g8 = build_graph_from_edgels(
+            9,
+            9,
+            &edgels,
+            &ContourBuildConfig {
+                connectivity: Connectivity::C8,
+                ..base.clone()
+            },
+        );
+        assert_eq!(g8.edges.len(), 1, "C8 sees one chain");
+        assert_eq!(g8.num_ends(), 2);
+
+        let g4 = build_graph_from_edgels(
+            9,
+            9,
+            &edgels,
+            &ContourBuildConfig {
+                connectivity: Connectivity::C4,
+                ..base
+            },
+        );
+        // Under C4 every diagonal pixel is isolated: no chains at all, and
+        // each pixel becomes its own isolated node.
+        assert_eq!(g4.edges.len(), 0, "C4 must not traverse diagonals");
+        assert_eq!(
+            g4.nodes
+                .iter()
+                .filter(|n| n.kind == NodeKind::Isolated)
+                .count(),
+            edgels.len()
+        );
+    }
+
+    /// `min_component_size` drops small connected components before tracing:
+    /// a 3-pixel fleck disappears while the long chain survives untouched.
+    #[test]
+    fn min_component_size_filters_small_flecks() {
+        let mut edgels = Vec::new();
+        for x in 1..=10 {
+            edgels.push(e(x, 2)); // 10-pixel line
+        }
+        edgels.push(e(1, 8)); // 3-pixel fleck, far from the line
+        edgels.push(e(2, 8));
+        edgels.push(e(3, 8));
+
+        let cfg = |min_size: usize| ContourBuildConfig {
+            connectivity: Connectivity::C8,
+            min_component_size: min_size,
+            record_strengths: false,
+            record_geometry: false,
+            ..Default::default()
+        };
+
+        let g_all = build_graph_from_edgels(13, 13, &edgels, &cfg(1));
+        assert_eq!(g_all.edges.len(), 2, "both components traced at size 1");
+
+        let g_filtered = build_graph_from_edgels(13, 13, &edgels, &cfg(5));
+        assert_eq!(g_filtered.edges.len(), 1, "the fleck must be dropped");
+        let edge = &g_filtered.edges[0];
+        // The surviving chain is the long line, not the fleck.
+        assert!(edge.points.iter().all(|p| (p.y - 2.0).abs() < 0.5));
+        assert_eq!(edge.points.len(), 10);
+    }
 }

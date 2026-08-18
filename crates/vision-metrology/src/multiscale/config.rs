@@ -65,3 +65,27 @@ impl Default for MultiScaleConfig {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use vm_primitives::edge::edge2d::Edge2DConfig;
+
+    use super::MultiScaleConfig;
+
+    /// The documented contract of the defaults: three levels including the
+    /// original, informational sigma 1.0, auto-thresholding edge config, and
+    /// per-cell dedup on. Changing any of these is a behavior change for every
+    /// downstream user and must be deliberate.
+    #[test]
+    fn default_values_are_the_documented_contract() {
+        let cfg = MultiScaleConfig::default();
+        assert_eq!(cfg.num_levels, 3);
+        assert_eq!(cfg.base_sigma, 1.0);
+        assert!(cfg.merge_duplicates);
+        assert_eq!(cfg.edge, Edge2DConfig::default());
+        // Auto-threshold mode is what makes the per-level halving irrelevant
+        // by default; pin that the default edge config actually is auto.
+        assert_eq!(cfg.edge.low_thresh, 0.0);
+        assert_eq!(cfg.edge.high_thresh, 0.0);
+    }
+}
