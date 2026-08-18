@@ -25,14 +25,45 @@ Run from the workspace root before every commit:
 cargo fmt --all
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps
 ```
 
-CI runs exactly these, plus a cross-platform build/test on Windows and macOS.
-Documentation is built with `RUSTDOCFLAGS="-D warnings"`, so check intra-doc links
-locally too:
+CI runs all four, and additionally:
+
+| Job | Command |
+|-----|---------|
+| MSRV | `cargo +1.89.0 check --workspace --all-targets --all-features` |
+| Examples | every self-asserting example under `crates/vision-metrology/examples/` |
+| Python bindings | `pip install crates/vm-python` then `pytest crates/vm-python/tests` |
+| Cross-platform | build and test on Windows and macOS |
+
+The weekly security workflow additionally runs `cargo audit` and
+`cargo deny check` (licences, duplicate versions, source registries). Both are
+expected to pass with no ignores; if a new dependency introduces a licence that
+is not in `deny.toml`'s allow-list, that is a deliberate review, not a config
+oversight.
+
+### MSRV
+
+The workspace declares `rust-version = "1.89"` in the root `Cargo.toml`. It is
+currently set by nalgebra 0.35, not by anything in this repository. `cargo
+clippy` enforces it through `incompatible_msrv`, so a `std` item stabilised
+later than 1.89 fails the lint rather than surfacing as a user's build error.
+
+`rust-toolchain.toml` pins day-to-day work to stable; the MSRV job overrides it
+with `cargo +1.89.0`, which takes precedence over the file.
+
+### Python bindings
+
+The extension module is built by maturin and imported as `vision_metrology`.
+Note that the Rust lib target is deliberately named `vm_python` instead: naming
+it `vision_metrology` collides with the `vision-metrology` crate's own lib
+target. The Python-visible name comes from the `#[pymodule]` function name and
+from `module-name` in `pyproject.toml`.
 
 ```bash
-RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps
+pip install crates/vm-python
+pytest crates/vm-python/tests
 ```
 
 ## Conventions

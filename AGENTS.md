@@ -64,9 +64,17 @@ Three publishable crates with clear layering:
 Run from workspace root:
 
 ```bash
-cargo fmt
-cargo clippy --all-targets
-cargo test
+cargo fmt --all
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace --all-features
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps
+```
+
+The workspace MSRV is `1.89` (declared in the root `Cargo.toml`, set by
+nalgebra). Clippy enforces it via `incompatible_msrv`. To check it directly:
+
+```bash
+cargo +1.89.0 check --workspace --all-targets --all-features
 ```
 
 If performance-sensitive code changed, also run benchmarks:
