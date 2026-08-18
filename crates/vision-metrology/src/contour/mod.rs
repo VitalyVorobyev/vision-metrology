@@ -1,7 +1,7 @@
 //! Junction-aware contour graph extraction from 2D edgels.
 //!
-//! This crate builds contour topology from integer-grid adjacency while keeping
-//! subpixel polyline geometry from `vm-edge` edgels:
+//! This module builds contour topology from integer-grid adjacency while keeping
+//! subpixel polyline geometry from `vm_primitives::edge` edgels:
 //! - Node pixels are defined by degree `!= 2` in the chosen connectivity.
 //! - Degree-2 pixels are traced as chain points between nodes.
 //! - Pure loop components (all degree-2) are represented by a loop edge and a

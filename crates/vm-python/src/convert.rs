@@ -1,4 +1,4 @@
-//! Conversion helpers between numpy arrays and `vm-core` image types.
+//! Conversion helpers between numpy arrays and `vm_primitives` image types.
 //!
 //! ## GIL strategy (OQ-4)
 //! All image I/O uses `PyReadonlyArray2<u8>` (zero-copy view). The GIL must

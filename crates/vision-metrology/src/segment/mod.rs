@@ -1,6 +1,6 @@
 //! Image segmentation for the `vision-metrology` workspace.
 //!
-//! This crate provides four segmentation modes:
+//! This module provides four segmentation modes:
 //!
 //! 1. **Binary thresholding** — Otsu global optimal threshold and adaptive
 //!    (local-mean) threshold.
@@ -14,7 +14,7 @@
 //! - Pixel centers at `i as f32`.
 //! - Default border mode: `Clamp`.
 //! - Hot paths are allocation-free (per-row or per-scan).
-//! - Fallible functions return `Result<T, vm_core::Error>`.
+//! - Fallible functions return `Result<T, vm_primitives::Error>`.
 
 mod ccl;
 mod region;

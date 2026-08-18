@@ -1,6 +1,6 @@
 //! Multi-scale 2-D edge detection for machine-vision metrology.
 //!
-//! This crate combines [`vm_primitives::PyramidF32`] and [`vm_primitives::edge::edge2d::Edge2DDetector`]
+//! This module combines [`vm_primitives::PyramidF32`] and [`vm_primitives::edge::edge2d::Edge2DDetector`]
 //! into a single convenient API that:
 //!
 //! 1. Builds a Gaussian pyramid from any supported input type (`u8`, `u16`, `f32`).
@@ -35,7 +35,7 @@
 //!
 //! ## Coordinate convention
 //!
-//! Pixel center convention is inherited from `vm-core`: integer coordinate `i`
+//! Pixel center convention is inherited from `vm_primitives::core`: integer coordinate `i`
 //! refers to the center of pixel `i`. Edgel positions from coarser levels are
 //! multiplied by `2^level` to bring them back to level-0 space.
 //!

@@ -1,7 +1,7 @@
 //! Rigid and similarity directed-edge object matching for the `vision-metrology`
 //! workspace.
 //!
-//! This crate matches a set of model edgels (stored in an [`EdgeModel`]) against
+//! This module matches a set of model edgels (stored in an [`EdgeModel`]) against
 //! scene edgels using a chamfer-distance coarse search followed by point-to-point
 //! ICP refinement and normal-coherence scoring.
 //!

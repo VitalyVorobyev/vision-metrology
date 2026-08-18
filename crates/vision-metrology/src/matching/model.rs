@@ -28,7 +28,8 @@ use vm_primitives::{Image, Point2f};
 pub struct EdgeModel {
     /// Model edgels in model-local coordinates (centroid at origin).
     ///
-    /// Normal direction follows the dark-to-bright convention from `vm-edge`.
+    /// Normal direction follows the dark-to-bright convention of
+    /// [`vm_primitives::Edgel`].
     /// For CAD-derived models, outward normals are the caller's responsibility.
     pub edgels: Vec<Edgel>,
     /// Centroid of the original edgels (in scene/input coordinates).

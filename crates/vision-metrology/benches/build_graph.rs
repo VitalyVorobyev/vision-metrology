@@ -51,7 +51,7 @@ fn bench_build_graph(c: &mut Criterion) {
         record_geometry: false,
     };
 
-    c.bench_function("vm_contour_build_graph_50k", |b| {
+    c.bench_function("contour_build_graph_50k", |b| {
         b.iter(|| {
             let g = build_graph_from_edgels(width, height, black_box(&edgels), black_box(&cfg));
             black_box((g.nodes.len(), g.edges.len()));

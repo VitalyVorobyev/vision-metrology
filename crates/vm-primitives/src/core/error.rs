@@ -2,7 +2,7 @@ use core::fmt;
 
 /// Library-wide error type.
 ///
-/// All public fallible functions in `vm-*` crates return `Result<T, vm_core::Error>`.
+/// All public fallible functions in this workspace return `Result<T, Error>`.
 /// Internal programmer-error invariants use `assert!` or `Option` instead.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {

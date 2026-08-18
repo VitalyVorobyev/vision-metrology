@@ -1,8 +1,8 @@
 //! Industrial machine-vision metrology library.
 //!
 //! `vision-metrology` provides a complete pipeline for high-precision image
-//! analysis in industrial settings. It bundles all workspace crates into a
-//! single dependency and re-exports their APIs flat at crate root.
+//! analysis in industrial settings. It builds on [`vm_primitives`], which it
+//! re-exports in full, so this is the only dependency you need.
 //!
 //! ## Modules
 //!

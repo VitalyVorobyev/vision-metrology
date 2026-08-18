@@ -1,6 +1,6 @@
 //! Fast image pyramid primitives for coarse-to-fine vision processing.
 //!
-//! `vm-pyr` uses a fixed 2x2 mean downsample (box filter) and aggressively
+//! This module uses a fixed 2x2 mean downsample (box filter) and aggressively
 //! favors throughput.
 //!
 //! Drop-odd policy:

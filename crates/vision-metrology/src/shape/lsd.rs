@@ -196,7 +196,7 @@ fn angle_diff(a: f32, b: f32) -> f32 {
 }
 
 // ---------------------------------------------------------------------------
-// Simple 2×2 downscale (2×2 mean, same as vm-pyr level)
+// Simple 2×2 downscale (2×2 mean, same as a `vm_primitives::pyr` level)
 // ---------------------------------------------------------------------------
 
 fn downscale_u8_to_f32(

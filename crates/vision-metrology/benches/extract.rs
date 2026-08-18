@@ -31,7 +31,7 @@ fn bench_rows(c: &mut Criterion) {
         ..LaserExtractConfig::default()
     };
 
-    c.bench_function("vm_laser_rows_1280x512", |b| {
+    c.bench_function("laser_extract_rows_1280x512", |b| {
         b.iter(|| {
             let line = ext.extract_line_u8(black_box(&view), 0..512, black_box(&cfg), None);
             black_box(line.points.len());
@@ -50,7 +50,7 @@ fn bench_cols_gather(c: &mut Criterion) {
         ..LaserExtractConfig::default()
     };
 
-    c.bench_function("vm_laser_cols_gather_512x1280", |b| {
+    c.bench_function("laser_extract_cols_gather_512x1280", |b| {
         b.iter(|| {
             let line = ext.extract_line_u8(black_box(&view), 0..512, black_box(&cfg), None);
             black_box(line.points.len());

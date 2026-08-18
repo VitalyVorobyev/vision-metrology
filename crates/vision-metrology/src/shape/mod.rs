@@ -63,7 +63,7 @@
 //!
 //! ## Border mode
 //! Gradient computation in LSD uses `Clamp` border replication (consistent
-//! with `vm-edge` and `vm-core`).
+//! with `vm_primitives::edge` and `vm_primitives::core`).
 //!
 //! ## Allocation policy
 //! All per-frame scratch allocations (gradient images, region buffers, bucket

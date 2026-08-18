@@ -268,7 +268,7 @@ pub type Affine2f = nalgebra::Affine2<f32>;
 pub type Projective2f = nalgebra::Projective2<f32>;
 
 // ---------------------------------------------------------------------------
-// Conversions between vm-core lightweight types and nalgebra
+// Conversions between this crate's lightweight types and nalgebra
 // ---------------------------------------------------------------------------
 
 /// Convert a [`Point2f`] to a nalgebra `Point2<f32>`.

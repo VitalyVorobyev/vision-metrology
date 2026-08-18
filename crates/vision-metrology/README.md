@@ -1,32 +1,88 @@
-Umbrella crate re-exporting the entire vision-metrology workspace.
+# vision-metrology
 
-`vision-metrology` is a single convenience entry point: add it as your only dependency and all workspace crates become available under their respective module paths. It is the right starting point for integration examples and end-to-end pipelines where you want access to the full stack without listing each crate individually.
+High-level algorithms for industrial machine-vision metrology: contour topology,
+laser stripe extraction, multi-scale edges, shape fitting, segmentation, and
+edge-model matching. Pure Rust — no OpenCV, no FFI.
 
-## Quick start
-
-```bash
-# Run the built-in measure_circles end-to-end example
-cargo run -p vision-metrology --example measure_circles
-```
-
-Or from your own crate's `Cargo.toml`:
+This crate re-exports [`vm-primitives`](../vm-primitives) in full, so it is the only
+dependency you need.
 
 ```toml
 [dependencies]
-vision-metrology = { path = "../vision-metrology" }
+vision-metrology = "0.1"
 ```
 
-## Key crates re-exported
+## Modules
 
-| Module | Source crate | Provides |
-|---|---|---|
-| `vm_core` | `vm-core` | Image, geometry, border modes, Error |
-| `vm_pyr` | `vm-pyr` | PyramidF32, 2x2 mean downsample |
-| `vm_edge` | `vm-edge` | Edge1DDetector, Edge2DDetector, Edgel, GradientBuffers |
-| `vm_laser` | `vm-laser` | LaserLineDetector, LaserSample, LaserLine |
-| `vm_contour` | `vm-contour` | ContourGraph, build_graph_from_edgels, smooth_polyline |
-| `vm_morph` | `vm-morph` | erode/dilate, chamfer distance, thinning |
-| `vm_multiscale` | `vm-multiscale` | MultiScaleEdgeDetector, ScaleAnnotatedEdgel |
-| `vm_shape` | `vm-shape` | LsdDetector, ConicFitter, LineSegment2f, Ellipse2f |
-| `vm_segment` | `vm-segment` | otsu_threshold_u8, label_connected_components_u8, ComponentStats |
-| `vm_match` | `vm-match` | EdgeModel, RigidEdgeMatcher, MatchResult |
+| Module | Content |
+|---|---|
+| `contour` | `ContourGraph` — junction-aware topology (T/Y junctions, loops) built from edgels, with per-edge tangent, curvature, arc-length parameterization, and Gaussian polyline smoothing |
+| `laser` | `LaserExtractor` — laser stripe centerlines from opposite-polarity 1-D edge pairs, scanning rows or columns, with ROI and prior tracking |
+| `matching` | `EdgeModel` + `RigidEdgeMatcher` — chamfer-distance coarse search over a rigid/similarity grid, IoU non-maximum suppression, ICP refinement |
+| `multiscale` | `MultiScaleEdgeDetector` — 2-D edge detection at every pyramid level, merged back to level-0 coordinates |
+| `segment` | Otsu and adaptive thresholding, connected-component labeling with per-component stats, watershed, edgel region growing |
+| `shape` | `LsdDetector` (line-segment detection with NFA validation), `ConicFitter` (Bookstein / Fitzgibbon), RANSAC ellipse fitting |
+
+Everything from `vm_primitives` — `Image`, `Edge2DDetector`, `PyramidF32`, morphology,
+geometry — is re-exported at this crate's root as well, and each module's own types
+are re-exported flat. So `vision_metrology::ContourGraph` and
+`vision_metrology::contour::ContourGraph` are the same type.
+
+## Example
+
+```rust
+use vision_metrology::{
+    Connectivity, Image, component_stats, label_connected_components_u8, otsu_threshold_u8,
+};
+
+// Two 32×32 bright squares on a dark background.
+let mut data = vec![20u8; 128 * 128];
+for (y0, x0) in [(16usize, 16usize), (72, 80)] {
+    for y in y0..y0 + 32 {
+        for x in x0..x0 + 32 {
+            data[y * 128 + x] = 200;
+        }
+    }
+}
+let img = Image::from_vec(128, 128, data).expect("valid image");
+
+// `otsu_threshold_u8` returns the threshold value, not a mask.
+let t = otsu_threshold_u8(&img.as_view());
+let mask: Vec<u8> = img.data().iter().map(|&v| if v > t { 255 } else { 0 }).collect();
+let mask = Image::from_vec(128, 128, mask).expect("valid image");
+
+let labels = label_connected_components_u8(&mask.as_view(), Connectivity::C8);
+for c in component_stats(&labels, 16) {
+    println!("component {}: {} px, centroid ({:.1}, {:.1})",
+             c.label, c.pixel_count, c.centroid.x, c.centroid.y);
+}
+// component 1: 1024 px, centroid (31.5, 31.5)
+// component 2: 1024 px, centroid (95.5, 87.5)
+```
+
+## Examples
+
+Runnable end-to-end programs in [`examples/`](examples):
+
+| Example | Shows |
+|---|---|
+| `pyramid` | Building and inspecting an image pyramid |
+| `edge_1d` / `edge_2d` | Subpixel 1-D and 2-D edge detection |
+| `multiscale_edges` | Merging detections across pyramid levels |
+| `contour_graph` | Contour topology, junctions, curvature |
+| `morphology` | Erode / dilate / open / close, chamfer distance |
+| `line_segments` | LSD line-segment detection |
+| `measure_circles` | End-to-end circle metrology with ellipse fitting |
+| `segmentation` | Thresholding, labeling, component statistics |
+| `edge_matching` | Building an edge model and locating it in a scene |
+| `laserline` | Laser stripe extraction from a multi-snap image (takes `--input`) |
+
+```bash
+cargo run -p vision-metrology --example measure_circles
+cargo run -p vision-metrology --example laserline -- --help
+```
+
+## License
+
+Licensed under either of [Apache License, Version 2.0](../../LICENSE-APACHE) or
+[MIT license](../../LICENSE-MIT) at your option.
