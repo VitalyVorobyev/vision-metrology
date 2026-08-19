@@ -39,3 +39,9 @@ manifest-path = "Cargo.toml"
 # `PyInit_` symbol.
 module-name = "vision_metrology"
 features = ["pyo3/extension-module", "pyo3/abi3-py310"]
+# `python/vision_metrology/__init__.pyi` + `py.typed` ship alongside the
+# compiled extension in the wheel; there is no `__init__.py` — this is
+# maturin's documented layout for a pure Rust extension module with hand-
+# written stubs (see the `rust-python-bindings` skill and
+# https://www.maturin.rs/project_layout).
+python-source = "python"

@@ -33,6 +33,22 @@ for m in vm.ShapeMatcher(vm.ShapeSearchConfig(min_score=0.6)).find(scene, model)
 - Requires Python `>=3.10`.
 - Built as ABI3 (`abi3-py310`) wheels.
 
+## Type stubs
+
+The wheel ships `vision_metrology/__init__.pyi` and `py.typed` (PEP 561), so
+mypy/pyright and IDE autocomplete see the real signatures without importing
+the compiled extension. This is maturin's documented layout for a pure Rust
+extension with hand-written stubs: `python-source = "python"` in
+`pyproject.toml` points at `python/vision_metrology/`, which holds
+`__init__.pyi` + `py.typed` plus a thin `__init__.py` that re-exports the
+compiled submodule maturin places alongside them (`from .vision_metrology
+import *`) — the bridge is needed because the extension's own module name
+matches the wrapping package's, so nothing imports it automatically. The
+stub is hand-maintained: it must be updated in the same PR as any change to
+`src/lib.rs`'s `#[pymodule]` registration list, and a test
+(`test_package_ships_py_typed_and_a_stub_matching_the_runtime_surface`)
+checks every name the stub declares actually exists at runtime.
+
 ## Quick start
 
 ```bash

@@ -533,6 +533,30 @@ def test_morph_basics_round_trip_shapes():
     assert dist.max() > 0
 
 
+def test_package_ships_py_typed_and_a_stub_matching_the_runtime_surface():
+    """`py.typed` and `__init__.pyi` must be installed, and the stub's names
+    must be a subset of what actually exists at runtime (no promising an API
+    the extension doesn't have)."""
+    import importlib.resources as res
+    import re
+
+    root = res.files("vision_metrology")
+    assert (root / "py.typed").is_file()
+
+    stub_text = (root / "__init__.pyi").read_text()
+    class_names = re.findall(r"^class (\w+)", stub_text, re.MULTILINE)
+    func_names = re.findall(r"^def (\w+)\(", stub_text, re.MULTILINE)
+
+    assert "EdgeDetector" in class_names
+    assert "MetrologyModel" in class_names
+    assert "Caliper" in class_names
+    assert "detect_edges" in func_names
+    assert "fit_line" in func_names
+
+    for name in class_names + func_names:
+        assert hasattr(vm, name), f"{name} is declared in the stub but missing at runtime"
+
+
 def test_shape_model_save_load_roundtrip(tmp_path):
     """A persisted model must match at the identical pose and score."""
     model = vm.ShapeModel(make_bracket(), BRACKET_ROI)
