@@ -85,10 +85,6 @@ agent) can pick it up cold. When an item is scheduled it moves into
   (653 / 692). Under it despite a large total: `edge/edge2d.rs` (578 / 859),
   `edge/gradient.rs` (527 / 783), `matching/score.rs` (423 / 683). Split opportunistically
   when a track touches them.
-- **`Edge2DDetector` should consume `DirectionField`** and delete its private
-  `compute_scharr` — the Scharr kernel still exists twice (`edge2d.rs` and `gradient.rs`).
-  LSD's third copy of the *downsample* is gone (it uses `pyr` now), but it still has its own
-  Scharr. Pure refactor, no behavior change; verify with the existing edge2d tests + bench.
 - **miri job** for the unsafe paths. `unsafe` is *not* confined to `laser/` — it lives in
   `vm-primitives/core/image.rs` (the `get_unchecked` family), `core/sample.rs`,
   `pyr/downsample.rs` (the contiguous-even kernels) and `edge/conv1d.rs`, with
@@ -147,17 +143,6 @@ agent) can pick it up cold. When an item is scheduled it moves into
 - **`contour::build_graph_from_edgels`** (the raw-edgel constructor) isn't bound, only the
   detector-output convenience `build_contour_graph`. Add if a caller has edgels from
   somewhere other than `Edge2DDetector` (e.g. a laser stripe).
-- **`MetrologyModel.apply`'s Python binding silently skips the model origin.** Found
-  while building `lab/` (the Visual Metrology Lab, v0.3): Rust's `ShapeMatch::pose` maps a
-  model-frame point as `position + scale·R(angle)·(point − origin)`
-  (`crates/vision-metrology/src/matching/matcher.rs`), but
-  `crates/vm-python/src/measure_py.rs`'s `apply(image, x, y, angle, scale)` builds its
-  fixture as `scale·R(angle)·point + (x, y)` with no `origin` subtraction — correct only
-  when the taught model's `origin` is `(0, 0)`. `lab/backend/src/vm_lab/geometry.py`
-  works around it caller-side (`correct_translation`); the binding should either take
-  `origin` explicitly (matching `ShapeMatch.matrix(origin)`'s own pattern) or read it off
-  the `ShapeModel` it presumably has access to internally, so Python callers don't have to
-  rediscover this.
 - **No per-caliper "explain" API for `MetrologyModel`.** `apply`'s result exposes the fit
   and the `hits` it used, but not which calipers were rejected or why, nor their raw
   profiles — useful for a UI (`lab/`'s Measure tab wants exactly this) or for debugging a

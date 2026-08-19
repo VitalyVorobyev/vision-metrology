@@ -514,6 +514,39 @@ def test_metrology_model_measures_a_circle():
     assert len(r.hits) == 32
 
 
+def test_metrology_model_apply_honors_nonzero_origin():
+    """Regression for the origin-correction bug (docs/backlog.md, now fixed):
+    `apply` used to build `scale·R(angle)·point + (x, y)`, skipping the
+    `point - origin` subtraction that `ShapeMatch::pose` applies. Here the
+    model's origin is (20, 10), the circle (radius ~40) is taught off-origin
+    at (35, 10), and the fixture rotates by ~-90 degrees -- if `origin` were
+    ignored the fitted circle would land 15 px away from the true center."""
+    origin = (20.0, 10.0)
+    shape_center = (35.0, 10.0)  # origin + (15, 0) in model space
+    radius = 40.0
+    image_center = (80.0, 80.0)
+    angle = -np.pi / 2
+    scale = 1.0
+
+    disc = make_disc(200, 200, image_center[0], image_center[1], radius)
+
+    model = vm.MetrologyModel()
+    model.add(vm.MetrologyObject(vm.MetrologyShape.circle(shape_center, radius)))
+
+    # image_center = (x, y) + scale*R(angle)*(shape_center - origin)
+    #              = (x, y) + R(-90deg)*(15, 0) = (x, y - 15)
+    fixture_x, fixture_y = image_center[0], image_center[1] + 15.0
+
+    results = model.apply(disc, fixture_x, fixture_y, angle=angle, scale=scale, origin=origin)
+    assert len(results) == 1
+    r = results[0]
+    assert isinstance(r, vm.MetrologyResult)
+    assert r.kind == "circle"
+    assert abs(r.circle.cx - image_center[0]) < 0.05
+    assert abs(r.circle.cy - image_center[1]) < 0.05
+    assert abs(r.circle.r - radius) < 0.05
+
+
 def test_metrology_model_reports_a_failed_object_without_dropping_others():
     flat = np.full((64, 64), 128, dtype=np.uint8)
     model = vm.MetrologyModel()

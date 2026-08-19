@@ -235,7 +235,7 @@ pass/fail on real canend data — **done in pixels**; the millimetre step waits 
 
 ## Track C — credibility and infrastructure — `planned`
 
-### C1 — accuracy regression suite  ← the differentiator
+### C1 — accuracy regression suite  ← the differentiator — `in progress — envelopes pinned, doc table pending`
 Performance is measured and recorded; **accuracy is not**, and for a metrology library the
 accuracy numbers *are* the product. Track A found three separate systematic biases that
 every existing test passed straight through. Add `tests/accuracy.rs` and a
@@ -250,6 +250,23 @@ every existing test passed straight through. Add `tests/accuracy.rs` and a
 | `ShapeMatcher` | sub-pixel translation and rotation sweep | pose bias, σ |
 
 Gate each inside a recorded envelope. No open-source Rust CV crate publishes this.
+
+**Landed so far:** `crates/vision-metrology/tests/accuracy.rs`, a data-driven table
+(`ROWS: &[Row]`, one row per operator, `fn() -> Measured` + a pinned envelope — adding an
+operator is one row) covering `Edge1DDetector`, `Edge2DDetector`, `Caliper` (rect), `fit_circle`
+and `ShapeMatcher` (translation + rotation) over the swept axes above, each fixture an
+antialiased Gaussian-CDF edge (or SDF+smoothstep L-shape for `ShapeMatcher`) with exact
+subpixel ground truth. Envelopes were measured once and pinned at ~1.5x, except `fit_circle`'s:
+its worst cell (30° arc + 10% outliers) is a genuinely near-degenerate circle fit — a nearly
+straight chord where RANSAC's own consensus metric is ambiguous among near-collinear points,
+not an implementation defect — so that envelope is intentionally looser. `Edge2DDetector`'s
+sweep also found that `Hysteresis::Auto` is unusable at the heavy-blur/high-noise corner of the
+grid: a weak true peak lets per-pixel noise dominate the frame's own max-response scaling and
+hysteresis-chain across the whole image; the fixture instead characterises each blur level's
+clean peak once and holds a fixed `Hysteresis::Manual` threshold, which is what a tuned real
+system would do too. `LaserExtractor` and `fit_ellipse` are not yet covered, and
+`docs/accuracy.md`'s generated table (an example, alongside the performance table) is not
+started — both are the natural next session's work.
 
 ### C2 — blob features
 `ComponentStats` is bbox + centroid + count. Add second-order moments → orientation and

@@ -23,7 +23,7 @@ from fastapi import APIRouter, HTTPException
 
 import vision_metrology as vm
 
-from vm_lab.geometry import correct_translation, perp, to_scene
+from vm_lab.geometry import perp, to_scene
 from vm_lab.routers.find import run_find
 from vm_lab.schemas import (
     CaliperProfileOut,
@@ -194,11 +194,9 @@ async def measure(req: MeasureRequest) -> MeasureResponse:
             )
         )
 
-    # `vm.MetrologyModel.apply` builds `scale·R(angle)·p + (x, y)` with no origin
-    # subtraction — see geometry.py's module docstring — so the translation handed to it
-    # must already be origin-corrected.
-    tx, ty = correct_translation(origin, fixture.x, fixture.y, fixture.angle, fixture.scale)
-    raw_results = metrology_model.apply(img, x=tx, y=ty, angle=fixture.angle, scale=fixture.scale)
+    raw_results = metrology_model.apply(
+        img, x=fixture.x, y=fixture.y, angle=fixture.angle, scale=fixture.scale, origin=origin
+    )
 
     out_objects: list[MeasureObjectResultOut] = []
     for obj, raw in zip(req.objects, raw_results, strict=True):

@@ -37,6 +37,50 @@ use crate::core::{Image, ImageView, Pixel};
 
 use super::edge2d::SmoothKind;
 
+/// The canonical dense 3×3 Scharr gradient: clamped-border, one pass over
+/// `src` (`w × h`, row-major), calling `sink(idx, gx, gy, mag)` per pixel.
+///
+/// This is the single copy of the kernel — [`DirectionField::scharr_normalised`]
+/// and [`Edge2DDetector::compute_scharr`](super::edge2d::Edge2DDetector) both
+/// call it instead of each carrying their own expression tree. `sink` decides
+/// what to do with each pixel's raw `(gx, gy, mag)` (normalise-and-gate here,
+/// store as-is in `Edge2DDetector`), so this stays the same cost as either of
+/// the two inline loops it replaces — no intermediate buffer, no branch a
+/// caller that doesn't need it would pay for.
+#[inline]
+pub(super) fn dense_scharr(
+    src: &[f32],
+    w: usize,
+    h: usize,
+    mut sink: impl FnMut(usize, f32, f32, f32),
+) {
+    for y in 0..h {
+        let ym1 = y.saturating_sub(1) * w;
+        let y0 = y * w;
+        let yp1 = (y + 1).min(h.saturating_sub(1)) * w;
+        for x in 0..w {
+            let xm1 = x.saturating_sub(1);
+            let xp1 = (x + 1).min(w.saturating_sub(1));
+
+            let p00 = src[ym1 + xm1];
+            let p01 = src[ym1 + x];
+            let p02 = src[ym1 + xp1];
+            let p10 = src[y0 + xm1];
+            let p12 = src[y0 + xp1];
+            let p20 = src[yp1 + xm1];
+            let p21 = src[yp1 + x];
+            let p22 = src[yp1 + xp1];
+
+            let gx = (3.0 * p02 + 10.0 * p12 + 3.0 * p22) - (3.0 * p00 + 10.0 * p10 + 3.0 * p20);
+            let gy = (3.0 * p20 + 10.0 * p21 + 3.0 * p22) - (3.0 * p00 + 10.0 * p01 + 3.0 * p02);
+
+            let idx = y0 + x;
+            let m = (gx * gx + gy * gy).sqrt();
+            sink(idx, gx, gy, m);
+        }
+    }
+}
+
 /// Dense per-pixel unit gradient direction with a magnitude gate.
 ///
 /// Build with [`DirectionField::build`] for any pixel type, or
@@ -265,44 +309,19 @@ impl DirectionField {
 
     /// Scharr 3×3 gradient, magnitude, and gated normalisation in one pass.
     fn scharr_normalised(&mut self, min_mag: f32) {
-        let (w, h) = (self.width, self.height);
-        let src = &self.tmp;
-        for y in 0..h {
-            let ym1 = y.saturating_sub(1) * w;
-            let y0 = y * w;
-            let yp1 = (y + 1).min(h - 1) * w;
-            for x in 0..w {
-                let xm1 = x.saturating_sub(1);
-                let xp1 = (x + 1).min(w - 1);
-
-                let p00 = src[ym1 + xm1];
-                let p01 = src[ym1 + x];
-                let p02 = src[ym1 + xp1];
-                let p10 = src[y0 + xm1];
-                let p12 = src[y0 + xp1];
-                let p20 = src[yp1 + xm1];
-                let p21 = src[yp1 + x];
-                let p22 = src[yp1 + xp1];
-
-                let gx =
-                    (3.0 * p02 + 10.0 * p12 + 3.0 * p22) - (3.0 * p00 + 10.0 * p10 + 3.0 * p20);
-                let gy =
-                    (3.0 * p20 + 10.0 * p21 + 3.0 * p22) - (3.0 * p00 + 10.0 * p01 + 3.0 * p02);
-
-                let idx = y0 + x;
-                let m = (gx * gx + gy * gy).sqrt();
-                self.mag[idx] = m;
-                let k = 2 * idx;
-                if m >= min_mag && m > 0.0 {
-                    let inv = 1.0 / m;
-                    self.dir[k] = gx * inv;
-                    self.dir[k + 1] = gy * inv;
-                } else {
-                    self.dir[k] = 0.0;
-                    self.dir[k + 1] = 0.0;
-                }
+        let (dir, mag) = (&mut self.dir, &mut self.mag);
+        dense_scharr(&self.tmp, self.width, self.height, |idx, gx, gy, m| {
+            mag[idx] = m;
+            let k = 2 * idx;
+            if m >= min_mag && m > 0.0 {
+                let inv = 1.0 / m;
+                dir[k] = gx * inv;
+                dir[k + 1] = gy * inv;
+            } else {
+                dir[k] = 0.0;
+                dir[k + 1] = 0.0;
             }
-        }
+        });
     }
 
     // ── lazy tiled mode ─────────────────────────────────────────────────────

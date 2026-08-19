@@ -89,15 +89,13 @@ cd frontend && bun run typecheck && bun run test && bun run build
 
 ## Notes for the next session
 
-- **The origin-correction gotcha** (`backend/src/vm_lab/geometry.py`): the Rust
-  `ShapeMatch::pose` maps a model-frame point as `position + scale·R(angle)·(point −
-  origin)`, but the PyO3 binding `MetrologyModel.apply(image, x, y, angle, scale)`
-  builds its fixture as `scale·R(angle)·point + (x, y)` — it does not subtract `origin`
-  first. The two only agree when a model's `origin` happens to be `(0, 0)`. The backend
-  works around this itself (`correct_translation`) rather than assuming callers know to;
-  worth fixing at the binding level (`crates/vm-python/src/measure_py.rs`) so future
-  Python consumers don't have to rediscover it. Filed as a candidate for
-  `docs/backlog.md` on the main crate.
+- **The origin-correction gotcha is fixed.** `MetrologyModel.apply` used to build its
+  fixture as `scale·R(angle)·point + (x, y)`, skipping the `origin` subtraction that
+  `ShapeMatch::pose` applies (`position + scale·R(angle)·(point − origin)`), so the
+  backend had to pre-correct the translation itself (`correct_translation` in
+  `backend/src/vm_lab/geometry.py`). `apply` now takes an `origin` keyword and builds the
+  same fixture `ShapeMatch::pose` does (`crates/vm-python/src/measure_py.rs`); the backend
+  passes the model's `origin` straight through and `correct_translation` is gone.
 - **Per-caliper hit/reject and profiles are recomputed by the lab**, not read off
   `MetrologyModel.apply`'s result — that binding only returns the fit and its used
   `hits`, not what every caliper individually found. `measure.py`'s `_place_calipers`

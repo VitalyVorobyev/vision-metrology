@@ -13,6 +13,7 @@
 //! This module is intentionally single-scale. Pyramid/multi-scale integration
 //! is done in higher-level crates.
 
+use super::gradient::dense_scharr;
 use crate::core::{
     BorderMode, Image, ImageView, Pixel, Point2f, Vec2f, Vec2fExt, parabolic_peak_offset,
     sample_bilinear_f32,
@@ -304,43 +305,19 @@ impl Edge2DDetector {
         }
     }
 
+    /// Scharr gradient over `self.tmp` (already pre-smoothed by the caller).
+    ///
+    /// Calls [`dense_scharr`] — the same kernel `DirectionField` builds
+    /// itself from, kept as a single shared function rather than two
+    /// duplicated expression trees.
     fn compute_scharr(&mut self) {
-        let w = self.tmp.width();
-        let h = self.tmp.height();
-        let src = self.tmp.data();
-
-        let (gx_img, gy_img, mag_img) = (&mut self.gx, &mut self.gy, &mut self.mag);
-        let gx = gx_img.data_mut();
-        let gy = gy_img.data_mut();
-        let mag = mag_img.data_mut();
-
-        for y in 0..h {
-            let ym1 = y.saturating_sub(1);
-            let yp1 = (y + 1).min(h - 1);
-            for x in 0..w {
-                let xm1 = x.saturating_sub(1);
-                let xp1 = (x + 1).min(w - 1);
-
-                let p00 = src[ym1 * w + xm1];
-                let p01 = src[ym1 * w + x];
-                let p02 = src[ym1 * w + xp1];
-                let p10 = src[y * w + xm1];
-                let p12 = src[y * w + xp1];
-                let p20 = src[yp1 * w + xm1];
-                let p21 = src[yp1 * w + x];
-                let p22 = src[yp1 * w + xp1];
-
-                let gxx =
-                    (3.0 * p02 + 10.0 * p12 + 3.0 * p22) - (3.0 * p00 + 10.0 * p10 + 3.0 * p20);
-                let gyy =
-                    (3.0 * p20 + 10.0 * p21 + 3.0 * p22) - (3.0 * p00 + 10.0 * p01 + 3.0 * p02);
-
-                let idx = y * w + x;
-                gx[idx] = gxx;
-                gy[idx] = gyy;
-                mag[idx] = (gxx * gxx + gyy * gyy).sqrt();
-            }
-        }
+        let (w, h) = (self.tmp.width(), self.tmp.height());
+        let (gx, gy, mag) = (self.gx.data_mut(), self.gy.data_mut(), self.mag.data_mut());
+        dense_scharr(self.tmp.data(), w, h, |idx, gxx, gyy, m| {
+            gx[idx] = gxx;
+            gy[idx] = gyy;
+            mag[idx] = m;
+        });
     }
 
     fn non_max_suppression(&mut self) {
