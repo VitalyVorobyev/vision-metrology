@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark light" />
+    <title>visual-metrology-lab</title>
+    <script>
+      // Duplicated from @vitavision/lab-ui's theme.ts on purpose — must stay in agreement
+      // with it. The class has to be on <html> before first paint, before any module has
+      // loaded, or there is a flash of the wrong palette on every load.
+      (function () {
+        try {
+          var stored = localStorage.getItem("vitavision-theme");
+          var dark =
+            stored === "dark" ||
+            ((stored === null || stored === "system") &&
+              window.matchMedia("(prefers-color-scheme: dark)").matches);
+          if (dark) document.documentElement.classList.add("dark");
+        } catch (_) {
+          // Storage unavailable: fall through to the light palette defined on :root.
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,18 @@
+@import "tailwindcss";
+@import "@vitavision/lab-ui/styles.css";
+
+/* See @vitavision/lab-ui's README "Consumer wiring" #1: Tailwind's @source only scans
+   literal source text, and dist/index.js is where the package's own class names live. */
+@source "../node_modules/@vitavision/lab-ui/dist";
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  overflow: hidden;
+  background: var(--color-ground);
+  color: var(--color-fg);
+}
