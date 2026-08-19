@@ -85,10 +85,6 @@ agent) can pick it up cold. When an item is scheduled it moves into
   (653 / 692). Under it despite a large total: `edge/edge2d.rs` (578 / 859),
   `edge/gradient.rs` (527 / 783), `matching/score.rs` (423 / 683). Split opportunistically
   when a track touches them.
-- **`Edge2DDetector` should consume `DirectionField`** and delete its private
-  `compute_scharr` — the Scharr kernel still exists twice (`edge2d.rs` and `gradient.rs`).
-  LSD's third copy of the *downsample* is gone (it uses `pyr` now), but it still has its own
-  Scharr. Pure refactor, no behavior change; verify with the existing edge2d tests + bench.
 - **miri job** for the unsafe paths. `unsafe` is *not* confined to `laser/` — it lives in
   `vm-primitives/core/image.rs` (the `get_unchecked` family), `core/sample.rs`,
   `pyr/downsample.rs` (the contiguous-even kernels) and `edge/conv1d.rs`, with
