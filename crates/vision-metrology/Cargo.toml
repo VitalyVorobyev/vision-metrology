@@ -83,6 +83,11 @@ name = "extract"
 harness = false
 required-features = ["laser"]
 
+[[bench]]
+name = "measure"
+harness = false
+required-features = ["measure"]
+
 
 # Examples and integration tests are auto-discovered, so the gated ones need an
 # explicit target entry declaring which module they exercise. Without this,
