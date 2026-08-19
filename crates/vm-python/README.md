@@ -10,7 +10,6 @@ It provides both:
 Legacy names were removed:
 - `import vm_python` -> `import vision_metrology as vm`
 - `PyEdgeDetector` -> `EdgeDetector`
-- `PyMultiScaleDetector` -> `MultiScaleDetector`
 - `PyLsdDetector` -> `LsdDetector`
 - `PyConicFitter` -> `ConicFitter`
 - `PySegmenter` -> `Segmenter`
@@ -58,7 +57,6 @@ edgels_fn = vm.detect_edges_u8(img, vm.EdgeConfig())
 ## Config classes
 
 - `EdgeConfig`
-- `MultiScaleConfig`
 - `LsdConfig`
 - `ConicFitConfig`
 - `ShapeModelConfig`
@@ -67,7 +65,6 @@ edgels_fn = vm.detect_edges_u8(img, vm.EdgeConfig())
 ## Free functions
 
 - `detect_edges_u8(img, config)`
-- `detect_multiscale_edges_u8(img, config)`
 - `detect_line_segments_u8(img, config)`
 - `fit_ellipse(pts, config)`
 - `find_shape_model(model_image, roi, scene_image, model_config=None, search_config=None)`

@@ -10,7 +10,7 @@ Three publishable crates, two layers:
 
 ```
 crates/vm-primitives     core · pyr · edge · morph
-crates/vision-metrology  contour · laser · matching · multiscale · segment · shape
+crates/vision-metrology  contour · laser · matching · segment · shape
 crates/vm-python         PyO3 bindings (depends on both)
 ```
 
@@ -120,7 +120,6 @@ cargo bench -p vm-primitives --bench morph
 
 # vision-metrology
 cargo bench -p vision-metrology --bench build_graph
-cargo bench -p vision-metrology --bench detect_multiscale
 cargo bench -p vision-metrology --bench detect_shape
 cargo bench -p vision-metrology --bench extract
 cargo bench -p vision-metrology --bench match_shape

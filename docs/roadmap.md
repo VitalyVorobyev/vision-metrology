@@ -21,7 +21,7 @@ coarse, gather, postprocess, tests}` with a private `ScanPixel` trait collapsing
 u8/u16/f32 triplication (public API unchanged, extract bench regression gate ≤2%).
 `GridCtx` parameter struct removes the three `too_many_arguments` allows in
 `contour/build.rs`. Test gaps: edge1d Centroid path + threshold rejection + u8/u16 entry
-points, multiscale config defaults, contour C4 + min_component_size, **T13** (greedy-bound
+points, contour C4 + min_component_size, **T13** (greedy-bound
 safety: greediness 0 vs no-abort reference, bit-identical), **R3** (fine-toothed model at
 coarse levels — passes or documented). New benches: morph, edge1d, contour smooth, and a
 seeded **cluttered fixture** for match_shape. Model serialization: `serde` feature,

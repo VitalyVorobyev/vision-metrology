@@ -35,7 +35,6 @@ No OpenCV, no FFI. All coordinates follow the **pixel-center** convention: integ
 | `contour` | Junction-aware contour graph (T/Y junctions, loops), per-edge tangent and curvature, polyline smoothing |
 | `laser` | Laser stripe extraction using opposite-polarity edge pairs, with ROI and prior tracking |
 | `matching` | Shape-based object detection: gradient-orientation model, coarse-to-fine search over translation / rotation / scale, subpixel pose refinement — see the [guide](docs/shape-matching.md) |
-| `multiscale` | Multi-scale 2-D edge detection across pyramid levels, merged to level-0 coordinates |
 | `segment` | Otsu and adaptive thresholding, connected-component labeling, watershed, edgel region growing |
 | `shape` | LSD line-segment detection, Bookstein/Fitzgibbon conic fitting, RANSAC ellipse fitting |
 
@@ -49,9 +48,6 @@ pyr           2×2 mean pyramid — coarse-to-fine levels
   │
   ▼
 edge          subpixel 1-D/2-D edge detection, gradient buffers
-  │
-  ▼
-multiscale    merge detections across pyramid levels → level-0 coordinates
   │
   ▼
 contour       topology graph — T/Y junctions, loops, polyline smoothing

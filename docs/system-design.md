@@ -26,7 +26,6 @@ vm-primitives  ──►  vision-metrology  ──►  vm-python
 | `vision-metrology` | `contour` | contour graph with T/Y junctions, per-edge geometry, polyline smoothing |
 | | `laser` | stripe extraction via opposite-polarity edge pairs (rows/cols, ROI + prior) |
 | | `matching` | `ShapeModel`/`ShapeMatcher`: gradient-orientation shape-based detection |
-| | `multiscale` | multi-scale edge detection across pyramid levels |
 | | `segment` | Otsu/adaptive thresholding, CCL, watershed, edgel region growing |
 | | `shape` | LSD, Bookstein/Fitzgibbon conic fitting, RANSAC ellipse fitting |
 | `vm-python` | — | numpy-in/numpy-out detectors; lib target named `vm_python` (see invariants) |
@@ -126,6 +125,29 @@ pyramid + ~2.5 ms search. Below the top pyramid level the search reads only smal
 around candidates, so full-frame fine-level fields are mostly wasted work. The performance
 plan (roadmap Track 2) is lazy tiled fields first, integer u8 Scharr second, quantized
 directions + SIMD only if still needed — in that order, each gated on measurement.
+
+### `multiscale` deleted, not fixed (2026-08)
+`MultiScaleEdgeDetector` ran the 2-D detector on every pyramid level and merged the results
+back to level 0. Three things were wrong with it and only the first was a bug:
+
+1. It mapped a level-`l` edgel to level 0 as `p · 2^l`, omitting the `(2^l − 1)/2` term that
+   invariant 2 requires. Level-2 positions were off by 1.5 px, level-3 by 3.5 px. Mixed with
+   correct level-0 edgels this produced a *systematic* bias, not noise: `examples/measure_circles`
+   measured every circle centre 0.07–0.10 px low in both axes, growing with radius as the
+   coarse levels contributed more. With the module removed the same example measures 0.00 px.
+   Its assertions (5 px on centre, 1.5 px on radius) were far too loose to notice.
+2. Deduplication keyed on `idx * 2^l`, so a level-3 edgel claimed a single level-0 pixel
+   rather than the 8×8 block it stood for, and `merge_duplicates` barely merged. The test
+   only asserted `merged <= all`.
+3. The reported `scale = base_sigma · 2^l` was fiction. A box-mean pyramid with a fixed-σ DoG
+   at each level is not a Gaussian scale space, so the number had no operational meaning.
+
+Fixing (1) alone would have left a module that is neither a scale space nor a sound merge,
+with no consumer inside the workspace. The one sound idea — the level↔level-0 mapping — is
+now `pyr::level_to_base` / `base_to_level`, the single implementation of invariant 2. If
+genuine scale selection is ever needed, design it as a real scale space rather than reviving
+this. `examples/measure_circles` and its Python twin now use `Edge2DDetector` directly, with
+assertions tightened to 0.02 px on centre and 0.10 px on radius.
 
 ### Release profile is tuned, and benches inherit it (2026-08)
 `[profile.release] lto = "thin", codegen-units = 1` in the root manifest, with

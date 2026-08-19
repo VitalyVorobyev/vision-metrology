@@ -89,7 +89,7 @@ jobs:
         run: |
           set -euo pipefail
           for ex in contour_graph edge_1d edge_2d line_segments measure_circles \
-                    morphology multiscale_edges pyramid segmentation shape_matching; do
+                    morphology pyramid segmentation shape_matching; do
             echo "::group::$ex"
             cargo run --release -p vision-metrology --example "$ex"
             echo "::endgroup::"

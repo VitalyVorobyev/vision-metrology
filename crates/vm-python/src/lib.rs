@@ -10,19 +10,15 @@ mod convert;
 mod detector;
 mod functions;
 mod match_py;
-mod multiscale;
 mod segment;
 mod shape;
 mod types;
 
 use pyo3::prelude::*;
 
-use config_py::{
-    ConicFitConfig, EdgeConfig, LsdConfig, MultiScaleConfig, ShapeModelConfig, ShapeSearchConfig,
-};
+use config_py::{ConicFitConfig, EdgeConfig, LsdConfig, ShapeModelConfig, ShapeSearchConfig};
 use detector::EdgeDetector;
 use match_py::{ShapeMatcher, ShapeModel};
-use multiscale::MultiScaleDetector;
 use segment::Segmenter;
 use shape::{ConicFitter, LsdDetector};
 use types::{ComponentStats, Edgel, Ellipse, LineSegment, ShapeMatch};
@@ -32,7 +28,6 @@ use types::{ComponentStats, Edgel, Ellipse, LineSegment, ShapeMatch};
 fn vision_metrology(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Config types
     m.add_class::<EdgeConfig>()?;
-    m.add_class::<MultiScaleConfig>()?;
     m.add_class::<LsdConfig>()?;
     m.add_class::<ConicFitConfig>()?;
     m.add_class::<ShapeModelConfig>()?;
@@ -40,7 +35,6 @@ fn vision_metrology(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Stateful classes
     m.add_class::<EdgeDetector>()?;
-    m.add_class::<MultiScaleDetector>()?;
     m.add_class::<LsdDetector>()?;
     m.add_class::<ConicFitter>()?;
     m.add_class::<ShapeModel>()?;

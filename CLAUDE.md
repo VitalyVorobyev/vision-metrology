@@ -19,7 +19,6 @@ Three published crates, two layers:
   * `::contour`   — contour graph, junctions, per-edge tangent/curvature, polyline smoothing
   * `::laser`     — stripe extraction using opposite-polarity edge pairs
   * `::matching`  — `ShapeModel` + `ShapeMatcher`, gradient-orientation shape-based object detection
-  * `::multiscale`— multi-scale edge detection across pyramid levels
   * `::segment`   — Otsu/adaptive thresholding, CCL, watershed, edgel region growing
   * `::shape`     — LSD, Bookstein/Fitzgibbon conic fitting, RANSAC ellipse fitting
 * `crates/vm-python`: PyO3 extension module exposing detectors with numpy array I/O

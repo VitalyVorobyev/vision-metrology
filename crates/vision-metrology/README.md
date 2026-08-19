@@ -19,7 +19,6 @@ vision-metrology = "0.1"
 | `contour` | `ContourGraph` — junction-aware topology (T/Y junctions, loops) built from edgels, with per-edge tangent, curvature, arc-length parameterization, and Gaussian polyline smoothing |
 | `laser` | `LaserExtractor` — laser stripe centerlines from opposite-polarity 1-D edge pairs, scanning rows or columns, with ROI and prior tracking |
 | `matching` | `ShapeModel` + `ShapeMatcher` — gradient-orientation similarity, coarse-to-fine search over translation / rotation / uniform scale, occlusion-proportional scoring, subpixel pose refinement |
-| `multiscale` | `MultiScaleEdgeDetector` — 2-D edge detection at every pyramid level, merged back to level-0 coordinates |
 | `segment` | Otsu and adaptive thresholding, connected-component labeling with per-component stats, watershed, edgel region growing |
 | `shape` | `LsdDetector` (line-segment detection with NFA validation), `ConicFitter` (Bookstein / Fitzgibbon), RANSAC ellipse fitting |
 
@@ -68,7 +67,6 @@ Runnable end-to-end programs in [`examples/`](examples):
 |---|---|
 | `pyramid` | Building and inspecting an image pyramid |
 | `edge_1d` / `edge_2d` | Subpixel 1-D and 2-D edge detection |
-| `multiscale_edges` | Merging detections across pyramid levels |
 | `contour_graph` | Contour topology, junctions, curvature |
 | `morphology` | Erode / dilate / open / close, chamfer distance |
 | `line_segments` | LSD line-segment detection |

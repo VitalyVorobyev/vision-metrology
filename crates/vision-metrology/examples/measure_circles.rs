@@ -5,14 +5,14 @@
 //!
 //! ## Pipeline
 //! 1. Generate a 512×512 synthetic image with 3 circles (radii 40, 60, 80 px).
-//! 2. Run `MultiScaleEdgeDetector` (3 pyramid levels) to extract edgels.
+//! 2. Run `Edge2DDetector` to extract subpixel edgels.
 //! 3. Build a `ContourGraph` from the edgels to extract connected components.
 //! 4. For each connected component with ≥ 60 edgels, collect all polyline points
 //!    from all arcs in that component and attempt `ConicFitter::fit_ellipse_ransac`.
 //! 5. Collect valid ellipses (semi-axis ratio < 1.2, plausible radius).
 //! 6. Print a JSON measurement report: `[{"cx": …, "cy": …, "a": …, "b": …, "angle": …}, …]`.
-//! 7. Assert that 3 ellipses were found and each recovered radius is within 1.5 px
-//!    of ground truth.
+//! 7. Assert that 3 ellipses were found, each centre within 0.02 px and each
+//!    radius within 0.10 px of ground truth.
 //!
 //! ## Run
 //! ```text
@@ -21,13 +21,12 @@
 //!
 //! Output is deterministic (no RNG, no file I/O).
 
-use vision_metrology::edge::edge2d::Edgel;
 use vision_metrology::{ConicFitConfig, ConicFitter, Ellipse2f};
 use vision_metrology::{
     Connectivity, ContourBuildConfig, ContourGraph, NodeId, build_graph_from_edgels,
 };
+use vision_metrology::{Edge2DConfig, Edge2DDetector};
 use vision_metrology::{Image, Point2f};
-use vision_metrology::{MultiScaleConfig, MultiScaleEdgeDetector};
 
 // ---------------------------------------------------------------------------
 // Ground-truth circles
@@ -91,15 +90,6 @@ fn generate_synthetic_image(width: usize, height: usize) -> Image<u8> {
 // ---------------------------------------------------------------------------
 // ScaleAnnotatedEdgel → Edgel conversion
 // ---------------------------------------------------------------------------
-
-fn to_edgel(e: &vision_metrology::ScaleAnnotatedEdgel) -> Edgel {
-    Edgel {
-        p: e.p,
-        n: e.n,
-        strength: e.strength,
-        idx: e.idx,
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Collect all polyline points from a connected component
@@ -168,18 +158,11 @@ fn main() {
     println!("Generating 512x512 synthetic image with 3 circles (r=40, 60, 80)...");
     let img = generate_synthetic_image(w, h);
 
-    // --- Step 2: multi-scale edge detection (3 levels) ---
-    println!("Running MultiScaleEdgeDetector (3 levels)...");
-    let mut ms_det = MultiScaleEdgeDetector::new();
-    let ms_cfg = MultiScaleConfig {
-        num_levels: 3,
-        ..MultiScaleConfig::default()
-    };
-    let scale_edgels = ms_det.detect_u8(&img.as_view(), &ms_cfg);
-    println!("  Detected {} scale-annotated edgels.", scale_edgels.len());
-
-    // Convert ScaleAnnotatedEdgel → Edgel for the contour builder.
-    let edgels: Vec<Edgel> = scale_edgels.iter().map(to_edgel).collect();
+    // --- Step 2: subpixel edge detection ---
+    println!("Running Edge2DDetector...");
+    let mut det = Edge2DDetector::new();
+    let edgels = det.detect_u8(&img.as_view(), &Edge2DConfig::default());
+    println!("  Detected {} edgels.", edgels.len());
 
     // --- Step 3: build contour graph ---
     println!("Building ContourGraph...");
@@ -304,19 +287,26 @@ fn main() {
         let r_fit = (nearest.semi_major() + nearest.semi_minor()) * 0.5;
         let r_err = (r_fit - c.r).abs();
 
+        // Tolerances are tight on purpose. A synthetic, noise-free, perfectly
+        // round target measured with subpixel edges + a RANSAC ellipse fit
+        // should land on the centre essentially exactly; anything above a
+        // hundredth of a pixel here means a systematic bias, not noise. The
+        // previous 5 px / 1.5 px bounds passed happily while multi-scale edgel
+        // merging was dragging every centre 0.07-0.10 px negative in both axes
+        // (a missing (2^l - 1)/2 half-pixel term). Do not loosen these.
         assert!(
-            cx_err <= 5.0,
-            "Circle r={}: centre_x error {cx_err:.2} > 5.0 px",
+            cx_err <= 0.02,
+            "Circle r={}: centre_x error {cx_err:.4} > 0.02 px",
             c.r
         );
         assert!(
-            cy_err <= 5.0,
-            "Circle r={}: centre_y error {cy_err:.2} > 5.0 px",
+            cy_err <= 0.02,
+            "Circle r={}: centre_y error {cy_err:.4} > 0.02 px",
             c.r
         );
         assert!(
-            r_err <= 1.5,
-            "Circle r={}: radius error {r_err:.2} > 1.5 px (r_fit={r_fit:.2})",
+            r_err <= 0.10,
+            "Circle r={}: radius error {r_err:.4} > 0.10 px (r_fit={r_fit:.2})",
             c.r
         );
 

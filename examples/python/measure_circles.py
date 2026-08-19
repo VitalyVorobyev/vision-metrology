@@ -27,8 +27,8 @@ def main():
     print(f"Generating {w}x{h} synthetic image with 3 circles (r=40, 60, 80)...")
     img = generate_image(w, h)
 
-    print("Running MultiScaleDetector (3 levels)...")
-    edgels = vm.detect_multiscale_edges_u8(img, vm.MultiScaleConfig(num_levels=3))
+    print("Running EdgeDetector...")
+    edgels = vm.detect_edges_u8(img, vm.EdgeConfig())
     print(f"  Detected {len(edgels)} edgels")
 
     if not edgels:

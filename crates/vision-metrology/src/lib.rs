@@ -11,7 +11,6 @@
 //! | [`contour`]   | Junction-aware contour graph extraction from 2D edgels |
 //! | [`laser`]     | Laser stripe extraction using opposite-polarity edge pairs |
 //! | [`matching`]  | Shape-based object detection: gradient-orientation model matching |
-//! | [`multiscale`]| Multi-scale 2D edge detection across pyramid levels |
 //! | [`segment`]   | Otsu / adaptive threshold, CCL, watershed, region growing |
 //! | [`shape`]     | LSD line detection, Bookstein / Fitzgibbon conic / ellipse fitting |
 //!
@@ -21,7 +20,6 @@
 pub mod contour;
 pub mod laser;
 pub mod matching;
-pub mod multiscale;
 pub mod segment;
 pub mod shape;
 
@@ -45,7 +43,6 @@ pub use matching::{
     ShapeModelBuilder, ShapeModelConfig, ShapeModelLevel, ShapeSearchConfig,
     create_shape_model_f32, create_shape_model_u8, create_shape_model_u16, match_point_scores,
 };
-pub use multiscale::{MultiScaleConfig, MultiScaleEdgeDetector, ScaleAnnotatedEdgel};
 pub use segment::{
     AdaptiveThreshConfig, CcLabel, ComponentStats, RegionGrowConfig, adaptive_threshold_u8,
     component_stats, grow_regions, label_connected_components_u8, otsu_threshold_u8, watershed,

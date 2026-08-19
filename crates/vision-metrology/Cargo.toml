@@ -46,10 +46,6 @@ name = "build_graph"
 harness = false
 
 [[bench]]
-name = "detect_multiscale"
-harness = false
-
-[[bench]]
 name = "detect_shape"
 harness = false
 

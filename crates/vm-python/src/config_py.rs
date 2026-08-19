@@ -2,7 +2,6 @@
 
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use vision_metrology::MultiScaleConfig as NativeMultiScaleConfig;
 use vision_metrology::Polarity as NativePolarity;
 use vision_metrology::Refinement as NativeRefinement;
 use vision_metrology::ShapeModelConfig as NativeShapeModelConfig;
@@ -125,68 +124,6 @@ impl EdgeConfig {
             high_thresh: self.high_thresh,
             border,
             subpix,
-        })
-    }
-}
-
-#[pyclass(get_all, set_all, from_py_object)]
-#[derive(Debug, Clone)]
-pub struct MultiScaleConfig {
-    pub num_levels: usize,
-    pub base_sigma: f32,
-    pub merge_duplicates: bool,
-    pub edge: EdgeConfig,
-}
-
-#[pymethods]
-impl MultiScaleConfig {
-    #[new]
-    #[pyo3(signature = (num_levels=None, base_sigma=None, merge_duplicates=None, edge=None))]
-    pub fn new(
-        num_levels: Option<usize>,
-        base_sigma: Option<f32>,
-        merge_duplicates: Option<bool>,
-        edge: Option<EdgeConfig>,
-    ) -> Self {
-        let default = Self::default();
-        Self {
-            num_levels: num_levels.unwrap_or(default.num_levels),
-            base_sigma: base_sigma.unwrap_or(default.base_sigma),
-            merge_duplicates: merge_duplicates.unwrap_or(default.merge_duplicates),
-            edge: edge.unwrap_or(default.edge),
-        }
-    }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "MultiScaleConfig(num_levels={}, base_sigma={:.3}, merge_duplicates={})",
-            self.num_levels, self.base_sigma, self.merge_duplicates
-        )
-    }
-}
-
-impl Default for MultiScaleConfig {
-    fn default() -> Self {
-        let native = NativeMultiScaleConfig::default();
-        Self {
-            num_levels: native.num_levels,
-            base_sigma: native.base_sigma,
-            merge_duplicates: native.merge_duplicates,
-            edge: EdgeConfig::default(),
-        }
-    }
-}
-
-impl MultiScaleConfig {
-    pub fn to_native(&self) -> PyResult<NativeMultiScaleConfig> {
-        if self.num_levels == 0 {
-            return Err(PyValueError::new_err("num_levels must be >= 1"));
-        }
-        Ok(NativeMultiScaleConfig {
-            num_levels: self.num_levels,
-            base_sigma: self.base_sigma,
-            edge: self.edge.to_native()?,
-            merge_duplicates: self.merge_duplicates,
         })
     }
 }
