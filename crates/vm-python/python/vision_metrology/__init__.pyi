@@ -324,6 +324,7 @@ class MetrologyModel:
         y: float,
         angle: float = ...,
         scale: float = ...,
+        origin: Tuple[float, float] = ...,
     ) -> List[Union[MetrologyResult, MetrologyError]]: ...
 
 class Caliper:

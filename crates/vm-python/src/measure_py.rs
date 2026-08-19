@@ -29,7 +29,7 @@ use vision_metrology::measure::{
     MetrologyObject as NativeMetrologyObject, MetrologyShape as NativeMetrologyShape,
     RejectReason as NativeRejectReason,
 };
-use vm_primitives::{Point2f, Similarity2f, Vec2f};
+use vm_primitives::{Point2f, Similarity2f, Vec2f, similarity_from_parts, wrap_angle};
 
 use crate::config::{FitConfig, MeasureConfig};
 use crate::convert::{any_image_from_numpy, with_any_image};
@@ -41,6 +41,21 @@ create_exception!(
     PyException,
     "A caliper found no edge; `args[0]` names which gate rejected it."
 );
+
+/// `Translation(position) ∘ sR ∘ Translation(−origin)`, as a similarity.
+///
+/// Mirrors `vision_metrology::matching::matcher::pose_from` (private to that
+/// crate) — this is `ShapeMatch::pose`'s own construction, so a caller who
+/// hands this binding a `ShapeMatch`'s `(x, y, angle, scale)` plus the taught
+/// model's `origin` gets exactly the fixture `ShapeMatch::pose` would build.
+fn pose_from(position: Point2f, angle: f32, scale: f32, origin: Point2f) -> Similarity2f {
+    let (sn, cs) = wrap_angle(angle).sin_cos();
+    let t = Vec2f::new(
+        position.x - scale * (cs * origin.x - sn * origin.y),
+        position.y - scale * (sn * origin.x + cs * origin.y),
+    );
+    similarity_from_parts(t, wrap_angle(angle), scale)
+}
 
 fn reject_reason_str(r: NativeRejectReason) -> &'static str {
     match r {
@@ -425,13 +440,23 @@ impl MetrologyModel {
 
     /// Measure every object with the model's nominal geometry mapped through
     /// the fixture `(x, y, angle, scale)` — typically a matched
-    /// [`ShapeMatch`](crate::types::ShapeMatch)'s own fields.
+    /// [`ShapeMatch`](crate::types::ShapeMatch)'s own fields — composed with
+    /// `origin`, the model-space point that `(x, y)` names.
+    ///
+    /// `origin` defaults to `(0, 0)`; pass the taught [`ShapeModel`]'s
+    /// `origin` (the same value handed to [`ShapeMatch.matrix`]) when it is
+    /// nonzero, or the fixture is mis-posed — see the fixture-pose semantics
+    /// on [`ShapeMatch::pose`](crate::matching::ShapeMatch) (the Rust
+    /// `vision_metrology::matching` type this mirrors): `position +
+    /// scale·R(angle)·(point − origin)`, not the origin-less `scale·R(angle)·point +
+    /// (x, y)` this binding built before this fix.
     ///
     /// Returns one entry per object, in [`add`](Self::add) order: either a
     /// [`MetrologyResult`] or a [`MetrologyError`] naming why that object
     /// could not be measured. See the module docstring for why this is a
     /// list of outcomes rather than raising on the first failure.
-    #[pyo3(signature = (image, x, y, angle=0.0, scale=1.0))]
+    #[pyo3(signature = (image, x, y, angle=0.0, scale=1.0, origin=(0.0, 0.0)))]
+    #[allow(clippy::too_many_arguments)]
     pub fn apply(
         &mut self,
         py: Python<'_>,
@@ -440,9 +465,15 @@ impl MetrologyModel {
         y: f32,
         angle: f32,
         scale: f32,
+        origin: (f32, f32),
     ) -> PyResult<Vec<Py<PyAny>>> {
         let any = any_image_from_numpy(py, image)?;
-        let fixture = Similarity2f::new(Vec2f::new(x, y), angle, scale);
+        let fixture = pose_from(
+            Point2f::new(x, y),
+            angle,
+            scale,
+            Point2f::new(origin.0, origin.1),
+        );
         let outcomes = with_any_image!(any, view => self.inner.apply(&view, &fixture));
 
         outcomes

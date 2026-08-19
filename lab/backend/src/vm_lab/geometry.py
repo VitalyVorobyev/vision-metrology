@@ -4,11 +4,10 @@
 image as `position + scale · R(angle) · (point − origin)` (radians; `R` is the standard
 `[[cos,-sin],[sin,cos]]` matrix — see `crates/vm-primitives/src/core/geom/transform.rs`).
 
-The Python binding `vm.MetrologyModel.apply(image, x, y, angle, scale)` builds its own
-fixture as `scale · R(angle) · point + (x, y)` — it does **not** subtract `origin` first.
-That only equals the Rust `pose` above when `origin == (0, 0)`. `correct_translation`
-below computes the `(x, y)` to hand `apply` so that its un-origin-aware formula produces
-the correct, origin-aware pose — see the model-frame gotcha noted in lab/README.md.
+`vm.MetrologyModel.apply(image, x, y, angle, scale, origin=...)` now builds exactly this
+fixture itself (the `origin` keyword was added to close the gotcha this module used to work
+around — see `docs/backlog.md` history and `crates/vm-python/src/measure_py.rs`), so callers
+just pass the model's own `origin` straight through instead of pre-correcting the translation.
 
 `to_scene` performs the same transform directly, used by this module's own caliper
 placement (`measure.py`), which must mirror `MetrologyModel::measure_one` in
@@ -37,11 +36,3 @@ def to_scene(
     ox, oy = origin
     rx, ry = rotate(px - ox, py - oy, angle)
     return x + scale * rx, y + scale * ry
-
-
-def correct_translation(
-    origin: tuple[float, float], x: float, y: float, angle: float, scale: float
-) -> tuple[float, float]:
-    ox, oy = origin
-    rx, ry = rotate(ox, oy, angle)
-    return x - scale * rx, y - scale * ry
