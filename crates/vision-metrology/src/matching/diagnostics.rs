@@ -118,12 +118,12 @@ mod tests {
             height: 100.0,
         };
         let model = ShapeModelBuilder::new()
-            .build_u8(&img.as_view(), roi, &ShapeModelConfig::default())
+            .build(&img.as_view(), roi, &ShapeModelConfig::default())
             .expect("model builds");
 
         let cfg = ShapeSearchConfig::default();
         let m = ShapeMatcher::new()
-            .find_u8(&img.as_view(), &model, &cfg)
+            .find(&img.as_view(), &model, &cfg)
             .into_iter()
             .next()
             .expect("self-match");

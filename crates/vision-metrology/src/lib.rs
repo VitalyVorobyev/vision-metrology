@@ -40,8 +40,8 @@ pub use laser::{
 };
 pub use matching::{
     ContourOrientation, ModelPoint, Polarity, Refinement, ShapeMatch, ShapeMatcher, ShapeModel,
-    ShapeModelBuilder, ShapeModelConfig, ShapeModelLevel, ShapeSearchConfig,
-    create_shape_model_f32, create_shape_model_u8, create_shape_model_u16, match_point_scores,
+    ShapeModelBuilder, ShapeModelConfig, ShapeModelLevel, ShapeSearchConfig, create_shape_model,
+    match_point_scores,
 };
 pub use segment::{
     AdaptiveThreshConfig, CcLabel, ComponentStats, RegionGrowConfig, adaptive_threshold_u8,

@@ -19,7 +19,7 @@
 //!
 //! let img: Image<u8> = Image::from_vec(640, 480, vec![0u8; 640 * 480]).unwrap();
 //! let mut det = Edge2DDetector::new();
-//! let edgels = det.detect_u8(&img.as_view(), &Edge2DConfig::default());
+//! let edgels = det.detect(&img.as_view(), &Edge2DConfig::default());
 //! println!("{} edgels found", edgels.len());
 //! ```
 

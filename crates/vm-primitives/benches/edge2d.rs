@@ -27,7 +27,7 @@ fn bench_edge2d_u8(c: &mut Criterion) {
 
     c.bench_function("edge2d_detect_u8_1280x1024", |b| {
         b.iter(|| {
-            let out = det.detect_u8(black_box(&view), black_box(&cfg));
+            let out = det.detect(black_box(&view), black_box(&cfg));
             black_box(out.len());
         });
     });
@@ -43,7 +43,7 @@ fn bench_direction_field_u8(c: &mut Criterion) {
 
     c.bench_function("direction_field_1280x1024", |b| {
         b.iter(|| {
-            field.build_u8(black_box(&view), SmoothKind::Binomial3, 10.0);
+            field.build(black_box(&view), SmoothKind::Binomial3, 10.0);
             black_box(field.width());
         });
     });

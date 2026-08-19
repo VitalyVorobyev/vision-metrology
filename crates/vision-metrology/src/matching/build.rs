@@ -1,8 +1,8 @@
 //! Shape model creation, from a reference image or from geometry alone.
 
 use vm_primitives::{
-    Edge2DDetector, Edgel, Error, ImageView, Point2f, Polyline2f, Pyramid, Rect2f, SmoothKind,
-    Vec2f,
+    Edge2DDetector, Edgel, Error, ImageView, Pixel, Point2f, Polyline2f, Pyramid, Rect2f,
+    SmoothKind, Vec2f,
 };
 
 use super::config::ShapeModelConfig;
@@ -80,7 +80,7 @@ fn to_level(v: f32, level: usize) -> f32 {
 /// let roi = Rect2f { x: 220.0, y: 160.0, width: 200.0, height: 160.0 };
 ///
 /// let mut builder = ShapeModelBuilder::new();
-/// let model = builder.build_u8(&img.as_view(), roi, &ShapeModelConfig::default())?;
+/// let model = builder.build(&img.as_view(), roi, &ShapeModelConfig::default())?;
 /// println!("{} levels, {} points at level 0", model.num_levels(), model.point_count(0));
 /// # Ok(())
 /// # }
@@ -100,48 +100,21 @@ impl ShapeModelBuilder {
         }
     }
 
-    /// Build a model from a `u8` reference image and a rectangular ROI.
+    /// Build a model from a reference image of any [`Pixel`] type and a
+    /// rectangular ROI.
+    ///
+    /// The ROI's own pyramid is what the model points are detected on — see
+    /// system-design invariant 3: model and scene must suffer identical
+    /// box-downsample aliasing.
     ///
     /// # Errors
     /// - [`Error::InvalidConfig`] for a non-positive ROI, a reversed or
     ///   non-positive `scale_range`, or a reversed `angle_range`.
     /// - [`Error::OutOfBounds`] when the ROI does not lie inside the image.
     /// - [`Error::InsufficientData`] when too few edge points survive.
-    pub fn build_u8(
+    pub fn build<P: Pixel>(
         &mut self,
-        img: &ImageView<'_, u8>,
-        roi: Rect2f,
-        cfg: &ShapeModelConfig,
-    ) -> Result<ShapeModel, Error> {
-        let crop = validate(img.width(), img.height(), roi, cfg)?;
-        let sub = img.subview(crop.x0, crop.y0, crop.w, crop.h)?;
-        self.pyr.build(&sub, crop.levels);
-        self.finish(crop, roi, cfg)
-    }
-
-    /// Build a model from a `u16` reference image. See [`build_u8`](Self::build_u8).
-    ///
-    /// # Errors
-    /// Same as [`build_u8`](Self::build_u8).
-    pub fn build_u16(
-        &mut self,
-        img: &ImageView<'_, u16>,
-        roi: Rect2f,
-        cfg: &ShapeModelConfig,
-    ) -> Result<ShapeModel, Error> {
-        let crop = validate(img.width(), img.height(), roi, cfg)?;
-        let sub = img.subview(crop.x0, crop.y0, crop.w, crop.h)?;
-        self.pyr.build(&sub, crop.levels);
-        self.finish(crop, roi, cfg)
-    }
-
-    /// Build a model from an `f32` reference image. See [`build_u8`](Self::build_u8).
-    ///
-    /// # Errors
-    /// Same as [`build_u8`](Self::build_u8).
-    pub fn build_f32(
-        &mut self,
-        img: &ImageView<'_, f32>,
+        img: &ImageView<'_, P>,
         roi: Rect2f,
         cfg: &ShapeModelConfig,
     ) -> Result<ShapeModel, Error> {
@@ -163,7 +136,7 @@ impl ShapeModelBuilder {
         for level in 0..built {
             let img = self.pyr.level(level).expect("level < num_levels");
             let (lw, lh) = (img.width(), img.height());
-            let edgels = self.det.detect_f32(&img.as_view(), &cfg.edge);
+            let edgels = self.det.detect(&img.as_view(), &cfg.edge);
 
             // Sub-image level-l coordinates translate to full-image level-l
             // coordinates by a pure shift, because the crop origin was aligned
@@ -223,40 +196,19 @@ impl ShapeModelBuilder {
     }
 }
 
-/// One-shot [`ShapeModelBuilder::build_u8`] for callers that build one model.
+/// One-shot [`ShapeModelBuilder::build`] for callers that build a single model.
+///
+/// Reuse a [`ShapeModelBuilder`] instead when building several — it keeps its
+/// pyramid and edge-detector scratch between calls.
 ///
 /// # Errors
-/// Same as [`ShapeModelBuilder::build_u8`].
-pub fn create_shape_model_u8(
-    img: &ImageView<'_, u8>,
+/// Same as [`ShapeModelBuilder::build`].
+pub fn create_shape_model<P: Pixel>(
+    img: &ImageView<'_, P>,
     roi: Rect2f,
     cfg: &ShapeModelConfig,
 ) -> Result<ShapeModel, Error> {
-    ShapeModelBuilder::new().build_u8(img, roi, cfg)
-}
-
-/// One-shot [`ShapeModelBuilder::build_u16`].
-///
-/// # Errors
-/// Same as [`ShapeModelBuilder::build_u16`].
-pub fn create_shape_model_u16(
-    img: &ImageView<'_, u16>,
-    roi: Rect2f,
-    cfg: &ShapeModelConfig,
-) -> Result<ShapeModel, Error> {
-    ShapeModelBuilder::new().build_u16(img, roi, cfg)
-}
-
-/// One-shot [`ShapeModelBuilder::build_f32`].
-///
-/// # Errors
-/// Same as [`ShapeModelBuilder::build_f32`].
-pub fn create_shape_model_f32(
-    img: &ImageView<'_, f32>,
-    roi: Rect2f,
-    cfg: &ShapeModelConfig,
-) -> Result<ShapeModel, Error> {
-    ShapeModelBuilder::new().build_f32(img, roi, cfg)
+    ShapeModelBuilder::new().build(img, roi, cfg)
 }
 
 impl ShapeModel {

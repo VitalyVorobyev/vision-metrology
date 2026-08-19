@@ -1,7 +1,7 @@
 //! Coarse stripe-centre estimation used to seed the precise DoG search.
 
-use super::scan::ScanPixel;
 use super::types::CoarseMethod;
+use vm_primitives::Pixel;
 
 /// Estimate the coarse stripe centre in a `u8` scan-line using the given method.
 ///
@@ -25,8 +25,8 @@ pub fn coarse_center_f32(line: &[f32], coarse: &CoarseMethod) -> Option<f32> {
     coarse_center_in_range(line, coarse, 0, line.len())
 }
 
-pub(super) fn coarse_center_in_range<T: ScanPixel>(
-    line: &[T],
+pub(super) fn coarse_center_in_range<P: Pixel>(
+    line: &[P],
     coarse: &CoarseMethod,
     start: usize,
     end: usize,
@@ -63,7 +63,7 @@ pub(super) fn coarse_center_in_range<T: ScanPixel>(
     }
 }
 
-fn argmax<T: ScanPixel>(line: &[T]) -> Option<(usize, T)> {
+fn argmax<P: Pixel>(line: &[P]) -> Option<(usize, P)> {
     let mut it = line.iter().copied().enumerate();
     let mut best = it.next()?;
     for (i, v) in it {

@@ -32,7 +32,7 @@ fn main() {
         ..Edge1DConfig::default()
     };
 
-    let peaks = det.detect_in_f32(&signal, &cfg);
+    let peaks = det.detect_in(&signal, &cfg);
 
     // --- Step 3: print results ---
     println!("Detected {} edge peak(s):", peaks.len());

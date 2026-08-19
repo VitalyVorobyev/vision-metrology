@@ -1,21 +1,20 @@
 //! Bright-on-dark edge-pair selection with a continuity prior.
 
-use vm_primitives::{Edge1DDetector, EdgePair1D, EdgePeak, EdgePolarity};
+use vm_primitives::{Edge1DDetector, EdgePair1D, EdgePeak, EdgePolarity, Pixel};
 
-use super::scan::ScanPixel;
 use super::types::{LaserExtractConfig, LaserSample};
 
 /// Detect edge peaks on one scan line and pick the best stripe pair.
-pub(super) fn detect_pair<T: ScanPixel>(
+pub(super) fn detect_pair<P: Pixel>(
     detector: &mut Edge1DDetector,
-    line: &[T],
+    line: &[P],
     predicted: f32,
     tracking: bool,
     cfg: &LaserExtractConfig,
     x_offset: usize,
     scan_i: usize,
 ) -> Option<LaserSample> {
-    let peaks = T::detect_peaks(detector, line, &cfg.edge_cfg);
+    let peaks = detector.detect_in_ref(line, &cfg.edge_cfg);
     let pair = best_pair_with_prior_offset(
         peaks,
         x_offset as f32,

@@ -108,7 +108,7 @@ pub fn best_edge_pair_in_row_u8(
     pair_cfg: &EdgePairConfig,
 ) -> Option<EdgePair1D> {
     let row = img.row(y);
-    let peaks = detector.detect_in_u8_borrowed(row, edge_cfg);
+    let peaks = detector.detect_in_ref(row, edge_cfg);
     best_edge_pair(peaks, pair_cfg)
 }
 
@@ -166,7 +166,7 @@ mod tests {
             prefer_bright_on_dark: true,
         };
 
-        let peaks = det.detect_in_f32(&sig, &edge_cfg);
+        let peaks = det.detect_in(&sig, &edge_cfg);
         let pair = best_edge_pair(&peaks, &pair_cfg).expect("pair should exist");
 
         assert!((pair.left.x - x_l).abs() <= 0.2);

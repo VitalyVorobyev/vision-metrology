@@ -170,7 +170,7 @@ fn setup(common: &CommonArgs) -> Result<Setup> {
         ..Default::default()
     };
     let model = ShapeModelBuilder::new()
-        .build_u8(&reference.as_view(), common.roi, &model_cfg)
+        .build(&reference.as_view(), common.roi, &model_cfg)
         .map_err(|e| anyhow::anyhow!("model build: {e}"))?;
     let search = ShapeSearchConfig {
         min_score: common.min_score,
@@ -223,7 +223,7 @@ fn audit(args: AuditArgs) -> Result<()> {
     for (i, path) in frames.iter().enumerate() {
         let scene = load_gray(path)?;
         let t = Instant::now();
-        let found = matcher.find_u8(&scene.as_view(), &s.model, &s.search);
+        let found = matcher.find(&scene.as_view(), &s.model, &s.search);
         let dt = t.elapsed().as_secs_f64() * 1e3;
         times.push(dt);
         let name = path.file_stem().unwrap_or_default().to_string_lossy();
@@ -318,7 +318,7 @@ fn rim_relative(
     m: &ShapeMatch,
     r_hint: f32,
 ) -> Option<(f32, f32)> {
-    let edgels = det.detect_u8(&scene.as_view(), &Edge2DConfig::default());
+    let edgels = det.detect(&scene.as_view(), &Edge2DConfig::default());
     // The rim circles the image centre region; seed with the frame centre.
     let seed = Point2f {
         x: scene.width() as f32 * 0.5,
@@ -381,7 +381,7 @@ fn xcheck(args: XcheckArgs) -> Result<()> {
         let name = path.file_stem().unwrap_or_default().to_string_lossy();
 
         let Some(m) = matcher
-            .find_u8(&scene.as_view(), &s.model, &s.search)
+            .find(&scene.as_view(), &s.model, &s.search)
             .into_iter()
             .next()
         else {

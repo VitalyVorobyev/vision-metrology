@@ -73,6 +73,13 @@ pub trait Pixel: sealed::Sealed + Copy + Default + PartialOrd + core::fmt::Debug
     /// Exact `f32` value of an accumulator.
     fn acc_to_f32(a: Self::Acc) -> f32;
 
+    /// Borrow `s` as `&[f32]` when `Self` *is* `f32`, else `None`.
+    ///
+    /// Lets generic code skip the widening copy on the one type that needs
+    /// none. Callers must treat `None` as "copy through
+    /// [`to_f32`](Pixel::to_f32)", never as an error.
+    fn as_f32_slice(s: &[Self]) -> Option<&[f32]>;
+
     /// Mean of four accumulated samples, back in this pixel type.
     ///
     /// Integer types round half-up (`(sum + 2) / 4`); `f32` scales by `0.25`.
@@ -107,6 +114,11 @@ impl Pixel for u8 {
     }
 
     #[inline]
+    fn as_f32_slice(_: &[Self]) -> Option<&[f32]> {
+        None
+    }
+
+    #[inline]
     fn acc_mean4(a: u32) -> Self {
         ((a + 2) / 4) as u8
     }
@@ -137,6 +149,11 @@ impl Pixel for u16 {
     }
 
     #[inline]
+    fn as_f32_slice(_: &[Self]) -> Option<&[f32]> {
+        None
+    }
+
+    #[inline]
     fn acc_mean4(a: u32) -> Self {
         ((a + 2) / 4) as u16
     }
@@ -164,6 +181,11 @@ impl Pixel for f32 {
     #[inline]
     fn acc_to_f32(a: f32) -> f32 {
         a
+    }
+
+    #[inline]
+    fn as_f32_slice(s: &[Self]) -> Option<&[f32]> {
+        Some(s)
     }
 
     #[inline]
@@ -215,6 +237,14 @@ mod tests {
         assert_eq!(u8::from_f32_sat(f32::NAN), 0);
         assert_eq!(u16::from_f32_sat(70_000.0), 65535);
         assert_eq!(f32::from_f32_sat(1.25), 1.25);
+    }
+
+    /// Only `f32` may claim the zero-copy path; the others must force a widen.
+    #[test]
+    fn only_f32_borrows_as_f32() {
+        assert!(u8::as_f32_slice(&[1u8, 2]).is_none());
+        assert!(u16::as_f32_slice(&[1u16, 2]).is_none());
+        assert_eq!(f32::as_f32_slice(&[1.5f32, 2.5]), Some(&[1.5f32, 2.5][..]));
     }
 
     #[test]

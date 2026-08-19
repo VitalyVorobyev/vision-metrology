@@ -29,7 +29,7 @@ fn main() {
     println!("Running Edge2DDetector with default config...");
     let mut det = Edge2DDetector::new();
     let cfg = Edge2DConfig::default();
-    let edgels = det.detect_u8(&img.as_view(), &cfg);
+    let edgels = det.detect(&img.as_view(), &cfg);
 
     // --- Step 3: print stats ---
     println!("Detected {} edgel(s).", edgels.len());

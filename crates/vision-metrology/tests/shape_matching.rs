@@ -113,7 +113,7 @@ fn bracket_roi() -> Rect2f {
 fn build_bracket_model(cfg: &ShapeModelConfig) -> ShapeModel {
     let reference = bracket_at(256.0, 256.0, 0.0, 1.0);
     ShapeModelBuilder::new()
-        .build_u8(&reference.as_view(), bracket_roi(), cfg)
+        .build(&reference.as_view(), bracket_roi(), cfg)
         .expect("bracket model builds")
 }
 
@@ -136,7 +136,7 @@ fn expected_position(model: &ShapeModel, cx: f32, cy: f32, angle: f32, s: f32) -
 
 fn find_one(scene: &Image<u8>, model: &ShapeModel, cfg: &ShapeSearchConfig) -> Option<ShapeMatch> {
     ShapeMatcher::new()
-        .find_u8(&scene.as_view(), model, cfg)
+        .find(&scene.as_view(), model, cfg)
         .into_iter()
         .next()
 }
@@ -224,7 +224,7 @@ fn t21_an_angle_range_may_straddle_pi() {
 fn t19_a_uniform_scene_yields_nothing() {
     let model = build_bracket_model(&ShapeModelConfig::default());
     let flat = Image::from_vec(W, H, vec![128u8; W * H]).unwrap();
-    let out = ShapeMatcher::new().find_u8(&flat.as_view(), &model, &ShapeSearchConfig::default());
+    let out = ShapeMatcher::new().find(&flat.as_view(), &model, &ShapeSearchConfig::default());
     assert!(out.is_empty(), "{out:?}");
 }
 
@@ -236,8 +236,8 @@ fn t22_output_is_reproducible() {
         max_matches: 0,
         ..Default::default()
     };
-    let a = ShapeMatcher::new().find_u8(&scene.as_view(), &model, &cfg);
-    let b = ShapeMatcher::new().find_u8(&scene.as_view(), &model, &cfg);
+    let a = ShapeMatcher::new().find(&scene.as_view(), &model, &cfg);
+    let b = ShapeMatcher::new().find(&scene.as_view(), &model, &cfg);
     assert_eq!(a.len(), b.len());
     for (x, y) in a.iter().zip(&b) {
         assert_eq!(x, y);
@@ -258,7 +258,7 @@ fn t18_degenerate_inputs_report_the_right_error() {
         height: 20.0,
     };
     assert_eq!(
-        b.build_u8(&img.as_view(), empty, &cfg),
+        b.build(&img.as_view(), empty, &cfg),
         Err(Error::InvalidConfig("roi must have positive extent"))
     );
 
@@ -269,7 +269,7 @@ fn t18_degenerate_inputs_report_the_right_error() {
         height: 200.0,
     };
     assert_eq!(
-        b.build_u8(&img.as_view(), outside, &cfg),
+        b.build(&img.as_view(), outside, &cfg),
         Err(Error::OutOfBounds)
     );
 
@@ -278,7 +278,7 @@ fn t18_degenerate_inputs_report_the_right_error() {
         ..Default::default()
     };
     assert_eq!(
-        b.build_u8(&img.as_view(), bracket_roi(), &bad_scale),
+        b.build(&img.as_view(), bracket_roi(), &bad_scale),
         Err(Error::InvalidConfig(
             "scale_range must be positive and ordered"
         ))
@@ -297,7 +297,7 @@ fn t18_degenerate_inputs_report_the_right_error() {
     // A blank image has no edges at all.
     let flat = Image::from_vec(W, H, vec![90u8; W * H]).unwrap();
     assert!(matches!(
-        b.build_u8(&flat.as_view(), bracket_roi(), &cfg),
+        b.build(&flat.as_view(), bracket_roi(), &cfg),
         Err(Error::InsufficientData { .. })
     ));
 }
@@ -327,7 +327,7 @@ fn t17_auto_level_count_shrinks_with_the_model() {
         height: 40.0,
     };
     let m = ShapeModelBuilder::new()
-        .build_u8(&small.as_view(), roi, &ShapeModelConfig::default())
+        .build(&small.as_view(), roi, &ShapeModelConfig::default())
         .expect("small model builds");
     assert!(
         m.num_levels() >= 2 && m.num_levels() <= 3,
@@ -384,7 +384,7 @@ fn t15_a_symmetric_model_does_not_blow_up() {
         height: 132.0,
     };
     let model = ShapeModelBuilder::new()
-        .build_u8(&reference.as_view(), roi, &ShapeModelConfig::default())
+        .build(&reference.as_view(), roi, &ShapeModelConfig::default())
         .expect("ring model builds");
 
     let scene = render(&sdf_ring, 240.0, 270.0, 0.0, 1.0, &Render::default());
@@ -590,7 +590,7 @@ fn t6_clutter_does_not_produce_a_false_positive() {
         min_score: 0.6,
         ..Default::default()
     };
-    let out = ShapeMatcher::new().find_u8(&scene.as_view(), &model, &cfg);
+    let out = ShapeMatcher::new().find(&scene.as_view(), &model, &cfg);
     assert_eq!(
         out.len(),
         1,
@@ -664,7 +664,7 @@ fn t10_t11_two_instances_are_reported_and_duplicates_are_not() {
         min_score: 0.7,
         ..Default::default()
     };
-    let out = ShapeMatcher::new().find_u8(&scene.as_view(), &model, &cfg);
+    let out = ShapeMatcher::new().find(&scene.as_view(), &model, &cfg);
     assert_eq!(out.len(), 2, "{out:?}");
 
     for &(cx, cy, angle) in &[(150.0f32, 150.0f32, 0.0f32), (360.0, 350.0, 1.2)] {
@@ -685,7 +685,7 @@ fn t10_t11_two_instances_are_reported_and_duplicates_are_not() {
     };
     assert_eq!(
         ShapeMatcher::new()
-            .find_u8(&scene.as_view(), &model, &tight)
+            .find(&scene.as_view(), &model, &tight)
             .len(),
         2
     );
@@ -785,7 +785,7 @@ fn r3_fine_toothed_model_survives_the_pyramid() {
         height: 72.0,
     };
     let model = ShapeModelBuilder::new()
-        .build_u8(&reference.as_view(), roi, &ShapeModelConfig::default())
+        .build(&reference.as_view(), roi, &ShapeModelConfig::default())
         .expect("comb model builds");
 
     // The comb must yield a genuinely multi-level model for the probe to mean

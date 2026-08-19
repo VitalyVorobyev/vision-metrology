@@ -165,7 +165,7 @@ fn build_model(args: &Args, model_path: &Path, roi: Rect2f) -> Result<ShapeModel
         ..Default::default()
     };
     let t0 = Instant::now();
-    let model = ShapeModelBuilder::new().build_u8(&reference.as_view(), roi, &cfg)?;
+    let model = ShapeModelBuilder::new().build(&reference.as_view(), roi, &cfg)?;
     println!(
         "model from {}: {} levels, built in {:.1} ms",
         model_path.display(),
@@ -207,9 +207,9 @@ fn single(
 
     let mut matcher = ShapeMatcher::new();
     // One warm-up call so the reported time excludes first-touch allocation.
-    let _ = matcher.find_u8(&scene.as_view(), model, &search);
+    let _ = matcher.find(&scene.as_view(), model, &search);
     let t1 = Instant::now();
-    let matches = matcher.find_u8(&scene.as_view(), model, &search);
+    let matches = matcher.find(&scene.as_view(), model, &search);
     let find_ms = t1.elapsed().as_secs_f64() * 1e3;
 
     println!(
@@ -292,7 +292,7 @@ fn batch(
     for path in &paths {
         let Ok(scene) = load_gray(path) else { continue };
         let t = Instant::now();
-        let matches = matcher.find_u8(&scene.as_view(), model, &search);
+        let matches = matcher.find(&scene.as_view(), model, &search);
         times.push(t.elapsed().as_secs_f64() * 1e3);
 
         match matches.first() {
@@ -443,11 +443,8 @@ fn synthetic() -> Result<()> {
     });
     let scene = Image::from_vec(SW, SH, scene_data)?;
 
-    let model = ShapeModelBuilder::new().build_u8(
-        &reference.as_view(),
-        roi,
-        &ShapeModelConfig::default(),
-    )?;
+    let model =
+        ShapeModelBuilder::new().build(&reference.as_view(), roi, &ShapeModelConfig::default())?;
     println!(
         "model: {} levels, {} points at level 0",
         model.num_levels(),
@@ -461,7 +458,7 @@ fn synthetic() -> Result<()> {
         ..Default::default()
     };
     let t0 = Instant::now();
-    let matches = ShapeMatcher::new().find_u8(&scene.as_view(), &model, &cfg);
+    let matches = ShapeMatcher::new().find(&scene.as_view(), &model, &cfg);
     println!(
         "found {} instances in {:.1} ms",
         matches.len(),

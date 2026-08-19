@@ -48,7 +48,7 @@ img = np.zeros((64, 64), dtype=np.uint8)
 img[:, 32:] = 200
 
 # Object API
-edgels_obj = vm.EdgeDetector(vm.EdgeConfig()).detect_u8(img)
+edgels_obj = vm.EdgeDetector(vm.EdgeConfig()).detect(img)
 
 # Free-function API
 edgels_fn = vm.detect_edges_u8(img, vm.EdgeConfig())

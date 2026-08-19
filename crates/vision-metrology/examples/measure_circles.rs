@@ -161,7 +161,7 @@ fn main() {
     // --- Step 2: subpixel edge detection ---
     println!("Running Edge2DDetector...");
     let mut det = Edge2DDetector::new();
-    let edgels = det.detect_u8(&img.as_view(), &Edge2DConfig::default());
+    let edgels = det.detect(&img.as_view(), &Edge2DConfig::default());
     println!("  Detected {} edgels.", edgels.len());
 
     // --- Step 3: build contour graph ---

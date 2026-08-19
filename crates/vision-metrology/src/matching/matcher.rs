@@ -1,7 +1,7 @@
 //! Coarse-to-fine shape search.
 
 use vm_primitives::{
-    DirectionField, ImageView, Point2f, Pyramid, Similarity2f, Vec2f, similarity_from_parts,
+    DirectionField, ImageView, Pixel, Point2f, Pyramid, Similarity2f, Vec2f, similarity_from_parts,
     wrap_angle,
 };
 
@@ -87,7 +87,7 @@ impl MapBuffers {
 /// let mut matcher = ShapeMatcher::new();
 /// let cfg = ShapeSearchConfig { min_score: 0.6, max_matches: 4, ..Default::default() };
 ///
-/// for m in matcher.find_u8(&scene.as_view(), model, &cfg) {
+/// for m in matcher.find(&scene.as_view(), model, &cfg) {
 ///     println!("{:?} at {:.1} deg, score {:.2}", m.position, m.angle().to_degrees(), m.score);
 /// }
 /// # }
@@ -121,10 +121,13 @@ impl ShapeMatcher {
         self.truncated
     }
 
-    /// Find instances of `model` in a `u8` scene.
-    pub fn find_u8(
+    /// Find instances of `model` in a scene of any [`Pixel`] type.
+    ///
+    /// [`ShapeSearchConfig::min_contrast`] is expressed on the input pixel
+    /// scale, so it needs raising for 16-bit data and re-tuning for `f32`.
+    pub fn find<P: Pixel>(
         &mut self,
-        img: &ImageView<'_, u8>,
+        img: &ImageView<'_, P>,
         model: &ShapeModel,
         cfg: &ShapeSearchConfig,
     ) -> Vec<ShapeMatch> {
@@ -132,35 +135,7 @@ impl ShapeMatcher {
         let t = std::time::Instant::now();
         self.pyr.build(img, model.num_levels());
         #[cfg(feature = "trace-cands")]
-        eprintln!(
-            "pyr build_from_u8: {:.3} ms",
-            t.elapsed().as_secs_f64() * 1e3
-        );
-        self.run(model, cfg)
-    }
-
-    /// Find instances of `model` in a `u16` scene.
-    ///
-    /// Remember that [`ShapeSearchConfig::min_contrast`] is on the input pixel
-    /// scale and needs raising for 16-bit data.
-    pub fn find_u16(
-        &mut self,
-        img: &ImageView<'_, u16>,
-        model: &ShapeModel,
-        cfg: &ShapeSearchConfig,
-    ) -> Vec<ShapeMatch> {
-        self.pyr.build(img, model.num_levels());
-        self.run(model, cfg)
-    }
-
-    /// Find instances of `model` in an `f32` scene.
-    pub fn find_f32(
-        &mut self,
-        img: &ImageView<'_, f32>,
-        model: &ShapeModel,
-        cfg: &ShapeSearchConfig,
-    ) -> Vec<ShapeMatch> {
-        self.pyr.build(img, model.num_levels());
+        eprintln!("pyr build: {:.3} ms", t.elapsed().as_secs_f64() * 1e3);
         self.run(model, cfg)
     }
 

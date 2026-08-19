@@ -126,6 +126,32 @@ around candidates, so full-frame fine-level fields are mostly wasted work. The p
 plan (roadmap Track 2) is lazy tiled fields first, integer u8 Scharr second, quantized
 directions + SIMD only if still needed — in that order, each gated on measurement.
 
+### One generic entry point per algorithm (2026-08)
+Every detector used to expose `_u8` / `_u16` / `_f32` variants of the same method. Counting
+the affected functions across both library crates: **40 entry points became 16**, and the
+three that remain `_f32` (`build_image_f32`, `begin_tiled_f32`, `ensure_rect_f32`) genuinely
+only ever see pyramid levels, which are always `f32`.
+
+`vm_primitives::Pixel` is a sealed trait over `u8`/`u16`/`f32` carrying `to_f32`,
+`from_f32_sat`, an `Acc` accumulator, and `as_f32_slice` (the zero-copy hook that keeps an
+`f32` laser scan from being widened into scratch it does not need). Sealed, so adding a pixel
+type stays non-breaking downstream.
+
+`laser`'s private `ScanPixel` trait is gone — `Pixel` covers everything it did except the
+per-type gather scratch, which is now a `Vec<P>` local to the column scan: one allocation per
+call, next to the output vector, rather than three buffers on the extractor.
+
+**A measurement that overrode the tidier design.** Gathering columns directly as `f32` looks
+like it saves a widening pass. It does not: it quadruples the gather's write traffic, while
+the widening it avoids happens only over the much smaller ROI segment.
+`laser_extract_cols_gather_512x1280` went 151 → 183 µs (+21%) before this was caught by an
+A/B against a baseline measured in the same session. Gathering the pixel type as-is is back,
+and the reasoning is recorded in `laser/gather.rs` so it is not "simplified" again.
+
+Everything else held or improved: `shape_find_1280x1024_360deg` 3.42 → 3.36 ms,
+`..._clutter` 6.61 → 6.42 ms, `laser_extract_rows` +0.3%, `laser_extract_cols` +0.3%,
+`shape_model_create` +0.6%.
+
 ### LSD downsamples through `pyr`, and its config stopped lying (2026-08)
 `shape/lsd.rs` carried its own 2×2 downsample under a comment claiming it was "the same as a
 `vm_primitives::pyr` level". It was not: `div_ceil` + border clamp against `pyr`'s drop-odd,

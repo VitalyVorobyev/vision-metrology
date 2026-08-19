@@ -77,7 +77,7 @@ pub fn build_graph_from_detector_output(
     edge_cfg: &Edge2DConfig,
     contour_cfg: &ContourBuildConfig,
 ) -> ContourGraph {
-    let edgels = detector.detect_u8(img, edge_cfg);
+    let edgels = detector.detect(img, edge_cfg);
     build_graph_from_edgels(img.width(), img.height(), &edgels, contour_cfg)
 }
 
@@ -989,7 +989,7 @@ mod tests {
         // and 432 edges whose longest run was 15 points.
         let img = ring_image(128, 40.0, 2.0);
         let mut det = Edge2DDetector::new();
-        let edgels = det.detect_u8(&img.as_view(), &Edge2DConfig::default());
+        let edgels = det.detect(&img.as_view(), &Edge2DConfig::default());
         assert!(
             edgels.len() > 500,
             "fixture should produce a rich edgel set"
@@ -1026,7 +1026,7 @@ mod tests {
         // first. Without it the thick band is read as a mesh of junctions.
         let img = ring_image(128, 40.0, 2.0);
         let mut det = Edge2DDetector::new();
-        let edgels = det.detect_u8(&img.as_view(), &Edge2DConfig::default());
+        let edgels = det.detect(&img.as_view(), &Edge2DConfig::default());
 
         let thinned = build_graph_from_edgels(
             128,
@@ -1067,7 +1067,7 @@ mod tests {
         // an unmodified edgel position, not a snapped or averaged one.
         let img = ring_image(128, 40.0, 2.0);
         let mut det = Edge2DDetector::new();
-        let edgels = det.detect_u8(&img.as_view(), &Edge2DConfig::default());
+        let edgels = det.detect(&img.as_view(), &Edge2DConfig::default());
         let g = build_graph_from_edgels(
             128,
             128,

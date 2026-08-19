@@ -57,7 +57,7 @@ impl EdgeDetector {
     ) -> PyResult<Bound<'py, PyList>> {
         let image = image_from_numpy_u8(py, &img)?;
         let cfg = self.cfg.to_native()?;
-        let edgels = self.det.detect_u8(&image.as_view(), &cfg);
+        let edgels = self.det.detect(&image.as_view(), &cfg);
         edgels_to_pylist(py, &edgels)
     }
 

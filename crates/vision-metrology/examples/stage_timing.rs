@@ -65,7 +65,7 @@ fn main() {
         ..Default::default()
     };
     let model = ShapeModelBuilder::new()
-        .build_u8(&reference.as_view(), roi, &cfg)
+        .build(&reference.as_view(), roi, &cfg)
         .unwrap();
     let n_lv = model.num_levels();
     println!("model levels: {n_lv}");
@@ -104,11 +104,11 @@ fn main() {
     // Full find for reference
     let mut matcher = ShapeMatcher::new();
     let scfg = ShapeSearchConfig::default();
-    let _ = matcher.find_u8(&scene.as_view(), &model, &scfg);
+    let _ = matcher.find(&scene.as_view(), &model, &scfg);
     let t = Instant::now();
     let mut found = 0usize;
     for _ in 0..50 {
-        found += matcher.find_u8(&scene.as_view(), &model, &scfg).len();
+        found += matcher.find(&scene.as_view(), &model, &scfg).len();
     }
     println!(
         "find_u8 total      : {:8.3} ms   (found {} / 50)",
@@ -188,11 +188,11 @@ fn main() {
     ];
     for (name, cfg) in cases {
         eprintln!("=== case: {name}");
-        let _ = matcher.find_u8(&clutter.as_view(), &model, &cfg);
+        let _ = matcher.find(&clutter.as_view(), &model, &cfg);
         let t = Instant::now();
         let mut n = 0usize;
         for _ in 0..30 {
-            n += matcher.find_u8(&clutter.as_view(), &model, &cfg).len();
+            n += matcher.find(&clutter.as_view(), &model, &cfg).len();
         }
         println!(
             "{name:24}: {:8.3} ms  (found {n}/30, truncated {})",

@@ -37,7 +37,7 @@ let data: Vec<u8> = (0..64 * 64).map(|i| if i % 64 >= 32 { 200 } else { 0 }).col
 let img = Image::from_vec(64, 64, data).expect("valid image");
 
 let mut det = Edge2DDetector::new();
-let edgels = det.detect_u8(&img.as_view(), &Edge2DConfig::default());
+let edgels = det.detect(&img.as_view(), &Edge2DConfig::default());
 assert!(edgels.iter().all(|e| (e.p.x - 31.5).abs() < 1.0));
 ```
 

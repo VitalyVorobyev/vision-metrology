@@ -475,7 +475,7 @@ mod tests {
         }
         let img = Image::from_vec(32, 32, data).unwrap();
         let mut f = DirectionField::new();
-        f.build_f32(&img.as_view(), SmoothKind::None, min_mag);
+        f.build(&img.as_view(), SmoothKind::None, min_mag);
         f
     }
 
@@ -611,7 +611,7 @@ mod tests {
         }
         let img = Image::from_vec(w, h, data).unwrap();
         let mut field = DirectionField::new();
-        field.build_f32(&img.as_view(), SmoothKind::Binomial3, 10.0);
+        field.build(&img.as_view(), SmoothKind::Binomial3, 10.0);
 
         // A 24-point model with deterministic pseudo-random offsets and unit
         // directions -- realistic enough that partial sums dip and recover.

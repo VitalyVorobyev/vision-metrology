@@ -16,7 +16,7 @@
 //! is done in higher-level crates.
 
 use crate::core::{
-    BorderMode, Image, ImageView, Point2f, Vec2f, parabolic_peak_offset, sample_bilinear_f32,
+    BorderMode, Image, ImageView, Pixel, Point2f, Vec2f, parabolic_peak_offset, sample_bilinear_f32,
 };
 
 /// A single subpixel 2-D edge element (edgel).
@@ -153,86 +153,61 @@ impl Edge2DDetector {
         }
     }
 
-    /// Detect edgels in a `u8` image.
+    /// Detect edgels in a grayscale image of any [`Pixel`] type.
     ///
-    /// Internally converts pixel values to `f32` (range [0, 255]).
-    pub fn detect_u8(&mut self, img: &ImageView<'_, u8>, cfg: &Edge2DConfig) -> Vec<Edgel> {
-        self.ensure_dims(img.width(), img.height());
-        copy_u8_to_tmp(img, self.tmp.data_mut(), img.width());
-        self.detect_from_tmp(cfg)
-    }
-
-    /// Detect edgels in a `u16` image.
-    ///
-    /// Internally converts pixel values to `f32` (range [0, 65535]).
-    pub fn detect_u16(&mut self, img: &ImageView<'_, u16>, cfg: &Edge2DConfig) -> Vec<Edgel> {
-        self.ensure_dims(img.width(), img.height());
-        copy_u16_to_tmp(img, self.tmp.data_mut(), img.width());
-        self.detect_from_tmp(cfg)
-    }
-
-    /// Detect edgels in an `f32` image.
-    pub fn detect_f32(&mut self, img: &ImageView<'_, f32>, cfg: &Edge2DConfig) -> Vec<Edgel> {
-        self.ensure_dims(img.width(), img.height());
-        copy_f32_to_tmp(img, self.tmp.data_mut(), img.width());
-        self.detect_from_tmp(cfg)
-    }
-
-    /// Like [`detect_f32`][Self::detect_f32] but also returns a view into the
-    /// internal gradient buffers.
-    ///
-    /// The returned [`GradientBuffers`] borrows from `self` and is valid only
-    /// until the next call to any `detect_*` method on this detector.
+    /// `u8` and `u16` values are widened to `f32` on the way in, keeping their
+    /// own numeric range (`0..=255`, `0..=65535`) — thresholds in
+    /// [`Edge2DConfig`] are therefore expressed on the input scale.
     ///
     /// # Example
-    /// ```rust
+    /// ```
+    /// use vm_primitives::{Edge2DConfig, Edge2DDetector, Image};
+    ///
+    /// let mut data = vec![0u8; 32 * 32];
+    /// for y in 0..32 { for x in 16..32 { data[y * 32 + x] = 200; } }
+    /// let img = Image::from_vec(32, 32, data).unwrap();
+    ///
+    /// let mut det = Edge2DDetector::new();
+    /// let edgels = det.detect(&img.as_view(), &Edge2DConfig::default());
+    /// assert!(edgels.iter().all(|e| (e.p.x - 15.5).abs() < 1.0));
+    /// ```
+    pub fn detect<P: Pixel>(&mut self, img: &ImageView<'_, P>, cfg: &Edge2DConfig) -> Vec<Edgel> {
+        self.ensure_dims(img.width(), img.height());
+        let w = img.width();
+        copy_to_tmp(img, self.tmp.data_mut(), w);
+        self.detect_from_tmp(cfg)
+    }
+
+    /// Like [`detect`][Self::detect] but also lends a view of the internal
+    /// gradient buffers.
+    ///
+    /// The returned [`GradientBuffers`] borrows from `self` and is valid only
+    /// until the next `detect` call on this detector.
+    ///
+    /// # Example
+    /// ```
     /// use vm_primitives::{Edge2DConfig, Edge2DDetector, Image};
     ///
     /// let img = Image::<f32>::new_fill(64, 48, 0.0);
     /// let mut det = Edge2DDetector::new();
-    /// let (edgels, grads) = det.detect_f32_with_gradients(&img.as_view(), &Edge2DConfig::default());
-    /// assert_eq!(grads.width, 64);
-    /// assert_eq!(grads.height, 48);
+    /// let (edgels, grads) = det.detect_with_gradients(&img.as_view(), &Edge2DConfig::default());
+    /// assert_eq!((grads.width, grads.height), (64, 48));
     /// assert_eq!(grads.gx.len(), 64 * 48);
+    /// assert!(edgels.is_empty());
     /// ```
-    pub fn detect_f32_with_gradients<'a>(
+    pub fn detect_with_gradients<'a, P: Pixel>(
         &'a mut self,
-        img: &ImageView<'_, f32>,
+        img: &ImageView<'_, P>,
         cfg: &Edge2DConfig,
     ) -> (Vec<Edgel>, GradientBuffers<'a>) {
-        let edgels = self.detect_f32(img, cfg);
-        let w = self.gx.width();
-        let h = self.gx.height();
+        let edgels = self.detect(img, cfg);
+        let (width, height) = (self.gx.width(), self.gx.height());
         let grads = GradientBuffers {
             gx: self.gx.data(),
             gy: self.gy.data(),
             mag: self.mag.data(),
-            width: w,
-            height: h,
-        };
-        (edgels, grads)
-    }
-
-    /// Like [`detect_u8`][Self::detect_u8] but also returns a view into the
-    /// internal gradient buffers.
-    ///
-    /// Converts the `u8` input to `f32` internally (same as [`detect_u8`][Self::detect_u8]).
-    /// The returned [`GradientBuffers`] borrows from `self` and is valid only
-    /// until the next call to any `detect_*` method on this detector.
-    pub fn detect_u8_with_gradients<'a>(
-        &'a mut self,
-        img: &ImageView<'_, u8>,
-        cfg: &Edge2DConfig,
-    ) -> (Vec<Edgel>, GradientBuffers<'a>) {
-        let edgels = self.detect_u8(img, cfg);
-        let w = self.gx.width();
-        let h = self.gx.height();
-        let grads = GradientBuffers {
-            gx: self.gx.data(),
-            gy: self.gy.data(),
-            mag: self.mag.data(),
-            width: w,
-            height: h,
+            width,
+            height,
         };
         (edgels, grads)
     }
@@ -548,31 +523,19 @@ impl Default for Edge2DDetector {
     }
 }
 
-fn copy_u8_to_tmp(src: &ImageView<'_, u8>, dst: &mut [f32], dst_w: usize) {
-    for y in 0..src.height() {
-        let s = src.row(y);
-        let d = &mut dst[y * dst_w..(y + 1) * dst_w];
-        for (dv, &sv) in d.iter_mut().zip(s.iter()) {
-            *dv = sv as f32;
+/// Widen `src` into the packed `f32` scratch plane.
+fn copy_to_tmp<P: Pixel>(src: &ImageView<'_, P>, dst: &mut [f32], dst_w: usize) {
+    if let Some(packed) = src.as_contiguous_slice() {
+        for (d, s) in dst.iter_mut().zip(packed) {
+            *d = s.to_f32();
         }
+        return;
     }
-}
-
-fn copy_u16_to_tmp(src: &ImageView<'_, u16>, dst: &mut [f32], dst_w: usize) {
     for y in 0..src.height() {
-        let s = src.row(y);
         let d = &mut dst[y * dst_w..(y + 1) * dst_w];
-        for (dv, &sv) in d.iter_mut().zip(s.iter()) {
-            *dv = sv as f32;
+        for (dv, sv) in d.iter_mut().zip(src.row(y)) {
+            *dv = sv.to_f32();
         }
-    }
-}
-
-fn copy_f32_to_tmp(src: &ImageView<'_, f32>, dst: &mut [f32], dst_w: usize) {
-    for y in 0..src.height() {
-        let s = src.row(y);
-        let d = &mut dst[y * dst_w..(y + 1) * dst_w];
-        d.copy_from_slice(s);
     }
 }
 
@@ -657,8 +620,8 @@ mod tests {
             ..Edge2DConfig::default()
         };
 
-        let e_none = det.detect_u8(&img.as_view(), &cfg_none);
-        let e_sub = det.detect_u8(&img.as_view(), &cfg_sub);
+        let e_none = det.detect(&img.as_view(), &cfg_none);
+        let e_sub = det.detect(&img.as_view(), &cfg_sub);
 
         assert!(e_none.len() > 100);
         assert!(e_sub.len() > 100);
@@ -690,7 +653,7 @@ mod tests {
         let img = Image::from_vec(w, h, img_u8).expect("valid image");
 
         let mut det = Edge2DDetector::new();
-        let edgels = det.detect_u8(&img.as_view(), &Edge2DConfig::default());
+        let edgels = det.detect(&img.as_view(), &Edge2DConfig::default());
         assert!(!edgels.is_empty());
 
         let pos = edgels.iter().filter(|e| e.n.x > 0.0).count();
@@ -721,8 +684,8 @@ mod tests {
             ..Edge2DConfig::default()
         };
 
-        let c_lo = det.detect_u8(&img.as_view(), &cfg_lo).len();
-        let c_hi = det.detect_u8(&img.as_view(), &cfg_hi).len();
+        let c_lo = det.detect(&img.as_view(), &cfg_lo).len();
+        let c_hi = det.detect(&img.as_view(), &cfg_hi).len();
 
         assert!(c_lo > 0);
         assert!(c_hi < c_lo);
@@ -741,8 +704,8 @@ mod tests {
         let img32 = Image::from_vec(w, h, img_f32).expect("valid image");
 
         let mut det = Edge2DDetector::new();
-        let e16 = det.detect_u16(&img16.as_view(), &Edge2DConfig::default());
-        let e32 = det.detect_f32(&img32.as_view(), &Edge2DConfig::default());
+        let e16 = det.detect(&img16.as_view(), &Edge2DConfig::default());
+        let e32 = det.detect(&img32.as_view(), &Edge2DConfig::default());
 
         assert!(!e16.is_empty());
         assert!(!e32.is_empty());
@@ -764,8 +727,7 @@ mod tests {
         let img = Image::from_vec(w, h, img_f).expect("valid image");
 
         let mut det = Edge2DDetector::new();
-        let (_edgels, grads) =
-            det.detect_f32_with_gradients(&img.as_view(), &Edge2DConfig::default());
+        let (_edgels, grads) = det.detect_with_gradients(&img.as_view(), &Edge2DConfig::default());
 
         assert_eq!(grads.width, w);
         assert_eq!(grads.height, h);
@@ -815,7 +777,7 @@ mod tests {
             pre_smooth: false,
             ..Edge2DConfig::default()
         };
-        let (_edgels, grads) = det.detect_f32_with_gradients(&img.as_view(), &cfg);
+        let (_edgels, grads) = det.detect_with_gradients(&img.as_view(), &cfg);
 
         // Sum gx values in the column at edge_x across all rows:
         // majority should be positive (left-to-right brightness increase → gx > 0).
@@ -845,8 +807,8 @@ mod tests {
         let cfg = Edge2DConfig::default();
         let mut det = Edge2DDetector::new();
 
-        let edgels_ref = det.detect_u8(&img.as_view(), &cfg);
-        let (edgels_w, grads) = det.detect_u8_with_gradients(&img.as_view(), &cfg);
+        let edgels_ref = det.detect(&img.as_view(), &cfg);
+        let (edgels_w, grads) = det.detect_with_gradients(&img.as_view(), &cfg);
 
         assert_eq!(
             edgels_ref.len(),

@@ -87,10 +87,10 @@ fn the_two_matchers_agree_through_the_bridge() {
 
     // Shape matcher.
     let model = ShapeModelBuilder::new()
-        .build_u8(&reference.as_view(), ROI, &ShapeModelConfig::default())
+        .build(&reference.as_view(), ROI, &ShapeModelConfig::default())
         .expect("model");
     let m = ShapeMatcher::new()
-        .find_u8(&scene.as_view(), &model, &ShapeSearchConfig::default())
+        .find(&scene.as_view(), &model, &ShapeSearchConfig::default())
         .into_iter()
         .next()
         .expect("shape match");
@@ -134,10 +134,10 @@ fn zncc_scores_the_true_pose_high_and_a_wrong_pose_low() {
     let scene = bracket(230.0, 190.0, truth_angle);
 
     let model = ShapeModelBuilder::new()
-        .build_u8(&reference.as_view(), ROI, &ShapeModelConfig::default())
+        .build(&reference.as_view(), ROI, &ShapeModelConfig::default())
         .expect("model");
     let m = ShapeMatcher::new()
-        .find_u8(&scene.as_view(), &model, &ShapeSearchConfig::default())
+        .find(&scene.as_view(), &model, &ShapeSearchConfig::default())
         .into_iter()
         .next()
         .expect("shape match");
