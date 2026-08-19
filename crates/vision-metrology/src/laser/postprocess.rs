@@ -24,14 +24,8 @@ pub(super) fn build_points(samples: &[LaserSample], axis: ScanAxis) -> Vec<Point
         }
 
         let p = match axis {
-            ScanAxis::Rows => Point2f {
-                x: s.center,
-                y: s.scan_i as f32,
-            },
-            ScanAxis::Cols { .. } => Point2f {
-                x: s.scan_i as f32,
-                y: s.center,
-            },
+            ScanAxis::Rows => Point2f::new(s.center, s.scan_i as f32),
+            ScanAxis::Cols { .. } => Point2f::new(s.scan_i as f32, s.center),
         };
         points.push(p);
     }

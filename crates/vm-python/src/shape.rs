@@ -50,10 +50,7 @@ fn points_from_numpy(pts: PyReadonlyArray2<'_, f32>) -> PyResult<Vec<Point2f>> {
     })?;
 
     Ok((0..n)
-        .map(|i| Point2f {
-            x: slice[i * 2],
-            y: slice[i * 2 + 1],
-        })
+        .map(|i| Point2f::new(slice[i * 2], slice[i * 2 + 1]))
         .collect())
 }
 

@@ -126,6 +126,39 @@ around candidates, so full-frame fine-level fields are mostly wasted work. The p
 plan (roadmap Track 2) is lazy tiled fields first, integer u8 Scharr second, quantized
 directions + SIMD only if still needed — in that order, each gated on measurement.
 
+### `Point2f` / `Vec2f` are nalgebra aliases (2026-08)
+```rust
+pub type Point2f = nalgebra::Point2<f32>;
+pub type Vec2f   = nalgebra::Vector2<f32>;
+```
+The crate previously carried its own two-field structs plus seven public functions to convert
+to and from nalgebra — while invariant 13 says not to re-implement linear algebra, and
+`Similarity2f` already put nalgebra in the public API. Aliasing removes the parallel type
+system: 7 conversion functions and ~250 lines of hand-written operators are gone, and points
+now cross into `calibration-rs` / `corrmatch` / `chess-corners-rs` untouched.
+
+Costs, accepted knowingly:
+- 147 struct literals became `Point2f::new(x, y)`. Mechanical.
+- `dot` takes a reference: `a.dot(&b)`.
+- `perp`, `cross` and `normalized_or_zero` moved to the `Vec2fExt` trait, which must be
+  imported.
+- The model wire format changed — nalgebra serializes a vector as a flat `[x, y]` rather than
+  `{"x":…,"y":…}` — so `SHAPE_MODEL_FORMAT_VERSION` is **2** and version-1 documents are
+  rejected.
+- `shape_model_create_1280x1024` 490 → 529 µs (+8%). Model building is a one-time cost;
+  `find`, the per-frame path, is unchanged (3.36 ms) and clutter moved +0.5%.
+
+**The trap this introduced, and the guard against it.** nalgebra's `normalize` divides
+unconditionally, so a zero vector yields `NaN` where the old hand-written version returned
+zero. Four call sites normalize a possibly-degenerate gradient or tangent and then reject it
+with `t.norm() < 0.5` — and `NaN < 0.5` is **false**, so those guards would have silently
+stopped rejecting and let `NaN` directions into the model and the score.
+`Vec2fExt::normalized_or_zero` restores the old semantics and is what every such site now
+calls; the distinction is documented on the trait method and pinned by a test.
+
+Canend set1/dome after the change: 50/50, shape p50 0.998, ZNCC p50 0.961 — identical to
+four decimal places.
+
 ### One generic entry point per algorithm (2026-08)
 Every detector used to expose `_u8` / `_u16` / `_f32` variants of the same method. Counting
 the affected functions across both library crates: **40 entry points became 16**, and the

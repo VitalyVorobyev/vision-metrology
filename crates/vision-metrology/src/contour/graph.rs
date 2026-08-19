@@ -106,12 +106,9 @@ impl GraphEdge {
             let dy = self.points[next].y - self.points[prev].y;
             let len = (dx * dx + dy * dy).sqrt();
             tangents.push(if len > 0.0 {
-                Vec2f {
-                    x: dx / len,
-                    y: dy / len,
-                }
+                Vec2f::new(dx / len, dy / len)
             } else {
-                Vec2f { x: 0.0, y: 0.0 }
+                Vec2f::new(0.0, 0.0)
             });
         }
 
@@ -234,10 +231,7 @@ mod tests {
         Node {
             id,
             kind,
-            p: Point2f {
-                x: id as f32,
-                y: 0.0,
-            },
+            p: Point2f::new(id as f32, 0.0),
             idx: (id, 0),
             degree: match kind {
                 NodeKind::End => 1,
@@ -270,15 +264,7 @@ mod tests {
     }
 
     fn line(id: EdgeId, n: usize) -> GraphEdge {
-        edge(
-            id,
-            (0..n)
-                .map(|i| Point2f {
-                    x: i as f32,
-                    y: 0.0,
-                })
-                .collect(),
-        )
+        edge(id, (0..n).map(|i| Point2f::new(i as f32, 0.0)).collect())
     }
 
     /// Samples a circle of radius `r` at `n` evenly spaced angles.
@@ -288,10 +274,7 @@ mod tests {
             (0..n)
                 .map(|i| {
                     let t = i as f32 / n as f32 * core::f32::consts::TAU;
-                    Point2f {
-                        x: r * t.cos(),
-                        y: r * t.sin(),
-                    }
+                    Point2f::new(r * t.cos(), r * t.sin())
                 })
                 .collect(),
         )

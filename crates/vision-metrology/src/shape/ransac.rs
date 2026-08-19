@@ -208,8 +208,8 @@ mod tests {
         // 80 inlier points on an ellipse + 20 random outliers.
         // The RANSAC should still find the ellipse to within 0.5 px / 1%.
         let ell = Ellipse2f {
-            center: Point2f { x: 50.0, y: 40.0 },
-            semi_axes: Vec2f { x: 20.0, y: 10.0 },
+            center: Point2f::new(50.0, 40.0),
+            semi_axes: Vec2f::new(20.0, 10.0),
             angle: 0.0,
         };
 
@@ -218,10 +218,10 @@ mod tests {
         // Add 20 outliers spread across a wider region
         let mut rng = Lcg::new(999);
         for _ in 0..20 {
-            pts.push(Point2f {
-                x: rng.next_mod(200) as f32,
-                y: rng.next_mod(200) as f32,
-            });
+            pts.push(Point2f::new(
+                rng.next_mod(200) as f32,
+                rng.next_mod(200) as f32,
+            ));
         }
 
         let mut scratch = Vec::new();
@@ -252,7 +252,7 @@ mod tests {
 
     #[test]
     fn ransac_fails_with_too_few_points() {
-        let pts = vec![Point2f { x: 1.0, y: 2.0 }; 4];
+        let pts = vec![Point2f::new(1.0, 2.0); 4];
         let mut scratch = Vec::new();
         assert!(ransac_fit_ellipse(&pts, 10, 1.0, 5, 0, &mut scratch).is_err());
     }
@@ -262,10 +262,7 @@ mod tests {
         // All 30 points uniformly random (no coherent ellipse).
         let mut rng = Lcg::new(7);
         let pts: Vec<Point2f> = (0..30)
-            .map(|_| Point2f {
-                x: rng.next_mod(100) as f32,
-                y: rng.next_mod(100) as f32,
-            })
+            .map(|_| Point2f::new(rng.next_mod(100) as f32, rng.next_mod(100) as f32))
             .collect();
         let mut scratch = Vec::new();
         // With a very strict inlier requirement (50 inliers from 30 points), must fail.

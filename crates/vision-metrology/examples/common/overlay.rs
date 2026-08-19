@@ -157,19 +157,18 @@ pub fn diagnostic(
     }
 
     // Panel 1 annotations in panel coordinates.
-    let to_panel = |p: Point2f| Point2f {
-        x: (p.x - x0 as f32) * ZOOM as f32,
-        y: (p.y - y0 as f32) * ZOOM as f32,
+    let to_panel = |p: Point2f| {
+        Point2f::new(
+            (p.x - x0 as f32) * ZOOM as f32,
+            (p.y - y0 as f32) * ZOOM as f32,
+        )
     };
     {
         let o = to_panel(m.position);
         // Axes arrow along the model +x axis.
         let len = radius * 0.6 * ZOOM as f32;
         let (snn, css) = m.angle().sin_cos();
-        let tip = Point2f {
-            x: o.x + css * len,
-            y: o.y + snn * len,
-        };
+        let tip = Point2f::new(o.x + css * len, o.y + snn * len);
         line_px(&mut canvas, o.x, o.y, tip.x, tip.y, ORANGE);
         let (hx, hy) = (-css * 6.0, -snn * 6.0);
         line_px(
@@ -195,7 +194,7 @@ pub fn diagnostic(
     let pts = model.reference_points();
     for (p, &t) in pts.iter().zip(terms.iter()) {
         let q = m.pose * nalgebra::Point2::new(p.x, p.y);
-        let pp = to_panel(Point2f { x: q.x, y: q.y });
+        let pp = to_panel(Point2f::new(q.x, q.y));
         let c = term_color(t);
         for dy in 0..2i32 {
             for dx in 0..2i32 {
@@ -336,7 +335,7 @@ fn rect(canvas: &mut image::RgbImage, r: Rect2f, x_off: usize, c: [u8; 3]) {
 fn rect_edges(r: Rect2f) -> [(Point2f, Point2f); 4] {
     let (x0, y0) = (r.x, r.y);
     let (x1, y1) = (r.x + r.width, r.y + r.height);
-    let p = |x, y| Point2f { x, y };
+    let p = |x, y| Point2f::new(x, y);
     [
         (p(x0, y0), p(x1, y0)),
         (p(x1, y0), p(x1, y1)),

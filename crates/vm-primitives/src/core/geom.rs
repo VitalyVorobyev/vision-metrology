@@ -1,123 +1,64 @@
-use core::{
-    f32::consts::PI,
-    ops::{Add, Mul, Neg, Sub},
-};
+use core::{f32::consts::PI, ops::Neg};
 
 /// A 2-D point in floating-point pixel coordinates.
 ///
+/// An alias for [`nalgebra::Point2<f32>`], so points move between this crate
+/// and any other nalgebra-based library without conversion. Construct with
+/// `Point2f::new(x, y)`; read or write `.x` / `.y` as usual.
+///
 /// By convention, integer coordinate `i` refers to the **center** of pixel `i`.
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct Point2f {
-    /// Horizontal (column) coordinate in pixels.
-    pub x: f32,
-    /// Vertical (row) coordinate in pixels.
-    pub y: f32,
-}
+pub type Point2f = nalgebra::Point2<f32>;
 
 /// A 2-D displacement vector (difference of two [`Point2f`] values).
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct Vec2f {
-    /// Horizontal component in pixels.
-    pub x: f32,
-    /// Vertical component in pixels.
-    pub y: f32,
+///
+/// An alias for [`nalgebra::Vector2<f32>`]. `Point2f - Point2f` yields one, and
+/// `Point2f + Vec2f` moves a point.
+///
+/// See [`Vec2fExt`] for the two operations nalgebra does not provide under
+/// these names (`perp`, `cross`) and for
+/// [`normalized_or_zero`](Vec2fExt::normalized_or_zero), which callers should
+/// prefer over `normalize` whenever the input may be zero.
+pub type Vec2f = nalgebra::Vector2<f32>;
+
+/// 2-D vector operations this crate relies on beyond nalgebra's inherent set.
+pub trait Vec2fExt: Sized {
+    /// Rotate by +90° (counter-clockwise in a y-down image frame): `(x, y) → (−y, x)`.
+    ///
+    /// Turns an edge tangent into a normal, and builds the rotational column of
+    /// a similarity Jacobian.
+    fn perp(self) -> Self;
+
+    /// 2-D cross product `self × rhs = self.x·rhs.y − self.y·rhs.x`.
+    ///
+    /// The signed area of the parallelogram spanned by the two vectors; equal
+    /// to `self.perp().dot(&rhs)`.
+    fn cross(self, rhs: Self) -> f32;
+
+    /// Unit vector in the same direction, or the **zero vector** when `self` is
+    /// zero.
+    ///
+    /// nalgebra's `normalize` divides unconditionally and yields `NaN` for a
+    /// zero input. Several call sites here normalize a possibly-degenerate
+    /// gradient or tangent and then reject it with `t.norm() < 0.5` — a test
+    /// that `NaN` silently *passes*. Use this instead wherever the input can be
+    /// zero.
+    fn normalized_or_zero(self) -> Self;
 }
 
-impl Vec2f {
-    /// Dot product `self · rhs`.
-    pub fn dot(self, rhs: Self) -> f32 {
-        self.x * rhs.x + self.y * rhs.y
+impl Vec2fExt for Vec2f {
+    #[inline]
+    fn perp(self) -> Self {
+        Vec2f::new(-self.y, self.x)
     }
 
-    /// Euclidean length `√(x² + y²)`.
-    pub fn norm(self) -> f32 {
-        self.dot(self).sqrt()
+    #[inline]
+    fn cross(self, rhs: Self) -> f32 {
+        self.x * rhs.y - self.y * rhs.x
     }
 
-    /// Returns a unit vector in the same direction, or the zero vector if `norm() == 0`.
-    pub fn normalize(self) -> Self {
-        let n = self.norm();
-        if n == 0.0 {
-            Self::default()
-        } else {
-            self * (1.0 / n)
-        }
-    }
-}
-
-impl Add<Vec2f> for Point2f {
-    type Output = Point2f;
-
-    fn add(self, rhs: Vec2f) -> Self::Output {
-        Point2f {
-            x: self.x + rhs.x,
-            y: self.y + rhs.y,
-        }
-    }
-}
-
-impl Sub<Vec2f> for Point2f {
-    type Output = Point2f;
-
-    fn sub(self, rhs: Vec2f) -> Self::Output {
-        Point2f {
-            x: self.x - rhs.x,
-            y: self.y - rhs.y,
-        }
-    }
-}
-
-impl Sub<Point2f> for Point2f {
-    type Output = Vec2f;
-
-    fn sub(self, rhs: Point2f) -> Self::Output {
-        Vec2f {
-            x: self.x - rhs.x,
-            y: self.y - rhs.y,
-        }
-    }
-}
-
-impl Add for Vec2f {
-    type Output = Vec2f;
-
-    fn add(self, rhs: Vec2f) -> Self::Output {
-        Vec2f {
-            x: self.x + rhs.x,
-            y: self.y + rhs.y,
-        }
-    }
-}
-
-impl Sub for Vec2f {
-    type Output = Vec2f;
-
-    fn sub(self, rhs: Vec2f) -> Self::Output {
-        Vec2f {
-            x: self.x - rhs.x,
-            y: self.y - rhs.y,
-        }
-    }
-}
-
-impl Mul<f32> for Vec2f {
-    type Output = Vec2f;
-
-    fn mul(self, rhs: f32) -> Self::Output {
-        Vec2f {
-            x: self.x * rhs,
-            y: self.y * rhs,
-        }
-    }
-}
-
-impl Mul<Vec2f> for f32 {
-    type Output = Vec2f;
-
-    fn mul(self, rhs: Vec2f) -> Self::Output {
-        rhs * self
+    #[inline]
+    fn normalized_or_zero(self) -> Self {
+        self.try_normalize(0.0).unwrap_or_else(Vec2f::zeros)
     }
 }
 
@@ -168,10 +109,7 @@ impl Rect2f {
     /// Center of the bounding box.
     #[inline]
     pub fn center(self) -> Point2f {
-        Point2f {
-            x: self.x + self.width * 0.5,
-            y: self.y + self.height * 0.5,
-        }
+        Point2f::new(self.x + self.width * 0.5, self.y + self.height * 0.5)
     }
 
     /// Area (`width × height`). Returns 0 for degenerate rectangles.
@@ -271,61 +209,6 @@ pub type Affine2f = nalgebra::Affine2<f32>;
 pub type Projective2f = nalgebra::Projective2<f32>;
 
 // ---------------------------------------------------------------------------
-// Conversions between this crate's lightweight types and nalgebra
-// ---------------------------------------------------------------------------
-
-/// Convert a [`Point2f`] to a nalgebra `Point2<f32>`.
-#[inline]
-pub fn to_na_point(p: Point2f) -> nalgebra::Point2<f32> {
-    nalgebra::Point2::new(p.x, p.y)
-}
-
-/// Convert a nalgebra `Point2<f32>` to a [`Point2f`].
-#[inline]
-pub fn from_na_point(p: nalgebra::Point2<f32>) -> Point2f {
-    Point2f { x: p.x, y: p.y }
-}
-
-/// Convert a [`Vec2f`] to a nalgebra `Vector2<f32>`.
-#[inline]
-pub fn to_na_vec(v: Vec2f) -> nalgebra::Vector2<f32> {
-    nalgebra::Vector2::new(v.x, v.y)
-}
-
-/// Convert a nalgebra `Vector2<f32>` to a [`Vec2f`].
-#[inline]
-pub fn from_na_vec(v: nalgebra::Vector2<f32>) -> Vec2f {
-    Vec2f { x: v.x, y: v.y }
-}
-
-// ---------------------------------------------------------------------------
-// Vector helpers used by pose estimation and contour orientation
-// ---------------------------------------------------------------------------
-
-impl Vec2f {
-    /// Rotate by +90° (counter-clockwise in a y-down image frame): `(x, y) → (−y, x)`.
-    ///
-    /// Used to turn an edge tangent into a normal and to build the rotational
-    /// column of a similarity Jacobian.
-    #[inline]
-    pub fn perp(self) -> Self {
-        Self {
-            x: -self.y,
-            y: self.x,
-        }
-    }
-
-    /// 2-D cross product `self × rhs = self.x·rhs.y − self.y·rhs.x`.
-    ///
-    /// The signed area of the parallelogram spanned by the two vectors; equal
-    /// to `self.perp().dot(rhs)`.
-    #[inline]
-    pub fn cross(self, rhs: Self) -> f32 {
-        self.x * rhs.y - self.y * rhs.x
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Transform helpers
 // ---------------------------------------------------------------------------
 
@@ -338,7 +221,7 @@ impl Vec2f {
 /// itself instead of calling this per point.
 #[inline]
 pub fn transform_point(sim: &Similarity2f, p: Point2f) -> Point2f {
-    from_na_point(sim * to_na_point(p))
+    sim * p
 }
 
 /// Apply the linear part of a similarity transform to a displacement: `s·R·v`.
@@ -346,13 +229,13 @@ pub fn transform_point(sim: &Similarity2f, p: Point2f) -> Point2f {
 /// Translation is deliberately not applied — a displacement has no origin.
 #[inline]
 pub fn transform_vec(sim: &Similarity2f, v: Vec2f) -> Vec2f {
-    from_na_vec(sim * to_na_vec(v))
+    sim * v
 }
 
 /// Apply a rigid transform to a point: `R·p + t`.
 #[inline]
 pub fn transform_point_iso(iso: &Isometry2f, p: Point2f) -> Point2f {
-    from_na_point(iso * to_na_point(p))
+    iso * p
 }
 
 /// Build a [`Similarity2f`] from translation, rotation angle (radians) and
@@ -361,7 +244,7 @@ pub fn transform_point_iso(iso: &Isometry2f, p: Point2f) -> Point2f {
 /// The resulting map is `p ↦ scale·R(angle)·p + translation`.
 #[inline]
 pub fn similarity_from_parts(translation: Vec2f, angle: f32, scale: f32) -> Similarity2f {
-    Similarity2f::new(to_na_vec(translation), angle, scale)
+    Similarity2f::new(translation, angle, scale)
 }
 
 /// Decompose a [`Similarity2f`] into `(translation, angle, scale)`.
@@ -370,7 +253,7 @@ pub fn similarity_from_parts(translation: Vec2f, angle: f32, scale: f32) -> Simi
 #[inline]
 pub fn similarity_parts(sim: &Similarity2f) -> (Vec2f, f32, f32) {
     (
-        from_na_vec(sim.isometry.translation.vector),
+        sim.isometry.translation.vector,
         sim.isometry.rotation.angle(),
         sim.scaling(),
     )
@@ -409,33 +292,38 @@ pub fn parabolic_peak_offset(ym: f32, y0: f32, yp: f32) -> Option<f32> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Angle, Point2f, Rect2f, Vec2f, from_na_point, to_na_point};
+    use super::{Angle, Point2f, Rect2f, Vec2f, Vec2fExt};
 
     #[test]
     fn vec_ops_and_normalize() {
-        let a = Vec2f { x: 3.0, y: 4.0 };
-        let b = Vec2f { x: 1.0, y: -2.0 };
+        let a = Vec2f::new(3.0, 4.0);
+        let b = Vec2f::new(1.0, -2.0);
 
-        assert_eq!(a + b, Vec2f { x: 4.0, y: 2.0 });
-        assert_eq!(a - b, Vec2f { x: 2.0, y: 6.0 });
-        assert!((a.dot(b) + 5.0).abs() < 1e-6);
+        assert_eq!(a + b, Vec2f::new(4.0, 2.0));
+        assert_eq!(a - b, Vec2f::new(2.0, 6.0));
+        assert!((a.dot(&b) + 5.0).abs() < 1e-6);
         assert!((a.norm() - 5.0).abs() < 1e-6);
 
         let n = a.normalize();
         assert!((n.norm() - 1.0).abs() < 1e-6);
 
-        let z = Vec2f::default().normalize();
-        assert_eq!(z, Vec2f::default());
+        // nalgebra's `normalize` divides unconditionally, so a zero vector
+        // yields NaN. `normalized_or_zero` is the guard-friendly form the rest
+        // of the workspace uses; the difference matters because `NaN < 0.5`
+        // is false, so a bare `normalize` would sail through degeneracy checks.
+        assert!(Vec2f::zeros().normalize().x.is_nan());
+        assert_eq!(Vec2f::zeros().normalized_or_zero(), Vec2f::zeros());
+        assert!((a.normalized_or_zero().norm() - 1.0).abs() < 1e-6);
     }
 
     #[test]
     fn point_vec_ops() {
-        let p = Point2f { x: 2.0, y: 3.0 };
-        let v = Vec2f { x: 0.5, y: -1.0 };
+        let p = Point2f::new(2.0, 3.0);
+        let v = Vec2f::new(0.5, -1.0);
 
-        assert_eq!(p + v, Point2f { x: 2.5, y: 2.0 });
-        assert_eq!(p - v, Point2f { x: 1.5, y: 4.0 });
-        assert_eq!(p - Point2f { x: 1.0, y: 1.0 }, Vec2f { x: 1.0, y: 2.0 });
+        assert_eq!(p + v, Point2f::new(2.5, 2.0));
+        assert_eq!(p - v, Point2f::new(1.5, 4.0));
+        assert_eq!(p - Point2f::new(1.0, 1.0), Vec2f::new(1.0, 2.0));
     }
 
     #[test]
@@ -447,9 +335,9 @@ mod tests {
             height: 3.0,
         };
         assert!((r.area() - 12.0).abs() < 1e-6);
-        assert_eq!(r.center(), Point2f { x: 3.0, y: 3.5 });
-        assert!(r.contains(Point2f { x: 2.0, y: 3.0 }));
-        assert!(!r.contains(Point2f { x: 0.0, y: 3.0 }));
+        assert_eq!(r.center(), Point2f::new(3.0, 3.5));
+        assert!(r.contains(Point2f::new(2.0, 3.0)));
+        assert!(!r.contains(Point2f::new(0.0, 3.0)));
         let e = r.expanded_by(1.0);
         assert_eq!(e.x, 0.0);
         assert_eq!(e.width, 6.0);
@@ -469,17 +357,11 @@ mod tests {
     }
 
     #[test]
-    fn na_conversion_roundtrip() {
-        let p = Point2f { x: 1.5, y: -2.3 };
-        assert_eq!(from_na_point(to_na_point(p)), p);
-    }
-
-    #[test]
     fn isometry2f_apply() {
         use core::f32::consts::FRAC_PI_2;
         // 90° CCW rotation should map (1, 0) → (0, 1).
         let iso = nalgebra::Isometry2::rotation(FRAC_PI_2);
-        let q = iso * to_na_point(Point2f { x: 1.0, y: 0.0 });
+        let q = iso * Point2f::new(1.0, 0.0);
         assert!((q.x).abs() < 1e-6);
         assert!((q.y - 1.0).abs() < 1e-6);
     }
@@ -489,21 +371,21 @@ mod tests {
         use nalgebra::{Similarity2, Vector2};
         // Scale ×2, no rotation, translate by (1, 0).
         let sim = Similarity2::new(Vector2::new(1.0, 0.0), 0.0, 2.0);
-        let q = sim * to_na_point(Point2f { x: 1.0, y: 1.0 });
+        let q = sim * Point2f::new(1.0, 1.0);
         assert!((q.x - 3.0).abs() < 1e-6); // 2*1 + 1
         assert!((q.y - 2.0).abs() < 1e-6); // 2*1
     }
 
     #[test]
     fn perp_and_cross_agree() {
-        let a = Vec2f { x: 3.0, y: 1.0 };
-        let b = Vec2f { x: -2.0, y: 4.0 };
+        let a = Vec2f::new(3.0, 1.0);
+        let b = Vec2f::new(-2.0, 4.0);
         // perp is a +90 degree rotation, so it preserves length and is orthogonal.
         assert!((a.perp().norm() - a.norm()).abs() < 1e-6);
-        assert!(a.perp().dot(a).abs() < 1e-6);
-        assert_eq!(a.perp(), Vec2f { x: -1.0, y: 3.0 });
+        assert!(a.perp().dot(&a).abs() < 1e-6);
+        assert_eq!(a.perp(), Vec2f::new(-1.0, 3.0));
         // cross(a, b) == perp(a) . b by definition.
-        assert!((a.cross(b) - a.perp().dot(b)).abs() < 1e-6);
+        assert!((a.cross(b) - a.perp().dot(&b)).abs() < 1e-6);
         // Antisymmetry.
         assert!((a.cross(b) + b.cross(a)).abs() < 1e-6);
     }
@@ -512,7 +394,7 @@ mod tests {
     fn similarity_parts_roundtrip() {
         use super::{similarity_from_parts, similarity_parts, transform_point, transform_vec};
 
-        let t = Vec2f { x: 12.5, y: -3.25 };
+        let t = Vec2f::new(12.5, -3.25);
         let angle = 0.7_f32;
         let scale = 1.75_f32;
         let sim = similarity_from_parts(t, angle, scale);
@@ -523,14 +405,14 @@ mod tests {
         assert!((s2 - scale).abs() < 1e-5);
 
         // transform_point applies scale, then rotation, then translation.
-        let p = Point2f { x: 1.0, y: 0.0 };
+        let p = Point2f::new(1.0, 0.0);
         let q = transform_point(&sim, p);
         assert!((q.x - (scale * angle.cos() + t.x)).abs() < 1e-4);
         assert!((q.y - (scale * angle.sin() + t.y)).abs() < 1e-4);
 
         // A displacement is transformed by the linear part only, so the
         // difference of two transformed points equals the transformed difference.
-        let r = Point2f { x: 4.0, y: -2.0 };
+        let r = Point2f::new(4.0, -2.0);
         let dv = transform_vec(&sim, r - p);
         let dq = transform_point(&sim, r) - q;
         assert!((dv.x - dq.x).abs() < 1e-4 && (dv.y - dq.y).abs() < 1e-4);
@@ -542,7 +424,7 @@ mod tests {
         use core::f32::consts::FRAC_PI_2;
 
         let iso = nalgebra::Isometry2::new(nalgebra::Vector2::new(2.0, 3.0), FRAC_PI_2);
-        let q = transform_point_iso(&iso, Point2f { x: 1.0, y: 0.0 });
+        let q = transform_point_iso(&iso, Point2f::new(1.0, 0.0));
         assert!((q.x - 2.0).abs() < 1e-5);
         assert!((q.y - 4.0).abs() < 1e-5);
     }

@@ -34,10 +34,10 @@ pub mod pyr;
 
 pub use core::{
     Affine2f, Angle, BorderMode, Error, Image, ImageView, ImageViewMut, Isometry2f, Line2f, Pixel,
-    Point2f, Polyline2f, Projective2f, Rect2f, Similarity2f, Vec2f, from_na_point, from_na_vec,
-    map_index, parabolic_peak_offset, sample_bilinear_f32, sample_nearest, similarity_from_parts,
-    similarity_parts, to_f32, to_f32_u16, to_na_point, to_na_vec, transform_point,
-    transform_point_iso, transform_vec, wrap_angle,
+    Point2f, Polyline2f, Projective2f, Rect2f, Similarity2f, Vec2f, Vec2fExt, map_index,
+    parabolic_peak_offset, sample_bilinear_f32, sample_nearest, similarity_from_parts,
+    similarity_parts, to_f32, to_f32_u16, transform_point, transform_point_iso, transform_vec,
+    wrap_angle,
 };
 pub use edge::{
     DirectionField, DoGKernel1D, Edge1DConfig, Edge1DDetector, Edge2DConfig, Edge2DDetector,

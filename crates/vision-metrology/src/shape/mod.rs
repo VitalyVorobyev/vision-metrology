@@ -40,8 +40,8 @@
 //!
 //! // Generate 20 points on a known ellipse.
 //! let ell = Ellipse2f {
-//!     center: Point2f { x: 50.0, y: 40.0 },
-//!     semi_axes: Vec2f { x: 20.0, y: 10.0 },
+//!     center: Point2f::new(50.0, 40.0),
+//!     semi_axes: Vec2f::new(20.0, 10.0),
 //!     angle: 0.0,
 //! };
 //! let pts: Vec<Point2f> = (0..20).map(|i| {

@@ -29,8 +29,8 @@ fn synthetic_multiline_image() -> Image<u8> {
 fn ellipse_point_set() -> Vec<Point2f> {
     use core::f32::consts::PI;
     let ell = Ellipse2f {
-        center: Point2f { x: 300.0, y: 200.0 },
-        semi_axes: Vec2f { x: 100.0, y: 50.0 },
+        center: Point2f::new(300.0, 200.0),
+        semi_axes: Vec2f::new(100.0, 50.0),
         angle: PI / 6.0,
     };
     // Inliers
@@ -42,10 +42,7 @@ fn ellipse_point_set() -> Vec<Point2f> {
         .collect();
     // Outliers (20% of 1000)
     for i in 0..200usize {
-        pts.push(Point2f {
-            x: (i * 37 % 600) as f32,
-            y: (i * 53 % 400) as f32,
-        });
+        pts.push(Point2f::new((i * 37 % 600) as f32, (i * 53 % 400) as f32));
     }
     pts
 }
@@ -114,8 +111,8 @@ fn bench_conic_ransac_1000pts(c: &mut Criterion) {
 fn bench_conic_direct_fit(c: &mut Criterion) {
     use core::f32::consts::PI;
     let ell = Ellipse2f {
-        center: Point2f { x: 50.0, y: 40.0 },
-        semi_axes: Vec2f { x: 20.0, y: 10.0 },
+        center: Point2f::new(50.0, 40.0),
+        semi_axes: Vec2f::new(20.0, 10.0),
         angle: 0.0,
     };
     let pts: Vec<Point2f> = (0..100)

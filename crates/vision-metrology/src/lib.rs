@@ -38,6 +38,8 @@ pub use laser::{
     CoarseMethod, ColAccess, LaserExtractConfig, LaserExtractor, LaserLine, LaserSample, ScanAxis,
     best_pair_with_prior, coarse_center_f32, coarse_center_u8, coarse_center_u16,
 };
+#[cfg(feature = "serde")]
+pub use matching::SHAPE_MODEL_FORMAT_VERSION;
 pub use matching::{
     ContourOrientation, ModelPoint, Polarity, Refinement, ShapeMatch, ShapeMatcher, ShapeModel,
     ShapeModelBuilder, ShapeModelConfig, ShapeModelLevel, ShapeSearchConfig, create_shape_model,

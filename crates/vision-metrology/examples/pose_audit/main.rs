@@ -198,10 +198,7 @@ fn audit(args: AuditArgs) -> Result<()> {
     let frames = frames_in(&args.common.scene_dir)?;
     std::fs::create_dir_all(&args.out_dir)?;
 
-    let roi_center = Point2f {
-        x: s.roi.x + 0.5 * s.roi.width,
-        y: s.roi.y + 0.5 * s.roi.height,
-    };
+    let roi_center = Point2f::new(s.roi.x + 0.5 * s.roi.width, s.roi.y + 0.5 * s.roi.height);
 
     let mut matcher = ShapeMatcher::new();
     let mut det = Edge2DDetector::new();
@@ -245,7 +242,7 @@ fn audit(args: AuditArgs) -> Result<()> {
             &scene,
             &s.reference,
             s.roi,
-            Point2f { x: c.x, y: c.y },
+            Point2f::new(c.x, c.y),
             m.angle().to_degrees(),
         );
 
@@ -320,10 +317,7 @@ fn rim_relative(
 ) -> Option<(f32, f32)> {
     let edgels = det.detect(&scene.as_view(), &Edge2DConfig::default());
     // The rim circles the image centre region; seed with the frame centre.
-    let seed = Point2f {
-        x: scene.width() as f32 * 0.5,
-        y: scene.height() as f32 * 0.5,
-    };
+    let seed = Point2f::new(scene.width() as f32 * 0.5, scene.height() as f32 * 0.5);
     let band: Vec<Point2f> = edgels
         .iter()
         .map(|e| e.p)
@@ -352,10 +346,7 @@ fn xcheck(args: XcheckArgs) -> Result<()> {
     let frames = frames_in(&args.common.scene_dir)?;
     let n = frames.len().min(args.max_frames);
 
-    let roi_center = Point2f {
-        x: s.roi.x + 0.5 * s.roi.width,
-        y: s.roi.y + 0.5 * s.roi.height,
-    };
+    let roi_center = Point2f::new(s.roi.x + 0.5 * s.roi.width, s.roi.y + 0.5 * s.roi.height);
 
     // corrmatch: template = the reference ROI patch, full rotation search.
     let (tpl, tw, th) = corr::roi_patch(&s.reference, s.roi);

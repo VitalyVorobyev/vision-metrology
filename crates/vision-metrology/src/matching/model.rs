@@ -165,7 +165,12 @@ mod persist {
     use super::ShapeModel;
 
     /// Bumped whenever the serialized layout of [`ShapeModel`] changes.
-    pub const SHAPE_MODEL_FORMAT_VERSION: u32 = 1;
+    ///
+    /// | Version | Change |
+    /// |---|---|
+    /// | 1 | Initial format. `Point2f` / `Vec2f` as `{"x": …, "y": …}`. |
+    /// | 2 | `Point2f` / `Vec2f` became nalgebra aliases, which serialize as flat `[x, y]` arrays. Version 1 documents are rejected rather than silently mis-read. |
+    pub const SHAPE_MODEL_FORMAT_VERSION: u32 = 2;
 
     #[derive(serde::Serialize, serde::Deserialize)]
     struct Envelope {

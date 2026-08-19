@@ -426,10 +426,10 @@ mod tests {
     use super::{Bound, RotPoint, rotate_into, score_at};
     use crate::matching::config::Polarity;
     use crate::matching::model::ModelPoint;
-    use vm_primitives::{DirectionField, Image, SmoothKind, Vec2f};
+    use vm_primitives::{DirectionField, Image, SmoothKind, Vec2f, Vec2fExt};
 
     fn unit(x: f32, y: f32) -> Vec2f {
-        Vec2f { x, y }.normalize()
+        Vec2f::new(x, y).normalized_or_zero()
     }
 
     #[test]
@@ -449,7 +449,7 @@ mod tests {
     #[test]
     fn rotation_moves_offsets_and_directions_together() {
         let pts = [ModelPoint {
-            d: Vec2f { x: 10.0, y: 0.0 },
+            d: Vec2f::new(10.0, 0.0),
             t: unit(1.0, 0.0),
         }];
         let mut out = Vec::new();
@@ -624,17 +624,11 @@ mod tests {
                     .wrapping_add(1_442_695_040_888_963_407);
                 ((st >> 33) & 0xffff) as f32 / 65_535.0
             };
-            let d = Vec2f {
-                x: (next() - 0.5) * 16.0,
-                y: (next() - 0.5) * 16.0,
-            };
+            let d = Vec2f::new((next() - 0.5) * 16.0, (next() - 0.5) * 16.0);
             let a = next() * core::f32::consts::TAU;
             pts.push(ModelPoint {
                 d,
-                t: Vec2f {
-                    x: a.cos(),
-                    y: a.sin(),
-                },
+                t: Vec2f::new(a.cos(), a.sin()),
             });
         }
 

@@ -155,14 +155,8 @@ mod tests {
             .map(|i| {
                 let a = i as f32 * core::f32::consts::TAU / 40.0;
                 ModelPoint {
-                    d: Vec2f {
-                        x: 20.0 * a.cos(),
-                        y: 20.0 * a.sin(),
-                    },
-                    t: Vec2f {
-                        x: a.cos(),
-                        y: a.sin(),
-                    },
+                    d: Vec2f::new(20.0 * a.cos(), 20.0 * a.sin()),
+                    t: Vec2f::new(a.cos(), a.sin()),
                 }
             })
             .collect()
@@ -170,8 +164,8 @@ mod tests {
 
     fn at(x: f32, y: f32, score: f32) -> ShapeMatch {
         ShapeMatch {
-            pose: similarity_from_parts(Vec2f { x, y }, 0.0, 1.0),
-            position: Point2f { x, y },
+            pose: similarity_from_parts(Vec2f::new(x, y), 0.0, 1.0),
+            position: Point2f::new(x, y),
             score,
             support: 40,
             level: 0,

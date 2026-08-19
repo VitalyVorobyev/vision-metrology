@@ -358,10 +358,7 @@ impl ShapeMatcher {
                 continue;
             }
 
-            let position = Point2f {
-                x: up * pose.x + shift,
-                y: up * pose.y + shift,
-            };
+            let position = Point2f::new(up * pose.x + shift, up * pose.y + shift);
             out.push(ShapeMatch {
                 pose: pose_from(position, pose.angle, pose.scale, model.origin()),
                 position,
@@ -417,10 +414,10 @@ fn ensure_tiles_at(
 /// `Translation(position) ∘ sR ∘ Translation(−origin)`, as a similarity.
 fn pose_from(position: Point2f, angle: f32, scale: f32, origin: Point2f) -> Similarity2f {
     let (sn, cs) = wrap_angle(angle).sin_cos();
-    let t = Vec2f {
-        x: position.x - scale * (cs * origin.x - sn * origin.y),
-        y: position.y - scale * (sn * origin.x + cs * origin.y),
-    };
+    let t = Vec2f::new(
+        position.x - scale * (cs * origin.x - sn * origin.y),
+        position.y - scale * (sn * origin.x + cs * origin.y),
+    );
     similarity_from_parts(t, wrap_angle(angle), scale)
 }
 
@@ -633,8 +630,8 @@ mod tests {
 
     #[test]
     fn pose_maps_the_model_origin_onto_the_reported_position() {
-        let origin = Point2f { x: 30.0, y: -12.0 };
-        let position = Point2f { x: 640.0, y: 512.0 };
+        let origin = Point2f::new(30.0, -12.0);
+        let position = Point2f::new(640.0, 512.0);
         let pose = pose_from(position, 0.7, 1.3, origin);
         let q = pose * nalgebra::Point2::new(origin.x, origin.y);
         assert!((q.x - position.x).abs() < 1e-3, "{q}");
@@ -643,7 +640,7 @@ mod tests {
 
     #[test]
     fn pose_carries_the_requested_angle_and_scale() {
-        let pose = pose_from(Point2f { x: 5.0, y: 5.0 }, -0.4, 0.75, Point2f::default());
+        let pose = pose_from(Point2f::new(5.0, 5.0), -0.4, 0.75, Point2f::default());
         assert!((pose.isometry.rotation.angle() + 0.4).abs() < 1e-5);
         assert!((pose.scaling() - 0.75).abs() < 1e-5);
     }

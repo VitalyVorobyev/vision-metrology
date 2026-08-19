@@ -5,6 +5,8 @@
 //! real lens produces — and, more importantly, the ground-truth pose is exact
 //! to arbitrary subpixel precision.
 
+#[cfg(feature = "serde")]
+use vision_metrology::SHAPE_MODEL_FORMAT_VERSION;
 use vision_metrology::{
     ContourOrientation, Image, Point2f, Polarity, Polyline2f, Rect2f, Refinement, ShapeMatch,
     ShapeMatcher, ShapeModel, ShapeModelBuilder, ShapeModelConfig, ShapeSearchConfig, Vec2f,
@@ -123,15 +125,12 @@ fn build_bracket_model(cfg: &ShapeModelConfig) -> ShapeModel {
 /// model's reference point is the point-cloud centroid, at some offset `o` from
 /// that origin. Under the pose the centroid moves to `(cx, cy) + s·R·o`.
 fn expected_position(model: &ShapeModel, cx: f32, cy: f32, angle: f32, s: f32) -> Point2f {
-    let o = Vec2f {
-        x: model.origin().x - 256.0,
-        y: model.origin().y - 256.0,
-    };
+    let o = Vec2f::new(model.origin().x - 256.0, model.origin().y - 256.0);
     let (sn, cs) = angle.sin_cos();
-    Point2f {
-        x: cx + s * (cs * o.x - sn * o.y),
-        y: cy + s * (sn * o.x + cs * o.y),
-    }
+    Point2f::new(
+        cx + s * (cs * o.x - sn * o.y),
+        cy + s * (sn * o.x + cs * o.y),
+    )
 }
 
 fn find_one(scene: &Image<u8>, model: &ShapeModel, cfg: &ShapeSearchConfig) -> Option<ShapeMatch> {
@@ -285,7 +284,7 @@ fn t18_degenerate_inputs_report_the_right_error() {
     );
 
     let pts = vec![Point2f::default(); 5];
-    let dirs = vec![Vec2f { x: 1.0, y: 0.0 }; 3];
+    let dirs = vec![Vec2f::new(1.0, 0.0); 3];
     assert_eq!(
         ShapeModel::from_directed_points(&pts, &dirs, &cfg),
         Err(Error::SizeMismatch {
@@ -426,10 +425,7 @@ fn t16_a_contour_model_agrees_with_an_image_model() {
             prev = v;
             r += 0.25;
         }
-        pts.push(Point2f {
-            x: 256.0 - 30.0 + r * cs,
-            y: 256.0 - 30.0 + r * sn,
-        });
+        pts.push(Point2f::new(256.0 - 30.0 + r * cs, 256.0 - 30.0 + r * sn));
     }
     let contour_model = ShapeModel::from_polylines(
         &[Polyline2f { points: pts }],
@@ -830,8 +826,17 @@ fn a_persisted_model_matches_identically() {
     assert_eq!(a.position, b.position);
     assert_eq!(a.angle(), b.angle());
 
-    // Version gate: a bumped version must be refused, not mis-read.
-    let bad = json.replacen("\"format_version\":1", "\"format_version\":999", 1);
+    // Version gate: a document from another format version must be refused,
+    // not mis-read. Derive the needle from the constant — hard-coding
+    // `"format_version":1` meant the bump to 2 silently turned this assertion
+    // into a no-op, because the replacement stopped matching anything.
+    let needle = format!("\"format_version\":{SHAPE_MODEL_FORMAT_VERSION}");
+    assert!(
+        json.contains(&needle),
+        "envelope shape changed: {needle} not in {json:.120}"
+    );
+    let bad = json.replacen(&needle, "\"format_version\":999", 1);
+    assert_ne!(bad, json, "version substitution did not fire");
     assert!(ShapeModel::from_json(&bad).is_err());
     assert!(ShapeModel::from_json("{}").is_err());
 }

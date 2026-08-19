@@ -332,8 +332,8 @@ mod tests {
         // 20 exact points on a circle of radius 15 centred at (30, 25).
         // Bookstein fit should recover centre within 0.5 px and radius within 1%.
         let ell = Ellipse2f {
-            center: Point2f { x: 30.0, y: 25.0 },
-            semi_axes: Vec2f { x: 15.0, y: 15.0 },
+            center: Point2f::new(30.0, 25.0),
+            semi_axes: Vec2f::new(15.0, 15.0),
             angle: 0.0,
         };
         let pts = ellipse_points(&ell, 20);
@@ -362,8 +362,8 @@ mod tests {
         // 20 exact points on an ellipse: a=20, b=8, angle=45°, centre=(60,40).
         // Fitzgibbon fit should recover axes within 0.3 px.
         let ell = Ellipse2f {
-            center: Point2f { x: 60.0, y: 40.0 },
-            semi_axes: Vec2f { x: 20.0, y: 8.0 },
+            center: Point2f::new(60.0, 40.0),
+            semi_axes: Vec2f::new(20.0, 8.0),
             angle: PI / 4.0,
         };
         let pts = ellipse_points(&ell, 20);
@@ -394,7 +394,7 @@ mod tests {
 
     #[test]
     fn insufficient_data_returns_error() {
-        let pts = vec![Point2f { x: 1.0, y: 2.0 }; 3];
+        let pts = vec![Point2f::new(1.0, 2.0); 3];
         assert!(fit_bookstein(&pts).is_err());
         assert!(fit_fitzgibbon(&pts).is_err());
     }
@@ -406,15 +406,12 @@ mod tests {
         // with `.unwrap()` used to panic inside library code on ordinary bad
         // input rather than returning an error.
         let pts = vec![
-            Point2f { x: 0.0, y: 0.0 },
-            Point2f { x: 1.0, y: 0.0 },
-            Point2f { x: 2.0, y: 1.0 },
-            Point2f {
-                x: f32::NAN,
-                y: 2.0,
-            },
-            Point2f { x: 0.0, y: 3.0 },
-            Point2f { x: -1.0, y: 1.0 },
+            Point2f::new(0.0, 0.0),
+            Point2f::new(1.0, 0.0),
+            Point2f::new(2.0, 1.0),
+            Point2f::new(f32::NAN, 2.0),
+            Point2f::new(0.0, 3.0),
+            Point2f::new(-1.0, 1.0),
         ];
         assert!(
             matches!(fit_bookstein(&pts), Err(Error::Degenerate(_))),
@@ -429,15 +426,12 @@ mod tests {
     #[test]
     fn infinite_points_report_degenerate_not_panic() {
         let pts = vec![
-            Point2f { x: 0.0, y: 0.0 },
-            Point2f { x: 1.0, y: 0.0 },
-            Point2f {
-                x: f32::INFINITY,
-                y: 1.0,
-            },
-            Point2f { x: 1.0, y: 2.0 },
-            Point2f { x: 0.0, y: 3.0 },
-            Point2f { x: -1.0, y: 1.0 },
+            Point2f::new(0.0, 0.0),
+            Point2f::new(1.0, 0.0),
+            Point2f::new(f32::INFINITY, 1.0),
+            Point2f::new(1.0, 2.0),
+            Point2f::new(0.0, 3.0),
+            Point2f::new(-1.0, 1.0),
         ];
         assert!(matches!(fit_bookstein(&pts), Err(Error::Degenerate(_))));
         assert!(matches!(fit_fitzgibbon(&pts), Err(Error::Degenerate(_))));

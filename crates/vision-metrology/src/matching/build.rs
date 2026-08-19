@@ -2,7 +2,7 @@
 
 use vm_primitives::{
     Edge2DDetector, Edgel, Error, ImageView, Pixel, Point2f, Polyline2f, Pyramid, Rect2f,
-    SmoothKind, Vec2f,
+    SmoothKind, Vec2f, Vec2fExt,
 };
 
 use super::config::ShapeModelConfig;
@@ -166,10 +166,7 @@ impl ShapeModelBuilder {
                 {
                     continue;
                 }
-                let p = Point2f {
-                    x: e.p.x + shift.0,
-                    y: e.p.y + shift.1,
-                };
+                let p = Point2f::new(e.p.x + shift.0, e.p.y + shift.1);
                 if !roi_l.contains(p) {
                     continue;
                 }
@@ -256,7 +253,7 @@ impl ShapeModel {
             .iter()
             .zip(dirs)
             .filter_map(|(&p, &d)| {
-                let t = d.normalize();
+                let t = d.normalized_or_zero();
                 (t.norm() > 0.5).then_some(RawPoint {
                     p,
                     t,
@@ -317,7 +314,7 @@ impl ShapeModel {
             for i in 0..p.len() {
                 let prev = p[(i + p.len() - 1) % p.len()];
                 let next = p[(i + 1) % p.len()];
-                let t = (next - prev).normalize();
+                let t = (next - prev).normalized_or_zero();
                 if t.norm() < 0.5 {
                     continue;
                 }
@@ -409,10 +406,7 @@ fn centroid(pts: &[RawPoint]) -> Option<Point2f> {
     let (sx, sy) = pts
         .iter()
         .fold((0.0f32, 0.0f32), |(ax, ay), p| (ax + p.p.x, ay + p.p.y));
-    Some(Point2f {
-        x: sx / n,
-        y: sy / n,
-    })
+    Some(Point2f::new(sx / n, sy / n))
 }
 
 /// Build a model from a single level-0 point set by decimating it per level.
@@ -442,10 +436,7 @@ fn from_raw(pts: Vec<RawPoint>, cfg: &ShapeModelConfig) -> Result<ShapeModel, Er
         let at_level: Vec<RawPoint> = pts
             .iter()
             .map(|r| RawPoint {
-                p: Point2f {
-                    x: to_level(r.p.x, level),
-                    y: to_level(r.p.y, level),
-                },
+                p: Point2f::new(to_level(r.p.x, level), to_level(r.p.y, level)),
                 t: r.t,
                 strength: r.strength,
             })
@@ -471,10 +462,7 @@ fn assemble(
     let mut levels: Vec<ShapeModelLevel> = Vec::with_capacity(raw.len());
 
     for (level, pts) in raw.into_iter().enumerate() {
-        let ref_l = Point2f {
-            x: to_level(origin.x, level),
-            y: to_level(origin.y, level),
-        };
+        let ref_l = Point2f::new(to_level(origin.x, level), to_level(origin.y, level));
         let kept = if cfg.max_points == 0 || pts.len() <= cfg.max_points {
             pts
         } else {
@@ -601,7 +589,7 @@ fn merge_into_cells(pts: &[RawPoint], cell: f32) -> Vec<RawPoint> {
         let cx = (((p.p.x - x0) / cell).floor() as usize).min(nx - 1);
         let cy = (((p.p.y - y0) / cell).floor() as usize).min(ny - 1);
         let c = cy * nx + cx;
-        acc[c] = acc[c] + p.t;
+        acc[c] += p.t;
         count[c] += 1;
         let b = best[c];
         if b < 0 {
@@ -624,7 +612,7 @@ fn merge_into_cells(pts: &[RawPoint], cell: f32) -> Vec<RawPoint> {
         if agreement < MIN_MEAN_DIR {
             continue;
         }
-        let t = acc[c].normalize();
+        let t = acc[c].normalized_or_zero();
         if t.norm() < 0.5 {
             continue;
         }

@@ -132,7 +132,7 @@ pub fn smooth_polyline(points: &[Point2f], sigma: f32) -> Vec<Point2f> {
             *w_slot = 0.0;
         }
 
-        out.push(Point2f { x: ox, y: oy });
+        out.push(Point2f::new(ox, oy));
     }
 
     out
@@ -150,12 +150,7 @@ mod tests {
 
     /// Build a horizontal straight line of `n` points at y = 0.
     fn hline(n: usize) -> Vec<Point2f> {
-        (0..n)
-            .map(|i| Point2f {
-                x: i as f32,
-                y: 0.0,
-            })
-            .collect()
+        (0..n).map(|i| Point2f::new(i as f32, 0.0)).collect()
     }
 
     #[test]
@@ -197,7 +192,7 @@ mod tests {
 
     #[test]
     fn single_point_returns_unchanged() {
-        let pts = vec![Point2f { x: 3.0, y: 7.0 }];
+        let pts = vec![Point2f::new(3.0, 7.0)];
         let result = smooth_polyline(&pts, 1.0);
         assert_eq!(result.len(), 1);
         assert_eq!(result[0], pts[0]);
@@ -232,10 +227,7 @@ mod tests {
                 // Splitmix64-based deterministic hash.
                 let h = splitmix64(i as u64);
                 let noise = (h as f32 / u64::MAX as f32) * 2.0 * noise_amp - noise_amp;
-                Point2f {
-                    x,
-                    y: clean_y + noise,
-                }
+                Point2f::new(x, clean_y + noise)
             })
             .collect();
 

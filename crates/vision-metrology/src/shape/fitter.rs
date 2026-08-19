@@ -10,8 +10,8 @@
 //! use core::f32::consts::PI;
 //!
 //! let ell = Ellipse2f {
-//!     center: Point2f { x: 50.0, y: 40.0 },
-//!     semi_axes: Vec2f { x: 20.0, y: 10.0 },
+//!     center: Point2f::new(50.0, 40.0),
+//!     semi_axes: Vec2f::new(20.0, 10.0),
 //!     angle: 0.0,
 //! };
 //! let pts: Vec<Point2f> = (0..20).map(|i| {
@@ -204,8 +204,8 @@ mod tests {
         // 20 exact points on ellipse (a=20, b=8, θ=0, cx=60, cy=40).
         // The Bookstein fit should recover centre within 0.5 px and axes within 1%.
         let ell = Ellipse2f {
-            center: Point2f { x: 60.0, y: 40.0 },
-            semi_axes: Vec2f { x: 20.0, y: 8.0 },
+            center: Point2f::new(60.0, 40.0),
+            semi_axes: Vec2f::new(20.0, 8.0),
             angle: 0.0,
         };
         let pts = ellipse_pts(&ell, 20);
@@ -243,8 +243,8 @@ mod tests {
         // 20 noisy points (±0.3 px noise), Fitzgibbon direct fit.
         // Recover centre within 0.5 px and axes within 1%.
         let ell = Ellipse2f {
-            center: Point2f { x: 40.0, y: 30.0 },
-            semi_axes: Vec2f { x: 15.0, y: 7.0 },
+            center: Point2f::new(40.0, 30.0),
+            semi_axes: Vec2f::new(15.0, 7.0),
             angle: PI / 6.0,
         };
         let pts = noisy_ellipse_pts(&ell, 20, 0.3, 123);
@@ -273,18 +273,18 @@ mod tests {
     fn ransac_with_outliers() {
         // 16 inliers + 4 outliers; RANSAC (200 iters) should recover the ellipse.
         let ell = Ellipse2f {
-            center: Point2f { x: 50.0, y: 50.0 },
-            semi_axes: Vec2f { x: 18.0, y: 9.0 },
+            center: Point2f::new(50.0, 50.0),
+            semi_axes: Vec2f::new(18.0, 9.0),
             angle: 0.0,
         };
         let mut pts = noisy_ellipse_pts(&ell, 16, 0.2, 77);
         // Add outliers
         let mut rng = Lcg::new(888);
         for _ in 0..4 {
-            pts.push(Point2f {
-                x: rng.next_mod(200) as f32,
-                y: rng.next_mod(200) as f32,
-            });
+            pts.push(Point2f::new(
+                rng.next_mod(200) as f32,
+                rng.next_mod(200) as f32,
+            ));
         }
 
         let mut fitter = ConicFitter::new();
@@ -310,7 +310,7 @@ mod tests {
 
     #[test]
     fn insufficient_data_returns_error() {
-        let pts = vec![Point2f { x: 1.0, y: 1.0 }; 3];
+        let pts = vec![Point2f::new(1.0, 1.0); 3];
         let mut fitter = ConicFitter::new();
         assert!(fitter.fit(&pts, &ConicFitConfig::default()).is_err());
         assert!(
@@ -324,8 +324,8 @@ mod tests {
     fn reuse_fitter_across_calls() {
         // Confirm scratch buffers are reused: no panic on second call.
         let ell = Ellipse2f {
-            center: Point2f { x: 20.0, y: 20.0 },
-            semi_axes: Vec2f { x: 10.0, y: 5.0 },
+            center: Point2f::new(20.0, 20.0),
+            semi_axes: Vec2f::new(10.0, 5.0),
             angle: 0.0,
         };
         let pts = ellipse_pts(&ell, 10);

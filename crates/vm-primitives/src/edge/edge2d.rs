@@ -16,7 +16,8 @@
 //! is done in higher-level crates.
 
 use crate::core::{
-    BorderMode, Image, ImageView, Pixel, Point2f, Vec2f, parabolic_peak_offset, sample_bilinear_f32,
+    BorderMode, Image, ImageView, Pixel, Point2f, Vec2f, Vec2fExt, parabolic_peak_offset,
+    sample_bilinear_f32,
 };
 
 /// A single subpixel 2-D edge element (edgel).
@@ -470,11 +471,7 @@ impl Edge2DDetector {
                     continue;
                 }
 
-                let n = Vec2f {
-                    x: gx[idx] / m,
-                    y: gy[idx] / m,
-                }
-                .normalize();
+                let n = Vec2f::new(gx[idx] / m, gy[idx] / m).normalized_or_zero();
                 if n.norm() <= 1e-6 {
                     continue;
                 }
@@ -499,10 +496,7 @@ impl Edge2DDetector {
                     }
                 }
 
-                let p = Point2f {
-                    x: x as f32 + t * n.x,
-                    y: y as f32 + t * n.y,
-                };
+                let p = Point2f::new(x as f32 + t * n.x, y as f32 + t * n.y);
 
                 out.push(Edgel {
                     p,

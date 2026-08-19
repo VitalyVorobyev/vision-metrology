@@ -286,14 +286,8 @@ fn fit_line_to_region(stats: &RegionStats) -> Option<(Point2f, Vec2f, f32)> {
     // For ixy=0, iyy > ixx: atan2(0, negative) = π → θ=π/2 → dir=(0,1) (vertical). Correct.
     let theta = 0.5 * f64::atan2(2.0 * stats.ixy, stats.ixx - stats.iyy);
     let (cos_t, sin_t) = (theta.cos(), theta.sin());
-    let dir = Vec2f {
-        x: cos_t as f32,
-        y: sin_t as f32,
-    };
-    let center = Point2f {
-        x: stats.cx as f32,
-        y: stats.cy as f32,
-    };
+    let dir = Vec2f::new(cos_t as f32, sin_t as f32);
+    let center = Point2f::new(stats.cx as f32, stats.cy as f32);
     // Normalise line angle to (-π/2, π/2]
     let angle = theta as f32;
     let angle = if angle <= -PI / 2.0 {
@@ -317,10 +311,7 @@ fn region_endpoints_and_width(
     region_angle: f32,
     w: usize,
 ) -> (Point2f, Point2f, f32, usize) {
-    let perp = Vec2f {
-        x: -dir.y,
-        y: dir.x,
-    };
+    let perp = Vec2f::new(-dir.y, dir.x);
     let mut proj_min = f32::MAX;
     let mut proj_max = f32::MIN;
     let mut perp_max = 0.0f32;
@@ -349,14 +340,8 @@ fn region_endpoints_and_width(
         }
     }
 
-    let p1 = Point2f {
-        x: center.x + proj_min * dir.x,
-        y: center.y + proj_min * dir.y,
-    };
-    let p2 = Point2f {
-        x: center.x + proj_max * dir.x,
-        y: center.y + proj_max * dir.y,
-    };
+    let p1 = Point2f::new(center.x + proj_min * dir.x, center.y + proj_min * dir.y);
+    let p2 = Point2f::new(center.x + proj_max * dir.x, center.y + proj_max * dir.y);
     // Width = 2× max perpendicular extent (one-sided → full width)
     let width = (2.0 * perp_max + 1.0).max(1.0);
 
@@ -644,22 +629,19 @@ impl LsdDetector {
                 }
 
                 // ---- Map back to input-image coordinates ----
-                let p1 = Point2f {
-                    x: level_to_base(p1_buf.x, level),
-                    y: level_to_base(p1_buf.y, level),
-                };
-                let p2 = Point2f {
-                    x: level_to_base(p2_buf.x, level),
-                    y: level_to_base(p2_buf.y, level),
-                };
+                let p1 = Point2f::new(
+                    level_to_base(p1_buf.x, level),
+                    level_to_base(p1_buf.y, level),
+                );
+                let p2 = Point2f::new(
+                    level_to_base(p2_buf.x, level),
+                    level_to_base(p2_buf.y, level),
+                );
                 let length = length_buf * step;
                 let width = width_buf * step;
 
                 // Unit normal (perpendicular to line direction)
-                let normal = Vec2f {
-                    x: -dir.y,
-                    y: dir.x,
-                };
+                let normal = Vec2f::new(-dir.y, dir.x);
 
                 segments.push(LineSegment2f {
                     p1,

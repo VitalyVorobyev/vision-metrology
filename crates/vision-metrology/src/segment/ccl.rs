@@ -268,10 +268,10 @@ pub fn component_stats(cl: &CcLabel, min_area: u32) -> Vec<ComponentStats> {
         if cnt < min_area {
             continue;
         }
-        let centroid = Point2f {
-            x: (sum_x[lbl] / cnt as f64) as f32,
-            y: (sum_y[lbl] / cnt as f64) as f32,
-        };
+        let centroid = Point2f::new(
+            (sum_x[lbl] / cnt as f64) as f32,
+            (sum_y[lbl] / cnt as f64) as f32,
+        );
         // bbox: [min_x..=max_x] × [min_y..=max_y] in pixel-center coords.
         let x0 = min_x[lbl] as f32;
         let y0 = min_y[lbl] as f32;
