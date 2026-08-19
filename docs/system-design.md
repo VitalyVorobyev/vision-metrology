@@ -207,7 +207,8 @@ nominal radius and let the tolerances drop from 0.3 px to 0.03 px.
 solves the same problem for glue-bead cross-sections:
 - **Typed rejection reasons.** A caliper that finds nothing is a *result*, and which gate
   rejected it is the difference between "the part is missing" and "the search window is too
-  short". `Caliper::measure_checked` returns `Err(RejectReason)`.
+  short". `Caliper::measure` returns `Err(RejectReason)` — and there is no variant that
+  discards it (see below).
 - **An obliquity gate.** A caliper crossing an edge at a glancing angle reports a position
   along its own axis rather than the edge normal, and the two differ by `1/cos θ`; at a
   corner there is no meaningful crossing at all. `max_obliquity_deg` compares the local image
@@ -270,6 +271,28 @@ The gates are only worth having if they are checked. `--all-features` can never 
 `vision-metrology` and a `--feature-powerset` over `vm-primitives`.
 
 `Error` is `#[non_exhaustive]`, so adding a variant stops being a breaking change.
+
+### A measurement that found nothing is a result, not an empty slice (2026-08)
+`Caliper` had `measure` returning `&[MeasureEdge]` and `measure_checked` returning
+`Result<&[MeasureEdge], RejectReason>` — the same computation, one of them throwing away
+the diagnosis. `MetrologyModel` had the same pair, with the lossy `apply` additionally
+*renumbering*: objects whose fit failed were skipped, so `results[i]` was not object `i`
+and the caller could not tell which one was missing.
+
+Both lossy twins are deleted. `Caliper::measure` returns the `Result`; `Ok(&[])` is
+unrepresentable because an extraction that found nothing always has a `RejectReason`
+(`NoEdge`, `TooOblique`, `WrongPolarity`, `OffImage`, `ProfileTooShort`). `MetrologyModel::apply`
+returns `Vec<Result<MetrologyResult, Error>>`, one entry per object in `objects()` order.
+
+`MetrologyModel::hits()` — a parallel array of caliper edges from the last call, which the
+caller had to keep aligned by hand and which a second `apply` silently invalidated — folded
+into the result: `MetrologyResult { fit: MetrologyFit, hits: Vec<MeasureEdge> }`. The
+`Line`/`Circle` enum is now `MetrologyFit`, and `rms()`/`max_dev()`/`n_used()` are on both.
+
+This is the general rule the reset applies to diagnostics: cheap borrowing accessors
+(`Caliper::profile()`, `ShapeMatcher::truncated()`) stay, diagnostic *computation* lives in
+a `diagnostics` module off the hot path, and anything a result was already computing
+travels with that result instead of in a side channel.
 
 ### Configs say what they mean: the split, the sentinels, and `Contrast` (2026-08)
 Three problems in one pass, all of them in the *type* rather than the algorithm.

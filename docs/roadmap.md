@@ -113,7 +113,7 @@ impl MeasureHandle {
 impl MetrologyModel {
     /// `fixture` is `ShapeMatch::pose` — that is the whole point.
     pub fn apply<P: Pixel>(&mut self, img: &ImageView<'_, P>,
-                           fixture: &Similarity2f) -> &[MetrologyResult];
+                           fixture: &Similarity2f) -> Vec<Result<MetrologyResult, Error>>;
 }
 ```
 

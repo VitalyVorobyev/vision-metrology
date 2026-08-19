@@ -35,7 +35,9 @@ use vision_metrology::fit::{FitConfig, RansacConfig, RobustLoss, fit_circle};
 use vision_metrology::matching::{
     Contrast, ShapeMatcher, ShapeModel, ShapeModelBuilder, ShapeModelConfig, ShapeSearchConfig,
 };
-use vision_metrology::measure::{MetrologyModel, MetrologyObject, MetrologyResult, MetrologyShape};
+use vision_metrology::measure::{
+    MetrologyFit, MetrologyModel, MetrologyObject, MetrologyResult, MetrologyShape,
+};
 use vision_metrology::{Edge2DConfig, Edge2DDetector, Image, Point2f, Rect2f};
 
 #[derive(Parser)]
@@ -152,7 +154,11 @@ fn main() -> Result<()> {
         };
 
         let results = metrology.apply(&img.as_view(), &m.pose);
-        let Some(MetrologyResult::Circle(fit)) = results.first() else {
+        let Some(Ok(MetrologyResult {
+            fit: MetrologyFit::Circle(fit),
+            ..
+        })) = results.first()
+        else {
             println!("{name:>5}  {:>7.3}  rim not measurable", m.score);
             missed += 1;
             continue;

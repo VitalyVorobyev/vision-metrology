@@ -33,16 +33,35 @@ pub enum MetrologyShape {
     },
 }
 
-/// What was measured for one object.
+/// The fitted primitive behind a [`MetrologyResult`].
 #[derive(Debug, Clone, PartialEq)]
-pub enum MetrologyResult {
+pub enum MetrologyFit {
     /// A fitted line, with residuals.
     Line(Fit<Line2f>),
     /// A fitted circle, with residuals.
     Circle(Fit<Circle2f>),
 }
 
-impl MetrologyResult {
+/// What was measured for one object: the fit, and the caliper edges it came
+/// from.
+///
+/// `hits` used to be a separate `MetrologyModel::hits()` accessor holding the
+/// last call's edges parallel to the results — a second array the caller had to
+/// keep aligned by hand, and one that a second `apply` silently invalidated.
+/// Overlaying the hits on the image is the fastest way to see *why* a fit came
+/// out the way it did (usually one caliper that found the wrong edge), so they
+/// belong to the result that used them.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MetrologyResult {
+    /// The fitted primitive with its residual statistics.
+    pub fit: MetrologyFit,
+    /// The caliper edges the fit was computed from, in caliper order.
+    ///
+    /// Shorter than the object's `n_calipers` when some calipers found nothing.
+    pub hits: Vec<MeasureEdge>,
+}
+
+impl MetrologyFit {
     /// RMS deviation of the measured points from the fitted primitive, in pixels.
     pub fn rms(&self) -> f32 {
         match self {
@@ -66,6 +85,24 @@ impl MetrologyResult {
             Self::Line(f) => f.n_used,
             Self::Circle(f) => f.n_used,
         }
+    }
+}
+
+impl MetrologyResult {
+    /// RMS deviation of the measured points from the fitted primitive, in pixels.
+    pub fn rms(&self) -> f32 {
+        self.fit.rms()
+    }
+
+    /// Largest deviation, in pixels — the number a form tolerance is checked
+    /// against.
+    pub fn max_dev(&self) -> f32 {
+        self.fit.max_dev()
+    }
+
+    /// How many caliper points the fit used.
+    pub fn n_used(&self) -> usize {
+        self.fit.n_used()
     }
 }
 
@@ -118,7 +155,9 @@ impl MetrologyObject {
 ///
 /// # Example
 /// ```
-/// use vision_metrology::measure::{MetrologyModel, MetrologyObject, MetrologyResult, MetrologyShape};
+/// use vision_metrology::measure::{
+///     MetrologyFit, MetrologyModel, MetrologyObject, MetrologyShape,
+/// };
 /// use vision_metrology::{Image, Point2f, Similarity2f, Vec2f};
 ///
 /// // A bright disc of radius 30 centred at (64, 64).
@@ -142,7 +181,7 @@ impl MetrologyObject {
 ///
 /// // Identity fixture: the model is already in image coordinates.
 /// let results = model.apply(&img.as_view(), &Similarity2f::identity());
-/// let MetrologyResult::Circle(fit) = &results[0] else { panic!("a circle") };
+/// let MetrologyFit::Circle(fit) = &results[0].as_ref().expect("measured").fit else { panic!("a circle") };
 /// assert!((fit.model.radius - 30.0).abs() < 0.05, "r = {}", fit.model.radius);
 /// assert!(fit.rms < 0.05, "rms = {}", fit.rms);
 /// ```
@@ -151,9 +190,6 @@ pub struct MetrologyModel {
     objects: Vec<MetrologyObject>,
     caliper: Option<Caliper>,
     points: Vec<Point2f>,
-    results: Vec<MetrologyResult>,
-    /// Per-object caliper hits from the last `apply`, for diagnostics.
-    hits: Vec<Vec<MeasureEdge>>,
 }
 
 impl MetrologyModel {
@@ -174,62 +210,26 @@ impl MetrologyModel {
         &self.objects
     }
 
-    /// The caliper hits behind each result from the last [`apply`](Self::apply).
-    ///
-    /// One entry per object, in the same order. Overlaying these on the image
-    /// is the fastest way to see *why* a fit came out the way it did — which is
-    /// usually one caliper that found the wrong edge.
-    pub fn hits(&self) -> &[Vec<MeasureEdge>] {
-        &self.hits
-    }
-
     /// Measure every object, with the model's nominal geometry mapped through
     /// `fixture`.
     ///
-    /// `fixture` is normally [`ShapeMatch::pose`](crate::matching::ShapeMatch) from a
-    /// shape match. Objects whose fit fails are **skipped**, so the result may
-    /// be shorter than [`objects`](Self::objects) — use
-    /// [`apply_checked`](Self::apply_checked) when you need to know which.
+    /// `fixture` is normally [`ShapeMatch::pose`](crate::matching::ShapeMatch)
+    /// from a shape match. One entry per object, in
+    /// [`objects`](Self::objects) order, so index `i` is always object `i` —
+    /// there is no variant that drops the failures and renumbers the rest.
+    /// A `MetrologyObject` that could not be measured names its `Error`.
     pub fn apply<P: Pixel>(
-        &mut self,
-        img: &ImageView<'_, P>,
-        fixture: &Similarity2f,
-    ) -> &[MetrologyResult] {
-        self.run(img, fixture);
-        &self.results
-    }
-
-    /// Like [`apply`](Self::apply), but reports a per-object `Result` so a
-    /// failed measurement is visible rather than missing.
-    pub fn apply_checked<P: Pixel>(
         &mut self,
         img: &ImageView<'_, P>,
         fixture: &Similarity2f,
     ) -> Vec<Result<MetrologyResult, Error>> {
         let objects = core::mem::take(&mut self.objects);
         let mut out = Vec::with_capacity(objects.len());
-        self.hits.clear();
         for obj in &objects {
-            let mut hits = Vec::new();
-            out.push(self.measure_one(img, fixture, obj, &mut hits));
-            self.hits.push(hits);
+            out.push(self.measure_one(img, fixture, obj));
         }
         self.objects = objects;
         out
-    }
-
-    fn run<P: Pixel>(&mut self, img: &ImageView<'_, P>, fixture: &Similarity2f) {
-        let objects = core::mem::take(&mut self.objects);
-        self.results.clear();
-        self.hits.clear();
-        for obj in &objects {
-            let mut hits = Vec::new();
-            if let Ok(r) = self.measure_one(img, fixture, obj, &mut hits) {
-                self.results.push(r);
-            }
-            self.hits.push(hits);
-        }
-        self.objects = objects;
     }
 
     fn measure_one<P: Pixel>(
@@ -237,8 +237,8 @@ impl MetrologyModel {
         img: &ImageView<'_, P>,
         fixture: &Similarity2f,
         obj: &MetrologyObject,
-        hits: &mut Vec<MeasureEdge>,
     ) -> Result<MetrologyResult, Error> {
+        let mut hits: Vec<MeasureEdge> = Vec::new();
         if obj.n_calipers < 2 {
             return Err(Error::InvalidConfig("metrology object needs ≥2 calipers"));
         }
@@ -251,7 +251,6 @@ impl MetrologyModel {
         cal.set_config(obj.measure);
 
         self.points.clear();
-        hits.clear();
 
         match obj.shape {
             MetrologyShape::Line { a, b } => {
@@ -270,13 +269,16 @@ impl MetrologyModel {
                         half_len: obj.caliper_len * scale,
                         half_width: obj.caliper_width * scale,
                     });
-                    if let Some(e) = cal.measure(img).first() {
+                    if let Ok(&[e, ..]) = cal.measure(img) {
                         self.points.push(e.p);
-                        hits.push(*e);
+                        hits.push(e);
                     }
                 }
                 let fit = fit_line(&self.points, &obj.fit)?;
-                Ok(MetrologyResult::Line(fit))
+                Ok(MetrologyResult {
+                    fit: MetrologyFit::Line(fit),
+                    hits,
+                })
             }
             MetrologyShape::Circle {
                 center,
@@ -310,13 +312,16 @@ impl MetrologyModel {
                         half_len: obj.caliper_len * scale,
                         half_width: obj.caliper_width * scale,
                     });
-                    if let Some(e) = cal.measure(img).first() {
+                    if let Ok(&[e, ..]) = cal.measure(img) {
                         self.points.push(e.p);
-                        hits.push(*e);
+                        hits.push(e);
                     }
                 }
                 let fit = fit_circle(&self.points, &obj.fit)?;
-                Ok(MetrologyResult::Circle(fit))
+                Ok(MetrologyResult {
+                    fit: MetrologyFit::Circle(fit),
+                    hits,
+                })
             }
         }
     }
@@ -333,7 +338,7 @@ fn placeholder_rect() -> MeasureRect {
 
 #[cfg(test)]
 mod tests {
-    use super::{MetrologyModel, MetrologyObject, MetrologyResult, MetrologyShape};
+    use super::{MetrologyFit, MetrologyModel, MetrologyObject, MetrologyShape};
     use crate::fit::{FitConfig, RobustLoss};
     use vm_primitives::{Image, Point2f, Similarity2f, Vec2f};
 
@@ -381,7 +386,7 @@ mod tests {
 
         let results = model.apply(&img.as_view(), &Similarity2f::identity());
         assert_eq!(results.len(), 1);
-        let MetrologyResult::Circle(fit) = &results[0] else {
+        let MetrologyFit::Circle(fit) = &results[0].as_ref().expect("measured").fit else {
             panic!("expected a circle")
         };
         // The fixture is anti-aliased and the calipers average along the arc,
@@ -420,7 +425,7 @@ mod tests {
             let fixture = Similarity2f::new(Vec2f::new(tx, ty), rot, 1.0);
 
             let results = model.apply(&img.as_view(), &fixture);
-            let MetrologyResult::Circle(fit) = &results[0] else {
+            let MetrologyFit::Circle(fit) = &results[0].as_ref().expect("measured").fit else {
                 panic!("expected a circle")
             };
             assert!(
@@ -452,7 +457,7 @@ mod tests {
         let fixture = Similarity2f::new(Vec2f::new(96.0, 96.0), 0.0, 2.0);
 
         let results = model.apply(&img.as_view(), &fixture);
-        let MetrologyResult::Circle(fit) = &results[0] else {
+        let MetrologyFit::Circle(fit) = &results[0].as_ref().expect("measured").fit else {
             panic!("expected a circle")
         };
         assert!(
@@ -473,7 +478,7 @@ mod tests {
         }));
 
         let results = model.apply(&img.as_view(), &Similarity2f::identity());
-        let MetrologyResult::Line(fit) = &results[0] else {
+        let MetrologyFit::Line(fit) = &results[0].as_ref().expect("measured").fit else {
             panic!("expected a line")
         };
         assert!(fit.model.dir.y.abs() < 1e-3, "should be horizontal");
@@ -511,7 +516,7 @@ mod tests {
         model.add(obj);
 
         let results = model.apply(&img.as_view(), &Similarity2f::identity());
-        let MetrologyResult::Circle(fit) = &results[0] else {
+        let MetrologyFit::Circle(fit) = &results[0].as_ref().expect("measured").fit else {
             panic!("expected a circle")
         };
         // The good part of the boundary still gives the right circle...
@@ -538,11 +543,12 @@ mod tests {
             radius: 25.0,
             arc: None,
         }));
-        model.apply(&img.as_view(), &Similarity2f::identity());
+        let results = model.apply(&img.as_view(), &Similarity2f::identity());
 
-        assert_eq!(model.hits().len(), 1);
-        assert_eq!(model.hits()[0].len(), 32);
-        for e in &model.hits()[0] {
+        assert_eq!(results.len(), 1);
+        let hits = &results[0].as_ref().expect("measured").hits;
+        assert_eq!(hits.len(), 32);
+        for e in hits {
             assert!(
                 ((e.p - c).norm() - 25.0).abs() < 0.2,
                 "caliper hit off the boundary: {:?}",
@@ -552,7 +558,7 @@ mod tests {
     }
 
     #[test]
-    fn a_failed_object_is_visible_through_apply_checked() {
+    fn a_failed_object_is_visible_rather_than_missing() {
         // Nothing to find: a flat field.
         let img = Image::from_vec(64, 64, vec![128u8; 64 * 64]).expect("valid");
         let mut model = MetrologyModel::new();
@@ -562,12 +568,8 @@ mod tests {
             arc: None,
         }));
 
-        assert!(
-            model
-                .apply(&img.as_view(), &Similarity2f::identity())
-                .is_empty()
-        );
-        let checked = model.apply_checked(&img.as_view(), &Similarity2f::identity());
+        // The slot is still there — index i is object i, always.
+        let checked = model.apply(&img.as_view(), &Similarity2f::identity());
         assert_eq!(checked.len(), 1);
         assert!(checked[0].is_err(), "a flat field cannot yield a circle");
     }
@@ -583,7 +585,7 @@ mod tests {
         });
         obj.n_calipers = 1;
         model.add(obj);
-        let checked = model.apply_checked(&img.as_view(), &Similarity2f::identity());
+        let checked = model.apply(&img.as_view(), &Similarity2f::identity());
         assert!(checked[0].is_err());
     }
 }

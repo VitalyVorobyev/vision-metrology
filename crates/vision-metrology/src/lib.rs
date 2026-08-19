@@ -89,8 +89,8 @@ pub mod prelude {
     };
     #[cfg(feature = "measure")]
     pub use crate::measure::{
-        Caliper, EdgeSelect, MeasureConfig, MeasureEdge, MetrologyModel, MetrologyObject,
-        MetrologyResult, MetrologyShape, PolaritySelect, RejectReason,
+        Caliper, EdgeSelect, MeasureConfig, MeasureEdge, MetrologyFit, MetrologyModel,
+        MetrologyObject, MetrologyResult, MetrologyShape, PolaritySelect, RejectReason,
     };
     #[cfg(feature = "segment")]
     pub use crate::segment::{

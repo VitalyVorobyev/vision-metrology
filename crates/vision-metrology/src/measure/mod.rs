@@ -39,4 +39,4 @@ pub use caliper::{
     Caliper, EdgeSelect, MeasureArc, MeasureConfig, MeasureEdge, MeasurePair, MeasureRadial,
     MeasureRect, PolaritySelect, RejectReason,
 };
-pub use model::{MetrologyModel, MetrologyObject, MetrologyResult, MetrologyShape};
+pub use model::{MetrologyFit, MetrologyModel, MetrologyObject, MetrologyResult, MetrologyShape};
