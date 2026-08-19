@@ -12,7 +12,7 @@
 
 use vm_primitives::{DirectionField, Image, ImageView};
 
-use super::config::Polarity;
+use super::config::{Contrast, Polarity};
 use super::matcher::ShapeMatch;
 use super::model::ShapeModel;
 
@@ -33,7 +33,7 @@ pub fn match_point_scores(
     scene: &ImageView<'_, u8>,
     model: &ShapeModel,
     m: &ShapeMatch,
-    min_contrast: f32,
+    min_contrast: Contrast,
 ) -> Vec<f32> {
     let Some(level0) = model.level(0) else {
         return Vec::new();
@@ -42,6 +42,7 @@ pub fn match_point_scores(
     if points.is_empty() {
         return Vec::new();
     }
+    let min_contrast = min_contrast.resolve(scene);
 
     // Level-0 field, built lazily only around the match.
     let (w, h) = (scene.width(), scene.height());

@@ -31,7 +31,7 @@ impl Tracker {
     }
 
     fn tracking(&self, cfg: &LaserExtractConfig) -> bool {
-        self.last_valid_center.is_some() && self.gap_len <= cfg.max_gap_scans
+        self.last_valid_center.is_some() && self.gap_len <= cfg.tuning.max_gap_scans
     }
 
     fn accept(&mut self, samples: &mut Vec<LaserSample>, s: LaserSample) {
@@ -71,10 +71,10 @@ pub(super) fn extract_rows_samples<P: Pixel>(
         let tracking = tr.tracking(cfg);
         let predicted = if tracking {
             let last = tr.last_valid_center.expect("checked");
-            let (b0, b1) = roi_bounds(last, cfg.roi_half_width, n);
-            coarse_center_in_range(line, &cfg.coarse, b0, b1).unwrap_or(last)
+            let (b0, b1) = roi_bounds(last, cfg.tuning.roi_half_width, n);
+            coarse_center_in_range(line, &cfg.tuning.coarse, b0, b1).unwrap_or(last)
         } else {
-            match coarse_center_in_range(line, &cfg.coarse, 0, n) {
+            match coarse_center_in_range(line, &cfg.tuning.coarse, 0, n) {
                 Some(v) => v,
                 None => {
                     tr.miss(&mut samples, scan_i, None);
@@ -117,14 +117,14 @@ pub(super) fn extract_cols_gather_samples<P: Pixel>(
 
         let predicted = if tracking {
             let last = tr.last_valid_center.expect("checked");
-            let (b0, b1) = roi_bounds(last, cfg.roi_half_width, n);
+            let (b0, b1) = roi_bounds(last, cfg.tuning.roi_half_width, n);
             let line = gather_col_segment(img, scan_i, b0, b1, col_buf);
-            coarse_center_in_range(line, &cfg.coarse, 0, line.len())
+            coarse_center_in_range(line, &cfg.tuning.coarse, 0, line.len())
                 .map(|v| v + b0 as f32)
                 .unwrap_or(last)
         } else {
             let line = gather_col_segment(img, scan_i, 0, n, col_buf);
-            match coarse_center_in_range(line, &cfg.coarse, 0, line.len()) {
+            match coarse_center_in_range(line, &cfg.tuning.coarse, 0, line.len()) {
                 Some(v) => v,
                 None => {
                     tr.miss(&mut samples, scan_i, None);
@@ -133,7 +133,7 @@ pub(super) fn extract_cols_gather_samples<P: Pixel>(
             }
         };
 
-        let (roi0, roi1) = roi_bounds(predicted, cfg.roi_half_width, n);
+        let (roi0, roi1) = roi_bounds(predicted, cfg.tuning.roi_half_width, n);
         if roi1.saturating_sub(roi0) < 3 {
             tr.miss(&mut samples, scan_i, Some(predicted));
             continue;

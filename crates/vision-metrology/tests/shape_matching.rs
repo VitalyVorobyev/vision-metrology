@@ -9,7 +9,7 @@
 use vision_metrology::matching::SHAPE_MODEL_FORMAT_VERSION;
 use vision_metrology::matching::{
     ContourOrientation, Polarity, Refinement, ShapeMatch, ShapeMatcher, ShapeModel,
-    ShapeModelBuilder, ShapeModelConfig, ShapeSearchConfig,
+    ShapeModelBuilder, ShapeModelConfig, ShapeSearchConfig, ShapeSearchTuning,
 };
 use vision_metrology::{Image, Point2f, Polyline2f, Rect2f, Vec2f, wrap_angle};
 
@@ -232,7 +232,7 @@ fn t22_output_is_reproducible() {
     let model = build_bracket_model(&ShapeModelConfig::default());
     let scene = bracket_at(230.0, 280.0, 0.6, 1.0);
     let cfg = ShapeSearchConfig {
-        max_matches: 0,
+        max_matches: None,
         ..Default::default()
     };
     let a = ShapeMatcher::new().find(&scene.as_view(), &model, &cfg);
@@ -500,7 +500,10 @@ fn t5_the_score_tracks_the_visible_fraction() {
     let model = build_bracket_model(&ShapeModelConfig::default());
     let search = ShapeSearchConfig {
         min_score: 0.25,
-        greediness: 0.0,
+        tuning: ShapeSearchTuning {
+            greediness: 0.0,
+            ..Default::default()
+        },
         ..Default::default()
     };
 
@@ -582,7 +585,7 @@ fn t6_clutter_does_not_produce_a_false_positive() {
     }
 
     let cfg = ShapeSearchConfig {
-        max_matches: 0,
+        max_matches: None,
         min_score: 0.6,
         ..Default::default()
     };
@@ -631,7 +634,10 @@ fn t9_ignore_local_accepts_a_half_inverted_object() {
     });
     let cfg = ShapeSearchConfig {
         min_score: 0.2,
-        greediness: 0.0,
+        tuning: ShapeSearchTuning {
+            greediness: 0.0,
+            ..Default::default()
+        },
         ..Default::default()
     };
 
@@ -656,7 +662,7 @@ fn t10_t11_two_instances_are_reported_and_duplicates_are_not() {
     }
 
     let cfg = ShapeSearchConfig {
-        max_matches: 0,
+        max_matches: None,
         min_score: 0.7,
         ..Default::default()
     };
@@ -692,12 +698,18 @@ fn t12_greediness_does_not_move_the_answer() {
     let model = build_bracket_model(&ShapeModelConfig::default());
     let scene = bracket_at(210.0, 290.0, -0.8, 1.0);
     let exhaustive = ShapeSearchConfig {
-        greediness: 0.0,
+        tuning: ShapeSearchTuning {
+            greediness: 0.0,
+            ..Default::default()
+        },
         refinement: Refinement::LeastSquares,
         ..Default::default()
     };
     let greedy = ShapeSearchConfig {
-        greediness: 0.9,
+        tuning: ShapeSearchTuning {
+            greediness: 0.9,
+            ..Default::default()
+        },
         ..exhaustive.clone()
     };
 

@@ -32,8 +32,16 @@ pub(super) fn build_points(samples: &[LaserSample], axis: ScanAxis) -> Vec<Point
     points
 }
 
-/// Median-of-5 smoothing over each contiguous run of valid samples.
-pub(super) fn smooth_valid_centers(samples: &mut [LaserSample]) {
+/// Running-median smoothing over each contiguous run of valid samples.
+///
+/// The window is `2 · half_window + 1`, clipped at the ends of the run. Reads
+/// the original centres out of `orig` so the filter is not fed its own output.
+pub(super) fn smooth_valid_centers(samples: &mut [LaserSample], half_window: usize) {
+    if half_window == 0 {
+        return;
+    }
+
+    let mut window: Vec<f32> = Vec::with_capacity(2 * half_window + 1);
     let mut i = 0usize;
     while i < samples.len() {
         if !samples[i].valid {
@@ -54,16 +62,12 @@ pub(super) fn smooth_valid_centers(samples: &mut [LaserSample]) {
         }
 
         for j in 0..run_len {
-            let j0 = j.saturating_sub(2);
-            let j1 = (j + 2).min(run_len - 1);
-            let mut vals = [0.0f32; 5];
-            let mut count = 0usize;
-            for &v in orig.iter().take(j1 + 1).skip(j0) {
-                vals[count] = v;
-                count += 1;
-            }
-            vals[..count].sort_by(|a, b| a.partial_cmp(b).expect("finite compare"));
-            samples[start + j].center = vals[count / 2];
+            let j0 = j.saturating_sub(half_window);
+            let j1 = (j + half_window).min(run_len - 1);
+            window.clear();
+            window.extend_from_slice(&orig[j0..=j1]);
+            window.sort_by(|a, b| a.partial_cmp(b).expect("finite compare"));
+            samples[start + j].center = window[window.len() / 2];
         }
     }
 }

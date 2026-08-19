@@ -6,7 +6,7 @@ use vm_primitives::{Edge1DDetector, Error, ImageView, Pixel};
 
 use super::postprocess::{build_points, smooth_valid_centers};
 use super::scan::{extract_cols_gather_samples, extract_rows_samples};
-use super::types::{ColAccess, LaserExtractConfig, LaserLine, ScanAxis};
+use super::types::{CenterSmoothing, ColAccess, LaserExtractConfig, LaserLine, ScanAxis};
 
 /// Reusable laser stripe extractor.
 ///
@@ -68,7 +68,7 @@ impl LaserExtractor {
         cfg: &LaserExtractConfig,
         transposed: Option<&ImageView<'_, P>>,
     ) -> Result<LaserLine, Error> {
-        self.detector.set_sigma(cfg.edge_cfg.sigma);
+        self.detector.set_sigma(cfg.tuning.edge_cfg.sigma);
         let mut samples = match cfg.axis {
             ScanAxis::Rows => extract_rows_samples(&mut self.detector, img, scan_range, cfg),
             ScanAxis::Cols {
@@ -82,8 +82,8 @@ impl LaserExtractor {
             }
         };
 
-        if cfg.enable_smoothing {
-            smooth_valid_centers(&mut samples);
+        if let CenterSmoothing::Median { half_window } = cfg.tuning.smoothing {
+            smooth_valid_centers(&mut samples, half_window);
         }
 
         let points = build_points(&samples, cfg.axis);

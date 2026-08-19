@@ -74,7 +74,9 @@ mod score;
 mod search;
 
 pub use build::{ContourOrientation, ShapeModelBuilder};
-pub use config::{Polarity, Refinement, ShapeModelConfig, ShapeSearchConfig};
+pub use config::{
+    Contrast, Polarity, Refinement, ShapeModelConfig, ShapeSearchConfig, ShapeSearchTuning,
+};
 pub use matcher::{ShapeMatch, ShapeMatcher};
 #[cfg(feature = "serde")]
 pub use model::SHAPE_MODEL_FORMAT_VERSION;

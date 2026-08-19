@@ -28,4 +28,7 @@ mod gather;
 mod tests;
 
 pub use extractor::LaserExtractor;
-pub use types::{CoarseMethod, ColAccess, LaserExtractConfig, LaserLine, LaserSample, ScanAxis};
+pub use types::{
+    CenterSmoothing, CoarseMethod, ColAccess, LaserExtractConfig, LaserExtractTuning, LaserLine,
+    LaserSample, ScanAxis,
+};

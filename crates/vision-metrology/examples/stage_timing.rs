@@ -5,9 +5,11 @@
 //! small config sweep on the cluttered scene. Build with
 //! `--features trace-cands` to also see per-level candidate counts and stage
 //! times from inside the matcher on stderr.
+use std::num::NonZeroUsize;
+
 use std::time::Instant;
 use vision_metrology::matching::{
-    ShapeMatcher, ShapeModelBuilder, ShapeModelConfig, ShapeSearchConfig,
+    ShapeMatcher, ShapeModelBuilder, ShapeModelConfig, ShapeSearchConfig, ShapeSearchTuning,
 };
 use vision_metrology::{Image, Pyramid, Rect2f};
 use vm_primitives::{DirectionField, SmoothKind};
@@ -62,7 +64,7 @@ fn main() {
         height: 240.0,
     };
     let cfg = ShapeModelConfig {
-        max_points: 800,
+        max_points: NonZeroUsize::new(800),
         ..Default::default()
     };
     let model = ShapeModelBuilder::new()
@@ -168,21 +170,30 @@ fn main() {
         (
             "clutter max_cand 32",
             ShapeSearchConfig {
-                max_candidates: 32,
+                tuning: ShapeSearchTuning {
+                    max_candidates: 32,
+                    ..Default::default()
+                },
                 ..Default::default()
             },
         ),
         (
             "clutter last_level 1",
             ShapeSearchConfig {
-                last_level: 1,
+                tuning: ShapeSearchTuning {
+                    last_level: 1,
+                    ..Default::default()
+                },
                 ..Default::default()
             },
         ),
         (
             "clutter greediness 1.0",
             ShapeSearchConfig {
-                greediness: 1.0,
+                tuning: ShapeSearchTuning {
+                    greediness: 1.0,
+                    ..Default::default()
+                },
                 ..Default::default()
             },
         ),

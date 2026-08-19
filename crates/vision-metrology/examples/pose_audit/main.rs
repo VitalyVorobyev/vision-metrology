@@ -39,7 +39,7 @@ use corrmatch::{
 use vision_metrology::fit::{FitConfig, RansacConfig, fit_ellipse};
 use vision_metrology::matching::diagnostics::match_point_scores;
 use vision_metrology::matching::{
-    Polarity, ShapeMatch, ShapeMatcher, ShapeModel, ShapeModelBuilder, ShapeModelConfig,
+    Contrast, Polarity, ShapeMatch, ShapeMatcher, ShapeModel, ShapeModelBuilder, ShapeModelConfig,
     ShapeSearchConfig,
 };
 use vision_metrology::{Edge2DConfig, Edge2DDetector, Image, Point2f, Rect2f, wrap_angle};
@@ -167,7 +167,7 @@ fn setup(common: &CommonArgs) -> Result<Setup> {
     let reference = load_gray(&common.model_image)?;
     let polarity = parse_polarity(&common.polarity)?;
     let model_cfg = ShapeModelConfig {
-        min_contrast: common.model_min_contrast,
+        min_contrast: Contrast::Raw(common.model_min_contrast),
         polarity,
         ..Default::default()
     };

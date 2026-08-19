@@ -1,27 +1,31 @@
 //! Python-visible configuration objects and conversion to native Rust configs.
 
+use core::num::NonZeroUsize;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use vision_metrology::fit::{
     FitConfig as NativeFitConfig, RansacConfig as NativeRansacConfig,
     RobustLoss as NativeRobustLoss,
 };
+
+use vision_metrology::matching::Contrast;
 use vision_metrology::matching::Polarity as NativePolarity;
 use vision_metrology::matching::Refinement as NativeRefinement;
 use vision_metrology::matching::ShapeModelConfig as NativeShapeModelConfig;
 use vision_metrology::matching::ShapeSearchConfig as NativeShapeSearchConfig;
+use vision_metrology::matching::ShapeSearchTuning as NativeShapeSearchTuning;
 use vision_metrology::shape::LsdConfig as NativeLsdConfig;
 use vm_primitives::BorderMode;
 use vm_primitives::PreSmooth as NativePreSmooth;
-use vm_primitives::edge::{Edge2DConfig, SmoothKind, Subpix2D};
+use vm_primitives::edge::{Edge2DConfig, Hysteresis, SmoothKind, Subpix2D};
 
 #[pyclass(get_all, set_all, from_py_object)]
 #[derive(Debug, Clone)]
 pub struct EdgeConfig {
-    pub pre_smooth: bool,
     pub smooth_kind: String,
-    pub low_thresh: f32,
-    pub high_thresh: f32,
+    /// `None` on either threshold selects the automatic pair.
+    pub low_thresh: Option<f32>,
+    pub high_thresh: Option<f32>,
     pub border_mode: String,
     pub border_constant: f32,
     pub subpix: String,
@@ -31,7 +35,6 @@ pub struct EdgeConfig {
 impl EdgeConfig {
     #[new]
     #[pyo3(signature = (
-        pre_smooth=None,
         smooth_kind=None,
         low_thresh=None,
         high_thresh=None,
@@ -40,7 +43,6 @@ impl EdgeConfig {
         subpix=None
     ))]
     pub fn new(
-        pre_smooth: Option<bool>,
         smooth_kind: Option<String>,
         low_thresh: Option<f32>,
         high_thresh: Option<f32>,
@@ -50,10 +52,9 @@ impl EdgeConfig {
     ) -> Self {
         let default = Self::default();
         Self {
-            pre_smooth: pre_smooth.unwrap_or(default.pre_smooth),
             smooth_kind: smooth_kind.unwrap_or(default.smooth_kind),
-            low_thresh: low_thresh.unwrap_or(default.low_thresh),
-            high_thresh: high_thresh.unwrap_or(default.high_thresh),
+            low_thresh: low_thresh.or(default.low_thresh),
+            high_thresh: high_thresh.or(default.high_thresh),
             border_mode: border_mode.unwrap_or(default.border_mode),
             border_constant: border_constant.unwrap_or(default.border_constant),
             subpix: subpix.unwrap_or(default.subpix),
@@ -62,8 +63,7 @@ impl EdgeConfig {
 
     fn __repr__(&self) -> String {
         format!(
-            "EdgeConfig(pre_smooth={}, smooth_kind='{}', low_thresh={:.3}, high_thresh={:.3}, border_mode='{}', border_constant={:.3}, subpix='{}')",
-            self.pre_smooth,
+            "EdgeConfig(smooth_kind='{}', low_thresh={:?}, high_thresh={:?}, border_mode='{}', border_constant={:.3}, subpix='{}')",
             self.smooth_kind,
             self.low_thresh,
             self.high_thresh,
@@ -76,12 +76,14 @@ impl EdgeConfig {
 
 impl Default for EdgeConfig {
     fn default() -> Self {
-        let native = Edge2DConfig::default();
+        let (low_thresh, high_thresh) = match Edge2DConfig::default().hysteresis {
+            Hysteresis::Auto => (None, None),
+            Hysteresis::Manual { low, high } => (Some(low), Some(high)),
+        };
         Self {
-            pre_smooth: native.pre_smooth,
             smooth_kind: "binomial3".to_string(),
-            low_thresh: native.low_thresh,
-            high_thresh: native.high_thresh,
+            low_thresh,
+            high_thresh,
             border_mode: "clamp".to_string(),
             border_constant: 0.0,
             subpix: "parabolic_along_normal".to_string(),
@@ -122,11 +124,17 @@ impl EdgeConfig {
             }
         };
 
+        let hysteresis = match (self.low_thresh, self.high_thresh) {
+            (None, None) => Hysteresis::Auto,
+            (low, high) => Hysteresis::Manual {
+                low: low.unwrap_or(0.0),
+                high: high.unwrap_or(0.0),
+            },
+        };
+
         Ok(Edge2DConfig {
-            pre_smooth: self.pre_smooth,
             smooth_kind,
-            low_thresh: self.low_thresh,
-            high_thresh: self.high_thresh,
+            hysteresis,
             border,
             subpix,
         })
@@ -351,9 +359,11 @@ impl FitConfig {
 #[pyclass(get_all, set_all, from_py_object)]
 #[derive(Debug, Clone)]
 pub struct ShapeModelConfig {
-    pub num_levels: usize,
+    /// `None` selects the level count automatically.
+    pub num_levels: Option<usize>,
     pub min_contrast: f32,
-    pub max_points: usize,
+    /// `None` keeps every point.
+    pub max_points: Option<usize>,
     pub angle_min: f32,
     pub angle_max: f32,
     pub scale_min: f32,
@@ -367,9 +377,12 @@ impl Default for ShapeModelConfig {
     fn default() -> Self {
         let n = NativeShapeModelConfig::default();
         Self {
-            num_levels: n.num_levels,
-            min_contrast: n.min_contrast,
-            max_points: n.max_points,
+            num_levels: n.num_levels.map(NonZeroUsize::get),
+            min_contrast: match n.min_contrast {
+                Contrast::Raw(v) => v,
+                Contrast::FractionOfRange(f) => f,
+            },
+            max_points: n.max_points.map(NonZeroUsize::get),
             angle_min: n.angle_range.0,
             angle_max: n.angle_range.1,
             scale_min: n.scale_range.0,
@@ -408,9 +421,9 @@ impl ShapeModelConfig {
     ) -> Self {
         let d = Self::default();
         Self {
-            num_levels: num_levels.unwrap_or(d.num_levels),
+            num_levels: num_levels.or(d.num_levels),
             min_contrast: min_contrast.unwrap_or(d.min_contrast),
-            max_points: max_points.unwrap_or(d.max_points),
+            max_points: max_points.or(d.max_points),
             angle_min: angle_min.unwrap_or(d.angle_min),
             angle_max: angle_max.unwrap_or(d.angle_max),
             scale_min: scale_min.unwrap_or(d.scale_min),
@@ -422,7 +435,7 @@ impl ShapeModelConfig {
 
     fn __repr__(&self) -> String {
         format!(
-            "ShapeModelConfig(num_levels={}, max_points={}, angle=({:.3},{:.3}), scale=({:.3},{:.3}), polarity='{}')",
+            "ShapeModelConfig(num_levels={:?}, max_points={:?}, angle=({:.3},{:.3}), scale=({:.3},{:.3}), polarity='{}')",
             self.num_levels,
             self.max_points,
             self.angle_min,
@@ -456,9 +469,9 @@ impl ShapeModelConfig {
             return Err(PyValueError::new_err("angle_max must be >= angle_min"));
         }
         Ok(NativeShapeModelConfig {
-            num_levels: self.num_levels,
-            min_contrast: self.min_contrast,
-            max_points: self.max_points,
+            num_levels: self.num_levels.and_then(NonZeroUsize::new),
+            min_contrast: Contrast::Raw(self.min_contrast),
+            max_points: self.max_points.and_then(NonZeroUsize::new),
             angle_range: (self.angle_min, self.angle_max),
             scale_range: (self.scale_min, self.scale_max),
             polarity: parse_polarity(&self.polarity)?,
@@ -474,7 +487,8 @@ impl ShapeModelConfig {
 pub struct ShapeSearchConfig {
     pub min_score: f32,
     pub greediness: f32,
-    pub max_matches: usize,
+    /// `None` reports every instance.
+    pub max_matches: Option<usize>,
     pub max_overlap: f32,
     pub min_contrast: f32,
     /// "none", "interpolate" or "least_squares".
@@ -489,14 +503,17 @@ impl Default for ShapeSearchConfig {
         let n = NativeShapeSearchConfig::default();
         Self {
             min_score: n.min_score,
-            greediness: n.greediness,
-            max_matches: n.max_matches,
+            greediness: n.tuning.greediness,
+            max_matches: n.max_matches.map(NonZeroUsize::get),
             max_overlap: n.max_overlap,
-            min_contrast: n.min_contrast,
+            min_contrast: match n.min_contrast {
+                Contrast::Raw(v) => v,
+                Contrast::FractionOfRange(f) => f,
+            },
             refinement: "interpolate".to_string(),
-            last_level: n.last_level,
-            max_candidates: n.max_candidates,
-            coarse_score_factor: n.coarse_score_factor,
+            last_level: n.tuning.last_level,
+            max_candidates: n.tuning.max_candidates,
+            coarse_score_factor: n.tuning.coarse_score_factor,
         }
     }
 }
@@ -531,7 +548,7 @@ impl ShapeSearchConfig {
         Self {
             min_score: min_score.unwrap_or(d.min_score),
             greediness: greediness.unwrap_or(d.greediness),
-            max_matches: max_matches.unwrap_or(d.max_matches),
+            max_matches: max_matches.or(d.max_matches),
             max_overlap: max_overlap.unwrap_or(d.max_overlap),
             min_contrast: min_contrast.unwrap_or(d.min_contrast),
             refinement: refinement.unwrap_or(d.refinement),
@@ -543,7 +560,7 @@ impl ShapeSearchConfig {
 
     fn __repr__(&self) -> String {
         format!(
-            "ShapeSearchConfig(min_score={:.3}, greediness={:.2}, max_matches={}, refinement='{}')",
+            "ShapeSearchConfig(min_score={:.3}, greediness={:.2}, max_matches={:?}, refinement='{}')",
             self.min_score, self.greediness, self.max_matches, self.refinement
         )
     }
@@ -569,14 +586,17 @@ impl ShapeSearchConfig {
         };
         Ok(NativeShapeSearchConfig {
             min_score: self.min_score,
-            greediness: self.greediness,
-            max_matches: self.max_matches,
+            max_matches: self.max_matches.and_then(NonZeroUsize::new),
             max_overlap: self.max_overlap,
-            min_contrast: self.min_contrast,
+            min_contrast: Contrast::Raw(self.min_contrast),
             refinement,
-            last_level: self.last_level,
-            max_candidates: self.max_candidates,
-            coarse_score_factor: self.coarse_score_factor,
+            tuning: NativeShapeSearchTuning {
+                greediness: self.greediness,
+                last_level: self.last_level,
+                max_candidates: self.max_candidates,
+                coarse_score_factor: self.coarse_score_factor,
+                ..NativeShapeSearchTuning::default()
+            },
             ..NativeShapeSearchConfig::default()
         })
     }

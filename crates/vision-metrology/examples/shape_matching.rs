@@ -20,6 +20,7 @@
 //!     --out overlay.png --polarity ignore-global
 //! ```
 
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -27,8 +28,8 @@ use anyhow::{Context, Result, bail};
 use clap::{Parser, ValueEnum};
 use image::ImageReader;
 use vision_metrology::matching::{
-    Polarity, Refinement, ShapeMatch, ShapeMatcher, ShapeModel, ShapeModelBuilder,
-    ShapeModelConfig, ShapeSearchConfig,
+    Contrast, Polarity, Refinement, ShapeMatch, ShapeMatcher, ShapeModel, ShapeModelBuilder,
+    ShapeModelConfig, ShapeSearchConfig, ShapeSearchTuning,
 };
 use vision_metrology::{Image, Point2f, Rect2f};
 
@@ -160,9 +161,9 @@ fn load_gray(path: &Path) -> Result<Image<u8>> {
 fn build_model(args: &Args, model_path: &Path, roi: Rect2f) -> Result<ShapeModel> {
     let reference = load_gray(model_path)?;
     let cfg = ShapeModelConfig {
-        max_points: args.max_points,
+        max_points: NonZeroUsize::new(args.max_points),
         polarity: args.polarity.into(),
-        min_contrast: args.model_min_contrast,
+        min_contrast: Contrast::Raw(args.model_min_contrast),
         ..Default::default()
     };
     let t0 = Instant::now();
@@ -187,9 +188,12 @@ fn build_model(args: &Args, model_path: &Path, roi: Rect2f) -> Result<ShapeModel
 fn search_config(args: &Args) -> ShapeSearchConfig {
     ShapeSearchConfig {
         min_score: args.min_score,
-        greediness: args.greediness,
-        max_matches: args.max_matches,
-        min_contrast: args.min_contrast,
+        tuning: ShapeSearchTuning {
+            greediness: args.greediness,
+            ..Default::default()
+        },
+        max_matches: NonZeroUsize::new(args.max_matches),
+        min_contrast: Contrast::Raw(args.min_contrast),
         refinement: Refinement::LeastSquares,
         ..Default::default()
     }
@@ -454,7 +458,7 @@ fn synthetic() -> Result<()> {
 
     let cfg = ShapeSearchConfig {
         min_score: 0.6,
-        max_matches: 0,
+        max_matches: None,
         refinement: Refinement::LeastSquares,
         ..Default::default()
     };

@@ -22,7 +22,9 @@ mod laser1d;
 
 pub use conv1d::convolve_f32;
 pub use edge1d::{Edge1DConfig, Edge1DDetector, EdgePeak, EdgePolarity, SubpixRefine};
-pub use edge2d::{Edge2DConfig, Edge2DDetector, Edgel, GradientBuffers, SmoothKind, Subpix2D};
+pub use edge2d::{
+    Edge2DConfig, Edge2DDetector, Edgel, GradientBuffers, Hysteresis, SmoothKind, Subpix2D,
+};
 pub use gradient::DirectionField;
 pub use kernels1d::DoGKernel1D;
 pub use laser1d::{EdgePair1D, EdgePairConfig, best_edge_pair, best_edge_pair_in_row_u8};

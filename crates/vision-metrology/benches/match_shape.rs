@@ -1,7 +1,10 @@
+use std::num::NonZeroUsize;
+
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 use vision_metrology::matching::{
     ShapeMatcher, ShapeModel, ShapeModelBuilder, ShapeModelConfig, ShapeSearchConfig,
+    ShapeSearchTuning,
 };
 use vision_metrology::{Image, Rect2f};
 
@@ -39,7 +42,7 @@ fn model_and_scene() -> (ShapeModel, Image<u8>) {
         height: 240.0,
     };
     let cfg = ShapeModelConfig {
-        max_points: 800,
+        max_points: NonZeroUsize::new(800),
         ..Default::default()
     };
     let model = ShapeModelBuilder::new()
@@ -106,7 +109,7 @@ fn bench_create(c: &mut Criterion) {
         height: 240.0,
     };
     let cfg = ShapeModelConfig {
-        max_points: 800,
+        max_points: NonZeroUsize::new(800),
         ..Default::default()
     };
     let mut builder = ShapeModelBuilder::new();
@@ -184,7 +187,10 @@ fn bench_find_greedy0(c: &mut Criterion) {
     let (model, scene) = model_and_scene();
     let view = scene.as_view();
     let cfg = ShapeSearchConfig {
-        greediness: 0.0,
+        tuning: ShapeSearchTuning {
+            greediness: 0.0,
+            ..Default::default()
+        },
         ..Default::default()
     };
     let mut matcher = ShapeMatcher::new();
@@ -205,7 +211,7 @@ fn bench_find_scale(c: &mut Criterion) {
         height: 240.0,
     };
     let cfg = ShapeModelConfig {
-        max_points: 800,
+        max_points: NonZeroUsize::new(800),
         scale_range: (0.8, 1.25),
         ..Default::default()
     };

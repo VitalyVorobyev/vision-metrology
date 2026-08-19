@@ -80,13 +80,19 @@ impl MapBuffers {
 ///
 /// # Example
 /// ```no_run
+/// use std::num::NonZeroUsize;
+///
 /// use vision_metrology::Image;
 /// use vision_metrology::matching::{ShapeMatcher, ShapeModel, ShapeSearchConfig};
 ///
 /// # fn run(model: &ShapeModel) {
 /// let scene: Image<u8> = Image::new_fill(1280, 1024, 0);
 /// let mut matcher = ShapeMatcher::new();
-/// let cfg = ShapeSearchConfig { min_score: 0.6, max_matches: 4, ..Default::default() };
+/// let cfg = ShapeSearchConfig {
+///     min_score: 0.6,
+///     max_matches: NonZeroUsize::new(4),
+///     ..Default::default()
+/// };
 ///
 /// for m in matcher.find(&scene.as_view(), model, &cfg) {
 ///     println!("{:?} at {:.1} deg, score {:.2}", m.position, m.angle().to_degrees(), m.score);
@@ -124,8 +130,10 @@ impl ShapeMatcher {
 
     /// Find instances of `model` in a scene of any [`Pixel`] type.
     ///
-    /// [`ShapeSearchConfig::min_contrast`] is expressed on the input pixel
-    /// scale, so it needs raising for 16-bit data and re-tuning for `f32`.
+    /// [`Contrast::Raw`](super::Contrast::Raw) `min_contrast` is expressed on
+    /// the input pixel scale, so it needs raising for 16-bit data and re-tuning
+    /// for `f32`; [`Contrast::FractionOfRange`](super::Contrast::FractionOfRange)
+    /// avoids that by measuring the scene.
     pub fn find<P: Pixel>(
         &mut self,
         img: &ImageView<'_, P>,
@@ -134,13 +142,19 @@ impl ShapeMatcher {
     ) -> Vec<ShapeMatch> {
         #[cfg(feature = "trace-cands")]
         let t = std::time::Instant::now();
+        let min_contrast = cfg.min_contrast.resolve(img);
         self.pyr.build(img, model.num_levels());
         #[cfg(feature = "trace-cands")]
         eprintln!("pyr build: {:.3} ms", t.elapsed().as_secs_f64() * 1e3);
-        self.run(model, cfg)
+        self.run(model, cfg, min_contrast)
     }
 
-    fn run(&mut self, model: &ShapeModel, cfg: &ShapeSearchConfig) -> Vec<ShapeMatch> {
+    fn run(
+        &mut self,
+        model: &ShapeModel,
+        cfg: &ShapeSearchConfig,
+        min_contrast: f32,
+    ) -> Vec<ShapeMatch> {
         #[cfg(feature = "trace-cands")]
         let t_run = std::time::Instant::now();
         self.truncated = false;
@@ -160,9 +174,9 @@ impl ShapeMatcher {
         for level in 0..n_lv {
             let img = self.pyr.level(level).expect("level < n_lv");
             if level == top {
-                self.fields[level].build_image_f32(img, model.smooth(), cfg.min_contrast);
+                self.fields[level].build_image_f32(img, model.smooth(), min_contrast);
             } else {
-                self.fields[level].begin_tiled_f32(img, model.smooth(), cfg.min_contrast);
+                self.fields[level].begin_tiled_f32(img, model.smooth(), min_contrast);
             }
         }
         #[cfg(feature = "trace-cands")]
@@ -171,7 +185,7 @@ impl ShapeMatcher {
             t_run.elapsed().as_secs_f64() * 1e3
         );
 
-        let last = cfg.last_level.min(top);
+        let last = cfg.tuning.last_level.min(top);
         let angles = intersect(
             cfg.angle_range.unwrap_or(model.angle_range()),
             model.angle_range(),
@@ -203,13 +217,13 @@ impl ShapeMatcher {
         }
         let lvl = model.level(top).expect("top < num_levels");
         let coarse = if top > last {
-            cfg.min_score * cfg.coarse_score_factor
+            cfg.min_score * cfg.tuning.coarse_score_factor
         } else {
             cfg.min_score
         };
-        let bound = Bound::new(lvl.points.len(), cfg.greediness, coarse);
-        let ang = Grid::angles(angles, step_at(cfg.angle_step, lvl.angle_step, top));
-        let sca = Grid::scales(scales, step_at(cfg.scale_step, lvl.scale_step, top));
+        let bound = Bound::new(lvl.points.len(), cfg.tuning.greediness, coarse);
+        let ang = Grid::angles(angles, step_at(cfg.tuning.angle_step, lvl.angle_step, top));
+        let sca = Grid::scales(scales, step_at(cfg.tuning.scale_step, lvl.scale_step, top));
 
         cands.clear();
         maps.resize(span.width() * span.height());
@@ -230,7 +244,7 @@ impl ShapeMatcher {
                 cands,
             );
         }
-        *truncated = cap_candidates(cands, cfg.max_candidates);
+        *truncated = cap_candidates(cands, cfg.tuning.max_candidates);
         #[cfg(feature = "trace-cands")]
         {
             let mut pos: Vec<(i32, i32)> = cands.iter().map(|c| (c.x, c.y)).collect();
@@ -253,11 +267,11 @@ impl ShapeMatcher {
             let img = pyr.level(level).expect("level < n_lv");
             let span = Span::for_level(cfg.roi, level, img.width(), img.height());
             let thresh = if level > last {
-                cfg.min_score * cfg.coarse_score_factor
+                cfg.min_score * cfg.tuning.coarse_score_factor
             } else {
                 cfg.min_score
             };
-            let bound = Bound::new(lvl.points.len(), cfg.greediness, thresh);
+            let bound = Bound::new(lvl.points.len(), cfg.tuning.greediness, thresh);
             next.clear();
             for cand in cands.iter() {
                 // Candidates arrive in the coarser level's coordinates;
@@ -275,8 +289,8 @@ impl ShapeMatcher {
                     &lvl.points,
                     span,
                     *cand,
-                    step_at(cfg.angle_step, lvl.angle_step, level),
-                    step_at(cfg.scale_step, lvl.scale_step, level),
+                    step_at(cfg.tuning.angle_step, lvl.angle_step, level),
+                    step_at(cfg.tuning.scale_step, lvl.scale_step, level),
                     angles,
                     scales,
                     polarity,
@@ -329,21 +343,14 @@ impl ShapeMatcher {
                     field,
                     &lvl.points,
                     pose,
-                    step_at(cfg.angle_step, lvl.angle_step, last),
-                    step_at(cfg.scale_step, lvl.scale_step, last),
+                    step_at(cfg.tuning.angle_step, lvl.angle_step, last),
+                    step_at(cfg.tuning.scale_step, lvl.scale_step, last),
                     polarity,
                     rot,
                 );
             }
             if cfg.refinement == Refinement::LeastSquares {
-                pose = least_squares(
-                    field,
-                    &lvl.points,
-                    pose,
-                    lvl.radius,
-                    cfg.min_contrast,
-                    polarity,
-                );
+                pose = least_squares(field, &lvl.points, pose, lvl.radius, min_contrast, polarity);
             }
 
             let (score, support) = score_pose(
@@ -427,11 +434,10 @@ fn pose_from(position: Point2f, angle: f32, scale: f32, origin: Point2f) -> Simi
 /// The model radius halves per level, so one pixel of tip motion corresponds to
 /// twice the angle: an explicitly configured level-0 step doubles per level.
 #[inline]
-fn step_at(configured: f32, derived: f32, level: usize) -> f32 {
-    if configured > 0.0 {
-        configured * (1usize << level) as f32
-    } else {
-        derived
+fn step_at(configured: Option<f32>, derived: f32, level: usize) -> f32 {
+    match configured {
+        Some(step) if step > 0.0 => step * (1usize << level) as f32,
+        _ => derived,
     }
 }
 
@@ -648,10 +654,10 @@ mod tests {
 
     #[test]
     fn step_scaling_follows_the_halving_radius() {
-        assert!((step_at(0.01, 9.9, 0) - 0.01).abs() < 1e-9);
-        assert!((step_at(0.01, 9.9, 3) - 0.08).abs() < 1e-9);
+        assert!((step_at(Some(0.01), 9.9, 0) - 0.01).abs() < 1e-9);
+        assert!((step_at(Some(0.01), 9.9, 3) - 0.08).abs() < 1e-9);
         // Zero means "use the model's own derived step".
-        assert!((step_at(0.0, 9.9, 3) - 9.9).abs() < 1e-9);
+        assert!((step_at(None, 9.9, 3) - 9.9).abs() < 1e-9);
     }
 
     #[test]

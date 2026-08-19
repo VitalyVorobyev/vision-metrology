@@ -25,13 +25,15 @@
 //! Units are **pixels**. Millimetres arrive with the `metric` module
 //! (roadmap B5), which converts a fitted primitive through a calibration.
 
+use std::num::NonZeroUsize;
+
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
 use clap::Parser;
 use vision_metrology::fit::{FitConfig, RansacConfig, RobustLoss, fit_circle};
 use vision_metrology::matching::{
-    ShapeMatcher, ShapeModel, ShapeModelBuilder, ShapeModelConfig, ShapeSearchConfig,
+    Contrast, ShapeMatcher, ShapeModel, ShapeModelBuilder, ShapeModelConfig, ShapeSearchConfig,
 };
 use vision_metrology::measure::{MetrologyModel, MetrologyObject, MetrologyResult, MetrologyShape};
 use vision_metrology::{Edge2DConfig, Edge2DDetector, Image, Point2f, Rect2f};
@@ -73,12 +75,12 @@ fn main() -> Result<()> {
     // Build the tab model, then measure the rim once in the first frame and
     // express it in the tab's own frame.
     let first = load_gray(&frames[0])?;
-    let model = build_model(&first, args.roi, args.model_min_contrast)?;
+    let model = build_model(&first, args.roi, Contrast::Raw(args.model_min_contrast))?;
 
     let mut matcher = ShapeMatcher::new();
     let search = ShapeSearchConfig {
         min_score: 0.5,
-        max_matches: 1,
+        max_matches: NonZeroUsize::new(1),
         ..ShapeSearchConfig::default()
     };
     let taught_pose = matcher
@@ -230,7 +232,7 @@ fn teach_rim(
     .map_err(|e| anyhow::anyhow!("rim teach failed: {e}"))
 }
 
-fn build_model(img: &Image<u8>, roi: Rect2f, min_contrast: f32) -> Result<ShapeModel> {
+fn build_model(img: &Image<u8>, roi: Rect2f, min_contrast: Contrast) -> Result<ShapeModel> {
     ShapeModelBuilder::new()
         .build(
             &img.as_view(),

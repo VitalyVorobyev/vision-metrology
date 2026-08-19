@@ -1,6 +1,8 @@
 //! Configuration for shape model creation and search.
 
-use vm_primitives::{Edge2DConfig, Point2f, Rect2f};
+use core::num::NonZeroUsize;
+
+use vm_primitives::{Edge2DConfig, ImageView, Pixel, Point2f, Rect2f};
 
 /// How the sign of the gradient direction is treated when scoring.
 ///
@@ -46,6 +48,80 @@ pub enum Refinement {
     LeastSquares,
 }
 
+/// A gradient-magnitude floor, and the unit it is expressed in.
+///
+/// Both `min_contrast` fields used to be a bare `f32` in **Scharr response
+/// units on the input pixel scale** — a number that silently changes meaning
+/// with the pixel type. A threshold of 10 sits just above 8-bit sensor noise
+/// and admits essentially everything in a `u16` frame, where the same physical
+/// contrast produces a response 257× larger. Every `u16` or `f32` user had to
+/// re-derive a value that the `u8` user got for free, and nothing in the type
+/// said so.
+///
+/// [`FractionOfRange`](Self::FractionOfRange) states the threshold relative to
+/// the image itself and therefore transfers across pixel types unchanged.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Contrast {
+    /// Absolute Scharr response units on the input pixel scale.
+    ///
+    /// What the field always meant. Exact and cheap — nothing is measured from
+    /// the image — but tied to the pixel type it was tuned on.
+    Raw(f32),
+    /// A fraction of the response an ideal step across the image's full
+    /// dynamic range would produce.
+    ///
+    /// The unsmoothed Scharr operator answers such a step with
+    /// `16 · (max − min)` of the image, so `FractionOfRange(f)` resolves to
+    /// `f · 16 · (max − min)`. The default binomial pre-smooth spreads a real
+    /// step over two pixels and so reaches roughly half of that, which makes
+    /// `f ≈ 0.1` the practical "clearly a real edge" setting and
+    /// `f ≈ 0.0025` the equivalent of the historical `Raw(10.0)` on `u8`.
+    ///
+    /// Costs one min/max pass over the image per call.
+    FractionOfRange(f32),
+}
+
+impl Default for Contrast {
+    /// `Raw(0.0)` — accept everything the edge detector produced.
+    fn default() -> Self {
+        Contrast::Raw(0.0)
+    }
+}
+
+/// Scharr's response to an ideal unit-amplitude step: `3 + 10 + 3` on each side.
+const SCHARR_FULL_STEP_GAIN: f32 = 16.0;
+
+impl Contrast {
+    /// Resolve to Scharr response units, measuring `img` only if needed.
+    pub(crate) fn resolve<P: Pixel>(self, img: &ImageView<'_, P>) -> f32 {
+        match self {
+            Contrast::Raw(v) => v,
+            Contrast::FractionOfRange(f) => f * SCHARR_FULL_STEP_GAIN * dynamic_range(img),
+        }
+    }
+
+    /// Resolve without an image. `None` when the variant needs one.
+    pub(crate) fn resolve_raw(self) -> Option<f32> {
+        match self {
+            Contrast::Raw(v) => Some(v),
+            Contrast::FractionOfRange(_) => None,
+        }
+    }
+}
+
+/// `max − min` over the whole view, in the pixel type's own `f32` units.
+fn dynamic_range<P: Pixel>(img: &ImageView<'_, P>) -> f32 {
+    let (mut lo, mut hi) = (f32::INFINITY, f32::NEG_INFINITY);
+    for y in 0..img.height() {
+        for &v in img.row(y) {
+            let v = v.to_f32();
+            lo = lo.min(v);
+            hi = hi.max(v);
+        }
+    }
+    if hi > lo { hi - lo } else { 0.0 }
+}
+
 /// Parameters for building a [`ShapeModel`](super::ShapeModel).
 ///
 /// The intended `angle_range` and `scale_range` are stored in the model because
@@ -53,24 +129,28 @@ pub enum Refinement {
 /// the search sweeps with. A search may narrow them but not widen them.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ShapeModelConfig {
-    /// Number of pyramid levels, or `0` to choose automatically.
+    /// Number of pyramid levels; `None` chooses automatically.
     ///
     /// Automatic selection keeps adding levels while the level still has at
     /// least `min_points_per_level` points and a radius of at least 6 px, up to
     /// a hard ceiling of 5 levels.
-    pub num_levels: usize,
+    pub num_levels: Option<NonZeroUsize>,
     /// Edge detector configuration used at every pyramid level.
     pub edge: Edge2DConfig,
     /// Additional gradient-magnitude floor for a point to enter the model.
-    /// `0.0` keeps everything the edge detector produced.
-    pub min_contrast: f32,
-    /// Maximum points per level; the excess is grid-decimated. `0` = unlimited.
+    ///
+    /// The single most consequential setting on low-relief parts: because the
+    /// score divides by the full point count, a model point on faint
+    /// non-repeating surface shading *dilutes* every later score rather than
+    /// merely failing to help.
+    pub min_contrast: Contrast,
+    /// Maximum points per level; the excess is grid-decimated. `None` = unlimited.
     ///
     /// Decimation is always spatially uniform. Keeping the *strongest* `n`
     /// points instead would bias the score upward and break the
     /// `score ≈ 1 − occluded_fraction` property the `min_score` threshold rests
     /// on.
-    pub max_points: usize,
+    pub max_points: Option<NonZeroUsize>,
     /// Reference point in reference-image coordinates. `None` = centroid of the
     /// level-0 points, which minimises the model radius and therefore the
     /// number of angle steps the search needs.
@@ -92,10 +172,10 @@ pub struct ShapeModelConfig {
 impl Default for ShapeModelConfig {
     fn default() -> Self {
         Self {
-            num_levels: 0,
+            num_levels: None,
             edge: Edge2DConfig::default(),
-            min_contrast: 0.0,
-            max_points: 512,
+            min_contrast: Contrast::Raw(0.0),
+            max_points: NonZeroUsize::new(512),
             origin: None,
             angle_range: (-core::f32::consts::PI, core::f32::consts::PI),
             scale_range: (1.0, 1.0),
@@ -106,20 +186,18 @@ impl Default for ShapeModelConfig {
 }
 
 /// Parameters for a [`ShapeMatcher`](super::ShapeMatcher) search.
+///
+/// These eight fields describe **what you are looking for**. The knobs that
+/// describe *how hard the search works* — step sizes, candidate budgets, the
+/// greedy abort — live in [`ShapeSearchTuning`] under `tuning`, so the common
+/// case stays `ShapeSearchConfig { min_score: 0.6, ..Default::default() }` and
+/// nobody reaches for `max_candidates` before they have measured anything.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ShapeSearchConfig {
     /// Minimum score in `[0, 1]` for a match to be reported.
     pub min_score: f32,
-    /// Greedy early-termination strength.
-    ///
-    /// `0.0` uses a provably safe bound — it never rejects a pose that would
-    /// have scored at least `min_score` — and is the exhaustive reference used
-    /// in tests. `1.0` requires the running mean to stay above `min_score` at
-    /// every step: fastest, but it will miss a match whose first-evaluated
-    /// points happen to be the occluded ones.
-    pub greediness: f32,
-    /// Maximum number of instances to report. `0` = unlimited.
-    pub max_matches: usize,
+    /// Maximum number of instances to report. `None` = unlimited.
+    pub max_matches: Option<NonZeroUsize>,
     /// Maximum fraction of a candidate's model points that may fall on an
     /// already-accepted instance before the candidate is suppressed.
     pub max_overlap: f32,
@@ -131,19 +209,33 @@ pub struct ShapeSearchConfig {
     pub angle_range: Option<(f32, f32)>,
     /// Scale range to sweep; `None` uses the model's own range.
     pub scale_range: Option<(f32, f32)>,
-    /// Level-0 angle step in radians; `0.0` derives it from the model radius.
-    pub angle_step: f32,
-    /// Level-0 relative scale step; `0.0` derives it from the model radius.
-    pub scale_step: f32,
     /// Scene gradients weaker than this contribute nothing to the score.
-    ///
-    /// Expressed in Scharr response units on the input pixel scale: a clean
-    /// black/white `u8` step gives a gradient magnitude of about 2000, so the
-    /// default of 10 sits safely above 8-bit sensor noise. **Re-tune for `u16`
-    /// and `f32` inputs**, whose pixel scales differ by orders of magnitude.
-    pub min_contrast: f32,
+    pub min_contrast: Contrast,
     /// Subpixel pose refinement mode.
     pub refinement: Refinement,
+    /// Search effort: the knobs a working setup rarely touches.
+    pub tuning: ShapeSearchTuning,
+}
+
+/// Advanced search knobs for [`ShapeSearchConfig`].
+///
+/// Every field here trades run time against the chance of missing a match that
+/// `min_score` says should be reported. Defaults are what the benches and the
+/// canend dataset were tuned on.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ShapeSearchTuning {
+    /// Greedy early-termination strength.
+    ///
+    /// `0.0` uses a provably safe bound — it never rejects a pose that would
+    /// have scored at least `min_score` — and is the exhaustive reference used
+    /// in tests. `1.0` requires the running mean to stay above `min_score` at
+    /// every step: fastest, but it will miss a match whose first-evaluated
+    /// points happen to be the occluded ones.
+    pub greediness: f32,
+    /// Level-0 angle step in radians; `None` derives it from the model radius.
+    pub angle_step: Option<f32>,
+    /// Level-0 relative scale step; `None` derives it from the model radius.
+    pub scale_step: Option<f32>,
     /// Finest pyramid level to descend to. `0` is full resolution.
     pub last_level: usize,
     /// Maximum candidates carried between pyramid levels.
@@ -159,16 +251,24 @@ impl Default for ShapeSearchConfig {
     fn default() -> Self {
         Self {
             min_score: 0.5,
-            greediness: 0.9,
-            max_matches: 1,
+            max_matches: NonZeroUsize::new(1),
             max_overlap: 0.5,
             roi: None,
             angle_range: None,
             scale_range: None,
-            angle_step: 0.0,
-            scale_step: 0.0,
-            min_contrast: 10.0,
+            min_contrast: Contrast::Raw(10.0),
             refinement: Refinement::default(),
+            tuning: ShapeSearchTuning::default(),
+        }
+    }
+}
+
+impl Default for ShapeSearchTuning {
+    fn default() -> Self {
+        Self {
+            greediness: 0.9,
+            angle_step: None,
+            scale_step: None,
             last_level: 0,
             max_candidates: 128,
             coarse_score_factor: 0.9,
@@ -178,22 +278,53 @@ impl Default for ShapeSearchConfig {
 
 #[cfg(test)]
 mod tests {
-    use super::{Polarity, Refinement, ShapeModelConfig, ShapeSearchConfig};
+    use core::num::NonZeroUsize;
+
+    use super::{Contrast, Polarity, Refinement, ShapeModelConfig, ShapeSearchConfig};
+    use vm_primitives::{Image, ImageView};
 
     #[test]
     fn defaults_are_the_documented_ones() {
         let m = ShapeModelConfig::default();
-        assert_eq!(m.num_levels, 0);
-        assert_eq!(m.max_points, 512);
+        assert_eq!(m.num_levels, None);
+        assert_eq!(m.max_points, NonZeroUsize::new(512));
         assert_eq!(m.polarity, Polarity::Match);
         assert_eq!(m.scale_range, (1.0, 1.0));
         assert_eq!(m.min_points_per_level, 8);
+        assert_eq!(m.min_contrast, Contrast::Raw(0.0));
 
         let s = ShapeSearchConfig::default();
         assert_eq!(s.min_score, 0.5);
-        assert_eq!(s.greediness, 0.9);
-        assert_eq!(s.max_matches, 1);
+        assert_eq!(s.tuning.greediness, 0.9);
+        assert_eq!(s.max_matches, NonZeroUsize::new(1));
         assert_eq!(s.refinement, Refinement::Interpolate);
-        assert_eq!(s.last_level, 0);
+        assert_eq!(s.tuning.last_level, 0);
+        assert_eq!(s.min_contrast, Contrast::Raw(10.0));
+    }
+
+    /// The whole point of `FractionOfRange`: the same number on `u8` and `u16`
+    /// data of the same physical contrast resolves proportionally, so a value
+    /// tuned on one transfers to the other.
+    #[test]
+    fn fraction_of_range_scales_with_the_pixel_type() {
+        let img8 = Image::from_vec(2, 1, vec![0u8, 200]).expect("valid image");
+        let img16 = Image::from_vec(2, 1, vec![0u16, 200 * 257]).expect("valid image");
+
+        let c = Contrast::FractionOfRange(0.1);
+        assert_eq!(c.resolve(&img8.as_view()), 0.1 * 16.0 * 200.0);
+        assert_eq!(c.resolve(&img16.as_view()), 0.1 * 16.0 * 200.0 * 257.0);
+
+        // Raw is untouched by the image, which is what makes it the default.
+        let r = Contrast::Raw(10.0);
+        assert_eq!(r.resolve(&img8.as_view()), 10.0);
+        assert_eq!(r.resolve(&img16.as_view()), 10.0);
+    }
+
+    /// A flat image has no range, so no threshold can be derived from it.
+    #[test]
+    fn a_flat_image_has_zero_range() {
+        let flat = Image::new_fill(4, 4, 128u8);
+        let v: ImageView<'_, u8> = flat.as_view();
+        assert_eq!(Contrast::FractionOfRange(0.5).resolve(&v), 0.0);
     }
 }

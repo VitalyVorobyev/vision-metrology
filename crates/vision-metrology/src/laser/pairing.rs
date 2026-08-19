@@ -14,14 +14,14 @@ pub(super) fn detect_pair<P: Pixel>(
     x_offset: usize,
     scan_i: usize,
 ) -> Option<LaserSample> {
-    let peaks = detector.detect_in_ref(line, &cfg.edge_cfg);
+    let peaks = detector.detect_in_ref(line, &cfg.tuning.edge_cfg);
     let pair = best_pair_with_prior_offset(
         peaks,
         x_offset as f32,
         cfg.min_width,
         cfg.max_width,
         predicted,
-        cfg.prior_weight,
+        cfg.tuning.prior_weight,
     )?;
 
     accept_pair(pair, predicted, tracking, cfg, scan_i)
@@ -38,7 +38,7 @@ fn accept_pair(
         return None;
     }
 
-    if tracking && (pair.center_x - predicted).abs() > cfg.max_jump_px {
+    if tracking && (pair.center_x - predicted).abs() > cfg.tuning.max_jump_px {
         return None;
     }
 

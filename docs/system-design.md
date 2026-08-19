@@ -62,8 +62,19 @@ matching update here.
    `unsafe_op_in_unsafe_fn` is denied workspace-wide.
 8. **Error type.** `vm_primitives::Error` everywhere; `&'static str` payloads only.
 9. **`'static` public outputs.** No lifetimes in public result types (PyO3 compatibility).
-10. **Config-struct + reusable-detector API pattern** throughout; `0.0`/`0` mean "auto"
-    where a config field supports it.
+10. **Config-struct + reusable-detector API pattern, and no sentinel values.** A config
+    is a plain `pub` struct with `Default`, constructed with `..Default::default()`; a
+    detector owns its scratch and is reused across calls. "Absent", "automatic" and
+    "unlimited" are spelled in the type — `Option<T>`, `Option<NonZeroUsize>`, or a named
+    enum — never as `0`, `0.0`, or an empty range. A magic value is indistinguishable from
+    a legitimate one (`low_thresh = 0.0` meant *both* "no threshold" and "choose one for
+    me"), does not survive a language boundary (`None` is what a Python caller writes),
+    and cannot be checked by the compiler.
+    A config that grows past ~8 fields splits: the fields that describe **what is being
+    looked for** stay at the top level; the ones that describe **how hard the search
+    works** move into a nested `tuning: XTuning` with its own `Default`. Numeric thresholds
+    that depend on the pixel type carry a unit type (see `Contrast`) rather than a
+    comment saying which pixel type they were tuned for.
 11. **Default border mode is `Clamp`** in core/edge unless configured otherwise.
 12. **Determinism.** No RNG in library code; tests use synthetic fixtures (seeded if
     randomness is unavoidable); f32 sort ties broken explicitly (`(−score, x, y)`).
@@ -259,6 +270,47 @@ The gates are only worth having if they are checked. `--all-features` can never 
 `vision-metrology` and a `--feature-powerset` over `vm-primitives`.
 
 `Error` is `#[non_exhaustive]`, so adding a variant stops being a breaking change.
+
+### Configs say what they mean: the split, the sentinels, and `Contrast` (2026-08)
+Three problems in one pass, all of them in the *type* rather than the algorithm.
+
+**The split.** `ShapeSearchConfig` had 14 flat fields, six of which (`max_candidates`,
+`coarse_score_factor`, `greediness`, the two step overrides, `last_level`) are search
+*effort* — they trade run time against the chance of missing a match `min_score` says
+should be reported. Presenting them next to `min_score` invites tuning by field name.
+They now live in `tuning: ShapeSearchTuning`, which has its own `Default`, so the common
+case is unchanged and the advanced case is one word longer. `LaserExtractConfig` split the
+same way: `axis` / `min_width` / `max_width` / `min_score` say what a stripe *is*;
+`tuning` holds the coarse method, ROI half-width, jump and gap limits, prior weight, edge
+config and smoothing. No builders — the plain-struct-plus-`..Default::default()` form is
+what makes serde and the Python mirror cheap.
+
+**The sentinels.** `0`/`0.0` meaning "auto" is gone (invariant 10 rewritten):
+`num_levels`, `max_points`, `max_matches` are `Option<NonZeroUsize>`; `angle_step`,
+`scale_step` are `Option<f32>`; `Edge2DConfig`'s two threshold fields became one
+`Hysteresis::{Auto, Manual{low, high}}`, which also fixes the case where a caller set one
+of the pair and silently got neither meaning. `NonZeroUsize::new(512)` *is* an
+`Option<NonZeroUsize>`, so struct literals stayed readable.
+
+`Edge2DConfig::pre_smooth: bool` alongside `smooth_kind: SmoothKind` was two encodings of
+one decision, with `pre_smooth: false, smooth_kind: Binomial3` representable and
+meaningless. `SmoothKind::None` already said it; the bool is gone.
+
+`LaserExtractConfig::enable_smoothing: bool` turned out to be real — a median-of-5 over
+each contiguous run of valid samples — with the window hard-coded where no caller could
+see it. It is now `CenterSmoothing::{None, Median { half_window }}`, and the filter is
+parameterised by it.
+
+**`Contrast`.** `min_contrast` was documented as "Scharr response units on the input pixel
+scale", which is to say: a number whose meaning changes by 257× between `u8` and `u16`
+data of identical physical contrast. `Contrast::Raw(f32)` keeps exactly that behaviour and
+is the default; `Contrast::FractionOfRange(f)` resolves to `f · 16 · (max − min)` of the
+image being processed — 16 being Scharr's response to an ideal unit step — and therefore
+transfers between pixel types unchanged. The model resolves it against the reference
+*ROI*, not the frame; the search resolves it against the scene; `ShapeModel::from_edgels`
+has no image and returns `InvalidConfig` rather than inventing a range from the very
+strengths it is about to filter. `Raw` costs nothing, so the min/max pass only happens
+when a fraction was actually asked for.
 
 ### The v0.3 visibility sweep: one path per name, and nothing else public (2026-08)
 Invariant 17 said "one canonical path per name"; the crate root said otherwise. A flat
