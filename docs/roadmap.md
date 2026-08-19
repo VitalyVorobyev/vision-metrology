@@ -5,94 +5,199 @@ Where the project is going, track by track, with acceptance criteria. Status val
 not appended. Background and rationale live in [`system-design.md`](system-design.md);
 deferred items and known debt in [`backlog.md`](backlog.md).
 
-## Completed foundations (2026-08)
+## Completed foundations
 
 | Milestone | PR |
 |---|---|
 | 12 → 3 crate consolidation, CI unblocked, docs realigned | #13 |
 | Dependency bumps, licensing, real CI (6 jobs), 4 algorithm bug fixes, 198 tests | #15 |
 | Shape-based object detection replacing the chamfer matcher; validated 256/256 on canend | #18 |
+| B-track closure, extractor split, serde model persistence | #20 |
+| Detection performance: lazy tiled direction fields, 7.8 → 3.46 ms full-360° | #21, #23 |
+| Visual diagnostics + corrmatch external validation | #22 |
 
-## Current tracks
+## Where this is going
 
-### Track 1 — B-track closure + de-spaghettification — `done` (PR #20)
-Split `laser/extractor.rs` (1717 lines) into `laser/{types, extractor, scan, pairing,
-coarse, gather, postprocess, tests}` with a private `ScanPixel` trait collapsing the
-u8/u16/f32 triplication (public API unchanged, extract bench regression gate ≤2%).
-`GridCtx` parameter struct removes the three `too_many_arguments` allows in
-`contour/build.rs`. Test gaps: edge1d Centroid path + threshold rejection + u8/u16 entry
-points, contour C4 + min_component_size, **T13** (greedy-bound
-safety: greediness 0 vs no-abort reference, bit-identical), **R3** (fine-toothed model at
-coarse levels — passes or documented). New benches: morph, edge1d, contour smooth, and a
-seeded **cluttered fixture** for match_shape. Model serialization: `serde` feature,
-versioned `ShapeModel` save/load, Python parity.
+The library can **find** a part and **see** its edges. It cannot yet **measure** one: there
+is no caliper, no line fit, no circle fit, no general filter, no image warp, no
+pixel→millimetre bridge. Tracks B and C close that, so the whole chain works end to end:
 
-**Accept:** all quality gates green; extractor files ≤ ~400 lines; no
-`too_many_arguments` allows in contour; extract bench within 2% of baseline.
+```
+acquire → rectify → locate (matching) → fixture (pose) → measure (calipers)
+        → fit primitives (robust) → gauge in millimetres → pass / fail
+```
 
-### Track 2 — detection performance — `done` (PRs #21, #23)
-Direction (per user): pay serious attention to performance; ~5 ms full-360° detection is
-the aspiration, and the hard context is a ~30 ms budget for the *whole* multi-stage
-analysis of a frame, of which detection is stage 1.
-Landed: clean 360° 7.8 → 3.46 ms, clutter 10.4 → 6.57 ms, tracked (ROI + angle prior)
-1.49 ms, canend medians 5.6–25.5 ms at 256/256 with bit-identical scores.
-Levers in order, each gated on measurement: (1) lazy 64×64-tiled direction fields —
-full field only at the top level, tiles on demand around candidates below it;
-(2) integer Scharr directly on u8 — dropped: measurement showed the pyramid+conversion
-at 0.13 ms, not worth it; (3) quantized directions + SIMD — deferred to backlog with
-measured numbers. Landed instead: blocked span scoring (bit-identical, vector-friendly),
-degenerate scale/angle collapse in candidate refinement, tile-determinism tests,
-tracked-ROI bench, `trace-cands` diagnostics feature. PreparedScene moved to backlog
-(lazy tiles removed most of the amortization win). The `workflow_dispatch` bench
-workflow landed (criterion table into the job summary, raw estimates as an artifact —
-shared-runner numbers are indicative only; M4 Pro references stay in system-design.md).
-`truncated()` root-cause is understood (adversarial
-fixture genuinely has >128 spatially distinct coarse hypotheses; the funnel handles
-them — 128→64→15→3→1 — and detection is unaffected).
+---
 
-**Accept:** <5 ms on both fixtures; tile-determinism + T13 green; canend 256/256
-re-validated; `truncated()` resolved or explained + bounded; per-stage numbers recorded
-in system-design.md.
+## Track A — v0.2 substrate reset — `done`
 
-### Track 3 — visual diagnostics + corrmatch external validation — `done`
-`corrmatch` (crates.io) as a workspace dev-dependency. Diagnostic overlay replacing the
-current one: scene panel with pose quad + axes glyph; **registration panel** — zoomed
-checkerboard composite of the pose-warped reference patch vs the scene (sub-pixel
-misregistration visible as edge breaks at checker boundaries); **contribution panel** —
-model points colored by their individual score term. `examples/pose_audit/`: `audit`
-(overlays + external ZNCC per match via `MaskedTemplatePlan::from_rotated_u8` +
-`score_masked_zncc_at`) and `xcheck` (corrmatch full search vs ShapeMatcher, Δposition/
-Δangle stats). Coordinate-convention conversion pinned by a unit test. **Repeatability on
-real data**: rim fit via RANSAC ellipse per frame, tab pose in rim-centered coordinates,
-σ across frames reported (target σ < 0.1 px, < 0.1°). Regenerated canend report.
+One breaking wave over the whole surface, taken while nothing is published.
 
-**Accept:** pose_audit over ≥3 canend folders with ZNCC ≥ 0.8 on all found matches;
-xcheck Δposition p95 < 1 px, Δangle p95 < 0.5°; repeatability numbers published.
-**Measured (full regeneration, all 6 canend folders, 256 frames):** 256/256 found;
-per-folder ZNCC p50 0.915–0.961, worst single frame 0.82 (a wrong pose collapses it by
-≥0.3, pinned by test). xcheck over 20 frames × 3 set1 folders: |Δpos| p95 0.87–1.31 px,
-|Δangle| p95 0.35–0.66° (sums BOTH matchers' errors incl. corrmatch's angle quantization;
-accepted). Cross-polarity: dome model on dark-field frames, IgnoreGlobal — 50/50 at score
-p50 0.936 with *negative* ZNCC (−0.52), independently confirming the contrast inversion.
-Rim-relative spread σ(radius) 0.8–3.3 px / σ(φ−angle) 1.1–3.9° over *different physical
-cans* per folder — an upper bound bundling real part-to-part tab variation, not detection
-repeatability. Report (3.4) regenerated with three-panel diagnostic plates, ZNCC/xcheck
-tables, and honest repeatability labelling.
+**Landed:**
+- **`Pixel`**, a sealed trait over `u8`/`u16`/`f32`. Every `_u8`/`_u16`/`_f32` triplet
+  collapsed into one generic entry point: **40 entry points → 16**. `laser`'s private
+  `ScanPixel` deleted.
+- **`Pyramid`** generic over `Pixel`, `unsafe`-free (5 blocks removed, and 1.1% *faster*
+  than the raw-pointer version it replaced), `downsample.rs` 489 → 189 lines. Optional
+  `PreSmooth::Binomial121` closes the primitive half of R3. `level_to_base` /
+  `base_to_level` are now the single implementation of invariant 2.
+- **`Point2f` / `Vec2f` are nalgebra aliases**; 7 conversion functions and ~250 lines of
+  hand-written operators gone. `Vec2fExt::normalized_or_zero` guards the NaN trap this
+  introduced.
+- **Module hygiene**: no glob re-exports, `prelude` on both crates, every domain module a
+  default-on feature, CI feature-matrix job. `Error` is `#[non_exhaustive]`.
+- **Six defects fixed**, three of which were silently corrupting measurements:
+  - `multiscale` mapped level-*l* edgels without the `(2^l − 1)/2` term, biasing every
+    fitted circle centre 0.07–0.10 px. **Module deleted** — its dedup and its `scale`
+    annotation were unsound too.
+  - LSD carried a second, divergent downsample and mapped endpoints back without the
+    half-pixel term: −0.50 px at the default config, −0.95 px on odd widths. It now uses
+    `pyr`, and its two fictional config fields (`scale`, which meant 0.5 not 0.8, and
+    `sigma_scale`, never read) are replaced by honest ones.
+  - `downsample2x2_mean_*_into` guarded a release-mode out-of-bounds write with a
+    `debug_assert!`; the size contract is now checked and returns `Error::SizeMismatch`.
+  - `Pyramid::ensure` was public and could construct 0×0 levels.
+  - `[profile.release]` was untuned despite a ~5 ms target: `lto = "thin"`,
+    `codegen-units = 1`, worth −2.6% / −1.9%.
+  - Four stale claims in the persistent-context docs.
 
-### Track 4 — metrology bridge — `planned`
-Runtime `metric` module consuming vision-calibration JSON exports (offline/runtime split —
-see system-design.md): mirror types `PinholeIntrinsics`, `BrownConrady5`, `LaserPlane` on
-nalgebra 0.35; alloc-free `undistort_pixel`, `pixel_to_ray`, `ray_plane_intersect`,
-`laser_line_to_profile(&LaserLine, &Calib) -> Vec<Point3f>`, `pixel_to_plane_mm`.
-Golden-file test against a real calibration-rs export. Python parity — the headline demo:
-laser image → 3D profile in millimetres.
+**Verified:** all gates green including the feature matrix and `cargo doc -D warnings`;
+`shape_find_1280x1024_360deg` 3.42 → 3.36 ms and clutter 6.61 → 6.42 ms; canend set1
+150/150 across three folders with ZNCC p50 0.912–0.961, identical to four decimals.
 
-**Accept:** golden-file numeric parity with calibration-rs; profile demo runs from Python.
+---
+
+## Track B — the measurement spine — `planned`
+
+Each module ships with its own bench, doc example, Python parity, and an accuracy entry
+in Track C1.
+
+### B1 — `fit`: robust primitive fitting
+Absorbs `shape/{conic,fit_conic,ransac,fitter}`. Adds what is simply missing: **there is
+no line fit and no circle fit today**, the two most common metrology measurements.
+
+```rust
+pub enum RobustLoss { None, Huber { k: f32 }, Tukey { c: f32 } }
+pub struct Fit<M> { pub model: M, pub rms: f32, pub max_dev: f32,
+                    pub n_used: usize, pub inliers: Vec<u32> }
+
+pub fn fit_line(&[Point2f], &FitConfig)    -> Result<Fit<Line2f>, Error>;    // TLS + IRLS
+pub fn fit_circle(&[Point2f], &FitConfig)  -> Result<Fit<Circle2f>, Error>;  // Taubin → geometric
+pub fn fit_ellipse(&[Point2f], &FitConfig) -> Result<Fit<Ellipse2f>, Error>; // Fitzgibbon → geometric
+```
+
+Two invariants to adopt with it: **storage f32, accumulation f64**, and **every measurement
+reports its residual**. The geometric (orthogonal-distance) refinement stage is what
+separates a metrology fit from an algebraic one; the current ellipse path stops at
+algebraic + RANSAC.
+
+**Accept:** on synthetic ground truth, `fit_circle` recovers radius within 0.01 px and
+centre within 0.005 px at zero noise, degrades gracefully with 30% outliers, and its `rms`
+tracks the injected noise.
+
+### B2 — `measure`: calipers and the metrology model  ← the headline
+A geometric wrapper over the existing `Edge1DDetector` and `sample_bilinear_f32`.
+
+```rust
+pub struct MeasureRect { center: Point2f, angle: f32, half_len: f32, half_width: f32 }
+pub struct MeasureArc  { center: Point2f, radius: f32, angle_start: f32,
+                         angle_extent: f32, half_width: f32 }
+
+impl MeasureHandle {
+    pub fn pos<P: Pixel>(&mut self,   img: &ImageView<'_, P>) -> &[MeasureEdge];
+    pub fn pairs<P: Pixel>(&mut self, img: &ImageView<'_, P>) -> &[MeasurePair];
+}
+
+impl MetrologyModel {
+    /// `fixture` is `ShapeMatch::pose` — that is the whole point.
+    pub fn apply<P: Pixel>(&mut self, img: &ImageView<'_, P>,
+                           fixture: &Similarity2f) -> &[MetrologyResult];
+}
+```
+
+For each position along the measurement axis, average `2·half_width+1` bilinear samples
+perpendicular into a 1-D profile, then hand it to the existing detector. `find` → `pose` →
+`apply` → fitted circle + rms → `metric` → millimetres closes the loop from "I found the
+part" to "the hole is 12.03 mm ± 0.01".
+
+**Accept:** caliper edge position unbiased to < 0.02 px on a synthetic step across the full
+angle sweep; a metrology model recovers a known circle from a rotated, translated fixture.
+
+### B3 — `filter`: the absent workhorse
+Separable and recursive (Deriche / van Vliet) Gaussian, sliding-window box mean, histogram
+median and rank (O(1) per pixel), grayscale erode/dilate/open/close/tophat
+(van Herk–Gil-Werman). `edge/conv1d.rs` folds in here. Feeds the pyramid pre-smooth and
+illumination correction.
+
+**Accept:** each filter matches a naive reference bit-for-bit on random fixtures; median and
+rank are O(1) in radius, measured rather than asserted.
+
+### B4 — `warp`: build once, apply per frame
+```rust
+impl Map {
+    pub fn affine(w, h, m: &Affine2f) -> Self;
+    pub fn projective(w, h, h: &Projective2f) -> Self;
+    pub fn polar(center: Point2f, r: Range<f32>, phi: Range<f32>, w, h) -> Self;
+    pub fn from_fn(w, h, f: impl Fn(f32, f32) -> (f32, f32)) -> Self;
+    pub fn apply<P: Pixel>(&self, src, dst, interp: Interp, border: BorderMode<P>);
+}
+```
+`polar` is the round-part unwrap, directly useful on canend. `from_fn` +
+`metric::undistort_pixel` gives undistortion maps for free once B5 lands.
+
+**Accept:** `polar` followed by its inverse recovers the source within 0.05 px; an affine
+map composed with its inverse is the identity to 1e-4.
+
+### B5 — `metric`: the calibration bridge
+Mirror `PinholeIntrinsics`, `BrownConrady5`, `LaserPlane` on nalgebra 0.35; alloc-free
+`undistort_pixel`, `pixel_to_ray`, `ray_plane_intersect`, `laser_line_to_profile`,
+`pixel_to_plane_mm`. Offline/runtime split as recorded in system-design.
+
+**Accept:** golden-file numeric parity with a real calibration-rs export; the laser →
+3-D-profile demo runs from Python.
+
+**Track B accept:** a new `examples/inspect_canend.rs` runs find → fixture → metrology
+model → millimetres → pass/fail on real canend data.
+
+---
+
+## Track C — credibility and infrastructure — `planned`
+
+### C1 — accuracy regression suite  ← the differentiator
+Performance is measured and recorded; **accuracy is not**, and for a metrology library the
+accuracy numbers *are* the product. Track A found three separate systematic biases that
+every existing test passed straight through. Add `tests/accuracy.rs` and a
+`docs/accuracy.md` table generated by an example, alongside the performance table:
+
+| Operator | Sweep | Report |
+|---|---|---|
+| `Edge2DDetector`, `Edge1DDetector` | edge angle 0–90°, blur σ 0.5–3, noise 0–5 LSB | bias, σ (px) |
+| `MeasureHandle::pos` | same, plus caliper width | bias, σ |
+| `fit_circle` / `fit_ellipse` | point count, arc extent, noise, outlier fraction | radius bias, centre σ |
+| `LaserExtractor` | stripe width, saturation, tilt | centre bias, σ |
+| `ShapeMatcher` | sub-pixel translation and rotation sweep | pose bias, σ |
+
+Gate each inside a recorded envelope. No open-source Rust CV crate publishes this.
+
+### C2 — blob features
+`ComponentStats` is bbox + centroid + count. Add second-order moments → orientation and
+elongation, plus convex hull, min-area rect, circularity, rectangularity. Cheap on top of
+the existing CCL and needed for blob-based inspection.
+
+### C3 — bindings and CI
+Python dtype dispatch (the bindings still accept only `uint8` while Rust is generic);
+generate the vm-python config conversions instead of hand-mirroring 588 lines;
+`cargo publish --dry-run` in CI; miri over **all** unsafe, not just `laser::`.
+
+---
 
 ## Later milestones
 
 - **v0.2.0 publish**: `vm-primitives` + `vision-metrology` to crates.io (+ wheels) once
-  Tracks 1–3 land. Gate: `cargo publish --dry-run` both crates, README/docs.rs review.
-- **Direct vision-calibration dependency**: when tiny-solver/faer move to nalgebra 0.35
-  and calibration-rs rebases; replaces the `metric` mirror types.
+  Track B lands. Gate: `cargo publish --dry-run` both crates, README/docs.rs review.
+- **Direct vision-calibration dependency**: when tiny-solver/faer move to nalgebra 0.35 and
+  calibration-rs rebases; replaces the `metric` mirror types.
+- **Shared substrate across the vision workspaces**: `box-image-pyramid`, `corrmatch` and
+  `chess-corners-rs` each carry their own `ImageView`. Publishing this crate's `core` as the
+  common substrate would end that duplication — worth doing only after v0.2 settles the API.
 - See [`backlog.md`](backlog.md) for unscheduled items.
