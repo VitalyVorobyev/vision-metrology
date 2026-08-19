@@ -5,7 +5,6 @@
 //! real lens produces — and, more importantly, the ground-truth pose is exact
 //! to arbitrary subpixel precision.
 
-#[cfg(feature = "serde")]
 use vision_metrology::matching::{
     ContourOrientation, Polarity, Refinement, ShapeMatch, ShapeMatcher, ShapeModel,
     ShapeModelBuilder, ShapeModelConfig, ShapeSearchConfig, ShapeSearchTuning,

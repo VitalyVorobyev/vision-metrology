@@ -67,6 +67,54 @@ One breaking wave over the whole surface, taken while nothing is published.
 
 ---
 
+## Track D — v0.3 API reset — `done`
+
+The last wave of breaking changes taken while the crates are unpublished, run as six
+commits, each with the full gate set green before the next started. Nothing about an
+algorithm moved; everything about how the API *states* things did. Detail and reasoning
+are in [`system-design.md`](system-design.md).
+
+1. **Visibility sweep.** The flat domain re-export block left the crate root at the
+   crate root; every type had two paths, in violation of invariant 17. Removed, `prelude`
+   extended to `fit` / `measure` / `segment`, and nine leaked internals pulled back:
+   the laser stage functions (a `_u8`/`_u16`/`_f32` triplet that also broke invariant 19),
+   `MAX_KERNEL_PTS`, the `downsample2x2_mean*` free functions, `create_shape_model`,
+   `transform_point_iso`, the `edge` submodule paths, and `match_point_scores` (now only
+   `matching::diagnostics::match_point_scores`).
+2. **Config split, sentinels, `Contrast`.** `ShapeSearchConfig` 14 flat fields → 8 + a
+   nested `ShapeSearchTuning`; `LaserExtractConfig` likewise. Every `0`/`0.0` = "auto"
+   became `Option<NonZeroUsize>` / `Option<f32>` / a named enum (`Hysteresis`,
+   `CenterSmoothing`) — **invariant 10 rewritten**. `min_contrast` gained a unit:
+   `Contrast::{Raw, FractionOfRange}`.
+3. **Result honesty.** `Caliper::measure_checked` → `measure` returning
+   `Result<&[MeasureEdge], RejectReason>`, with the lossy twin deleted;
+   `MetrologyModel::apply` returns one `Result` per object, in object order;
+   `hits()` folded into `MetrologyResult`.
+4. **One batched model-format bump** (2 → 3): opaque `save`/`load` + `to_bytes`/
+   `from_bytes`, `FORMAT_VERSION` internal, `ModelPoint`/`ShapeModelLevel` read-only
+   through accessors, and **backlog R3 closed** — the pyramid `PreSmooth` is stored in
+   the model and the search reads it from there, so invariant 3 cannot be violated.
+5. **`core` split into `raster` (zero nalgebra) and `geom`.** Module split only, both
+   private, no public path changed. The audit came out clean: the raster signatures
+   already took bare `f32` coordinates.
+6. **`shape` → `lsd`** (module + feature), and `DirectionField`'s stateful tiling protocol
+   became a `TiledField<'a>` session that owns `ensure_rect` and cannot be handed the
+   wrong image.
+
+**Verified:** all gates green, per-feature clippy by hand (which caught one stale
+`#[cfg(feature = "serde")]` that `--all-features` could not); every self-asserting example
+passes; `match_shape` held or improved on all six cases (360° 3.408 → 3.370 ms,
+scale sweep 17.57 → 16.83 ms); canend set1 `inspect_canend` **100/100** measured
+(dome mean 365.237 px σ 0.282, dark 365.696 px σ 0.307) and shape matching 150/150 found
+across dome / bright / dark with dome p50 **0.998**, unchanged to three decimals.
+
+**Deliberately not done here:** README and `docs/*.md` still describe the pre-reset
+surface in places (that is the docs wave), and `vm-python` mirrors the new configs only
+well enough to compile and pass its tests — full parity, `.pyi` stubs and a `Contrast`
+mode selector are the Python wave.
+
+---
+
 ## Track B — the measurement spine — `planned`
 
 Each module ships with its own bench, doc example, Python parity, and an accuracy entry
