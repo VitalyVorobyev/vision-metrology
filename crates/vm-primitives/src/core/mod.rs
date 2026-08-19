@@ -20,6 +20,7 @@ mod geom;
 mod image;
 mod pixel;
 mod sample;
+mod shapes;
 
 pub use border::{BorderMode, map_index};
 pub use error::Error;
@@ -31,3 +32,4 @@ pub use geom::{
 pub use image::{Image, ImageView, ImageViewMut, to_f32, to_f32_u16};
 pub use pixel::Pixel;
 pub use sample::{sample_bilinear_f32, sample_nearest};
+pub use shapes::{Circle2f, Conic2f, Ellipse2f};

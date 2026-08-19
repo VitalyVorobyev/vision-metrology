@@ -1,4 +1,5 @@
-//! Algebraic conic types: [`Conic2f`] and conversion to [`Ellipse2f`].
+//! Geometric primitives: [`Circle2f`], [`Ellipse2f`] and the algebraic
+//! [`Conic2f`] they convert through.
 //!
 //! A conic is represented by the general equation
 //!
@@ -16,7 +17,7 @@
 //! ratios; scale invariance is maintained by the fitting constraint (Bookstein
 //! or Fitzgibbon) applied during fitting.
 
-use vm_primitives::{Error, Point2f, Vec2f};
+use super::{Error, Point2f, Vec2f};
 
 // ---------------------------------------------------------------------------
 // Conic2f
@@ -88,6 +89,54 @@ impl Conic2f {
         let gx = 2.0 * a * x + b * y + d;
         let gy = b * x + 2.0 * c * y + e;
         (gx * gx + gy * gy).sqrt()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Circle2f
+// ---------------------------------------------------------------------------
+
+/// A circle in pixel coordinates.
+///
+/// The most-measured primitive in industrial metrology — hole diameters, boss
+/// positions, rim fits — and one this crate had no type for until now.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Circle2f {
+    /// Centre in pixel coordinates.
+    pub center: Point2f,
+    /// Radius in pixels.
+    pub radius: f32,
+}
+
+impl Circle2f {
+    /// Point on the circle at parameter `t` radians.
+    #[inline]
+    pub fn point_at(&self, t: f32) -> Point2f {
+        Point2f::new(
+            self.center.x + self.radius * t.cos(),
+            self.center.y + self.radius * t.sin(),
+        )
+    }
+
+    /// Signed distance from `p` to the circle: positive outside, negative inside.
+    ///
+    /// This is the residual a geometric (orthogonal-distance) fit minimises, so
+    /// it is what such a fit's `rms` is computed from.
+    #[inline]
+    pub fn signed_distance(&self, p: Point2f) -> f32 {
+        (p - self.center).norm() - self.radius
+    }
+
+    /// Circumference `2πr`.
+    #[inline]
+    pub fn circumference(&self) -> f32 {
+        2.0 * core::f32::consts::PI * self.radius
+    }
+
+    /// Area `πr²`.
+    #[inline]
+    pub fn area(&self) -> f32 {
+        core::f32::consts::PI * self.radius * self.radius
     }
 }
 

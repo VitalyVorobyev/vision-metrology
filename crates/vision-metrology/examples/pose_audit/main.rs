@@ -36,10 +36,11 @@ use corrmatch::{
     CompileConfig, MatchConfig as CorrMatchConfig, Matcher as CorrMatcher, RotationMode,
     Template as CorrTemplate,
 };
+use vision_metrology::fit::{FitConfig, RansacConfig, fit_ellipse};
 use vision_metrology::{
-    ConicFitConfig, ConicFitter, Edge2DConfig, Edge2DDetector, Image, Point2f, Polarity, Rect2f,
-    ShapeMatch, ShapeMatcher, ShapeModel, ShapeModelBuilder, ShapeModelConfig, ShapeSearchConfig,
-    match_point_scores, wrap_angle,
+    Edge2DConfig, Edge2DDetector, Image, Point2f, Polarity, Rect2f, ShapeMatch, ShapeMatcher,
+    ShapeModel, ShapeModelBuilder, ShapeModelConfig, ShapeSearchConfig, match_point_scores,
+    wrap_angle,
 };
 
 #[derive(Parser)]
@@ -202,7 +203,6 @@ fn audit(args: AuditArgs) -> Result<()> {
 
     let mut matcher = ShapeMatcher::new();
     let mut det = Edge2DDetector::new();
-    let mut fitter = ConicFitter::new();
 
     let mut scores = Vec::new();
     let mut znccs = Vec::new();
@@ -253,7 +253,7 @@ fn audit(args: AuditArgs) -> Result<()> {
 
         // Rim-relative repeatability.
         if let Some(r_hint) = args.rim_radius
-            && let Some((rr, dphi)) = rim_relative(&mut det, &mut fitter, &scene, m, r_hint)
+            && let Some((rr, dphi)) = rim_relative(&mut det, &scene, m, r_hint)
         {
             rim_r.push(f64::from(rr));
             rim_dphi.push(f64::from(dphi));
@@ -310,7 +310,6 @@ fn audit(args: AuditArgs) -> Result<()> {
 /// rim + tab measurement.
 fn rim_relative(
     det: &mut Edge2DDetector,
-    fitter: &mut ConicFitter,
     scene: &Image<u8>,
     m: &ShapeMatch,
     r_hint: f32,
@@ -329,9 +328,18 @@ fn rim_relative(
     if band.len() < 50 {
         return None;
     }
-    let ellipse = fitter
-        .fit_ellipse_ransac(&band, &ConicFitConfig::default())
-        .ok()?;
+    // The rim is a circle in the world but an ellipse in the image under
+    // perspective, so fit the more general primitive. RANSAC because the band
+    // also catches print and lighting edges.
+    let fit = fit_ellipse(
+        &band,
+        &FitConfig {
+            ransac: Some(RansacConfig::default()),
+            ..FitConfig::default()
+        },
+    )
+    .ok()?;
+    let ellipse = fit.model;
     let dx = m.position.x - ellipse.center.x;
     let dy = m.position.y - ellipse.center.y;
     let r = (dx * dx + dy * dy).sqrt();

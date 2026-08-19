@@ -13,10 +13,10 @@ def main():
         cy + b * np.sin(t),
     ]).astype(np.float32)
 
-    cfg = vm.ConicFitConfig(use_bookstein=False, ransac_iters=200, inlier_tol=1.5)
+    cfg = vm.FitConfig(ransac_iters=200, inlier_tol=1.5)
 
     # Object API
-    fitter = vm.ConicFitter(cfg)
+    fitter = vm.Fitter(cfg)
     result_obj = fitter.fit_ellipse(pts_exact)
 
     # Free-function API

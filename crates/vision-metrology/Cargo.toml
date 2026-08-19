@@ -18,10 +18,12 @@ serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
 
 [features]
-default = ["contour", "laser", "matching", "segment", "shape"]
+default = ["contour", "fit", "laser", "matching", "segment", "shape"]
 
 ## Junction-aware contour graph from 2-D edgels.
 contour = []
+## Robust line / circle / ellipse fitting with reported residuals.
+fit = []
 ## Laser stripe extraction via opposite-polarity edge pairs.
 laser = []
 ## Shape-based object detection (ShapeModel / ShapeMatcher).
@@ -63,7 +65,7 @@ required-features = ["contour"]
 [[bench]]
 name = "detect_shape"
 harness = false
-required-features = ["shape"]
+required-features = ["fit", "shape"]
 
 [[bench]]
 name = "segment"
@@ -99,7 +101,7 @@ required-features = ["shape"]
 
 [[example]]
 name = "measure_circles"
-required-features = ["contour", "shape"]
+required-features = ["contour", "fit"]
 
 [[example]]
 name = "segmentation"
@@ -115,7 +117,7 @@ required-features = ["matching"]
 
 [[example]]
 name = "pose_audit"
-required-features = ["matching", "shape"]
+required-features = ["fit", "matching"]
 
 [[test]]
 name = "shape_matching"

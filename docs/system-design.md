@@ -19,7 +19,7 @@ vm-primitives  ──►  vision-metrology  ──►  vm-python
 
 | Crate | Modules | Contents |
 |---|---|---|
-| `vm-primitives` | `core` | `Image<T>`/`ImageView<T>`, `Pixel` (sealed: u8/u16/f32), sampling, `BorderMode`, geometry as nalgebra aliases (`Point2f`, `Vec2f`, `Similarity2f`, …), `Error` |
+| `vm-primitives` | `core` | `Image<T>`/`ImageView<T>`, `Pixel` (sealed: u8/u16/f32), sampling, `BorderMode`, geometry as nalgebra aliases (`Point2f`, `Vec2f`, `Similarity2f`, …), `Circle2f`/`Ellipse2f`/`Conic2f`, `Error` |
 | | `pyr` | `Pyramid`: 2×2 box-mean pyramid generic over `Pixel`, optional binomial pre-smooth, `level_to_base` |
 | | `edge` | 1D/2D subpixel DoG edges, edgels, edge pairs, `DirectionField` |
 | | `morph` | binary morphology (parameterized SE), chamfer distance, Zhang-Suen thinning |
@@ -27,7 +27,8 @@ vm-primitives  ──►  vision-metrology  ──►  vm-python
 | | `laser` | stripe extraction via opposite-polarity edge pairs (rows/cols, ROI + prior) |
 | | `matching` | `ShapeModel`/`ShapeMatcher`: gradient-orientation shape-based detection |
 | | `segment` | Otsu/adaptive thresholding, CCL, watershed, edgel region growing |
-| | `shape` | LSD, Bookstein/Fitzgibbon conic fitting, RANSAC ellipse fitting |
+| | `fit` | robust line / circle / ellipse fitting, residuals reported |
+| | `shape` | LSD line-segment detection |
 | `vm-python` | — | numpy-in/numpy-out detectors; lib target named `vm_python` (see invariants) |
 
 Each `vision-metrology` module is a default-on feature (see invariant 18). Names live at
@@ -84,6 +85,13 @@ matching update here.
 19. **One entry point per algorithm**, generic over `Pixel`. No `_u8`/`_u16`/`_f32`
     variants of the same operation; a `_f32` suffix is only for something that genuinely
     only takes `f32` (a pyramid level).
+20. **Storage f32, accumulation f64.** Pixel coordinates are stored as `f32`; every
+    normal-equation, moment, or residual sum runs in `f64`. Squared coordinates near
+    2000 px exhaust an `f32` mantissa long before a fit converges.
+21. **Every measurement reports its residual.** A fitting or measuring operation returns
+    the deviation statistics that qualify it (`rms`, `max_dev`, how many points were used),
+    not just the parameters. Without them the caller cannot tell a measurement from a
+    number, and cannot gate on form tolerance at all.
 
 ## Decisions and why
 
@@ -137,6 +145,41 @@ pyramid + ~2.5 ms search. Below the top pyramid level the search reads only smal
 around candidates, so full-frame fine-level fields are mostly wasted work. The performance
 plan (roadmap Track 2) is lazy tiled fields first, integer u8 Scharr second, quantized
 directions + SIMD only if still needed — in that order, each gated on measurement.
+
+### `fit`: geometric refinement, and what robustness actually requires (2026-08)
+`shape` held algebraic conic fitting and a RANSAC ellipse wrapper; there was **no line fit
+and no circle fit at all** — the two most common metrology measurements. The new `fit`
+module supplies all three, and `shape` narrows to LSD. `Circle2f`, `Ellipse2f` and `Conic2f`
+move down to `vm-primitives::core` (types belong below the algorithms that produce them);
+`Circle2f` is new.
+
+Every fitter is algebraic-init → geometric refine, and returns `Fit<M>` with `rms`,
+`max_dev` and `n_used` (invariant 21). `fit_circle` uses Taubin, which is near-unbiased on
+short arcs where the Kåsa fit collapses toward the chord, then Gauss–Newton on the true
+residual `‖p − c‖ − r`: on a 30° arc that is the difference between visible bias and
+< 0.05 px.
+
+**Two things had to be discovered by testing rather than designed.**
+
+*Tukey cannot start from a contaminated fit.* The rejection radius is applied to the
+algebraic initialisation, which was computed from all the points including the outliers — so
+a small radius throws away the **inliers** and keeps whatever the corrupted fit passed
+through. Measured: one outlier 70 px off a 40-point circle left a Tukey fit standing on
+2 points. Fixed with graduated non-convexity — `RobustLoss::annealed` starts the radius wide
+enough to admit every point and shrinks it geometrically to the configured value.
+
+*Reweighting cannot fix a flipped axis.* 30 points on `y = 10` plus one at `(15, 60)` gives
+the outlier enough y-variance that total least squares returns a near-**vertical** line. The
+starting guess is not inaccurate, it is orthogonal, and no IRLS scheme recovers. That is what
+RANSAC is for — and `fit_line` was silently ignoring `FitConfig::ransac`, exactly the class
+of dead config field this reset removed from LSD. It is honoured now, with 2-point
+hypotheses.
+
+Bench (M4 Pro): `fit_circle_500pts` 2.6 µs, `+tukey` 4.2 µs, `fit_line_500pts` 1.7 µs,
+`fit_ellipse_100pts` 1.6 µs, `fit_ellipse_ransac_1000pts` 430 µs.
+
+`examples/measure_circles` now fits circles rather than ellipses and reports `rms`/`max_dev`
+per measurement; it also gates on `rms` — a filter only possible because the fit reports one.
 
 ### Module hygiene: preludes, explicit re-exports, feature gates (2026-08)
 `vision-metrology` re-exported `vm_primitives::*` with a glob. That gave every name two

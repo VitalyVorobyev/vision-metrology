@@ -27,7 +27,7 @@
 use nalgebra::{Matrix3, Matrix6, SVD, SymmetricEigen, Vector3};
 use vm_primitives::{Error, Point2f};
 
-use super::conic::Conic2f;
+use vm_primitives::Conic2f;
 
 // ---------------------------------------------------------------------------
 // Coordinate normalisation helpers
@@ -315,7 +315,7 @@ mod tests {
     use core::f32::consts::PI;
     use vm_primitives::{Point2f, Vec2f};
 
-    use crate::shape::conic::Ellipse2f;
+    use vm_primitives::Ellipse2f;
 
     /// Generate exact points on an ellipse.
     fn ellipse_points(ell: &Ellipse2f, n: usize) -> Vec<Point2f> {

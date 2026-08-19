@@ -5,7 +5,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyList;
 use pyo3::wrap_pyfunction;
 
-use crate::config_py::{ConicFitConfig, EdgeConfig, LsdConfig};
+use crate::config_py::{EdgeConfig, FitConfig, LsdConfig};
 use crate::detector::detect_edges_u8_impl;
 use crate::segment::{
     component_stats_impl, label_components_impl, otsu_threshold_impl, threshold_binary_impl,
@@ -34,7 +34,7 @@ pub fn detect_line_segments_u8<'py>(
 pub fn fit_ellipse<'py>(
     py: Python<'py>,
     pts: PyReadonlyArray2<'py, f32>,
-    config: ConicFitConfig,
+    config: FitConfig,
 ) -> PyResult<Option<Py<PyAny>>> {
     fit_ellipse_impl(py, pts, config)
 }

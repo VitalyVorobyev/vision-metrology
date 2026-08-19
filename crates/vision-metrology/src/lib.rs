@@ -12,7 +12,8 @@
 //! | [`laser`]     | Laser stripe extraction using opposite-polarity edge pairs |
 //! | [`matching`]  | Shape-based object detection: gradient-orientation model matching |
 //! | [`segment`]   | Otsu / adaptive threshold, CCL, watershed, region growing |
-//! | [`shape`]     | LSD line detection, Bookstein / Fitzgibbon conic / ellipse fitting |
+//! | [`fit`]       | Robust line / circle / ellipse fitting with reported residuals |
+//! | [`shape`]     | LSD line-segment detection |
 //!
 //! ## Features
 //!
@@ -27,6 +28,7 @@
 //! | Feature | Module | Implies |
 //! |---|---|---|
 //! | `contour` | [`contour`] | — |
+//! | `fit` | [`fit`] | — |
 //! | `laser` | [`laser`] | — |
 //! | `matching` | [`matching`] | — |
 //! | `segment` | [`segment`] | `contour` (region growing consumes a `ContourGraph`) |
@@ -41,6 +43,8 @@
 
 #[cfg(feature = "contour")]
 pub mod contour;
+#[cfg(feature = "fit")]
+pub mod fit;
 #[cfg(feature = "laser")]
 pub mod laser;
 #[cfg(feature = "matching")]
@@ -63,14 +67,12 @@ pub use vm_primitives;
 pub mod prelude {
     pub use vm_primitives::prelude::*;
 
-    #[cfg(feature = "shape")]
-    pub use crate::{
-        ConicFitConfig, ConicFitter, Ellipse2f, LineSegment2f, LsdConfig, LsdDetector,
-    };
     #[cfg(feature = "contour")]
     pub use crate::{Connectivity, ContourBuildConfig, ContourGraph, build_graph_from_edgels};
     #[cfg(feature = "laser")]
     pub use crate::{LaserExtractConfig, LaserExtractor, LaserLine};
+    #[cfg(feature = "shape")]
+    pub use crate::{LineSegment2f, LsdConfig, LsdDetector};
     #[cfg(feature = "matching")]
     pub use crate::{
         Polarity, ShapeMatch, ShapeMatcher, ShapeModel, ShapeModelBuilder, ShapeModelConfig,
@@ -83,11 +85,11 @@ pub mod prelude {
 // `vm-primitives` a potential name collision here, and hide what this crate's
 // surface actually is.
 pub use vm_primitives::{
-    Angle, BorderMode, Edge1DConfig, Edge1DDetector, Edge2DConfig, Edge2DDetector, EdgePolarity,
-    Edgel, Error, Image, ImageView, ImageViewMut, Isometry2f, Line2f, Pixel, Point2f, Polyline2f,
-    PreSmooth, Pyramid, PyramidConfig, Rect2f, Similarity2f, SmoothKind, SubpixRefine, Vec2f,
-    Vec2fExt, sample_bilinear_f32, sample_nearest, similarity_from_parts, similarity_parts,
-    transform_point, transform_vec, wrap_angle,
+    Angle, BorderMode, Circle2f, Conic2f, Edge1DConfig, Edge1DDetector, Edge2DConfig,
+    Edge2DDetector, EdgePolarity, Edgel, Ellipse2f, Error, Image, ImageView, ImageViewMut,
+    Isometry2f, Line2f, Pixel, Point2f, Polyline2f, PreSmooth, Pyramid, PyramidConfig, Rect2f,
+    Similarity2f, SmoothKind, SubpixRefine, Vec2f, Vec2fExt, sample_bilinear_f32, sample_nearest,
+    similarity_from_parts, similarity_parts, transform_point, transform_vec, wrap_angle,
 };
 
 // ---------------------------------------------------------------------------
@@ -98,6 +100,10 @@ pub use vm_primitives::{
 pub use contour::{
     Connectivity, ContourBuildConfig, ContourGraph, EdgeId, GraphEdge, MAX_KERNEL_PTS, Node,
     NodeId, NodeKind, build_graph_from_detector_output, build_graph_from_edgels, smooth_polyline,
+};
+#[cfg(feature = "fit")]
+pub use fit::{
+    Fit, FitConfig, RansacConfig, RobustLoss, fit_circle, fit_conic, fit_ellipse, fit_line,
 };
 #[cfg(feature = "laser")]
 pub use laser::{
@@ -118,6 +124,4 @@ pub use segment::{
     component_stats, grow_regions, label_connected_components_u8, otsu_threshold_u8, watershed,
 };
 #[cfg(feature = "shape")]
-pub use shape::{
-    Conic2f, ConicFitConfig, ConicFitter, Ellipse2f, LineSegment2f, LsdConfig, LsdDetector,
-};
+pub use shape::{LineSegment2f, LsdConfig, LsdDetector};

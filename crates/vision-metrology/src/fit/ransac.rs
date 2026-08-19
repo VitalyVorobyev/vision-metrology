@@ -19,8 +19,8 @@
 
 use vm_primitives::{Error, Point2f};
 
-use super::conic::{Conic2f, Ellipse2f};
-use super::fit_conic::fit_fitzgibbon;
+use super::conic::fit_fitzgibbon;
+use vm_primitives::{Conic2f, Ellipse2f};
 
 // ---------------------------------------------------------------------------
 // Minimal LCG PRNG (reproducible, no-std compatible)
@@ -185,7 +185,7 @@ mod tests {
     use core::f32::consts::PI;
     use vm_primitives::Vec2f;
 
-    use crate::shape::conic::Ellipse2f;
+    use vm_primitives::Ellipse2f;
 
     fn ellipse_points_with_noise(ell: &Ellipse2f, n: usize, noise: f32, seed: u64) -> Vec<Point2f> {
         let mut rng = Lcg::new(seed);

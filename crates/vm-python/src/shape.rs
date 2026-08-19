@@ -1,14 +1,15 @@
-//! Python bindings for `LsdDetector` and `ConicFitter`.
+//! Python bindings for `LsdDetector` and the `fit` module.
 
 use numpy::{PyReadonlyArray2, PyUntypedArrayMethods};
 use pyo3::prelude::*;
 use pyo3::types::PyList;
-use vision_metrology::{ConicFitter as NativeConicFitter, LsdDetector as NativeLsdDetector};
+use vision_metrology::LsdDetector as NativeLsdDetector;
+use vision_metrology::fit::{fit_circle, fit_ellipse};
 use vm_primitives::Point2f;
 
-use crate::config_py::{ConicFitConfig, LsdConfig};
+use crate::config_py::{FitConfig, LsdConfig};
 use crate::convert::image_from_numpy_u8;
-use crate::types::{Ellipse, LineSegment};
+use crate::types::{Circle, Ellipse, LineSegment};
 
 fn segments_to_pylist<'py>(
     py: Python<'py>,
@@ -96,29 +97,29 @@ impl LsdDetector {
     }
 }
 
-/// Python-facing conic/ellipse fitter.
+/// Python-facing primitive fitter.
+///
+/// Stateless — the Rust fitters own no scratch — but kept as a class so a
+/// config can be set once and reused, matching the other bindings.
 #[pyclass]
-pub struct ConicFitter {
-    fitter: NativeConicFitter,
-    cfg: ConicFitConfig,
+pub struct Fitter {
+    cfg: FitConfig,
 }
 
 #[pymethods]
-impl ConicFitter {
-    /// Create a new conic fitter with optional explicit config.
+impl Fitter {
+    /// Create a fitter with an optional explicit config.
     #[new]
     #[pyo3(signature = (config=None))]
-    pub fn new(config: Option<ConicFitConfig>) -> Self {
+    pub fn new(config: Option<FitConfig>) -> Self {
         Self {
-            fitter: NativeConicFitter::new(),
             cfg: config.unwrap_or_default(),
         }
     }
 
-    /// Fit an ellipse to a set of 2-D points.
+    /// Fit an ellipse to an `(N, 2)` float32 array.
     ///
-    /// `pts` must be a `(N, 2)` float32 numpy array.
-    /// Returns an `Ellipse` on success, or `None` if fitting fails.
+    /// Returns an `Ellipse`, or `None` when the fit fails.
     pub fn fit_ellipse<'py>(
         &mut self,
         py: Python<'py>,
@@ -126,18 +127,19 @@ impl ConicFitter {
     ) -> PyResult<Option<Py<PyAny>>> {
         let points = points_from_numpy(pts)?;
         let cfg = self.cfg.to_native()?;
-        let result = self.fitter.fit_ellipse_ransac(&points, &cfg);
-
-        match result {
-            Ok(ellipse) => {
+        match fit_ellipse(&points, &cfg) {
+            Ok(f) => {
                 let obj = Py::new(
                     py,
                     Ellipse {
-                        cx: ellipse.center.x,
-                        cy: ellipse.center.y,
-                        a: ellipse.semi_major(),
-                        b: ellipse.semi_minor(),
-                        angle: ellipse.angle,
+                        cx: f.model.center.x,
+                        cy: f.model.center.y,
+                        a: f.model.semi_major(),
+                        b: f.model.semi_minor(),
+                        angle: f.model.angle,
+                        rms: f.rms,
+                        max_dev: f.max_dev,
+                        n_used: f.n_used,
                     },
                 )?;
                 Ok(Some(obj.into()))
@@ -146,13 +148,43 @@ impl ConicFitter {
         }
     }
 
-    /// Return a copy of the current fitter config.
-    pub fn config(&self) -> ConicFitConfig {
+    /// Fit a circle to an `(N, 2)` float32 array.
+    ///
+    /// Returns a `Circle` carrying the residual statistics, or `None` when the
+    /// fit fails.
+    pub fn fit_circle<'py>(
+        &mut self,
+        py: Python<'py>,
+        pts: PyReadonlyArray2<'py, f32>,
+    ) -> PyResult<Option<Py<PyAny>>> {
+        let points = points_from_numpy(pts)?;
+        let cfg = self.cfg.to_native()?;
+        match fit_circle(&points, &cfg) {
+            Ok(f) => {
+                let obj = Py::new(
+                    py,
+                    Circle {
+                        cx: f.model.center.x,
+                        cy: f.model.center.y,
+                        r: f.model.radius,
+                        rms: f.rms,
+                        max_dev: f.max_dev,
+                        n_used: f.n_used,
+                    },
+                )?;
+                Ok(Some(obj.into()))
+            }
+            Err(_) => Ok(None),
+        }
+    }
+
+    /// Return a copy of the current config.
+    pub fn config(&self) -> FitConfig {
         self.cfg.clone()
     }
 
-    /// Replace fitter configuration.
-    pub fn set_config(&mut self, config: ConicFitConfig) {
+    /// Replace the config.
+    pub fn set_config(&mut self, config: FitConfig) {
         self.cfg = config;
     }
 }
@@ -169,8 +201,7 @@ pub(crate) fn detect_line_segments_u8_impl<'py>(
 pub(crate) fn fit_ellipse_impl<'py>(
     py: Python<'py>,
     pts: PyReadonlyArray2<'py, f32>,
-    config: ConicFitConfig,
+    config: FitConfig,
 ) -> PyResult<Option<Py<PyAny>>> {
-    let mut fitter = ConicFitter::new(Some(config));
-    fitter.fit_ellipse(py, pts)
+    Fitter::new(Some(config)).fit_ellipse(py, pts)
 }

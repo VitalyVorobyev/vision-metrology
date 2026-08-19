@@ -1,6 +1,4 @@
-//! Shape detection for the `vision-metrology` workspace.
-//!
-//! Provides two detection families:
+//! Line-segment detection.
 //!
 //! ## Line Segment Detection (LSD)
 //! [`LsdDetector`] implements gradient-coherence region growing with NFA
@@ -28,34 +26,6 @@
 //! assert!(!segs.is_empty());
 //! ```
 //!
-//! ## Conic and Ellipse Fitting
-//! [`ConicFitter`] fits algebraic conics (`Ax²+Bxy+Cy²+Dx+Ey+F=0`) to a set
-//! of [`vm_primitives::Point2f`] samples, with optional RANSAC outlier rejection.
-//! Ellipses can be converted to geometric form ([`Ellipse2f`]).
-//!
-//! ```rust
-//! use vision_metrology::{ConicFitter, ConicFitConfig, Ellipse2f};
-//! use vm_primitives::{Point2f, Vec2f};
-//! use core::f32::consts::PI;
-//!
-//! // Generate 20 points on a known ellipse.
-//! let ell = Ellipse2f {
-//!     center: Point2f::new(50.0, 40.0),
-//!     semi_axes: Vec2f::new(20.0, 10.0),
-//!     angle: 0.0,
-//! };
-//! let pts: Vec<Point2f> = (0..20).map(|i| {
-//!     ell.point_at(2.0 * PI * i as f32 / 20.0)
-//! }).collect();
-//!
-//! let mut fitter = ConicFitter::new();
-//! let conic = fitter.fit(&pts, &ConicFitConfig::default()).expect("fit");
-//! assert!(conic.is_ellipse());
-//! let recovered = conic.to_ellipse().expect("to_ellipse");
-//! assert!((recovered.center.x - 50.0).abs() < 0.5);
-//! assert!((recovered.semi_major() - 20.0).abs() < 0.5);
-//! ```
-//!
 //! ## Coordinate conventions
 //! All types follow the pixel-center convention: integer coordinate `i` refers
 //! to the **center** of pixel `i`. Subpixel positions are `i as f32 + delta`
@@ -71,13 +41,7 @@
 //! reused across `detect` / `fit` calls. Only the output `Vec<LineSegment2f>`
 //! or `Result<Ellipse2f>` is allocated per call.
 
-mod conic;
-mod fit_conic;
-mod fitter;
 mod lsd;
 mod nfa;
-mod ransac;
 
-pub use conic::{Conic2f, Ellipse2f};
-pub use fitter::{ConicFitConfig, ConicFitter};
 pub use lsd::{LineSegment2f, LsdConfig, LsdDetector};
