@@ -1,4 +1,8 @@
-//! Line-segment detection.
+//! Line-segment detection (LSD).
+//!
+//! Named `lsd` because that is what it is. It used to be `shape`, a name that
+//! stopped being true when algebraic conic fitting and the RANSAC ellipse
+//! wrapper moved into [`fit`](crate::fit) — what remained was one algorithm.
 //!
 //! ## Line Segment Detection (LSD)
 //! [`LsdDetector`] implements gradient-coherence region growing with NFA
@@ -7,7 +11,7 @@
 //! score.
 //!
 //! ```rust
-//! use vision_metrology::shape::{LsdConfig, LsdDetector};
+//! use vision_metrology::lsd::{LsdConfig, LsdDetector};
 //! use vm_primitives::{Image, Point2f};
 //!
 //! // Build a 64×64 image with a horizontal step edge at y=32.
@@ -41,7 +45,7 @@
 //! reused across `detect` / `fit` calls. Only the output `Vec<LineSegment2f>`
 //! or `Result<Ellipse2f>` is allocated per call.
 
-mod lsd;
+mod detect;
 mod nfa;
 
-pub use lsd::{LineSegment2f, LsdConfig, LsdDetector};
+pub use detect::{LineSegment2f, LsdConfig, LsdDetector};

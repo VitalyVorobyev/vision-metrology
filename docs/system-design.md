@@ -29,7 +29,7 @@ vm-primitives  ──►  vision-metrology  ──►  vm-python
 | | `segment` | Otsu/adaptive thresholding, CCL, watershed, edgel region growing |
 | | `fit` | robust line / circle / ellipse fitting, residuals reported |
 | | `measure` | calipers (rect / arc / radial), metrology model applied at a fixture pose |
-| | `shape` | LSD line-segment detection |
+| | `lsd` | LSD line-segment detection |
 | `vm-python` | — | numpy-in/numpy-out detectors; lib target named `vm_python` (see invariants) |
 
 Each `vision-metrology` module is a default-on feature (see invariant 18). Names live at
@@ -222,7 +222,7 @@ bead/stripe tool is built on top of this one.
 ### `fit`: geometric refinement, and what robustness actually requires (2026-08)
 `shape` held algebraic conic fitting and a RANSAC ellipse wrapper; there was **no line fit
 and no circle fit at all** — the two most common metrology measurements. The new `fit`
-module supplies all three, and `shape` narrows to LSD. `Circle2f`, `Ellipse2f` and `Conic2f`
+module supplies all three, and `shape` narrows to LSD (renamed `lsd` in the v0.3 reset). `Circle2f`, `Ellipse2f` and `Conic2f`
 move down to `vm-primitives::core` (types belong below the algorithms that produce them);
 `Circle2f` is new.
 
@@ -262,7 +262,7 @@ itself, so one dependency is still enough), an explicit curated re-export list, 
 `prelude` on both crates whose contents follow the feature gates.
 
 Every domain module is now an opt-in feature, default-on: `contour`, `laser`, `matching`,
-`segment` (implies `contour` — region growing consumes a `ContourGraph`), `shape`, and
+`segment` (implies `contour` — region growing consumes a `ContourGraph`), `lsd`, and
 `serde` (implies `matching`). Examples, benches and integration tests carry
 `required-features`, so `--no-default-features` skips them instead of failing.
 
@@ -271,6 +271,37 @@ The gates are only worth having if they are checked. `--all-features` can never 
 `vision-metrology` and a `--feature-powerset` over `vm-primitives`.
 
 `Error` is `#[non_exhaustive]`, so adding a variant stops being a breaking change.
+
+### `shape` → `lsd`, and the tiling protocol becomes a session (2026-08)
+Two renames of different weight.
+
+`shape` stopped being a true name when conic fitting and the RANSAC ellipse wrapper moved
+into `fit`: what was left was one algorithm. The module and its feature are now `lsd`, and
+`shape/lsd.rs` (the `lsd::lsd` path) is `lsd/detect.rs`.
+
+`DirectionField`'s lazy tiling was a three-step stateful protocol on one type —
+`begin_tiled_f32(img)`, then `ensure_rect_f32(img, …)` repeatedly, then read — where the
+ordering was documentation, the image was passed twice and checked with a runtime
+`assert!`, and reading a field that was never put into tiled mode was a silently-all-zero
+result rather than a compile error. `begin_tiled_f32` now returns a
+[`TiledField<'a>`] session borrowing **both** the field and the image; `ensure_rect` lives
+only on the session and takes no image, so it cannot be given the wrong one; the session
+derefs to the field, so scoring code is unchanged; and `#[must_use]` catches the caller
+who enters tiled mode and drops the session.
+
+The matcher builds one session per lazily-tiled level up front (`split_at_mut` separates
+the fully-built top level from the tiled ones), which cost one small `Vec` per `find` and
+removed the per-`ensure_rect` dimension assert. Measured on `match_shape`, M4 Pro:
+
+| Bench | before | after |
+|---|---|---|
+| `shape_find_1280x1024_360deg` | 3.408 ms | 3.370 ms |
+| `..._360deg_clutter` | 6.542 ms | 6.471 ms |
+| `..._tracked_roi` | 1.452 ms | 1.447 ms |
+| `..._360deg_greedy0` | 5.286 ms | 5.247 ms |
+| `..._scale_0p8_1p25` | 17.57 ms | 16.83 ms |
+
+Every case held or improved, so the safety came free.
 
 ### `core` splits into `raster` and `geom`, and the raster half names no nalgebra (2026-08)
 `core` was seven flat files in which the dependency on nalgebra was invisible. It is now
@@ -451,7 +482,8 @@ four decimal places.
 ### One generic entry point per algorithm (2026-08)
 Every detector used to expose `_u8` / `_u16` / `_f32` variants of the same method. Counting
 the affected functions across both library crates: **40 entry points became 16**, and the
-three that remain `_f32` (`build_image_f32`, `begin_tiled_f32`, `ensure_rect_f32`) genuinely
+three that remain `_f32` (`build_image_f32`, `begin_tiled_f32`, and — until the v0.3 reset
+turned it into `TiledField::ensure_rect` — `ensure_rect_f32`) genuinely
 only ever see pyramid levels, which are always `f32`.
 
 `vm_primitives::Pixel` is a sealed trait over `u8`/`u16`/`f32` carrying `to_f32`,
@@ -475,7 +507,7 @@ Everything else held or improved: `shape_find_1280x1024_360deg` 3.42 → 3.36 ms
 `shape_model_create` +0.6%.
 
 ### LSD downsamples through `pyr`, and its config stopped lying (2026-08)
-`shape/lsd.rs` carried its own 2×2 downsample under a comment claiming it was "the same as a
+`lsd/detect.rs` (then `shape/lsd.rs`) carried its own 2×2 downsample under a comment claiming it was "the same as a
 `vm_primitives::pyr` level". It was not: `div_ceil` + border clamp against `pyr`'s drop-odd,
 so on odd input the two disagreed on both output size and edge values. It then mapped
 positions back with a bare `p · (W / w)`, missing the `(2^l − 1)/2` term of invariant 2.

@@ -8,13 +8,13 @@ use vision_metrology::fit::{
     RobustLoss as NativeRobustLoss,
 };
 
+use vision_metrology::lsd::LsdConfig as NativeLsdConfig;
 use vision_metrology::matching::Contrast;
 use vision_metrology::matching::Polarity as NativePolarity;
 use vision_metrology::matching::Refinement as NativeRefinement;
 use vision_metrology::matching::ShapeModelConfig as NativeShapeModelConfig;
 use vision_metrology::matching::ShapeSearchConfig as NativeShapeSearchConfig;
 use vision_metrology::matching::ShapeSearchTuning as NativeShapeSearchTuning;
-use vision_metrology::shape::LsdConfig as NativeLsdConfig;
 use vm_primitives::BorderMode;
 use vm_primitives::PreSmooth as NativePreSmooth;
 use vm_primitives::edge::{Edge2DConfig, Hysteresis, SmoothKind, Subpix2D};

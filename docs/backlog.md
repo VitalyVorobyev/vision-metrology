@@ -39,7 +39,7 @@ agent) can pick it up cold. When an item is scheduled it moves into
 
 - **File-size offenders.** Invariant 14 counts *code* lines (tests excluded), so measure
   that way, not by raw total. Over the cap today: `contour/build.rs` (802 code / 1175 total),
-  `shape/lsd.rs` (757 / 983), `matching/build.rs` (737 / 737), `matching/matcher.rs`
+  `lsd/detect.rs` (757 / 983), `matching/build.rs` (737 / 737), `matching/matcher.rs`
   (653 / 692). Under it despite a large total: `edge/edge2d.rs` (578 / 859),
   `edge/gradient.rs` (527 / 783), `matching/score.rs` (423 / 683). Split opportunistically
   when a track touches them.

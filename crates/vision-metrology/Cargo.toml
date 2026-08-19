@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 readme = "README.md"
-description = "Industrial machine-vision metrology: contour graphs, laser stripe extraction, multi-scale edges, shape fitting, segmentation, edge-model matching"
+description = "Industrial machine-vision metrology: calipers and metrology models, robust line/circle/ellipse fitting, shape-based object detection, contour graphs, laser stripe extraction, subpixel edges"
 keywords = ["machine-vision", "metrology", "laser", "contour", "segmentation"]
 categories = ["computer-vision", "science"]
 
@@ -18,7 +18,7 @@ serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
 
 [features]
-default = ["contour", "fit", "laser", "matching", "measure", "segment", "shape"]
+default = ["contour", "fit", "laser", "lsd", "matching", "measure", "segment"]
 
 ## Junction-aware contour graph from 2-D edgels.
 contour = []
@@ -28,14 +28,13 @@ fit = []
 measure = ["fit"]
 ## Laser stripe extraction via opposite-polarity edge pairs.
 laser = []
+## LSD line-segment detection.
+lsd = []
 ## Shape-based object detection (ShapeModel / ShapeMatcher).
 matching = []
 ## Thresholding, CCL, watershed, edgel region growing.
 ## `segment::grow_regions` consumes a `ContourGraph`, so this implies `contour`.
 segment = ["contour"]
-## LSD line segments, conic and ellipse fitting.
-shape = []
-
 ## Versioned ShapeModel persistence: `save` / `load` and `to_bytes` /
 ## `from_bytes` over an opaque, version-gated document. Enables the same feature
 ## in vm-primitives for the geometry types the model embeds.
@@ -67,7 +66,7 @@ required-features = ["contour"]
 [[bench]]
 name = "detect_shape"
 harness = false
-required-features = ["fit", "shape"]
+required-features = ["fit", "lsd"]
 
 [[bench]]
 name = "segment"
@@ -99,7 +98,7 @@ required-features = ["laser"]
 
 [[example]]
 name = "line_segments"
-required-features = ["shape"]
+required-features = ["lsd"]
 
 [[example]]
 name = "measure_circles"

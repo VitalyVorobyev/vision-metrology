@@ -9,12 +9,12 @@
 //! | Module        | Content |
 //! |---------------|---------|
 //! | [`contour`]   | Junction-aware contour graph extraction from 2D edgels |
-//! | [`laser`]     | Laser stripe extraction using opposite-polarity edge pairs |
-//! | [`matching`]  | Shape-based object detection: gradient-orientation model matching |
-//! | [`segment`]   | Otsu / adaptive threshold, CCL, watershed, region growing |
 //! | [`fit`]       | Robust line / circle / ellipse fitting with reported residuals |
+//! | [`laser`]     | Laser stripe extraction using opposite-polarity edge pairs |
+//! | [`lsd`]       | LSD line-segment detection |
+//! | [`matching`]  | Shape-based object detection: gradient-orientation model matching |
 //! | [`measure`]   | Calipers and metrology models — measuring a located part |
-//! | [`shape`]     | LSD line-segment detection |
+//! | [`segment`]   | Otsu / adaptive threshold, CCL, watershed, region growing |
 //!
 //! ## Features
 //!
@@ -23,18 +23,18 @@
 //!
 //! ```toml
 //! vision-metrology = { version = "0.2", default-features = false,
-//!                      features = ["matching", "shape"] }
+//!                      features = ["matching", "lsd"] }
 //! ```
 //!
 //! | Feature | Module | Implies |
 //! |---|---|---|
 //! | `contour` | [`contour`] | — |
 //! | `fit` | [`fit`] | — |
-//! | `measure` | [`measure`] | `fit` (measured points are fitted) |
 //! | `laser` | [`laser`] | — |
+//! | `lsd` | [`lsd`] | — |
 //! | `matching` | [`matching`] | — |
+//! | `measure` | [`measure`] | `fit` (measured points are fitted) |
 //! | `segment` | [`segment`] | `contour` (region growing consumes a `ContourGraph`) |
-//! | `shape` | [`shape`] | — |
 //! | `serde` | `ShapeModel` persistence | `matching` |
 //!
 //! ## Importing
@@ -49,14 +49,14 @@ pub mod contour;
 pub mod fit;
 #[cfg(feature = "laser")]
 pub mod laser;
+#[cfg(feature = "lsd")]
+pub mod lsd;
 #[cfg(feature = "matching")]
 pub mod matching;
 #[cfg(feature = "measure")]
 pub mod measure;
 #[cfg(feature = "segment")]
 pub mod segment;
-#[cfg(feature = "shape")]
-pub mod shape;
 
 /// The lower crate, re-exported whole so one dependency is enough.
 ///
@@ -82,6 +82,8 @@ pub mod prelude {
     };
     #[cfg(feature = "laser")]
     pub use crate::laser::{LaserExtractConfig, LaserExtractor, LaserLine};
+    #[cfg(feature = "lsd")]
+    pub use crate::lsd::{LineSegment2f, LsdConfig, LsdDetector};
     #[cfg(feature = "matching")]
     pub use crate::matching::{
         Polarity, ShapeMatch, ShapeMatcher, ShapeModel, ShapeModelBuilder, ShapeModelConfig,
@@ -97,8 +99,6 @@ pub mod prelude {
         AdaptiveThreshConfig, CcLabel, ComponentStats, adaptive_threshold_u8,
         label_connected_components_u8, otsu_threshold_u8,
     };
-    #[cfg(feature = "shape")]
-    pub use crate::shape::{LineSegment2f, LsdConfig, LsdDetector};
 }
 
 // The primitives most callers of this crate need by name. Deliberately an
