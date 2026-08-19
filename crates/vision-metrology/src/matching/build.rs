@@ -1,7 +1,7 @@
 //! Shape model creation, from a reference image or from geometry alone.
 
 use vm_primitives::{
-    Edge2DDetector, Edgel, Error, ImageView, Point2f, Polyline2f, PyramidF32, Rect2f, SmoothKind,
+    Edge2DDetector, Edgel, Error, ImageView, Point2f, Polyline2f, Pyramid, Rect2f, SmoothKind,
     Vec2f,
 };
 
@@ -87,7 +87,7 @@ fn to_level(v: f32, level: usize) -> f32 {
 /// ```
 #[derive(Debug, Default)]
 pub struct ShapeModelBuilder {
-    pyr: PyramidF32,
+    pyr: Pyramid,
     det: Edge2DDetector,
 }
 
@@ -95,7 +95,7 @@ impl ShapeModelBuilder {
     /// Create a builder with empty scratch buffers.
     pub fn new() -> Self {
         Self {
-            pyr: PyramidF32::new(),
+            pyr: Pyramid::new(),
             det: Edge2DDetector::new(),
         }
     }
@@ -115,7 +115,7 @@ impl ShapeModelBuilder {
     ) -> Result<ShapeModel, Error> {
         let crop = validate(img.width(), img.height(), roi, cfg)?;
         let sub = img.subview(crop.x0, crop.y0, crop.w, crop.h)?;
-        self.pyr.build_from_u8(&sub, crop.levels);
+        self.pyr.build(&sub, crop.levels);
         self.finish(crop, roi, cfg)
     }
 
@@ -131,7 +131,7 @@ impl ShapeModelBuilder {
     ) -> Result<ShapeModel, Error> {
         let crop = validate(img.width(), img.height(), roi, cfg)?;
         let sub = img.subview(crop.x0, crop.y0, crop.w, crop.h)?;
-        self.pyr.build_from_u16(&sub, crop.levels);
+        self.pyr.build(&sub, crop.levels);
         self.finish(crop, roi, cfg)
     }
 
@@ -147,7 +147,7 @@ impl ShapeModelBuilder {
     ) -> Result<ShapeModel, Error> {
         let crop = validate(img.width(), img.height(), roi, cfg)?;
         let sub = img.subview(crop.x0, crop.y0, crop.w, crop.h)?;
-        self.pyr.build_from_f32(&sub, crop.levels);
+        self.pyr.build(&sub, crop.levels);
         self.finish(crop, roi, cfg)
     }
 

@@ -18,6 +18,7 @@ mod border;
 mod error;
 mod geom;
 mod image;
+mod pixel;
 mod sample;
 
 pub use border::{BorderMode, map_index};
@@ -29,4 +30,5 @@ pub use geom::{
     wrap_angle,
 };
 pub use image::{Image, ImageView, ImageViewMut, to_f32, to_f32_u16};
+pub use pixel::Pixel;
 pub use sample::{sample_bilinear_f32, sample_nearest};

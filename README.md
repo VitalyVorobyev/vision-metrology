@@ -24,7 +24,7 @@ No OpenCV, no FFI. All coordinates follow the **pixel-center** convention: integ
 | Module | Content |
 |---|---|
 | `core` | `Image` / `ImageView` / `ImageViewMut`, sampling and interpolation, border modes, geometry primitives and nalgebra type aliases, the shared `Error` type |
-| `pyr` | Ultra-fast 2×2 mean image pyramid |
+| `pyr` | 2×2 mean image pyramid, generic over pixel type, with optional anti-alias pre-smoothing |
 | `edge` | Subpixel 1-D/2-D edge detection (DoG, Scharr), edgels with gradient normals, opposite-polarity edge pairs, dense gradient direction fields |
 | `morph` | Binary morphology with parameterized structuring elements, chamfer distance transform, Zhang–Suen thinning |
 

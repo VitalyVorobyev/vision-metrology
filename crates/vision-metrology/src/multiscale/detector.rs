@@ -1,12 +1,12 @@
 //! Multi-scale edge detector implementation.
 
-use vm_primitives::PyramidF32;
+use vm_primitives::Pyramid;
 use vm_primitives::edge::edge2d::{Edge2DConfig, Edge2DDetector};
 use vm_primitives::{ImageView, Point2f, Vec2f};
 
 use crate::{MultiScaleConfig, ScaleAnnotatedEdgel};
 
-/// Combines [`PyramidF32`] and [`Edge2DDetector`] to produce edgels across
+/// Combines [`Pyramid`] and [`Edge2DDetector`] to produce edgels across
 /// multiple pyramid levels in a single call.
 ///
 /// Owns all scratch buffers internally so allocations happen only on the first
@@ -35,7 +35,7 @@ use crate::{MultiScaleConfig, ScaleAnnotatedEdgel};
 /// ```
 #[derive(Debug)]
 pub struct MultiScaleEdgeDetector {
-    pyramid: PyramidF32,
+    pyramid: Pyramid,
     detector: Edge2DDetector,
     /// Scratch bitmask: `cell_used[y * base_w + x]` is set when that level-0
     /// pixel cell has already been claimed by a finer-scale detection.
@@ -52,7 +52,7 @@ impl MultiScaleEdgeDetector {
     /// Create a new detector with empty scratch buffers.
     pub fn new() -> Self {
         Self {
-            pyramid: PyramidF32::new(),
+            pyramid: Pyramid::new(),
             detector: Edge2DDetector::new(),
             cell_used: Vec::new(),
         }
@@ -64,7 +64,7 @@ impl MultiScaleEdgeDetector {
         img: &ImageView<'_, u8>,
         cfg: &MultiScaleConfig,
     ) -> Vec<ScaleAnnotatedEdgel> {
-        self.pyramid.build_from_u8(img, cfg.num_levels);
+        self.pyramid.build(img, cfg.num_levels);
         self.detect_from_pyramid(img.width(), img.height(), cfg)
     }
 
@@ -74,7 +74,7 @@ impl MultiScaleEdgeDetector {
         img: &ImageView<'_, u16>,
         cfg: &MultiScaleConfig,
     ) -> Vec<ScaleAnnotatedEdgel> {
-        self.pyramid.build_from_u16(img, cfg.num_levels);
+        self.pyramid.build(img, cfg.num_levels);
         self.detect_from_pyramid(img.width(), img.height(), cfg)
     }
 
@@ -84,7 +84,7 @@ impl MultiScaleEdgeDetector {
         img: &ImageView<'_, f32>,
         cfg: &MultiScaleConfig,
     ) -> Vec<ScaleAnnotatedEdgel> {
-        self.pyramid.build_from_f32(img, cfg.num_levels);
+        self.pyramid.build(img, cfg.num_levels);
         self.detect_from_pyramid(img.width(), img.height(), cfg)
     }
 

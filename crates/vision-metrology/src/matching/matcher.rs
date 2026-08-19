@@ -1,7 +1,7 @@
 //! Coarse-to-fine shape search.
 
 use vm_primitives::{
-    DirectionField, ImageView, Point2f, PyramidF32, Similarity2f, Vec2f, similarity_from_parts,
+    DirectionField, ImageView, Point2f, Pyramid, Similarity2f, Vec2f, similarity_from_parts,
     wrap_angle,
 };
 
@@ -94,7 +94,7 @@ impl MapBuffers {
 /// ```
 #[derive(Debug, Default)]
 pub struct ShapeMatcher {
-    pyr: PyramidF32,
+    pyr: Pyramid,
     fields: Vec<DirectionField>,
     rot: Vec<RotPoint>,
     cands: Vec<Candidate>,
@@ -130,7 +130,7 @@ impl ShapeMatcher {
     ) -> Vec<ShapeMatch> {
         #[cfg(feature = "trace-cands")]
         let t = std::time::Instant::now();
-        self.pyr.build_from_u8(img, model.num_levels());
+        self.pyr.build(img, model.num_levels());
         #[cfg(feature = "trace-cands")]
         eprintln!(
             "pyr build_from_u8: {:.3} ms",
@@ -149,7 +149,7 @@ impl ShapeMatcher {
         model: &ShapeModel,
         cfg: &ShapeSearchConfig,
     ) -> Vec<ShapeMatch> {
-        self.pyr.build_from_u16(img, model.num_levels());
+        self.pyr.build(img, model.num_levels());
         self.run(model, cfg)
     }
 
@@ -160,7 +160,7 @@ impl ShapeMatcher {
         model: &ShapeModel,
         cfg: &ShapeSearchConfig,
     ) -> Vec<ShapeMatch> {
-        self.pyr.build_from_f32(img, model.num_levels());
+        self.pyr.build(img, model.num_levels());
         self.run(model, cfg)
     }
 

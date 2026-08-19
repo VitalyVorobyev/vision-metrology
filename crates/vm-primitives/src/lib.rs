@@ -5,7 +5,7 @@
 //! | Module  | Content |
 //! |---------|---------|
 //! | [`core`]  | Image views, sampling, border modes, geometry + nalgebra type aliases |
-//! | [`pyr`]   | Ultra-fast 2×2 mean image pyramid |
+//! | [`pyr`]   | 2×2 mean image pyramid, generic over pixel type, optional anti-alias pre-smooth |
 //! | [`edge`]  | 1-D/2-D subpixel edge (DoG / Scharr) detection, edgels, edge-pairs, dense direction fields |
 //! | [`morph`] | Binary morphology, chamfer distance transform, Zhang-Suen thinning |
 //!
@@ -33,7 +33,7 @@ pub mod pyr;
 // ---------------------------------------------------------------------------
 
 pub use core::{
-    Affine2f, Angle, BorderMode, Error, Image, ImageView, ImageViewMut, Isometry2f, Line2f,
+    Affine2f, Angle, BorderMode, Error, Image, ImageView, ImageViewMut, Isometry2f, Line2f, Pixel,
     Point2f, Polyline2f, Projective2f, Rect2f, Similarity2f, Vec2f, from_na_point, from_na_vec,
     map_index, parabolic_peak_offset, sample_bilinear_f32, sample_nearest, similarity_from_parts,
     similarity_parts, to_f32, to_f32_u16, to_na_point, to_na_vec, transform_point,
@@ -50,6 +50,6 @@ pub use morph::{
     thin_binary_u8,
 };
 pub use pyr::{
-    PyramidF32, downsample2x2_mean_f32, downsample2x2_mean_u8, downsample2x2_mean_u8_to_f32,
-    downsample2x2_mean_u16, downsample2x2_mean_u16_to_f32,
+    PreSmooth, Pyramid, PyramidConfig, base_to_level, downsample2x2_mean, downsample2x2_mean_into,
+    downsample2x2_mean_to_f32_into, level_to_base,
 };

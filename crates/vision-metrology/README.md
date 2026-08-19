@@ -23,7 +23,7 @@ vision-metrology = "0.1"
 | `segment` | Otsu and adaptive thresholding, connected-component labeling with per-component stats, watershed, edgel region growing |
 | `shape` | `LsdDetector` (line-segment detection with NFA validation), `ConicFitter` (Bookstein / Fitzgibbon), RANSAC ellipse fitting |
 
-Everything from `vm_primitives` — `Image`, `Edge2DDetector`, `PyramidF32`, morphology,
+Everything from `vm_primitives` — `Image`, `Edge2DDetector`, `Pyramid`, morphology,
 geometry — is re-exported at this crate's root as well, and each module's own types
 are re-exported flat. So `vision_metrology::ContourGraph` and
 `vision_metrology::contour::ContourGraph` are the same type.

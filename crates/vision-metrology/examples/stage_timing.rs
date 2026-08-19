@@ -7,7 +7,7 @@
 //! times from inside the matcher on stderr.
 use std::time::Instant;
 use vision_metrology::{
-    Image, PyramidF32, Rect2f, ShapeMatcher, ShapeModelBuilder, ShapeModelConfig, ShapeSearchConfig,
+    Image, Pyramid, Rect2f, ShapeMatcher, ShapeModelBuilder, ShapeModelConfig, ShapeSearchConfig,
 };
 use vm_primitives::{DirectionField, SmoothKind};
 
@@ -71,11 +71,11 @@ fn main() {
     println!("model levels: {n_lv}");
 
     // Stage 1: pyramid
-    let mut pyr = PyramidF32::new();
-    pyr.build_from_u8(&scene.as_view(), n_lv); // warm
+    let mut pyr = Pyramid::new();
+    pyr.build(&scene.as_view(), n_lv); // warm
     let t = Instant::now();
     for _ in 0..50 {
-        pyr.build_from_u8(&scene.as_view(), n_lv);
+        pyr.build(&scene.as_view(), n_lv);
     }
     println!(
         "pyramid build      : {:8.3} ms",
