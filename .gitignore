@@ -13,6 +13,11 @@ dist/
 # Local datasets and generated outputs (not distributed)
 data/
 
+# lab/ (visual metrology lab: FastAPI backend + React frontend, not part of the Cargo
+# workspace). `data/`, `.venv/` and `dist/` above already cover lab/backend/data,
+# lab/backend/.venv and lab/frontend/dist; node_modules is the one new pattern needed.
+node_modules/
+
 # `maturin develop`/`build` places the compiled extension directly in the
 # mixed-layout source tree (python-source = "python" in vm-python's
 # pyproject.toml); only the hand-written __init__.py/.pyi/py.typed are checked in.
