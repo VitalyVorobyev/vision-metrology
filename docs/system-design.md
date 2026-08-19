@@ -232,6 +232,18 @@ bright 16.9 → 9.2 ms, dark 15 → 11.5 ms, set2 dome 63 → **25.5 ms**, conve
 bit-identical to the pre-tiling code (verified against `main` on identical
 flags).
 
+Re-validated after the v0.2 substrate reset (`Pixel` trait, generic pyramid,
+LTO profile), set1 `normal`, `--model-min-contrast 400`:
+
+| folder | frames | found | shape p50 | ZNCC p50 | ms p50 |
+|---|---|---|---|---|---|
+| dome | 50 | 50/50 | 0.998 | 0.961 | 5.50 |
+| bright | 50 | 50/50 | 0.883 | 0.912 | 9.08 |
+| dark | 50 | 50/50 | 0.823 | 0.954 | 11.30 |
+
+Every folder is at or slightly below its pre-reset median (5.6 / 9.2 / 11.5 ms)
+and no detection was lost.
+
 Where the remaining time goes (cluttered fixture, per stage): top-level sweep
 2.3 ms, candidate descent 4.2 ms, everything else <0.5 ms. The descent cost is
 dominated by well-scoring candidates that legitimately never trigger the
