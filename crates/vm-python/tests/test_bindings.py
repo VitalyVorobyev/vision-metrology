@@ -21,7 +21,8 @@ def make_step_image(w: int = 64, h: int = 64, edge_x: int = 32) -> np.ndarray:
 
 def test_hard_break_namespace():
     assert hasattr(vm, "EdgeDetector")
-    assert hasattr(vm, "detect_edges_u8")
+    assert hasattr(vm, "detect_edges")
+    assert not hasattr(vm, "detect_edges_u8"), "the _u8 suffix is gone: detect dispatches on dtype"
     assert not hasattr(vm, "PyEdgeDetector")
     assert not hasattr(vm, "PyEdgel")
     assert hasattr(vm, "ShapeModel")
@@ -37,8 +38,8 @@ def test_edge_detector_object_and_function_parity():
     cfg = vm.EdgeConfig()
 
     det = vm.EdgeDetector(cfg)
-    edgels_obj = det.detect_u8(img)
-    edgels_fn = vm.detect_edges_u8(img, cfg)
+    edgels_obj = det.detect(img)
+    edgels_fn = vm.detect_edges(img, cfg)
 
     assert len(edgels_obj) > 0
     assert len(edgels_obj) == len(edgels_fn)
@@ -50,8 +51,26 @@ def test_edge_detector_object_and_function_parity():
 
 def test_edge_detector_no_edges_on_blank():
     img = np.full((64, 64), 128, dtype=np.uint8)
-    edgels = vm.detect_edges_u8(img, vm.EdgeConfig())
+    edgels = vm.detect_edges(img, vm.EdgeConfig())
     assert len(edgels) == 0
+
+
+def test_edge_detector_dtype_dispatch_agrees_on_a_synthetic_edge():
+    """u8, u16 and f32 views of the same edge must agree to the bit."""
+    img8 = make_step_image()
+    img16 = img8.astype(np.uint16)
+    img32 = img8.astype(np.float32)
+
+    results = [vm.EdgeDetector().detect(im) for im in (img8, img16, img32)]
+    counts = [len(r) for r in results]
+    assert counts[0] == counts[1] == counts[2] > 0
+    assert results[0][0].x == results[1][0].x == results[2][0].x
+
+
+def test_edge_detector_unsupported_dtype_names_the_supported_ones():
+    bad = np.zeros((16, 16), dtype=np.int32)
+    with pytest.raises(ValueError, match="uint8|uint16|float32"):
+        vm.EdgeDetector().detect(bad)
 
 
 def test_line_detector_object_and_function():
@@ -61,8 +80,8 @@ def test_line_detector_object_and_function():
 
     cfg = vm.LsdConfig()
     det = vm.LsdDetector(cfg)
-    segs_obj = det.detect_u8(img)
-    segs_fn = vm.detect_line_segments_u8(img, cfg)
+    segs_obj = det.detect(img)
+    segs_fn = vm.detect_line_segments(img, cfg)
 
     assert isinstance(segs_obj, list)
     assert isinstance(segs_fn, list)
@@ -72,6 +91,17 @@ def test_line_detector_object_and_function():
         s = segs_fn[0]
         for attr in ("x1", "y1", "x2", "y2", "width", "nfa", "angle", "length"):
             assert hasattr(s, attr)
+
+
+def test_line_detector_dtype_dispatch_agrees():
+    h, w = 64, 64
+    img8 = np.zeros((h, w), dtype=np.uint8)
+    img8[32:, :] = 255
+    img16 = img8.astype(np.uint16)
+    img32 = img8.astype(np.float32)
+
+    counts = [len(vm.LsdDetector().detect(im)) for im in (img8, img16, img32)]
+    assert counts[0] == counts[1] == counts[2] > 0
 
 
 def test_conic_fitter_object_and_function():
@@ -224,6 +254,31 @@ def test_shape_matcher_recovers_a_rotated_instance():
     assert abs(mapped[1] - 70.0) < 2.0
 
 
+def test_shape_matcher_dtype_dispatch_agrees_with_u8():
+    """ShapeModel.build and ShapeMatcher.find both dispatch on dtype."""
+    reference = make_bracket()
+    scene = make_bracket(cx=115.0, cy=70.0)
+
+    model8 = vm.ShapeModel(reference, BRACKET_ROI)
+    model16 = vm.ShapeModel(reference.astype(np.uint16), BRACKET_ROI)
+    model32 = vm.ShapeModel(reference.astype(np.float32), BRACKET_ROI)
+    assert model8.point_counts == model16.point_counts == model32.point_counts
+
+    matcher = vm.ShapeMatcher()
+    m8 = matcher.find(scene, model8)
+    m16 = matcher.find(scene.astype(np.uint16), model16)
+    m32 = matcher.find(scene.astype(np.float32), model32)
+    assert len(m8) == len(m16) == len(m32) == 1
+    assert abs(m8[0].x - m16[0].x) < 1e-3
+    assert abs(m8[0].x - m32[0].x) < 1e-3
+
+
+def test_shape_model_unsupported_dtype_names_the_supported_ones():
+    bad = np.zeros((16, 16), dtype=np.int32)
+    with pytest.raises(ValueError, match="uint8|uint16|float32"):
+        vm.ShapeModel(bad, BRACKET_ROI)
+
+
 def test_find_shape_model_free_function_matches_the_object_api():
     import math
 
@@ -260,7 +315,7 @@ def test_config_validation_errors():
     img = make_step_image()
 
     with pytest.raises(ValueError):
-        vm.detect_edges_u8(img, vm.EdgeConfig(smooth_kind="bad"))
+        vm.detect_edges(img, vm.EdgeConfig(smooth_kind="bad"))
 
     # A zero-extent ROI is invalid config, not an empty result.
     with pytest.raises(ValueError):

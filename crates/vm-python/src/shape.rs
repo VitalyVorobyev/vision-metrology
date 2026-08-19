@@ -8,7 +8,7 @@ use vision_metrology::lsd::LsdDetector as NativeLsdDetector;
 use vm_primitives::Point2f;
 
 use crate::config::{FitConfig, LsdConfig};
-use crate::convert::image_from_numpy_u8;
+use crate::convert::{any_image_from_numpy, with_any_image};
 use crate::types::{Circle, Ellipse, Line, LineSegment};
 
 fn segments_to_pylist<'py>(
@@ -74,15 +74,15 @@ impl LsdDetector {
         }
     }
 
-    /// Detect line segments in a 2-D `uint8` numpy array.
-    pub fn detect_u8<'py>(
+    /// Detect line segments in a 2-D `uint8`, `uint16` or `float32` numpy array.
+    pub fn detect<'py>(
         &mut self,
         py: Python<'py>,
-        img: PyReadonlyArray2<'py, u8>,
+        img: &Bound<'py, PyAny>,
     ) -> PyResult<Bound<'py, PyList>> {
-        let image = image_from_numpy_u8(py, &img)?;
+        let any = any_image_from_numpy(py, img)?;
         let cfg = self.cfg.to_native()?;
-        let segs = self.det.detect(&image.as_view(), &cfg);
+        let segs = with_any_image!(any, view => self.det.detect(&view, &cfg));
         segments_to_pylist(py, &segs)
     }
 
@@ -220,13 +220,13 @@ impl Fitter {
     }
 }
 
-pub(crate) fn detect_line_segments_u8_impl<'py>(
+pub(crate) fn detect_line_segments_impl<'py>(
     py: Python<'py>,
-    img: PyReadonlyArray2<'py, u8>,
+    img: &Bound<'py, PyAny>,
     config: LsdConfig,
 ) -> PyResult<Bound<'py, PyList>> {
     let mut det = LsdDetector::new(Some(config));
-    det.detect_u8(py, img)
+    det.detect(py, img)
 }
 
 pub(crate) fn fit_ellipse_impl<'py>(

@@ -3,7 +3,7 @@ PyO3 Python bindings for the vision-metrology workspace.
 This package is published as `vision-metrology` and imported as `vision_metrology`.
 It provides both:
 - stateful object APIs (`EdgeDetector`, `ShapeMatcher`, ...), and
-- declarative free functions (`detect_edges_u8`, `find_shape_model`, ...).
+- declarative free functions (`detect_edges`, `find_shape_model`, ...).
 
 ## Breaking change (hard break)
 
@@ -51,8 +51,13 @@ img[:, 32:] = 200
 edgels_obj = vm.EdgeDetector(vm.EdgeConfig()).detect(img)
 
 # Free-function API
-edgels_fn = vm.detect_edges_u8(img, vm.EdgeConfig())
+edgels_fn = vm.detect_edges(img, vm.EdgeConfig())
 ```
+
+`detect` / `detect_edges` and every other entry point onto a Rust function
+generic over `Pixel` accepts `uint8`, `uint16` or `float32` arrays — dispatch
+happens on the array's own dtype, no `_u8`/`_u16`/`_f32` suffix. An
+unsupported dtype raises `ValueError` naming the three that work.
 
 ## Config classes
 
@@ -87,8 +92,8 @@ edgels_fn = vm.detect_edges_u8(img, vm.EdgeConfig())
 
 ## Free functions
 
-- `detect_edges_u8(img, config)`
-- `detect_line_segments_u8(img, config)`
+- `detect_edges(img, config)` — `uint8`/`uint16`/`float32`
+- `detect_line_segments(img, config)` — `uint8`/`uint16`/`float32`
 - `fit_ellipse(pts, config)`
 - `fit_line(pts, config)`
 - `find_shape_model(model_image, roi, scene_image, model_config=None, search_config=None)`
@@ -127,11 +132,11 @@ path, except where noted:
 
 | Rust module | Python surface | Notes |
 |---|---|---|
-| `edge` (2D) | `EdgeDetector`, `detect_edges_u8` | dtype dispatch lands next |
+| `edge` (2D) | `EdgeDetector`, `detect_edges` | `uint8`/`uint16`/`float32` dispatch |
 | `edge` (1D) | via `Caliper` | not exposed standalone |
-| `lsd` | `LsdDetector`, `detect_line_segments_u8` | |
+| `lsd` | `LsdDetector`, `detect_line_segments` | `uint8`/`uint16`/`float32` dispatch |
 | `fit` | `Fitter`, `fit_ellipse`, `fit_line` | `fit_circle` via `Fitter` only |
-| `matching` | `ShapeModel`, `ShapeMatcher`, `find_shape_model` | |
+| `matching` | `ShapeModel`, `ShapeMatcher`, `find_shape_model` | `uint8`/`uint16`/`float32` dispatch on build and find |
 | `measure` | `Caliper`, `MetrologyModel`, `MetrologyObject`, `MetrologyShape`, `MetrologyResult` | |
 | `contour` | `build_contour_graph`, `ContourGraph`, `smooth_polyline` | detector-output variant only, not the raw-edgel constructor |
 | `segment` | `Segmenter`, free functions | watershed and edgel region growing not yet bound |
