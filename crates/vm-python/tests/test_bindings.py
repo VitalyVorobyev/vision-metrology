@@ -469,6 +469,32 @@ def test_fit_line_object_and_function():
     assert obj.n_used == 10
 
 
+def test_measurement_chain_disc_to_radial_calipers_to_circle_fit():
+    """The chain by hand: synthetic disc -> Caliper.radial around it ->
+    Fitter().fit_circle -- the same chain MetrologyModel automates, exercised
+    at the primitive level so a break in either half is localized."""
+    c = (90.0, 70.0)
+    r = 35.0
+    disc = make_disc(180, 160, c[0], c[1], r)
+
+    n = 24
+    points = []
+    for i in range(n):
+        angle = 2.0 * np.pi * i / n
+        cal = vm.Caliper.radial(c, r, angle, 10.0, 3.0)
+        edge = cal.measure(disc)[0]
+        points.append((edge.x, edge.y))
+    pts = np.array(points, dtype=np.float32)
+
+    fit = vm.Fitter().fit_circle(pts)
+    assert fit is not None
+    assert abs(fit.cx - c[0]) < 0.05
+    assert abs(fit.cy - c[1]) < 0.05
+    assert abs(fit.r - r) < 0.05
+    assert fit.rms < 0.05
+    assert fit.n_used == n
+
+
 def test_metrology_model_measures_a_circle():
     """The measurement chain: synthetic disc -> radial calipers -> circle fit."""
     c = (80.0, 80.0)

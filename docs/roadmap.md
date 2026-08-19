@@ -111,7 +111,21 @@ across dome / bright / dark with dome p50 **0.998**, unchanged to three decimals
 **Deliberately not done here:** README and `docs/*.md` still describe the pre-reset
 surface in places (that is the docs wave), and `vm-python` mirrors the new configs only
 well enough to compile and pass its tests — full parity, `.pyi` stubs and a `Contrast`
-mode selector are the Python wave.
+mode selector are the Python wave (**done**, see Track D.1 below).
+
+### D.1 — vm-python parity wave — `done`
+
+Four commits, gates green before each: config mirror (nested `ShapeSearchTuning`, `roi`/
+`angle_range`/`scale_range`, a tagged `Contrast` pyclass rather than a bare float),
+`measure`/`fit_line`/`contour`/`morph` bindings (`Caliper` raising `MeasureRejected`,
+`MetrologyModel` returning `MetrologyResult | MetrologyError` per object), dtype dispatch
+replacing every `_u8` name (`EdgeDetector`, `LsdDetector`, `ShapeModel`/`ShapeMatcher`
+all accept `uint8`/`uint16`/`float32`), and `.pyi` + `py.typed` wired into the wheel via
+maturin's `python-source` mixed layout — which turned out to need a bridging `__init__.py`
+(the compiled extension lands as a *submodule* of the same-named package, not merged into
+it; verified by installing the actual built wheel, not just compiling). `laser` and
+`segment::watershed`/region-growing got no binding this wave — recorded in
+`docs/backlog.md` under Python, not silently skipped.
 
 ---
 
@@ -243,8 +257,12 @@ elongation, plus convex hull, min-area rect, circularity, rectangularity. Cheap 
 the existing CCL and needed for blob-based inspection.
 
 ### C3 — bindings and CI
-Python dtype dispatch (the bindings still accept only `uint8` while Rust is generic);
-generate the vm-python config conversions instead of hand-mirroring 588 lines;
+Python dtype dispatch **done** (Track D.1: `EdgeDetector`/`LsdDetector`/`ShapeModel`/
+`ShapeMatcher`/`Caliper`/`MetrologyModel` all accept `uint8`/`uint16`/`float32` via one
+`AnyImage`/`with_any_image!` dispatch helper in `vm-python/src/convert.rs`). Still open:
+generate the vm-python config conversions instead of hand-mirroring them (now spread
+across `src/config/*.rs`, ~750 lines but each file under the 600-line soft cap); a Python
+binding for `laser` and for `segment::watershed`/region-growing (see `docs/backlog.md`);
 `cargo publish --dry-run` in CI; miri over **all** unsafe, not just `laser::`.
 
 ---
