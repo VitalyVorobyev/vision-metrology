@@ -141,6 +141,10 @@ required-features = ["matching"]
 name = "corrmatch_bridge"
 required-features = ["matching"]
 
+[[test]]
+name = "accuracy"
+required-features = ["fit", "measure", "matching"]
+
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
