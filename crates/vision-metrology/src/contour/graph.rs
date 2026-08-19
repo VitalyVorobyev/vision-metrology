@@ -148,7 +148,7 @@ impl GraphEdge {
 /// Nodes represent endpoints and junctions; edges are polyline arcs
 /// connecting them. Build via [`build_graph_from_edgels`].
 ///
-/// [`build_graph_from_edgels`]: crate::build_graph_from_edgels
+/// [`build_graph_from_edgels`]: crate::contour::build_graph_from_edgels
 #[derive(Debug, Clone, Default)]
 pub struct ContourGraph {
     /// Width of the source image (used as grid map extent).

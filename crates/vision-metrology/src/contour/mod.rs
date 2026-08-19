@@ -22,16 +22,16 @@ pub use build::{
     Connectivity, ContourBuildConfig, build_graph_from_detector_output, build_graph_from_edgels,
 };
 pub use graph::{ContourGraph, EdgeId, GraphEdge, Node, NodeId, NodeKind};
-pub use smooth::{MAX_KERNEL_PTS, smooth_polyline};
+pub use smooth::smooth_polyline;
 
 #[cfg(test)]
 mod geom_tests {
     use vm_primitives::{Point2f, Vec2f};
 
-    use crate::{Connectivity, ContourBuildConfig, build_graph_from_edgels};
+    use crate::contour::{Connectivity, ContourBuildConfig, build_graph_from_edgels};
 
-    fn e(x: usize, y: usize) -> vm_primitives::edge::edge2d::Edgel {
-        vm_primitives::edge::edge2d::Edgel {
+    fn e(x: usize, y: usize) -> vm_primitives::edge::Edgel {
+        vm_primitives::edge::Edgel {
             p: Point2f::new(x as f32, y as f32),
             n: Vec2f::new(1.0, 0.0),
             strength: 1.0,

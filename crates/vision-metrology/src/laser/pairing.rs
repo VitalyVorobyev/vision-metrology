@@ -53,27 +53,6 @@ fn accept_pair(
     })
 }
 
-/// Find the best bright-on-dark edge pair given a predicted centre position.
-///
-/// Scores each pair as `(left.strength + right.strength) - prior_weight * |centre - predicted|`.
-/// Returns `None` when no valid pair exists within `[min_width, max_width]`.
-pub fn best_pair_with_prior(
-    peaks: &[EdgePeak],
-    min_width: f32,
-    max_width: f32,
-    predicted_center: f32,
-    prior_weight: f32,
-) -> Option<EdgePair1D> {
-    best_pair_with_prior_offset(
-        peaks,
-        0.0,
-        min_width,
-        max_width,
-        predicted_center,
-        prior_weight,
-    )
-}
-
 fn best_pair_with_prior_offset(
     peaks: &[EdgePeak],
     x_offset: f32,

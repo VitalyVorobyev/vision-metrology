@@ -4,16 +4,17 @@ Locate a modelled contour in an image under translation, rotation and uniform
 scale — robustly against occlusion, clutter and changes in illumination.
 
 ```rust
-use vision_metrology::{
-    Rect2f, ShapeMatcher, ShapeModelBuilder, ShapeModelConfig, ShapeSearchConfig,
+use vision_metrology::Rect2f;
+use vision_metrology::matching::{
+    ShapeMatcher, ShapeModelBuilder, ShapeModelConfig, ShapeSearchConfig,
 };
 
 let roi = Rect2f { x: 420.0, y: 350.0, width: 420.0, height: 320.0 };
 let model = ShapeModelBuilder::new()
-    .build_u8(&reference.as_view(), roi, &ShapeModelConfig::default())?;
+    .build(&reference.as_view(), roi, &ShapeModelConfig::default())?;
 
 let cfg = ShapeSearchConfig { min_score: 0.6, ..Default::default() };
-for m in ShapeMatcher::new().find_u8(&scene.as_view(), &model, &cfg) {
+for m in ShapeMatcher::new().find(&scene.as_view(), &model, &cfg) {
     println!("score {:.3} at {:?}, {:.1} deg", m.score, m.position, m.angle().to_degrees());
 }
 ```

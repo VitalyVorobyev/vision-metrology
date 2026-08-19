@@ -142,8 +142,8 @@ pub struct ShapeMatch {
     pub level: usize,
 }
 
-impl From<vision_metrology::ShapeMatch> for ShapeMatch {
-    fn from(m: vision_metrology::ShapeMatch) -> Self {
+impl From<vision_metrology::matching::ShapeMatch> for ShapeMatch {
+    fn from(m: vision_metrology::matching::ShapeMatch) -> Self {
         Self {
             x: m.position.x,
             y: m.position.y,

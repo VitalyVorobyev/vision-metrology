@@ -12,9 +12,10 @@
 //! # Workflow
 //!
 //! ```no_run
-//! use vision_metrology::{
-//!     Image, Rect2f, ShapeMatcher, ShapeModelBuilder, ShapeModelConfig, ShapeSearchConfig,
+//! use vision_metrology::matching::{
+//!     ShapeMatcher, ShapeModelBuilder, ShapeModelConfig, ShapeSearchConfig,
 //! };
+//! use vision_metrology::{Image, Rect2f};
 //!
 //! # fn main() -> Result<(), vision_metrology::Error> {
 //! // 1. Build a model from a reference image and a rectangular ROI.
@@ -64,7 +65,7 @@
 
 mod build;
 mod config;
-mod diagnostics;
+pub mod diagnostics;
 mod matcher;
 mod model;
 mod nms;
@@ -72,9 +73,8 @@ mod refine;
 mod score;
 mod search;
 
-pub use build::{ContourOrientation, ShapeModelBuilder, create_shape_model};
+pub use build::{ContourOrientation, ShapeModelBuilder};
 pub use config::{Polarity, Refinement, ShapeModelConfig, ShapeSearchConfig};
-pub use diagnostics::match_point_scores;
 pub use matcher::{ShapeMatch, ShapeMatcher};
 #[cfg(feature = "serde")]
 pub use model::SHAPE_MODEL_FORMAT_VERSION;

@@ -67,21 +67,38 @@ pub use vm_primitives;
 /// The working set, for `use vision_metrology::prelude::*;`.
 ///
 /// Each group follows its module's feature gate, so the prelude shrinks with
-/// the build rather than failing it.
+/// the build rather than failing it. Everything here is also reachable at its
+/// module path — the prelude is a convenience, not a second API (invariant 17).
 pub mod prelude {
     pub use vm_primitives::prelude::*;
 
     #[cfg(feature = "contour")]
-    pub use crate::{Connectivity, ContourBuildConfig, ContourGraph, build_graph_from_edgels};
+    pub use crate::contour::{
+        Connectivity, ContourBuildConfig, ContourGraph, build_graph_from_edgels,
+    };
+    #[cfg(feature = "fit")]
+    pub use crate::fit::{
+        Fit, FitConfig, RansacConfig, RobustLoss, fit_circle, fit_ellipse, fit_line,
+    };
     #[cfg(feature = "laser")]
-    pub use crate::{LaserExtractConfig, LaserExtractor, LaserLine};
-    #[cfg(feature = "shape")]
-    pub use crate::{LineSegment2f, LsdConfig, LsdDetector};
+    pub use crate::laser::{LaserExtractConfig, LaserExtractor, LaserLine};
     #[cfg(feature = "matching")]
-    pub use crate::{
+    pub use crate::matching::{
         Polarity, ShapeMatch, ShapeMatcher, ShapeModel, ShapeModelBuilder, ShapeModelConfig,
         ShapeSearchConfig,
     };
+    #[cfg(feature = "measure")]
+    pub use crate::measure::{
+        Caliper, EdgeSelect, MeasureConfig, MeasureEdge, MetrologyModel, MetrologyObject,
+        MetrologyResult, MetrologyShape, PolaritySelect, RejectReason,
+    };
+    #[cfg(feature = "segment")]
+    pub use crate::segment::{
+        AdaptiveThreshConfig, CcLabel, ComponentStats, adaptive_threshold_u8,
+        label_connected_components_u8, otsu_threshold_u8,
+    };
+    #[cfg(feature = "shape")]
+    pub use crate::shape::{LineSegment2f, LsdConfig, LsdDetector};
 }
 
 // The primitives most callers of this crate need by name. Deliberately an
@@ -95,42 +112,3 @@ pub use vm_primitives::{
     Similarity2f, SmoothKind, SubpixRefine, Vec2f, Vec2fExt, sample_bilinear_f32, sample_nearest,
     similarity_from_parts, similarity_parts, transform_point, transform_vec, wrap_angle,
 };
-
-// ---------------------------------------------------------------------------
-// Flat domain re-exports
-// ---------------------------------------------------------------------------
-
-#[cfg(feature = "contour")]
-pub use contour::{
-    Connectivity, ContourBuildConfig, ContourGraph, EdgeId, GraphEdge, MAX_KERNEL_PTS, Node,
-    NodeId, NodeKind, build_graph_from_detector_output, build_graph_from_edgels, smooth_polyline,
-};
-#[cfg(feature = "fit")]
-pub use fit::{
-    Fit, FitConfig, RansacConfig, RobustLoss, fit_circle, fit_conic, fit_ellipse, fit_line,
-};
-#[cfg(feature = "laser")]
-pub use laser::{
-    CoarseMethod, ColAccess, LaserExtractConfig, LaserExtractor, LaserLine, LaserSample, ScanAxis,
-    best_pair_with_prior, coarse_center_f32, coarse_center_u8, coarse_center_u16,
-};
-#[cfg(feature = "serde")]
-pub use matching::SHAPE_MODEL_FORMAT_VERSION;
-#[cfg(feature = "matching")]
-pub use matching::{
-    ContourOrientation, ModelPoint, Polarity, Refinement, ShapeMatch, ShapeMatcher, ShapeModel,
-    ShapeModelBuilder, ShapeModelConfig, ShapeModelLevel, ShapeSearchConfig, create_shape_model,
-    match_point_scores,
-};
-#[cfg(feature = "measure")]
-pub use measure::{
-    Caliper, MeasureArc, MeasureConfig, MeasureEdge, MeasurePair, MeasureRadial, MeasureRect,
-    MetrologyModel, MetrologyObject, MetrologyResult, MetrologyShape, RejectReason,
-};
-#[cfg(feature = "segment")]
-pub use segment::{
-    AdaptiveThreshConfig, CcLabel, ComponentStats, RegionGrowConfig, adaptive_threshold_u8,
-    component_stats, grow_regions, label_connected_components_u8, otsu_threshold_u8, watershed,
-};
-#[cfg(feature = "shape")]
-pub use shape::{LineSegment2f, LsdConfig, LsdDetector};

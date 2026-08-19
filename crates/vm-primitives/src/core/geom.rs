@@ -232,12 +232,6 @@ pub fn transform_vec(sim: &Similarity2f, v: Vec2f) -> Vec2f {
     sim * v
 }
 
-/// Apply a rigid transform to a point: `R·p + t`.
-#[inline]
-pub fn transform_point_iso(iso: &Isometry2f, p: Point2f) -> Point2f {
-    iso * p
-}
-
 /// Build a [`Similarity2f`] from translation, rotation angle (radians) and
 /// uniform scale.
 ///
@@ -416,17 +410,6 @@ mod tests {
         let dv = transform_vec(&sim, r - p);
         let dq = transform_point(&sim, r) - q;
         assert!((dv.x - dq.x).abs() < 1e-4 && (dv.y - dq.y).abs() < 1e-4);
-    }
-
-    #[test]
-    fn transform_point_iso_has_unit_scale() {
-        use super::transform_point_iso;
-        use core::f32::consts::FRAC_PI_2;
-
-        let iso = nalgebra::Isometry2::new(nalgebra::Vector2::new(2.0, 3.0), FRAC_PI_2);
-        let q = transform_point_iso(&iso, Point2f::new(1.0, 0.0));
-        assert!((q.x - 2.0).abs() < 1e-5);
-        assert!((q.y - 4.0).abs() < 1e-5);
     }
 
     #[test]

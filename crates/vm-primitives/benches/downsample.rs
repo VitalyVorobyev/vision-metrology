@@ -1,6 +1,7 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
-use vm_primitives::{Image, Pixel, Pyramid, downsample2x2_mean_to_f32_into};
+use vm_primitives::pyr::bench_downsample2x2_mean_to_f32_into;
+use vm_primitives::{Image, Pixel, Pyramid};
 
 fn ramp_u8(width: usize, height: usize) -> Image<u8> {
     Image::from_vec(
@@ -27,7 +28,7 @@ fn bench_downsample_kernel(c: &mut Criterion) {
         c.bench_function(name, |b| {
             b.iter(|| {
                 let mut out = dst.as_view_mut();
-                downsample2x2_mean_to_f32_into(black_box(&view), &mut out).expect("dims");
+                bench_downsample2x2_mean_to_f32_into(black_box(&view), &mut out).expect("dims");
             });
         });
     }

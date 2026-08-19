@@ -55,7 +55,7 @@ pub use core::{
     ImageViewMut, Isometry2f, Line2f, Pixel, Point2f, Polyline2f, Projective2f, Rect2f,
     Similarity2f, Vec2f, Vec2fExt, map_index, parabolic_peak_offset, sample_bilinear_f32,
     sample_nearest, similarity_from_parts, similarity_parts, to_f32, to_f32_u16, transform_point,
-    transform_point_iso, transform_vec, wrap_angle,
+    transform_vec, wrap_angle,
 };
 pub use edge::{
     DirectionField, DoGKernel1D, Edge1DConfig, Edge1DDetector, Edge2DConfig, Edge2DDetector,
@@ -67,7 +67,4 @@ pub use morph::{
     dilate3x3_binary_u8, erode_binary_u8, erode3x3_binary_u8, open_binary_u8, open3x3_binary_u8,
     thin_binary_u8,
 };
-pub use pyr::{
-    PreSmooth, Pyramid, PyramidConfig, base_to_level, downsample2x2_mean, downsample2x2_mean_into,
-    downsample2x2_mean_to_f32_into, level_to_base,
-};
+pub use pyr::{PreSmooth, Pyramid, PyramidConfig, base_to_level, level_to_base};

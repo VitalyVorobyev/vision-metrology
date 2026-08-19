@@ -23,5 +23,22 @@
 mod downsample;
 mod pyramid;
 
-pub use downsample::{downsample2x2_mean, downsample2x2_mean_into, downsample2x2_mean_to_f32_into};
 pub use pyramid::{PreSmooth, Pyramid, PyramidConfig, base_to_level, level_to_base};
+
+/// Benchmark hook for the 2×2 box-mean kernel. **Not public API.**
+///
+/// The kernel itself is `pub(crate)` — [`Pyramid`] is the entry point. This
+/// exists only so `benches/downsample.rs` can measure kernel throughput per
+/// pixel type without the level-0 widening pass that a full [`Pyramid::build`]
+/// necessarily includes. It carries no stability promise whatsoever.
+///
+/// # Errors
+/// Returns [`Error`](crate::core::Error) unless `dst` is exactly
+/// `(src.width() / 2, src.height() / 2)`.
+#[doc(hidden)]
+pub fn bench_downsample2x2_mean_to_f32_into<P: crate::core::Pixel>(
+    src: &crate::core::ImageView<'_, P>,
+    dst: &mut crate::core::ImageViewMut<'_, f32>,
+) -> Result<(), crate::core::Error> {
+    downsample::downsample2x2_mean_to_f32_into(src, dst)
+}

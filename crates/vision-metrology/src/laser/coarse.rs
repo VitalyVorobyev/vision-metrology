@@ -3,28 +3,11 @@
 use super::types::CoarseMethod;
 use vm_primitives::Pixel;
 
-/// Estimate the coarse stripe centre in a `u8` scan-line using the given method.
+/// Estimate the coarse stripe centre inside `[lo, hi)` of a scan line.
 ///
-/// Returns the estimated subpixel centre position, or `None` if the signal is
-/// too weak to locate a centre.
-pub fn coarse_center_u8(line: &[u8], coarse: &CoarseMethod) -> Option<f32> {
-    coarse_center_in_range(line, coarse, 0, line.len())
-}
-
-/// Estimate the coarse stripe centre in a `u16` scan-line using the given method.
-///
-/// See [`coarse_center_u8`] for details.
-pub fn coarse_center_u16(line: &[u16], coarse: &CoarseMethod) -> Option<f32> {
-    coarse_center_in_range(line, coarse, 0, line.len())
-}
-
-/// Estimate the coarse stripe centre in an `f32` scan-line using the given method.
-///
-/// See [`coarse_center_u8`] for details.
-pub fn coarse_center_f32(line: &[f32], coarse: &CoarseMethod) -> Option<f32> {
-    coarse_center_in_range(line, coarse, 0, line.len())
-}
-
+/// One generic entry point (invariant 19): the `u8`/`u16`/`f32` wrappers that
+/// used to sit on top of it were public, allocation-free duplicates with no
+/// caller inside the workspace.
 pub(super) fn coarse_center_in_range<P: Pixel>(
     line: &[P],
     coarse: &CoarseMethod,

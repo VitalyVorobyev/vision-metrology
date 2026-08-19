@@ -26,10 +26,11 @@ use std::time::Instant;
 use anyhow::{Context, Result, bail};
 use clap::{Parser, ValueEnum};
 use image::ImageReader;
-use vision_metrology::{
-    Image, Point2f, Polarity, Rect2f, Refinement, ShapeMatch, ShapeMatcher, ShapeModel,
-    ShapeModelBuilder, ShapeModelConfig, ShapeSearchConfig,
+use vision_metrology::matching::{
+    Polarity, Refinement, ShapeMatch, ShapeMatcher, ShapeModel, ShapeModelBuilder,
+    ShapeModelConfig, ShapeSearchConfig,
 };
+use vision_metrology::{Image, Point2f, Rect2f};
 
 #[path = "common/overlay.rs"]
 mod overlay;

@@ -2,18 +2,18 @@
 
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use vision_metrology::LsdConfig as NativeLsdConfig;
-use vision_metrology::Polarity as NativePolarity;
-use vision_metrology::Refinement as NativeRefinement;
-use vision_metrology::ShapeModelConfig as NativeShapeModelConfig;
-use vision_metrology::ShapeSearchConfig as NativeShapeSearchConfig;
 use vision_metrology::fit::{
     FitConfig as NativeFitConfig, RansacConfig as NativeRansacConfig,
     RobustLoss as NativeRobustLoss,
 };
+use vision_metrology::matching::Polarity as NativePolarity;
+use vision_metrology::matching::Refinement as NativeRefinement;
+use vision_metrology::matching::ShapeModelConfig as NativeShapeModelConfig;
+use vision_metrology::matching::ShapeSearchConfig as NativeShapeSearchConfig;
+use vision_metrology::shape::LsdConfig as NativeLsdConfig;
 use vm_primitives::BorderMode;
 use vm_primitives::PreSmooth as NativePreSmooth;
-use vm_primitives::edge::edge2d::{Edge2DConfig, SmoothKind, Subpix2D};
+use vm_primitives::edge::{Edge2DConfig, SmoothKind, Subpix2D};
 
 #[pyclass(get_all, set_all, from_py_object)]
 #[derive(Debug, Clone)]

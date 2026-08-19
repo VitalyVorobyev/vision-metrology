@@ -22,10 +22,10 @@
 //! Output is deterministic (no RNG, no file I/O).
 
 use vision_metrology::Circle2f;
-use vision_metrology::fit::{Fit, FitConfig, RansacConfig, fit_circle};
-use vision_metrology::{
+use vision_metrology::contour::{
     Connectivity, ContourBuildConfig, ContourGraph, NodeId, build_graph_from_edgels,
 };
+use vision_metrology::fit::{Fit, FitConfig, RansacConfig, fit_circle};
 use vision_metrology::{Edge2DConfig, Edge2DDetector};
 use vision_metrology::{Image, Point2f};
 

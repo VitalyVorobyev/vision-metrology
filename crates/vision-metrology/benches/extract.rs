@@ -1,7 +1,7 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 use vision_metrology::Image;
-use vision_metrology::{ColAccess, LaserExtractConfig, LaserExtractor, ScanAxis};
+use vision_metrology::laser::{ColAccess, LaserExtractConfig, LaserExtractor, ScanAxis};
 
 fn build_vertical_stripe(width: usize, height: usize, x_l: usize, x_r: usize) -> Image<u8> {
     let mut data = vec![0u8; width * height];

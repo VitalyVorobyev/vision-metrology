@@ -37,11 +37,12 @@ use corrmatch::{
     Template as CorrTemplate,
 };
 use vision_metrology::fit::{FitConfig, RansacConfig, fit_ellipse};
-use vision_metrology::{
-    Edge2DConfig, Edge2DDetector, Image, Point2f, Polarity, Rect2f, ShapeMatch, ShapeMatcher,
-    ShapeModel, ShapeModelBuilder, ShapeModelConfig, ShapeSearchConfig, match_point_scores,
-    wrap_angle,
+use vision_metrology::matching::diagnostics::match_point_scores;
+use vision_metrology::matching::{
+    Polarity, ShapeMatch, ShapeMatcher, ShapeModel, ShapeModelBuilder, ShapeModelConfig,
+    ShapeSearchConfig,
 };
+use vision_metrology::{Edge2DConfig, Edge2DDetector, Image, Point2f, Rect2f, wrap_angle};
 
 #[derive(Parser)]
 #[command(about = "Audit shape-matching poses with independent checks")]

@@ -19,9 +19,8 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use image::ImageReader;
 use serde::Serialize;
-use vision_metrology::{
-    ColAccess, Edge1DConfig, Image, LaserExtractConfig, LaserExtractor, ScanAxis,
-};
+use vision_metrology::laser::{ColAccess, LaserExtractConfig, LaserExtractor, ScanAxis};
+use vision_metrology::{Edge1DConfig, Image};
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
 

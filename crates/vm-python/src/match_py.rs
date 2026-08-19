@@ -3,7 +3,7 @@
 use numpy::PyReadonlyArray2;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
-use vision_metrology::{
+use vision_metrology::matching::{
     ShapeMatcher as NativeShapeMatcher, ShapeModel as NativeShapeModel, ShapeModelBuilder,
 };
 use vm_primitives::Rect2f;

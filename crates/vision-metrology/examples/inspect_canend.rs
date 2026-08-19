@@ -30,11 +30,11 @@ use std::path::PathBuf;
 use anyhow::{Context, Result, bail};
 use clap::Parser;
 use vision_metrology::fit::{FitConfig, RansacConfig, RobustLoss, fit_circle};
-use vision_metrology::measure::{MetrologyModel, MetrologyObject, MetrologyResult, MetrologyShape};
-use vision_metrology::{
-    Edge2DConfig, Edge2DDetector, Image, Point2f, Rect2f, ShapeMatcher, ShapeModel,
-    ShapeModelBuilder, ShapeModelConfig, ShapeSearchConfig,
+use vision_metrology::matching::{
+    ShapeMatcher, ShapeModel, ShapeModelBuilder, ShapeModelConfig, ShapeSearchConfig,
 };
+use vision_metrology::measure::{MetrologyModel, MetrologyObject, MetrologyResult, MetrologyShape};
+use vision_metrology::{Edge2DConfig, Edge2DDetector, Image, Point2f, Rect2f};
 
 #[derive(Parser)]
 #[command(about = "Locate a can-end tab, then measure the rim in the tab's frame")]

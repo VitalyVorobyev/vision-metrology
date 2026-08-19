@@ -112,8 +112,8 @@ impl MetrologyObject {
 /// A set of nominal primitives measured together at a fixture pose.
 ///
 /// This is the piece that turns detection into inspection: a
-/// [`ShapeMatcher`](crate::ShapeMatcher) says *where the part is*, and its
-/// [`ShapeMatch::pose`](crate::ShapeMatch) is the fixture this model is applied
+/// [`ShapeMatcher`](crate::matching::ShapeMatcher) says *where the part is*, and its
+/// [`ShapeMatch::pose`](crate::matching::ShapeMatch) is the fixture this model is applied
 /// at. The model itself is taught once, in the part's own frame.
 ///
 /// # Example
@@ -186,7 +186,7 @@ impl MetrologyModel {
     /// Measure every object, with the model's nominal geometry mapped through
     /// `fixture`.
     ///
-    /// `fixture` is normally [`ShapeMatch::pose`](crate::ShapeMatch) from a
+    /// `fixture` is normally [`ShapeMatch::pose`](crate::matching::ShapeMatch) from a
     /// shape match. Objects whose fit fails are **skipped**, so the result may
     /// be shorter than [`objects`](Self::objects) — use
     /// [`apply_checked`](Self::apply_checked) when you need to know which.

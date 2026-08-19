@@ -53,7 +53,7 @@ fn vision_metrology(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // module. A bare `vision_metrology::…` here fails to resolve.
     m.add(
         "SHAPE_MODEL_FORMAT_VERSION",
-        ::vision_metrology::SHAPE_MODEL_FORMAT_VERSION,
+        ::vision_metrology::matching::SHAPE_MODEL_FORMAT_VERSION,
     )?;
     m.add_class::<Circle>()?;
     m.add_class::<Ellipse>()?;

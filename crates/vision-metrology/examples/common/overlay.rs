@@ -21,9 +21,8 @@
 // root uses a subset of it, so per-root dead-code analysis is meaningless.
 #![allow(dead_code)]
 
-use vision_metrology::{
-    BorderMode, Image, Point2f, Rect2f, ShapeMatch, ShapeModel, sample_bilinear_f32,
-};
+use vision_metrology::matching::{ShapeMatch, ShapeModel};
+use vision_metrology::{BorderMode, Image, Point2f, Rect2f, sample_bilinear_f32};
 
 pub const GREEN: [u8; 3] = [40, 220, 60];
 pub const RED: [u8; 3] = [235, 60, 50];

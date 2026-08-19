@@ -260,6 +260,35 @@ The gates are only worth having if they are checked. `--all-features` can never 
 
 `Error` is `#[non_exhaustive]`, so adding a variant stops being a breaking change.
 
+### The v0.3 visibility sweep: one path per name, and nothing else public (2026-08)
+Invariant 17 said "one canonical path per name"; the crate root said otherwise. A flat
+`pub use contour::{…}` / `laser::{…}` / `matching::{…}` block re-exported the whole domain
+surface, so every type had two paths (`vision_metrology::ShapeMatcher` and
+`vision_metrology::matching::ShapeMatcher`) and the crate root read as the API rather than
+the modules. The block is gone. What remains at the root is the curated `vm_primitives`
+list (the names a caller of *this* crate types constantly), the `vm_primitives` crate
+itself, and `prelude` — now covering `fit`, `measure` and `segment` too, which it had
+silently skipped.
+
+Removed from the public surface in the same pass, because pre-release is when this is free:
+
+- `laser::coarse_center_{u8,u16,f32}` and `laser::best_pair_with_prior` — pipeline stages,
+  not API, and the typed triplet violated invariant 19 outright. Deleted rather than
+  hidden: the generic `coarse_center_in_range` they wrapped is the real implementation and
+  had no other caller.
+- `contour::MAX_KERNEL_PTS` — an implementation detail of the smoothing scratch buffer.
+- `pyr::downsample2x2_mean{,_into,_to_f32_into}` — `Pyramid` is the entry point. The two
+  same-type variants had no caller anywhere and were deleted; the `f32` kernel is
+  `pub(crate)`, with a `#[doc(hidden)]` benchmark hook so `benches/downsample.rs` can still
+  measure per-pixel-type kernel throughput without the level-0 widening pass.
+- `matching::create_shape_model` — a one-line duplicate of `ShapeModelBuilder::build`.
+- `core::transform_point_iso` — `iso * p` with nalgebra in the public API already.
+- `edge`'s submodules (`edge::edge2d::Edgel` → `edge::Edgel`). Splitting a module across
+  files is a file-size decision (invariant 14); it should not show up in import paths.
+- `matching::match_point_scores` moved to `matching::diagnostics::match_point_scores`.
+  Diagnostics are a module, not a feature, and they do not belong at the root of the
+  algorithm they instrument.
+
 ### `Point2f` / `Vec2f` are nalgebra aliases (2026-08)
 ```rust
 pub type Point2f = nalgebra::Point2<f32>;

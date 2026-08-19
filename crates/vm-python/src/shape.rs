@@ -3,8 +3,8 @@
 use numpy::{PyReadonlyArray2, PyUntypedArrayMethods};
 use pyo3::prelude::*;
 use pyo3::types::PyList;
-use vision_metrology::LsdDetector as NativeLsdDetector;
 use vision_metrology::fit::{fit_circle, fit_ellipse};
+use vision_metrology::shape::LsdDetector as NativeLsdDetector;
 use vm_primitives::Point2f;
 
 use crate::config_py::{FitConfig, LsdConfig};
@@ -13,7 +13,7 @@ use crate::types::{Circle, Ellipse, LineSegment};
 
 fn segments_to_pylist<'py>(
     py: Python<'py>,
-    segs: &[vision_metrology::LineSegment2f],
+    segs: &[vision_metrology::shape::LineSegment2f],
 ) -> PyResult<Bound<'py, PyList>> {
     let list = PyList::empty(py);
     for s in segs {

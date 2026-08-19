@@ -14,8 +14,7 @@
 //! Module layout: `types` holds the public data types, `extractor` the
 //! reusable entry points, and the private `scan` / `pairing` / `coarse` /
 //! `gather` / `postprocess` modules each own one stage of the pipeline. The
-//! u8/u16/f32 paths share one generic implementation via the `ScanPixel`
-//! trait; the typed `extract_line_*` wrappers are the stable public surface.
+//! pipeline stages are internal — [`LaserExtractor`] is the surface.
 
 mod coarse;
 mod extractor;
@@ -28,7 +27,5 @@ mod gather;
 #[cfg(test)]
 mod tests;
 
-pub use coarse::{coarse_center_f32, coarse_center_u8, coarse_center_u16};
 pub use extractor::LaserExtractor;
-pub use pairing::best_pair_with_prior;
 pub use types::{CoarseMethod, ColAccess, LaserExtractConfig, LaserLine, LaserSample, ScanAxis};

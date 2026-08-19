@@ -73,7 +73,8 @@ fn to_level(v: f32, level: usize) -> f32 {
 ///
 /// # Example
 /// ```no_run
-/// use vision_metrology::{Image, Rect2f, ShapeModelBuilder, ShapeModelConfig};
+/// use vision_metrology::{Image, Rect2f};
+/// use vision_metrology::matching::{ShapeModelBuilder, ShapeModelConfig};
 ///
 /// # fn main() -> Result<(), vision_metrology::Error> {
 /// let img: Image<u8> = Image::new_fill(640, 480, 0);
@@ -191,21 +192,6 @@ impl ShapeModelBuilder {
 
         assemble(raw, origin, cfg)
     }
-}
-
-/// One-shot [`ShapeModelBuilder::build`] for callers that build a single model.
-///
-/// Reuse a [`ShapeModelBuilder`] instead when building several — it keeps its
-/// pyramid and edge-detector scratch between calls.
-///
-/// # Errors
-/// Same as [`ShapeModelBuilder::build`].
-pub fn create_shape_model<P: Pixel>(
-    img: &ImageView<'_, P>,
-    roi: Rect2f,
-    cfg: &ShapeModelConfig,
-) -> Result<ShapeModel, Error> {
-    ShapeModelBuilder::new().build(img, roi, cfg)
 }
 
 impl ShapeModel {

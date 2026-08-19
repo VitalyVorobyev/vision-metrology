@@ -80,7 +80,8 @@ impl MapBuffers {
 ///
 /// # Example
 /// ```no_run
-/// use vision_metrology::{Image, ShapeMatcher, ShapeModel, ShapeSearchConfig};
+/// use vision_metrology::Image;
+/// use vision_metrology::matching::{ShapeMatcher, ShapeModel, ShapeSearchConfig};
 ///
 /// # fn run(model: &ShapeModel) {
 /// let scene: Image<u8> = Image::new_fill(1280, 1024, 0);

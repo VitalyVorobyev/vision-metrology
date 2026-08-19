@@ -3,8 +3,8 @@
 use numpy::{IntoPyArray, PyArray2, PyReadonlyArray2, PyUntypedArrayMethods};
 use pyo3::prelude::*;
 use pyo3::types::PyList;
-use vision_metrology::Connectivity;
-use vision_metrology::{
+use vision_metrology::contour::Connectivity;
+use vision_metrology::segment::{
     CcLabel, component_stats, label_connected_components_u8, otsu_threshold_u8,
 };
 use vm_primitives::Image;

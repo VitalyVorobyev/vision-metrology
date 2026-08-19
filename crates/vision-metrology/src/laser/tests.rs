@@ -4,9 +4,10 @@
 //! module level rather than per submodule.
 
 use vm_primitives::Image;
-use vm_primitives::{DoGKernel1D, edge::conv1d::convolve_f32};
+use vm_primitives::{DoGKernel1D, edge::convolve_f32};
 
-use crate::{ColAccess, Error, LaserExtractConfig, LaserExtractor, ScanAxis};
+use crate::Error;
+use crate::laser::{ColAccess, LaserExtractConfig, LaserExtractor, ScanAxis};
 
 fn frac_overlap(i: usize, left: f32, right: f32) -> f32 {
     let x0 = i as f32 - 0.5;

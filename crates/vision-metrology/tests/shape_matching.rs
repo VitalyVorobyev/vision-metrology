@@ -6,12 +6,12 @@
 //! to arbitrary subpixel precision.
 
 #[cfg(feature = "serde")]
-use vision_metrology::SHAPE_MODEL_FORMAT_VERSION;
-use vision_metrology::{
-    ContourOrientation, Image, Point2f, Polarity, Polyline2f, Rect2f, Refinement, ShapeMatch,
-    ShapeMatcher, ShapeModel, ShapeModelBuilder, ShapeModelConfig, ShapeSearchConfig, Vec2f,
-    wrap_angle,
+use vision_metrology::matching::SHAPE_MODEL_FORMAT_VERSION;
+use vision_metrology::matching::{
+    ContourOrientation, Polarity, Refinement, ShapeMatch, ShapeMatcher, ShapeModel,
+    ShapeModelBuilder, ShapeModelConfig, ShapeSearchConfig,
 };
+use vision_metrology::{Image, Point2f, Polyline2f, Rect2f, Vec2f, wrap_angle};
 
 const W: usize = 512;
 const H: usize = 512;

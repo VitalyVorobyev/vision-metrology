@@ -7,7 +7,7 @@
 //! score.
 //!
 //! ```rust
-//! use vision_metrology::{LsdDetector, LsdConfig};
+//! use vision_metrology::shape::{LsdConfig, LsdDetector};
 //! use vm_primitives::{Image, Point2f};
 //!
 //! // Build a 64×64 image with a horizontal step edge at y=32.

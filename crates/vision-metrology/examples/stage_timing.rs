@@ -6,9 +6,10 @@
 //! `--features trace-cands` to also see per-level candidate counts and stage
 //! times from inside the matcher on stderr.
 use std::time::Instant;
-use vision_metrology::{
-    Image, Pyramid, Rect2f, ShapeMatcher, ShapeModelBuilder, ShapeModelConfig, ShapeSearchConfig,
+use vision_metrology::matching::{
+    ShapeMatcher, ShapeModelBuilder, ShapeModelConfig, ShapeSearchConfig,
 };
+use vision_metrology::{Image, Pyramid, Rect2f};
 use vm_primitives::{DirectionField, SmoothKind};
 
 fn main() {

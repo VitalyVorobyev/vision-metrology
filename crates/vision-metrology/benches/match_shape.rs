@@ -1,8 +1,9 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
-use vision_metrology::{
-    Image, Rect2f, ShapeMatcher, ShapeModel, ShapeModelBuilder, ShapeModelConfig, ShapeSearchConfig,
+use vision_metrology::matching::{
+    ShapeMatcher, ShapeModel, ShapeModelBuilder, ShapeModelConfig, ShapeSearchConfig,
 };
+use vision_metrology::{Image, Rect2f};
 
 const W: usize = 1280;
 const H: usize = 1024;

@@ -1,4 +1,4 @@
-use vm_primitives::edge::edge2d::{Edge2DConfig, Edge2DDetector, Edgel};
+use vm_primitives::edge::{Edge2DConfig, Edge2DDetector, Edgel};
 use vm_primitives::{Image, ImageView, Point2f, thin_binary_u8};
 
 use super::graph::{ContourGraph, EdgeId, GraphEdge, Node, NodeId, NodeKind};
@@ -802,10 +802,10 @@ fn index_if_in_bounds(x: isize, y: isize, width: usize, height: usize) -> Option
 
 #[cfg(test)]
 mod tests {
-    use vm_primitives::edge::edge2d::{Edge2DConfig, Edge2DDetector, Edgel};
+    use vm_primitives::edge::{Edge2DConfig, Edge2DDetector, Edgel};
     use vm_primitives::{Image, Point2f, Vec2f};
 
-    use crate::{
+    use crate::contour::{
         Connectivity, ContourBuildConfig, NodeKind, build_graph_from_detector_output,
         build_graph_from_edgels,
     };

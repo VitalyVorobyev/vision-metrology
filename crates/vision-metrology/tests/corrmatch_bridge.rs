@@ -15,9 +15,10 @@ use corrmatch::{
     CompileConfig, MatchConfig as CorrMatchConfig, Matcher as CorrMatcher, RotationMode,
     Template as CorrTemplate,
 };
-use vision_metrology::{
-    Image, Point2f, Rect2f, ShapeMatcher, ShapeModelBuilder, ShapeModelConfig, ShapeSearchConfig,
+use vision_metrology::matching::{
+    ShapeMatcher, ShapeModelBuilder, ShapeModelConfig, ShapeSearchConfig,
 };
+use vision_metrology::{Image, Point2f, Rect2f};
 
 const W: usize = 480;
 const H: usize = 360;

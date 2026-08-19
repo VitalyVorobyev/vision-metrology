@@ -27,7 +27,7 @@ pub use error::Error;
 pub use geom::{
     Affine2f, Angle, Isometry2f, Line2f, Point2f, Polyline2f, Projective2f, Rect2f, Similarity2f,
     Vec2f, Vec2fExt, parabolic_peak_offset, similarity_from_parts, similarity_parts,
-    transform_point, transform_point_iso, transform_vec, wrap_angle,
+    transform_point, transform_vec, wrap_angle,
 };
 pub use image::{Image, ImageView, ImageViewMut, to_f32, to_f32_u16};
 pub use pixel::Pixel;
