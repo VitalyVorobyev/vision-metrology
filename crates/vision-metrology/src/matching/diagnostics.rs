@@ -12,7 +12,7 @@
 
 use vm_primitives::{DirectionField, Image, ImageView};
 
-use super::config::Polarity;
+use super::config::{Contrast, Polarity};
 use super::matcher::ShapeMatch;
 use super::model::ShapeModel;
 
@@ -33,7 +33,7 @@ pub fn match_point_scores(
     scene: &ImageView<'_, u8>,
     model: &ShapeModel,
     m: &ShapeMatch,
-    min_contrast: f32,
+    min_contrast: Contrast,
 ) -> Vec<f32> {
     let Some(level0) = model.level(0) else {
         return Vec::new();
@@ -42,6 +42,7 @@ pub fn match_point_scores(
     if points.is_empty() {
         return Vec::new();
     }
+    let min_contrast = min_contrast.resolve(scene);
 
     // Level-0 field, built lazily only around the match.
     let (w, h) = (scene.width(), scene.height());
@@ -55,10 +56,11 @@ pub fn match_point_scores(
     let img = Image::from_vec(w, h, data).expect("scene dimensions are valid");
 
     let mut field = DirectionField::new();
-    field.begin_tiled_f32(&img, model.smooth(), min_contrast);
+    let mut session = field.begin_tiled_f32(&img, model.smooth(), min_contrast);
     let reach = (level0.radius * m.scale() * 1.1).ceil() as i32 + 4;
     let (cx, cy) = (m.position.x.round() as i32, m.position.y.round() as i32);
-    field.ensure_rect_f32(&img, cx - reach, cy - reach, cx + reach + 1, cy + reach + 1);
+    session.ensure_rect(cx - reach, cy - reach, cx + reach + 1, cy + reach + 1);
+    let field = &session;
 
     let (sn, cs) = m.angle().sin_cos();
     let scale = m.scale();

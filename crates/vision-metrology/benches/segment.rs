@@ -1,8 +1,8 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
-use vision_metrology::Connectivity;
 use vision_metrology::Image;
-use vision_metrology::{
+use vision_metrology::contour::Connectivity;
+use vision_metrology::segment::{
     AdaptiveThreshConfig, adaptive_threshold_u8, label_connected_components_u8, otsu_threshold_u8,
     watershed,
 };

@@ -6,11 +6,9 @@
 //! Normal direction: `n` is derived from image gradient `(gx, gy)` and points
 //! from dark to bright (increasing intensity).
 //!
-//! Threshold behavior:
-//! - If `high_thresh == 0.0` and `low_thresh == 0.0`, thresholds are chosen
-//!   automatically as `high = 0.2 * max_nms`, `low = 0.1 * max_nms`.
-//! - Otherwise provided thresholds are used as-is (with low/high ordering fixed
-//!   if needed).
+//! Threshold behavior: see [`Hysteresis`]. [`Hysteresis::Auto`] derives both
+//! thresholds from the frame's peak NMS response; [`Hysteresis::Manual`] uses
+//! the given pair (with low/high ordering fixed if needed).
 //!
 //! This module is intentionally single-scale. Pyramid/multi-scale integration
 //! is done in higher-level crates.
@@ -58,21 +56,43 @@ pub enum SmoothKind {
     Binomial3,
 }
 
+/// How the two hysteresis thresholds are chosen.
+///
+/// This used to be two `f32` fields where `0.0`/`0.0` meant "derive them" — a
+/// sentinel that made the *only* documented way to say "no threshold at all"
+/// indistinguishable from "choose for me", and that silently changed meaning
+/// if a caller set one field and left the other.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum Hysteresis {
+    /// Derive both from the frame's peak NMS response:
+    /// `high = 0.2 · max_nms`, `low = 0.1 · max_nms`.
+    ///
+    /// Adaptive per frame, which is what makes the detector work out of the box
+    /// on unknown illumination — and equally what makes it drift between frames
+    /// of a sequence. Pin the thresholds with [`Manual`](Self::Manual) once the
+    /// scene is known.
+    #[default]
+    Auto,
+    /// Fixed thresholds in gradient-magnitude units on the input pixel scale.
+    Manual {
+        /// Weak-edge floor: a pixel below this is never an edgel.
+        low: f32,
+        /// Strong-edge floor: a pixel above this seeds a chain.
+        high: f32,
+    },
+}
+
 /// Configuration for [`Edge2DDetector`].
 ///
 /// All fields are public and cheaply cloneable. Construct with
 /// `Edge2DConfig::default()` and override individual fields as needed.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Edge2DConfig {
-    /// Apply pre-smoothing before gradient computation.
-    pub pre_smooth: bool,
-    /// Which pre-smoothing kernel to use (only relevant when `pre_smooth = true`).
+    /// Pre-smoothing kernel applied before the gradient.
+    /// [`SmoothKind::None`] is how pre-smoothing is switched off.
     pub smooth_kind: SmoothKind,
-    /// Lower hysteresis threshold. Set both to `0.0` for automatic selection
-    /// (`low = 0.1 * max_nms`, `high = 0.2 * max_nms`).
-    pub low_thresh: f32,
-    /// Upper hysteresis threshold. See `low_thresh` for auto-threshold rules.
-    pub high_thresh: f32,
+    /// How the hysteresis thresholds are chosen.
+    pub hysteresis: Hysteresis,
     /// Border replication mode for gradient and NMS sampling.
     pub border: BorderMode<f32>,
     /// Sub-pixel refinement mode applied after NMS.
@@ -82,10 +102,8 @@ pub struct Edge2DConfig {
 impl Default for Edge2DConfig {
     fn default() -> Self {
         Self {
-            pre_smooth: true,
             smooth_kind: SmoothKind::Binomial3,
-            low_thresh: 0.0,
-            high_thresh: 0.0,
+            hysteresis: Hysteresis::Auto,
             border: BorderMode::Clamp,
             subpix: Subpix2D::ParabolicAlongNormal,
         }
@@ -236,11 +254,9 @@ impl Edge2DDetector {
             return Vec::new();
         }
 
-        if cfg.pre_smooth {
-            match cfg.smooth_kind {
-                SmoothKind::None => {}
-                SmoothKind::Binomial3 => self.smooth_binomial3(),
-            }
+        match cfg.smooth_kind {
+            SmoothKind::None => {}
+            SmoothKind::Binomial3 => self.smooth_binomial3(),
         }
 
         self.compute_scharr();
@@ -383,24 +399,23 @@ impl Edge2DDetector {
         self.visited.fill(0);
         self.stack.clear();
 
-        let mut low = cfg.low_thresh;
-        let mut high = cfg.high_thresh;
-
-        if low == 0.0 && high == 0.0 {
-            let mut max_nms = 0.0f32;
-            for &v in self.nms.data() {
-                if v > max_nms {
-                    max_nms = v;
+        let (mut low, mut high) = match cfg.hysteresis {
+            Hysteresis::Manual { low, high } => (low, high),
+            Hysteresis::Auto => {
+                let mut max_nms = 0.0f32;
+                for &v in self.nms.data() {
+                    if v > max_nms {
+                        max_nms = v;
+                    }
                 }
-            }
 
-            if max_nms <= 0.0 {
-                return 0;
-            }
+                if max_nms <= 0.0 {
+                    return 0;
+                }
 
-            high = 0.2 * max_nms;
-            low = 0.1 * max_nms;
-        }
+                (0.1 * max_nms, 0.2 * max_nms)
+            }
+        };
 
         if high < low {
             core::mem::swap(&mut high, &mut low);
@@ -528,7 +543,7 @@ fn copy_to_tmp<P: Pixel>(src: &ImageView<'_, P>, dst: &mut [f32], dst_w: usize) 
 mod tests {
     use crate::core::Image;
 
-    use super::{Edge2DConfig, Edge2DDetector, Edgel, Subpix2D};
+    use super::{Edge2DConfig, Edge2DDetector, Edgel, Hysteresis, SmoothKind, Subpix2D};
 
     fn build_slanted_step(
         width: usize,
@@ -659,13 +674,17 @@ mod tests {
         let mut det = Edge2DDetector::new();
 
         let cfg_lo = Edge2DConfig {
-            low_thresh: 25.0,
-            high_thresh: 50.0,
+            hysteresis: Hysteresis::Manual {
+                low: 25.0,
+                high: 50.0,
+            },
             ..Edge2DConfig::default()
         };
         let cfg_hi = Edge2DConfig {
-            low_thresh: 1.0e9,
-            high_thresh: 1.0e9,
+            hysteresis: Hysteresis::Manual {
+                low: 1.0e9,
+                high: 1.0e9,
+            },
             ..Edge2DConfig::default()
         };
 
@@ -759,7 +778,7 @@ mod tests {
 
         let mut det = Edge2DDetector::new();
         let cfg = Edge2DConfig {
-            pre_smooth: false,
+            smooth_kind: SmoothKind::None,
             ..Edge2DConfig::default()
         };
         let (_edgels, grads) = det.detect_with_gradients(&img.as_view(), &cfg);

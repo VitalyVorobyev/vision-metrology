@@ -19,7 +19,7 @@ vm-primitives  ──►  vision-metrology  ──►  vm-python
 
 | Crate | Modules | Contents |
 |---|---|---|
-| `vm-primitives` | `core` | `Image<T>`/`ImageView<T>`, `Pixel` (sealed: u8/u16/f32), sampling, `BorderMode`, geometry as nalgebra aliases (`Point2f`, `Vec2f`, `Similarity2f`, …), `Circle2f`/`Ellipse2f`/`Conic2f`, `Error` |
+| `vm-primitives` | `core` | Two private halves, one public path: `raster` (`Image<T>`/`ImageView<T>`, `Pixel` sealed over u8/u16/f32, sampling, `BorderMode`, `Error` — **no nalgebra**) and `geom` (nalgebra aliases `Point2f`/`Vec2f`/`Similarity2f`, `Vec2fExt`, transforms, `Circle2f`/`Ellipse2f`/`Conic2f`) |
 | | `pyr` | `Pyramid`: 2×2 box-mean pyramid generic over `Pixel`, optional binomial pre-smooth, `level_to_base` |
 | | `edge` | 1D/2D subpixel DoG edges, edgels, edge pairs, `DirectionField` |
 | | `morph` | binary morphology (parameterized SE), chamfer distance, Zhang-Suen thinning |
@@ -29,7 +29,7 @@ vm-primitives  ──►  vision-metrology  ──►  vm-python
 | | `segment` | Otsu/adaptive thresholding, CCL, watershed, edgel region growing |
 | | `fit` | robust line / circle / ellipse fitting, residuals reported |
 | | `measure` | calipers (rect / arc / radial), metrology model applied at a fixture pose |
-| | `shape` | LSD line-segment detection |
+| | `lsd` | LSD line-segment detection |
 | `vm-python` | — | numpy-in/numpy-out detectors; lib target named `vm_python` (see invariants) |
 
 Each `vision-metrology` module is a default-on feature (see invariant 18). Names live at
@@ -62,8 +62,19 @@ matching update here.
    `unsafe_op_in_unsafe_fn` is denied workspace-wide.
 8. **Error type.** `vm_primitives::Error` everywhere; `&'static str` payloads only.
 9. **`'static` public outputs.** No lifetimes in public result types (PyO3 compatibility).
-10. **Config-struct + reusable-detector API pattern** throughout; `0.0`/`0` mean "auto"
-    where a config field supports it.
+10. **Config-struct + reusable-detector API pattern, and no sentinel values.** A config
+    is a plain `pub` struct with `Default`, constructed with `..Default::default()`; a
+    detector owns its scratch and is reused across calls. "Absent", "automatic" and
+    "unlimited" are spelled in the type — `Option<T>`, `Option<NonZeroUsize>`, or a named
+    enum — never as `0`, `0.0`, or an empty range. A magic value is indistinguishable from
+    a legitimate one (`low_thresh = 0.0` meant *both* "no threshold" and "choose one for
+    me"), does not survive a language boundary (`None` is what a Python caller writes),
+    and cannot be checked by the compiler.
+    A config that grows past ~8 fields splits: the fields that describe **what is being
+    looked for** stay at the top level; the ones that describe **how hard the search
+    works** move into a nested `tuning: XTuning` with its own `Default`. Numeric thresholds
+    that depend on the pixel type carry a unit type (see `Contrast`) rather than a
+    comment saying which pixel type they were tuned for.
 11. **Default border mode is `Clamp`** in core/edge unless configured otherwise.
 12. **Determinism.** No RNG in library code; tests use synthetic fixtures (seeded if
     randomness is unavoidable); f32 sort ties broken explicitly (`(−score, x, y)`).
@@ -196,7 +207,8 @@ nominal radius and let the tolerances drop from 0.3 px to 0.03 px.
 solves the same problem for glue-bead cross-sections:
 - **Typed rejection reasons.** A caliper that finds nothing is a *result*, and which gate
   rejected it is the difference between "the part is missing" and "the search window is too
-  short". `Caliper::measure_checked` returns `Err(RejectReason)`.
+  short". `Caliper::measure` returns `Err(RejectReason)` — and there is no variant that
+  discards it (see below).
 - **An obliquity gate.** A caliper crossing an edge at a glancing angle reports a position
   along its own axis rather than the edge normal, and the two differ by `1/cos θ`; at a
   corner there is no meaningful crossing at all. `max_obliquity_deg` compares the local image
@@ -210,7 +222,7 @@ bead/stripe tool is built on top of this one.
 ### `fit`: geometric refinement, and what robustness actually requires (2026-08)
 `shape` held algebraic conic fitting and a RANSAC ellipse wrapper; there was **no line fit
 and no circle fit at all** — the two most common metrology measurements. The new `fit`
-module supplies all three, and `shape` narrows to LSD. `Circle2f`, `Ellipse2f` and `Conic2f`
+module supplies all three, and `shape` narrows to LSD (renamed `lsd` in the v0.3 reset). `Circle2f`, `Ellipse2f` and `Conic2f`
 move down to `vm-primitives::core` (types belong below the algorithms that produce them);
 `Circle2f` is new.
 
@@ -250,7 +262,7 @@ itself, so one dependency is still enough), an explicit curated re-export list, 
 `prelude` on both crates whose contents follow the feature gates.
 
 Every domain module is now an opt-in feature, default-on: `contour`, `laser`, `matching`,
-`segment` (implies `contour` — region growing consumes a `ContourGraph`), `shape`, and
+`segment` (implies `contour` — region growing consumes a `ContourGraph`), `lsd`, and
 `serde` (implies `matching`). Examples, benches and integration tests carry
 `required-features`, so `--no-default-features` skips them instead of failing.
 
@@ -259,6 +271,180 @@ The gates are only worth having if they are checked. `--all-features` can never 
 `vision-metrology` and a `--feature-powerset` over `vm-primitives`.
 
 `Error` is `#[non_exhaustive]`, so adding a variant stops being a breaking change.
+
+### `shape` → `lsd`, and the tiling protocol becomes a session (2026-08)
+Two renames of different weight.
+
+`shape` stopped being a true name when conic fitting and the RANSAC ellipse wrapper moved
+into `fit`: what was left was one algorithm. The module and its feature are now `lsd`, and
+`shape/lsd.rs` (the `lsd::lsd` path) is `lsd/detect.rs`.
+
+`DirectionField`'s lazy tiling was a three-step stateful protocol on one type —
+`begin_tiled_f32(img)`, then `ensure_rect_f32(img, …)` repeatedly, then read — where the
+ordering was documentation, the image was passed twice and checked with a runtime
+`assert!`, and reading a field that was never put into tiled mode was a silently-all-zero
+result rather than a compile error. `begin_tiled_f32` now returns a
+[`TiledField<'a>`] session borrowing **both** the field and the image; `ensure_rect` lives
+only on the session and takes no image, so it cannot be given the wrong one; the session
+derefs to the field, so scoring code is unchanged; and `#[must_use]` catches the caller
+who enters tiled mode and drops the session.
+
+The matcher builds one session per lazily-tiled level up front (`split_at_mut` separates
+the fully-built top level from the tiled ones), which cost one small `Vec` per `find` and
+removed the per-`ensure_rect` dimension assert. Measured on `match_shape`, M4 Pro:
+
+| Bench | before | after |
+|---|---|---|
+| `shape_find_1280x1024_360deg` | 3.408 ms | 3.370 ms |
+| `..._360deg_clutter` | 6.542 ms | 6.471 ms |
+| `..._tracked_roi` | 1.452 ms | 1.447 ms |
+| `..._360deg_greedy0` | 5.286 ms | 5.247 ms |
+| `..._scale_0p8_1p25` | 17.57 ms | 16.83 ms |
+
+Every case held or improved, so the safety came free.
+
+### `core` splits into `raster` and `geom`, and the raster half names no nalgebra (2026-08)
+`core` was seven flat files in which the dependency on nalgebra was invisible. It is now
+two private submodules with one rule between them: **`core::raster` mentions no
+linear-algebra type at all.** Buffers, pixel types, borders and sampling on one side;
+aliases, transforms and shapes on the other.
+
+The rule is not aesthetic. The ecosystem around this workspace already carries five
+near-duplicate `ImageView` types, and `rtvt-image` is a knowing fork of this very crate
+that exists *only* because it is pinned to nalgebra 0.34 while this one is on 0.35. An
+image buffer has nothing to do with linear algebra; the reason it could not be shared was
+that the two were in the same module. A raster layer that names no nalgebra type is the
+piece that can cross a major-version boundary, and this split is what makes extracting it
+later a move rather than a rewrite.
+
+The audit came out clean: `sample_bilinear_f32` and friends already took bare `f32`
+coordinates, so nothing had to change to satisfy the rule. `core::sample_bilinear_at`
+(taking a `Point2f`) is the geometry-side convenience that keeps the raster signature
+that way rather than "improving" it later.
+
+Both submodules stay **private** — every name keeps its single canonical `core::…` path
+(invariant 17). This is a rule about dependencies, not about import paths, and no public
+path changed.
+
+### One model-format bump, batched — opacity, read-only levels, R3 (2026-08)
+A stored `ShapeModel` is the one artefact of this crate that outlives a build, so every
+change to it invalidates files on disk. The v0.3 reset therefore did all of them at once:
+`FORMAT_VERSION` 2 → **3**, and no more bumps in this series.
+
+**The format is opaque.** `to_json` / `from_json` and the public
+`SHAPE_MODEL_FORMAT_VERSION` are replaced by `save` / `load` and `to_bytes` /
+`from_bytes`. The encoding is JSON today and that is not a promise: a documented wire
+format makes every internal field of the model a compatibility obligation, and the version
+constant existed only to let callers hand-assemble an envelope this crate should be the
+only writer of. Nothing a caller could do with the number is not better answered by `load`
+returning an error, so the constant is `pub(crate)` and the Rust and Python tests now
+assert the property that matters — a foreign document is refused, not mis-read.
+
+**`ModelPoint` and `ShapeModelLevel` are readable, not writable.** Their fields are
+`pub(crate)` with public accessors. The lab and the overlay code draw model points, so
+reading them has to stay easy; *writing* them does not, because the point order is
+load-bearing (greedy termination evaluates a prefix, which must sample the whole contour)
+and `radius` / `angle_step` / `scale_step` are derived quantities the search trusts.
+
+**R3 is wired (backlog item closed).** `ShapeModelConfig::pre_smooth` chooses the pyramid
+pre-filter, the built model stores it, and `ShapeMatcher::find` reads it off the *model*
+rather than from its own config. That is invariant 3 made unbreakable: a model taught with
+`Binomial121` cannot be searched against a box-mean scene, whatever the caller's search
+config says. The default stays `PreSmooth::None`, so nothing about existing behaviour
+moves; `Binomial121` is now available for the fine-toothed contours that alias away at
+levels 3–4.
+
+### A measurement that found nothing is a result, not an empty slice (2026-08)
+`Caliper` had `measure` returning `&[MeasureEdge]` and `measure_checked` returning
+`Result<&[MeasureEdge], RejectReason>` — the same computation, one of them throwing away
+the diagnosis. `MetrologyModel` had the same pair, with the lossy `apply` additionally
+*renumbering*: objects whose fit failed were skipped, so `results[i]` was not object `i`
+and the caller could not tell which one was missing.
+
+Both lossy twins are deleted. `Caliper::measure` returns the `Result`; `Ok(&[])` is
+unrepresentable because an extraction that found nothing always has a `RejectReason`
+(`NoEdge`, `TooOblique`, `WrongPolarity`, `OffImage`, `ProfileTooShort`). `MetrologyModel::apply`
+returns `Vec<Result<MetrologyResult, Error>>`, one entry per object in `objects()` order.
+
+`MetrologyModel::hits()` — a parallel array of caliper edges from the last call, which the
+caller had to keep aligned by hand and which a second `apply` silently invalidated — folded
+into the result: `MetrologyResult { fit: MetrologyFit, hits: Vec<MeasureEdge> }`. The
+`Line`/`Circle` enum is now `MetrologyFit`, and `rms()`/`max_dev()`/`n_used()` are on both.
+
+This is the general rule the reset applies to diagnostics: cheap borrowing accessors
+(`Caliper::profile()`, `ShapeMatcher::truncated()`) stay, diagnostic *computation* lives in
+a `diagnostics` module off the hot path, and anything a result was already computing
+travels with that result instead of in a side channel.
+
+### Configs say what they mean: the split, the sentinels, and `Contrast` (2026-08)
+Three problems in one pass, all of them in the *type* rather than the algorithm.
+
+**The split.** `ShapeSearchConfig` had 14 flat fields, six of which (`max_candidates`,
+`coarse_score_factor`, `greediness`, the two step overrides, `last_level`) are search
+*effort* — they trade run time against the chance of missing a match `min_score` says
+should be reported. Presenting them next to `min_score` invites tuning by field name.
+They now live in `tuning: ShapeSearchTuning`, which has its own `Default`, so the common
+case is unchanged and the advanced case is one word longer. `LaserExtractConfig` split the
+same way: `axis` / `min_width` / `max_width` / `min_score` say what a stripe *is*;
+`tuning` holds the coarse method, ROI half-width, jump and gap limits, prior weight, edge
+config and smoothing. No builders — the plain-struct-plus-`..Default::default()` form is
+what makes serde and the Python mirror cheap.
+
+**The sentinels.** `0`/`0.0` meaning "auto" is gone (invariant 10 rewritten):
+`num_levels`, `max_points`, `max_matches` are `Option<NonZeroUsize>`; `angle_step`,
+`scale_step` are `Option<f32>`; `Edge2DConfig`'s two threshold fields became one
+`Hysteresis::{Auto, Manual{low, high}}`, which also fixes the case where a caller set one
+of the pair and silently got neither meaning. `NonZeroUsize::new(512)` *is* an
+`Option<NonZeroUsize>`, so struct literals stayed readable.
+
+`Edge2DConfig::pre_smooth: bool` alongside `smooth_kind: SmoothKind` was two encodings of
+one decision, with `pre_smooth: false, smooth_kind: Binomial3` representable and
+meaningless. `SmoothKind::None` already said it; the bool is gone.
+
+`LaserExtractConfig::enable_smoothing: bool` turned out to be real — a median-of-5 over
+each contiguous run of valid samples — with the window hard-coded where no caller could
+see it. It is now `CenterSmoothing::{None, Median { half_window }}`, and the filter is
+parameterised by it.
+
+**`Contrast`.** `min_contrast` was documented as "Scharr response units on the input pixel
+scale", which is to say: a number whose meaning changes by 257× between `u8` and `u16`
+data of identical physical contrast. `Contrast::Raw(f32)` keeps exactly that behaviour and
+is the default; `Contrast::FractionOfRange(f)` resolves to `f · 16 · (max − min)` of the
+image being processed — 16 being Scharr's response to an ideal unit step — and therefore
+transfers between pixel types unchanged. The model resolves it against the reference
+*ROI*, not the frame; the search resolves it against the scene; `ShapeModel::from_edgels`
+has no image and returns `InvalidConfig` rather than inventing a range from the very
+strengths it is about to filter. `Raw` costs nothing, so the min/max pass only happens
+when a fraction was actually asked for.
+
+### The v0.3 visibility sweep: one path per name, and nothing else public (2026-08)
+Invariant 17 said "one canonical path per name"; the crate root said otherwise. A flat
+`pub use contour::{…}` / `laser::{…}` / `matching::{…}` block re-exported the whole domain
+surface, so every type had two paths (`vision_metrology::ShapeMatcher` and
+`vision_metrology::matching::ShapeMatcher`) and the crate root read as the API rather than
+the modules. The block is gone. What remains at the root is the curated `vm_primitives`
+list (the names a caller of *this* crate types constantly), the `vm_primitives` crate
+itself, and `prelude` — now covering `fit`, `measure` and `segment` too, which it had
+silently skipped.
+
+Removed from the public surface in the same pass, because pre-release is when this is free:
+
+- `laser::coarse_center_{u8,u16,f32}` and `laser::best_pair_with_prior` — pipeline stages,
+  not API, and the typed triplet violated invariant 19 outright. Deleted rather than
+  hidden: the generic `coarse_center_in_range` they wrapped is the real implementation and
+  had no other caller.
+- `contour::MAX_KERNEL_PTS` — an implementation detail of the smoothing scratch buffer.
+- `pyr::downsample2x2_mean{,_into,_to_f32_into}` — `Pyramid` is the entry point. The two
+  same-type variants had no caller anywhere and were deleted; the `f32` kernel is
+  `pub(crate)`, with a `#[doc(hidden)]` benchmark hook so `benches/downsample.rs` can still
+  measure per-pixel-type kernel throughput without the level-0 widening pass.
+- `matching::create_shape_model` — a one-line duplicate of `ShapeModelBuilder::build`.
+- `core::transform_point_iso` — `iso * p` with nalgebra in the public API already.
+- `edge`'s submodules (`edge::edge2d::Edgel` → `edge::Edgel`). Splitting a module across
+  files is a file-size decision (invariant 14); it should not show up in import paths.
+- `matching::match_point_scores` moved to `matching::diagnostics::match_point_scores`.
+  Diagnostics are a module, not a feature, and they do not belong at the root of the
+  algorithm they instrument.
 
 ### `Point2f` / `Vec2f` are nalgebra aliases (2026-08)
 ```rust
@@ -296,7 +482,8 @@ four decimal places.
 ### One generic entry point per algorithm (2026-08)
 Every detector used to expose `_u8` / `_u16` / `_f32` variants of the same method. Counting
 the affected functions across both library crates: **40 entry points became 16**, and the
-three that remain `_f32` (`build_image_f32`, `begin_tiled_f32`, `ensure_rect_f32`) genuinely
+three that remain `_f32` (`build_image_f32`, `begin_tiled_f32`, and — until the v0.3 reset
+turned it into `TiledField::ensure_rect` — `ensure_rect_f32`) genuinely
 only ever see pyramid levels, which are always `f32`.
 
 `vm_primitives::Pixel` is a sealed trait over `u8`/`u16`/`f32` carrying `to_f32`,
@@ -320,7 +507,7 @@ Everything else held or improved: `shape_find_1280x1024_360deg` 3.42 → 3.36 ms
 `shape_model_create` +0.6%.
 
 ### LSD downsamples through `pyr`, and its config stopped lying (2026-08)
-`shape/lsd.rs` carried its own 2×2 downsample under a comment claiming it was "the same as a
+`lsd/detect.rs` (then `shape/lsd.rs`) carried its own 2×2 downsample under a comment claiming it was "the same as a
 `vm_primitives::pyr` level". It was not: `div_ceil` + border clamp against `pyr`'s drop-odd,
 so on odd input the two disagreed on both output size and edge values. It then mapped
 positions back with a bare `p · (W / w)`, missing the `(2^l − 1)/2` term of invariant 2.
@@ -382,16 +569,16 @@ release build time, which is the trade we want on a library whose detection budg
 Record per release. The target use case budgets ~30 ms for a full multi-stage
 image analysis; detection is stage 1 and must leave room for the rest.
 
-| Bench | post-#18 | post-tiling (Track 2) |
-|---|---|---|
-| `shape_model_create_1280x1024` | 0.49 ms | 0.49 ms |
-| `shape_find_1280x1024_360deg` | 7.8 ms | **3.46 ms** |
-| `shape_find_1280x1024_360deg_clutter` | 10.4 ms | **6.57 ms** |
-| `shape_find_1280x1024_tracked_roi` | — | **1.49 ms** |
-| `shape_find_1280x1024_360deg_greedy0` | 11.2 ms | 5.47 ms |
-| `shape_find_1280x1024_scale_0p8_1p25` | 23.1 ms | 16.95 ms |
-| `direction_field_1280x1024` (full frame) | 4.0 ms | 4.0 ms (lazily skipped in find) |
-| `edge2d_detect_u8_1280x1024` | 5.6 ms | 5.6 ms |
+| Bench | post-#18 | post-tiling (Track 2) | post-v0.3 reset (Track D) |
+|---|---|---|---|
+| `shape_model_create_1280x1024` | 0.49 ms | 0.49 ms | 0.49 ms |
+| `shape_find_1280x1024_360deg` | 7.8 ms | **3.46 ms** | **3.37 ms** |
+| `shape_find_1280x1024_360deg_clutter` | 10.4 ms | **6.57 ms** | **6.47 ms** |
+| `shape_find_1280x1024_tracked_roi` | — | **1.49 ms** | **1.45 ms** |
+| `shape_find_1280x1024_360deg_greedy0` | 11.2 ms | 5.47 ms | 5.25 ms |
+| `shape_find_1280x1024_scale_0p8_1p25` | 23.1 ms | 16.95 ms | 16.83 ms |
+| `direction_field_1280x1024` (full frame) | 4.0 ms | 4.0 ms (lazily skipped in find) | 4.0 ms |
+| `edge2d_detect_u8_1280x1024` | 5.6 ms | 5.6 ms | 5.6 ms |
 
 Canend real data, full 360°, median per frame: set1 dome 15 → **5.6 ms**,
 bright 16.9 → 9.2 ms, dark 15 → 11.5 ms, set2 dome 63 → **25.5 ms**, conveyor
@@ -410,6 +597,17 @@ LTO profile), set1 `normal`, `--model-min-contrast 400`:
 
 Every folder is at or slightly below its pre-reset median (5.6 / 9.2 / 11.5 ms)
 and no detection was lost.
+
+Re-validated again after the **v0.3 API reset**, same flags: dome 50/50, shape
+p50 **0.998**, median 5.7 ms — identical to three decimals. `inspect_canend` on
+set1 `normal`: dome 50/50 measured, mean radius 365.237 px, σ 0.282 px; dark
+50/50, 365.696 px, σ 0.307 px — both matching the pre-reset numbers.
+
+A caution recorded while measuring: the `shape_matching` example's median score
+depends on which frame is taught. On set1/bright the same folder reads p50
+0.875 / 0.839 / 0.847 depending on whether the model comes from frame 1, 2 or
+25. Comparing runs across commits is only meaningful with the reference frame
+pinned.
 
 Where the remaining time goes (cluttered fixture, per stage): top-level sweep
 2.3 ms, candidate descent 4.2 ms, everything else <0.5 ms. The descent cost is

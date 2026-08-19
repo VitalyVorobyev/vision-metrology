@@ -87,7 +87,9 @@ pub struct CcLabel {
 ///
 /// # Example
 /// ```
-/// use vision_metrology::{Image, ImageView, Connectivity, label_connected_components_u8};
+/// use vision_metrology::{Image, ImageView};
+/// use vision_metrology::contour::Connectivity;
+/// use vision_metrology::segment::label_connected_components_u8;
 ///
 /// // 5×5 image: single 3×3 white rectangle in the center.
 /// let mut data = vec![0u8; 5 * 5];

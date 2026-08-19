@@ -1,4 +1,4 @@
-use crate::Error;
+use super::Error;
 
 /// Owned, contiguous 2-D image buffer.
 ///

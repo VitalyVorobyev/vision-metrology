@@ -39,7 +39,7 @@ agent) can pick it up cold. When an item is scheduled it moves into
 
 - **File-size offenders.** Invariant 14 counts *code* lines (tests excluded), so measure
   that way, not by raw total. Over the cap today: `contour/build.rs` (802 code / 1175 total),
-  `shape/lsd.rs` (757 / 983), `matching/build.rs` (737 / 737), `matching/matcher.rs`
+  `lsd/detect.rs` (757 / 983), `matching/build.rs` (737 / 737), `matching/matcher.rs`
   (653 / 692). Under it despite a large total: `edge/edge2d.rs` (578 / 859),
   `edge/gradient.rs` (527 / 783), `matching/score.rs` (423 / 683). Split opportunistically
   when a track touches them.
@@ -71,16 +71,6 @@ agent) can pick it up cold. When an item is scheduled it moves into
 
 ## Testing
 
-- **R3 — coarse-level aliasing on fine-toothed contours.** `PyramidF32` is a plain 2×2 box
-  mean with no pre-smoothing; high-frequency contours (fine teeth, thin webs) can alias or
-  vanish by level 3–4, so the true match dies at the coarse level. `coarse_score_factor`
-  is a band-aid; the real fix is an optional binomial pre-smooth on the pyramid. The comb
-  fixture test (`r3_fine_toothed_model_survives_the_pyramid`) pins the current behavior —
-  an 8 px tooth pitch survives today because the auto level count stops where coarse
-  points destabilize. **Half done:** `PreSmooth::Binomial121` now exists on `Pyramid` and is
-  the LSD default. What remains is wiring it into `ShapeModel`: invariant 3 means the model
-  and the scene must share the kernel, so the choice has to be stored in the model and the
-  serialization format version bumped.
 - **Laser extractor u16/f32 depth**: after the Track 1 split, the generic scan loop makes
   it cheap to run the full test matrix over all three pixel types — today u16/f32 have one
   cross-check test each.

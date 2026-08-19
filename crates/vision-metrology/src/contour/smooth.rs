@@ -23,7 +23,7 @@ use vm_primitives::Point2f;
 /// The Gaussian window spans `±3*sigma` arc-length, which for a typical
 /// 1-px sampling and σ = 128 px gives 769 neighbours — safely within this
 /// limit. Larger windows are silently capped.
-pub const MAX_KERNEL_PTS: usize = 2048;
+pub(crate) const MAX_KERNEL_PTS: usize = 2048;
 
 /// Smooth a polyline with 1-D Gaussian convolution along arc length.
 ///

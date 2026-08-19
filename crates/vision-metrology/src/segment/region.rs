@@ -156,7 +156,7 @@ pub fn grow_regions(
 #[cfg(test)]
 mod tests {
     use crate::contour::{Connectivity, ContourBuildConfig, build_graph_from_edgels};
-    use vm_primitives::edge::edge2d::Edgel;
+    use vm_primitives::edge::Edgel;
     use vm_primitives::{Image, Point2f, Vec2f};
 
     use super::{RegionGrowConfig, grow_regions};

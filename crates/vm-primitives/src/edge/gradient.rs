@@ -76,7 +76,7 @@ pub struct DirectionField {
     height: usize,
     min_mag: f32,
     // ── lazy tiled mode ────────────────────────────────────────────────────
-    /// Smoothing recorded by `begin_tiled_f32`, applied per tile.
+    /// Smoothing recorded when tiled mode was entered, applied per tile.
     smooth: SmoothKind,
     /// Per-tile build stamp; a tile is current iff `tile_stamp[i] == generation`.
     tile_stamp: Vec<u32>,
@@ -315,19 +315,35 @@ impl DirectionField {
     // the same expression trees as `smooth_binomial3` / `scharr_normalised`,
     // evaluated with image-border clamping in absolute coordinates.
     //
-    // Safety net: `begin_tiled_f32` zeroes exactly the tiles the previous
-    // generation built (O(built), not O(frame)), so a read that a caller
-    // forgot to `ensure_rect_f32` sees deterministic zeros — "no evidence",
-    // the same contribution as an out-of-image point — never stale data from
+    // Safety net: entering tiled mode zeroes exactly the tiles the previous
+    // generation built (O(built), not O(frame)), so a read of a rectangle the
+    // caller forgot to ensure sees deterministic zeros — "no evidence", the
+    // same contribution as an out-of-image point — never stale data from
     // another frame.
 
-    /// Enter lazy tiled mode for `img`: record the smoothing/gate parameters,
-    /// invalidate all tiles, and zero the ones the previous generation built.
+    /// Enter lazy tiled mode for `img`, returning the session that owns it.
     ///
-    /// After this call the field's buffers are current only where
-    /// [`ensure_rect_f32`](Self::ensure_rect_f32) has been called with a
-    /// covering rectangle; everywhere else `dir` reads as zero.
-    pub fn begin_tiled_f32(&mut self, img: &Image<f32>, smooth: SmoothKind, min_mag: f32) {
+    /// The returned [`TiledField`] borrows both the field and `img`, so the
+    /// two cannot drift apart: every `ensure_rect` afterwards necessarily
+    /// refers to the image tiled mode was entered with. That used to be a
+    /// runtime `assert!` on a second `&Image` argument, and the ordering
+    /// requirement — begin, then ensure, then read — was documentation only.
+    ///
+    /// The field's buffers are current only where
+    /// [`TiledField::ensure_rect`] has been called with a covering rectangle;
+    /// everywhere else `dir` reads as zero.
+    #[must_use = "the session owns ensure_rect; dropping it immediately leaves the field all zeros"]
+    pub fn begin_tiled_f32<'a>(
+        &'a mut self,
+        img: &'a Image<f32>,
+        smooth: SmoothKind,
+        min_mag: f32,
+    ) -> TiledField<'a> {
+        self.enter_tiled(img, smooth, min_mag);
+        TiledField { field: self, img }
+    }
+
+    fn enter_tiled(&mut self, img: &Image<f32>, smooth: SmoothKind, min_mag: f32) {
         let (w, h) = (img.width(), img.height());
         let dims_changed = self.width != w || self.height != h;
         self.ensure(w, h);
@@ -360,17 +376,10 @@ impl DirectionField {
         }
     }
 
-    /// Build every tile intersecting the half-open pixel rectangle
-    /// `[x0, x1) × [y0, y1)` (clamped to the image; already-built tiles are
-    /// skipped). `img` must be the image passed to
-    /// [`begin_tiled_f32`](Self::begin_tiled_f32).
-    ///
-    /// # Panics
-    /// Panics if `img`'s dimensions differ from the `begin_tiled_f32` image.
-    pub fn ensure_rect_f32(&mut self, img: &Image<f32>, x0: i32, y0: i32, x1: i32, y1: i32) {
-        assert!(
+    fn ensure_rect(&mut self, img: &Image<f32>, x0: i32, y0: i32, x1: i32, y1: i32) {
+        debug_assert!(
             img.width() == self.width && img.height() == self.height,
-            "ensure_rect_f32: image does not match begin_tiled_f32 dimensions"
+            "tiled session image does not match the field"
         );
         if self.width == 0 || self.height == 0 {
             return;
@@ -498,6 +507,53 @@ impl DirectionField {
                 }
             }
         }
+    }
+}
+
+/// A lazy-tiling session over a [`DirectionField`] and one image.
+///
+/// Returned by [`DirectionField::begin_tiled_f32`]. It holds both halves of
+/// the protocol together: the field whose tiles are being filled and the image
+/// they are filled from. Nothing else can call `ensure_rect`, and `ensure_rect`
+/// cannot be handed the wrong image, so the two ways this protocol used to be
+/// misusable are gone — no runtime dimension assert, and no way to read a
+/// field that was never put into tiled mode at all.
+///
+/// The session derefs to the field, so scoring code reads through it unchanged.
+/// Pixels in tiles that were never ensured read as zero, which the score treats
+/// as "no evidence" — the same contribution as an out-of-image point.
+pub struct TiledField<'a> {
+    field: &'a mut DirectionField,
+    img: &'a Image<f32>,
+}
+
+impl TiledField<'_> {
+    /// Build every tile intersecting the half-open pixel rectangle
+    /// `[x0, x1) × [y0, y1)`.
+    ///
+    /// Clamped to the image; tiles already built in this session are skipped,
+    /// so overlapping requests cost only the intersection test.
+    #[inline]
+    pub fn ensure_rect(&mut self, x0: i32, y0: i32, x1: i32, y1: i32) {
+        self.field.ensure_rect(self.img, x0, y0, x1, y1);
+    }
+
+    /// The field being filled, for reading.
+    ///
+    /// Same as dereferencing; named for call sites that need an explicit
+    /// `&DirectionField`.
+    #[inline]
+    pub fn field(&self) -> &DirectionField {
+        self.field
+    }
+}
+
+impl core::ops::Deref for TiledField<'_> {
+    type Target = DirectionField;
+
+    #[inline]
+    fn deref(&self) -> &DirectionField {
+        self.field
     }
 }
 
@@ -700,8 +756,8 @@ mod tests {
             full.build_image_f32(&img, smooth, 25.0);
 
             let mut tiled = DirectionField::new();
-            tiled.begin_tiled_f32(&img, smooth, 25.0);
-            tiled.ensure_rect_f32(&img, 0, 0, img.width() as i32, img.height() as i32);
+            let mut session = tiled.begin_tiled_f32(&img, smooth, 25.0);
+            session.ensure_rect(0, 0, img.width() as i32, img.height() as i32);
 
             assert_eq!(full.dir(), tiled.dir(), "dir differs ({smooth:?})");
             assert_eq!(full.mag(), tiled.mag(), "mag differs ({smooth:?})");
@@ -714,13 +770,13 @@ mod tests {
         let mut tiled = DirectionField::new();
 
         // Build everything once (generation 1)...
-        tiled.begin_tiled_f32(&img, SmoothKind::Binomial3, 25.0);
-        tiled.ensure_rect_f32(&img, 0, 0, 157, 101);
+        let mut session = tiled.begin_tiled_f32(&img, SmoothKind::Binomial3, 25.0);
+        session.ensure_rect(0, 0, 157, 101);
         assert!(tiled.dir().iter().any(|&v| v != 0.0));
 
         // ...then begin a new generation and ensure only a corner window.
-        tiled.begin_tiled_f32(&img, SmoothKind::Binomial3, 25.0);
-        tiled.ensure_rect_f32(&img, 0, 0, 40, 40);
+        let mut session = tiled.begin_tiled_f32(&img, SmoothKind::Binomial3, 25.0);
+        session.ensure_rect(0, 0, 40, 40);
 
         // Inside the window: identical to a full build. Outside: exact zeros,
         // never a stale value from the previous generation.
@@ -749,8 +805,8 @@ mod tests {
         let mut full = DirectionField::new();
 
         for img in [&a, &b, &a] {
-            tiled.begin_tiled_f32(img, SmoothKind::Binomial3, 25.0);
-            tiled.ensure_rect_f32(img, 0, 0, img.width() as i32, img.height() as i32);
+            let mut session = tiled.begin_tiled_f32(img, SmoothKind::Binomial3, 25.0);
+            session.ensure_rect(0, 0, img.width() as i32, img.height() as i32);
             full.build_image_f32(img, SmoothKind::Binomial3, 25.0);
             assert_eq!(full.dir(), tiled.dir());
             assert_eq!(full.mag(), tiled.mag());

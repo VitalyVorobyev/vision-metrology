@@ -19,9 +19,10 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use image::ImageReader;
 use serde::Serialize;
-use vision_metrology::{
-    ColAccess, Edge1DConfig, Image, LaserExtractConfig, LaserExtractor, ScanAxis,
+use vision_metrology::laser::{
+    ColAccess, LaserExtractConfig, LaserExtractTuning, LaserExtractor, ScanAxis,
 };
+use vision_metrology::{Edge1DConfig, Image};
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
 
@@ -146,11 +147,14 @@ fn main() -> Result<()> {
         axis: ScanAxis::Cols {
             access: ColAccess::Gather,
         },
-        edge_cfg: Edge1DConfig {
-            sigma: args.sigma,
-            pos_thresh: args.min_grad,
-            neg_thresh: args.min_grad,
-            ..Edge1DConfig::default()
+        tuning: LaserExtractTuning {
+            edge_cfg: Edge1DConfig {
+                sigma: args.sigma,
+                pos_thresh: args.min_grad,
+                neg_thresh: args.min_grad,
+                ..Edge1DConfig::default()
+            },
+            ..LaserExtractTuning::default()
         },
         ..LaserExtractConfig::default()
     };

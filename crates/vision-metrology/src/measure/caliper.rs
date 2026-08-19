@@ -2,7 +2,7 @@
 
 use vm_primitives::{
     BorderMode, Edge1DConfig, Edge1DDetector, EdgePolarity, ImageView, Pixel, Point2f,
-    SubpixRefine, Vec2f, Vec2fExt, sample_bilinear_f32,
+    SubpixRefine, Vec2f, Vec2fExt, sample_bilinear_at, sample_bilinear_f32,
 };
 
 /// A rectangular measurement region.
@@ -246,7 +246,7 @@ enum Placement {
 ///     MeasureConfig::default(),
 /// );
 ///
-/// let edges = cal.measure(&img.as_view());
+/// let edges = cal.measure(&img.as_view()).expect("an edge");
 /// assert_eq!(edges.len(), 1);
 /// // Pixel centres: the transition sits between x = 29 and x = 30.
 /// assert!((edges[0].p.x - 29.5).abs() < 0.05, "found at {}", edges[0].p.x);
@@ -326,19 +326,14 @@ impl Caliper {
 
     /// Extract edges from the image under the current placement.
     ///
-    /// The returned slice is valid until the next call on this caliper.
-    pub fn measure<P: Pixel>(&mut self, img: &ImageView<'_, P>) -> &[MeasureEdge] {
-        let _ = self.measure_checked(img);
-        &self.edges
-    }
-
-    /// Like [`measure`](Self::measure) but says **why** when nothing was found.
-    ///
-    /// `Ok` carries the edges; `Err` names the gate that rejected them. On a
-    /// production line the distinction between "no edge in the window" and
-    /// "the crossing was too oblique" is the difference between a missing part
-    /// and a mis-taught recipe.
-    pub fn measure_checked<P: Pixel>(
+    /// `Ok` carries the edges, valid until the next call on this caliper; `Err`
+    /// names the gate that rejected them. On a production line the distinction
+    /// between "no edge in the window" and "the crossing was too oblique" is
+    /// the difference between a missing part and a mis-taught recipe, so there
+    /// is no variant of this call that discards it — an empty `Ok(&[])` is
+    /// unrepresentable, because an extraction that found nothing always has a
+    /// [`RejectReason`].
+    pub fn measure<P: Pixel>(
         &mut self,
         img: &ImageView<'_, P>,
     ) -> Result<&[MeasureEdge], RejectReason> {
@@ -438,7 +433,7 @@ impl Caliper {
                 if q.x < 0.0 || q.y < 0.0 || q.x > w - 1.0 || q.y > h - 1.0 {
                     inside = false;
                 }
-                acc += sample_bilinear_f32(img, q.x, q.y, self.cfg.border);
+                acc += sample_bilinear_at(img, q, self.cfg.border);
             }
             self.profile[i] = acc / across as f32;
         }
@@ -703,7 +698,7 @@ mod tests {
     fn finds_a_step_at_the_right_subpixel_position() {
         let img = step_image(96, 96, 40);
         let mut cal = Caliper::rect(rect(48.0, 48.0, 0.0, 24.0, 10.0), MeasureConfig::default());
-        let edges = cal.measure(&img.as_view());
+        let edges = cal.measure(&img.as_view()).expect("an edge");
 
         assert_eq!(edges.len(), 1, "one step, one edge: {edges:?}");
         // Under the pixel-centre convention the transition between the last
@@ -728,7 +723,7 @@ mod tests {
         for deg in [0.0f32, 10.0, 20.0, 30.0] {
             let a = deg.to_radians();
             let mut cal = Caliper::rect(rect(64.0, 64.0, a, 30.0, 6.0), MeasureConfig::default());
-            let edges = cal.measure(&img.as_view());
+            let edges = cal.measure(&img.as_view()).expect("an edge");
             assert_eq!(edges.len(), 1, "deg={deg}: {edges:?}");
             assert!(
                 (edges[0].p.x - 59.5).abs() < 0.1,
@@ -745,7 +740,7 @@ mod tests {
         let mut positions = Vec::new();
         for hw in [0.0f32, 1.0, 5.0, 15.0] {
             let mut cal = Caliper::rect(rect(48.0, 48.0, 0.0, 24.0, hw), MeasureConfig::default());
-            let edges = cal.measure(&img.as_view());
+            let edges = cal.measure(&img.as_view()).expect("an edge");
             assert_eq!(edges.len(), 1, "half_width={hw}");
             positions.push(edges[0].p.x);
         }
@@ -768,7 +763,11 @@ mod tests {
         };
 
         let mut any = Caliper::rect(base, MeasureConfig::default());
-        assert_eq!(any.measure(&img.as_view()).len(), 2, "both bar edges");
+        assert_eq!(
+            any.measure(&img.as_view()).expect("edges").len(),
+            2,
+            "both bar edges"
+        );
 
         let mut rising = Caliper::rect(
             base,
@@ -777,7 +776,7 @@ mod tests {
                 ..MeasureConfig::default()
             },
         );
-        let r = rising.measure(&img.as_view());
+        let r = rising.measure(&img.as_view()).expect("a rising edge");
         assert_eq!(r.len(), 1);
         assert_eq!(r[0].polarity, EdgePolarity::Rising);
         assert!((r[0].p.x - 29.5).abs() < 0.1, "x = {}", r[0].p.x);
@@ -789,7 +788,7 @@ mod tests {
                 ..MeasureConfig::default()
             },
         );
-        let f = falling.measure(&img.as_view());
+        let f = falling.measure(&img.as_view()).expect("a falling edge");
         assert_eq!(f.len(), 1);
         assert_eq!(f[0].polarity, EdgePolarity::Falling);
         assert!((f[0].p.x - 59.5).abs() < 0.1, "x = {}", f[0].p.x);
@@ -807,7 +806,7 @@ mod tests {
                 ..MeasureConfig::default()
             },
         );
-        let e = first.measure(&img.as_view());
+        let e = first.measure(&img.as_view()).expect("an edge");
         assert_eq!(e.len(), 1);
         assert!((e[0].p.x - 29.5).abs() < 0.1);
 
@@ -818,7 +817,7 @@ mod tests {
                 ..MeasureConfig::default()
             },
         );
-        let e = last.measure(&img.as_view());
+        let e = last.measure(&img.as_view()).expect("an edge");
         assert_eq!(e.len(), 1);
         assert!((e[0].p.x - 59.5).abs() < 0.1);
     }
@@ -865,9 +864,21 @@ mod tests {
         let geom = rect(48.0, 48.0, 0.0, 24.0, 6.0);
         let cfg = MeasureConfig::default();
 
-        let x8 = Caliper::rect(geom, cfg).measure(&u8_img.as_view())[0].p.x;
-        let x16 = Caliper::rect(geom, cfg).measure(&u16_img.as_view())[0].p.x;
-        let x32 = Caliper::rect(geom, cfg).measure(&f32_img.as_view())[0].p.x;
+        let x8 = Caliper::rect(geom, cfg)
+            .measure(&u8_img.as_view())
+            .expect("an edge")[0]
+            .p
+            .x;
+        let x16 = Caliper::rect(geom, cfg)
+            .measure(&u16_img.as_view())
+            .expect("an edge")[0]
+            .p
+            .x;
+        let x32 = Caliper::rect(geom, cfg)
+            .measure(&f32_img.as_view())
+            .expect("an edge")[0]
+            .p
+            .x;
         assert_eq!(x8, x16);
         assert_eq!(x8, x32);
     }
@@ -902,7 +913,7 @@ mod tests {
             },
             MeasureConfig::default(),
         );
-        let edges = cal.measure(&img.as_view());
+        let edges = cal.measure(&img.as_view()).expect("an edge");
 
         // Two boundaries: entering the wedge at 0 degrees, leaving at 30.
         assert_eq!(edges.len(), 2, "{edges:?}");
@@ -948,7 +959,7 @@ mod tests {
                 },
                 cfg,
             );
-            let r_chord = chord.measure(&img.as_view())[0].p.x - c.x;
+            let r_chord = chord.measure(&img.as_view()).expect("an edge")[0].p.x - c.x;
 
             let mut arc = Caliper::radial(
                 MeasureRadial {
@@ -960,7 +971,7 @@ mod tests {
                 },
                 cfg,
             );
-            let r_arc = arc.measure(&img.as_view())[0].p.x - c.x;
+            let r_arc = arc.measure(&img.as_view()).expect("an edge")[0].p.x - c.x;
 
             // The chord fit reads low, and worse as the caliper widens.
             assert!(
@@ -998,7 +1009,7 @@ mod tests {
                     ..MeasureConfig::default()
                 },
             );
-            let e = cal.measure(&img.as_view());
+            let e = cal.measure(&img.as_view()).expect("an edge");
             assert_eq!(e.len(), 1, "step={step}");
             assert!(
                 (e[0].p.x - 39.5).abs() < 0.05,
@@ -1018,7 +1029,7 @@ mod tests {
 
         let mut ungated = Caliper::rect(geom, MeasureConfig::default());
         assert!(
-            !ungated.measure(&img.as_view()).is_empty(),
+            ungated.measure(&img.as_view()).is_ok(),
             "ungated, the glancing crossing is still reported"
         );
 
@@ -1029,10 +1040,7 @@ mod tests {
                 ..MeasureConfig::default()
             },
         );
-        assert_eq!(
-            gated.measure_checked(&img.as_view()),
-            Err(RejectReason::TooOblique)
-        );
+        assert_eq!(gated.measure(&img.as_view()), Err(RejectReason::TooOblique));
 
         // Straight on, the same gate passes.
         let mut straight = Caliper::rect(
@@ -1042,7 +1050,7 @@ mod tests {
                 ..MeasureConfig::default()
             },
         );
-        assert!(straight.measure_checked(&img.as_view()).is_ok());
+        assert!(straight.measure(&img.as_view()).is_ok());
     }
 
     /// Every rejection path must name itself.
@@ -1053,10 +1061,7 @@ mod tests {
 
         // Nothing to find.
         let mut none = Caliper::rect(rect(32.0, 32.0, 0.0, 20.0, 4.0), MeasureConfig::default());
-        assert_eq!(
-            none.measure_checked(&flat.as_view()),
-            Err(RejectReason::NoEdge)
-        );
+        assert_eq!(none.measure(&flat.as_view()), Err(RejectReason::NoEdge));
 
         // A rising-only caliper pointed the wrong way down a rising edge.
         let mut wrong = Caliper::rect(
@@ -1067,14 +1072,14 @@ mod tests {
             },
         );
         assert_eq!(
-            wrong.measure_checked(&img.as_view()),
+            wrong.measure(&img.as_view()),
             Err(RejectReason::WrongPolarity)
         );
 
         // Too short to convolve.
         let mut tiny = Caliper::rect(rect(48.0, 48.0, 0.0, 0.4, 1.0), MeasureConfig::default());
         assert_eq!(
-            tiny.measure_checked(&img.as_view()),
+            tiny.measure(&img.as_view()),
             Err(RejectReason::ProfileTooShort)
         );
     }
@@ -1083,7 +1088,7 @@ mod tests {
     fn a_flat_region_produces_no_edges() {
         let img = Image::from_vec(64, 64, vec![128u8; 64 * 64]).expect("valid");
         let mut cal = Caliper::rect(rect(32.0, 32.0, 0.0, 20.0, 5.0), MeasureConfig::default());
-        assert!(cal.measure(&img.as_view()).is_empty());
+        assert!(cal.measure(&img.as_view()).is_err());
         assert!(cal.measure_pairs(&img.as_view()).is_empty());
     }
 
@@ -1091,7 +1096,7 @@ mod tests {
     fn the_profile_is_available_for_diagnostics() {
         let img = step_image(96, 96, 40);
         let mut cal = Caliper::rect(rect(48.0, 48.0, 0.0, 24.0, 4.0), MeasureConfig::default());
-        cal.measure(&img.as_view());
+        let _ = cal.measure(&img.as_view());
         let prof = cal.profile();
         assert_eq!(prof.len(), 49, "2*24 + 1 samples");
         assert!((prof[0] - 20.0).abs() < 1e-3, "dark end: {}", prof[0]);

@@ -53,21 +53,18 @@ pub mod prelude {
 pub use core::{
     Affine2f, Angle, BorderMode, Circle2f, Conic2f, Ellipse2f, Error, Image, ImageView,
     ImageViewMut, Isometry2f, Line2f, Pixel, Point2f, Polyline2f, Projective2f, Rect2f,
-    Similarity2f, Vec2f, Vec2fExt, map_index, parabolic_peak_offset, sample_bilinear_f32,
-    sample_nearest, similarity_from_parts, similarity_parts, to_f32, to_f32_u16, transform_point,
-    transform_point_iso, transform_vec, wrap_angle,
+    Similarity2f, Vec2f, Vec2fExt, map_index, parabolic_peak_offset, sample_bilinear_at,
+    sample_bilinear_f32, sample_nearest, similarity_from_parts, similarity_parts, to_f32,
+    to_f32_u16, transform_point, transform_vec, wrap_angle,
 };
 pub use edge::{
     DirectionField, DoGKernel1D, Edge1DConfig, Edge1DDetector, Edge2DConfig, Edge2DDetector,
-    EdgePair1D, EdgePairConfig, EdgePeak, EdgePolarity, Edgel, GradientBuffers, SmoothKind,
-    Subpix2D, SubpixRefine, best_edge_pair, best_edge_pair_in_row_u8,
+    EdgePair1D, EdgePairConfig, EdgePeak, EdgePolarity, Edgel, GradientBuffers, Hysteresis,
+    SmoothKind, Subpix2D, SubpixRefine, TiledField, best_edge_pair, best_edge_pair_in_row_u8,
 };
 pub use morph::{
     StructuringElement, chamfer_distance_u8, close_binary_u8, close3x3_binary_u8, dilate_binary_u8,
     dilate3x3_binary_u8, erode_binary_u8, erode3x3_binary_u8, open_binary_u8, open3x3_binary_u8,
     thin_binary_u8,
 };
-pub use pyr::{
-    PreSmooth, Pyramid, PyramidConfig, base_to_level, downsample2x2_mean, downsample2x2_mean_into,
-    downsample2x2_mean_to_f32_into, level_to_base,
-};
+pub use pyr::{PreSmooth, Pyramid, PyramidConfig, base_to_level, level_to_base};

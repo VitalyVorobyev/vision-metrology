@@ -1,8 +1,8 @@
 //! Shape model creation, from a reference image or from geometry alone.
 
 use vm_primitives::{
-    Edge2DDetector, Edgel, Error, ImageView, Pixel, Point2f, Polyline2f, Pyramid, Rect2f,
-    SmoothKind, Vec2f, Vec2fExt,
+    Edge2DDetector, Edgel, Error, ImageView, Pixel, Point2f, Polyline2f, Pyramid, PyramidConfig,
+    Rect2f, Vec2f, Vec2fExt,
 };
 
 use super::config::ShapeModelConfig;
@@ -73,7 +73,8 @@ fn to_level(v: f32, level: usize) -> f32 {
 ///
 /// # Example
 /// ```no_run
-/// use vision_metrology::{Image, Rect2f, ShapeModelBuilder, ShapeModelConfig};
+/// use vision_metrology::{Image, Rect2f};
+/// use vision_metrology::matching::{ShapeModelBuilder, ShapeModelConfig};
 ///
 /// # fn main() -> Result<(), vision_metrology::Error> {
 /// let img: Image<u8> = Image::new_fill(640, 480, 0);
@@ -120,8 +121,18 @@ impl ShapeModelBuilder {
     ) -> Result<ShapeModel, Error> {
         let crop = validate(img.width(), img.height(), roi, cfg)?;
         let sub = img.subview(crop.x0, crop.y0, crop.w, crop.h)?;
-        self.pyr.build(&sub, crop.levels);
-        self.finish(crop, roi, cfg)
+        // A fractional `min_contrast` is measured against the ROI, not the
+        // whole frame: the background the part sits on is not the contrast the
+        // model is made of.
+        let min_contrast = cfg.min_contrast.resolve(&sub);
+        self.pyr.build_with(
+            &sub,
+            crop.levels,
+            &PyramidConfig {
+                pre_smooth: cfg.pre_smooth,
+            },
+        );
+        self.finish(crop, roi, cfg, min_contrast)
     }
 
     fn finish(
@@ -129,6 +140,7 @@ impl ShapeModelBuilder {
         crop: Crop,
         roi: Rect2f,
         cfg: &ShapeModelConfig,
+        min_contrast: f32,
     ) -> Result<ShapeModel, Error> {
         let built = self.pyr.num_levels();
         let mut raw: Vec<Vec<RawPoint>> = Vec::with_capacity(built);
@@ -154,7 +166,7 @@ impl ShapeModelBuilder {
 
             let mut pts = Vec::with_capacity(edgels.len());
             for e in &edgels {
-                if e.strength < cfg.min_contrast {
+                if e.strength < min_contrast {
                     continue;
                 }
                 // Reject the crop's own border, where the Scharr kernel
@@ -193,21 +205,6 @@ impl ShapeModelBuilder {
     }
 }
 
-/// One-shot [`ShapeModelBuilder::build`] for callers that build a single model.
-///
-/// Reuse a [`ShapeModelBuilder`] instead when building several — it keeps its
-/// pyramid and edge-detector scratch between calls.
-///
-/// # Errors
-/// Same as [`ShapeModelBuilder::build`].
-pub fn create_shape_model<P: Pixel>(
-    img: &ImageView<'_, P>,
-    roi: Rect2f,
-    cfg: &ShapeModelConfig,
-) -> Result<ShapeModel, Error> {
-    ShapeModelBuilder::new().build(img, roi, cfg)
-}
-
 impl ShapeModel {
     /// Build a model from edgels already extracted from a reference image.
     ///
@@ -218,9 +215,15 @@ impl ShapeModel {
     /// [`Error::InsufficientData`] when fewer than `min_points_per_level` edgels
     /// survive, [`Error::InvalidConfig`] for an invalid angle or scale range.
     pub fn from_edgels(edgels: &[Edgel], cfg: &ShapeModelConfig) -> Result<Self, Error> {
+        // There is no image here to measure a range against, and inventing one
+        // from the edgel strengths would make the threshold depend on the very
+        // points it is meant to filter.
+        let min_contrast = cfg.min_contrast.resolve_raw().ok_or(Error::InvalidConfig(
+            "min_contrast: FractionOfRange needs an image; use Contrast::Raw with from_edgels",
+        ))?;
         let pts: Vec<RawPoint> = edgels
             .iter()
-            .filter(|e| e.strength >= cfg.min_contrast)
+            .filter(|e| e.strength >= min_contrast)
             .map(|e| RawPoint {
                 p: e.p,
                 t: e.n,
@@ -361,10 +364,9 @@ fn validate(
         return Err(Error::OutOfBounds);
     }
 
-    let levels = if cfg.num_levels == 0 {
-        MAX_AUTO_LEVELS
-    } else {
-        cfg.num_levels.min(MAX_LEVELS)
+    let levels = match cfg.num_levels {
+        None => MAX_AUTO_LEVELS,
+        Some(n) => n.get().min(MAX_LEVELS),
     };
 
     // The crop origin must be a multiple of 2^(levels-1) so that the model's
@@ -425,10 +427,9 @@ fn from_raw(pts: Vec<RawPoint>, cfg: &ShapeModelConfig) -> Result<ShapeModel, Er
         })?,
     };
 
-    let levels = if cfg.num_levels == 0 {
-        MAX_AUTO_LEVELS
-    } else {
-        cfg.num_levels.min(MAX_LEVELS)
+    let levels = match cfg.num_levels {
+        None => MAX_AUTO_LEVELS,
+        Some(n) => n.get().min(MAX_LEVELS),
     };
 
     let mut per_level = Vec::with_capacity(levels);
@@ -463,10 +464,9 @@ fn assemble(
 
     for (level, pts) in raw.into_iter().enumerate() {
         let ref_l = Point2f::new(to_level(origin.x, level), to_level(origin.y, level));
-        let kept = if cfg.max_points == 0 || pts.len() <= cfg.max_points {
-            pts
-        } else {
-            decimate(&pts, cfg.max_points)
+        let kept = match cfg.max_points {
+            Some(cap) if pts.len() > cap.get() => decimate(&pts, cap.get()),
+            _ => pts,
         };
 
         if kept.len() < need || (level > 0 && kept.is_empty()) {
@@ -501,11 +501,7 @@ fn assemble(
         return Err(Error::InsufficientData { need, got: 0 });
     }
 
-    let smooth = if cfg.edge.pre_smooth {
-        cfg.edge.smooth_kind
-    } else {
-        SmoothKind::None
-    };
+    let smooth = cfg.edge.smooth_kind;
     Ok(ShapeModel::from_parts(
         levels,
         origin,
@@ -513,6 +509,7 @@ fn assemble(
         cfg.scale_range,
         cfg.polarity,
         smooth,
+        cfg.pre_smooth,
     ))
 }
 

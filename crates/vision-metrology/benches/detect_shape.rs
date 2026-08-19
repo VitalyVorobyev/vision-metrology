@@ -3,7 +3,8 @@ use std::hint::black_box;
 use vision_metrology::fit::{
     FitConfig, RansacConfig, RobustLoss, fit_circle, fit_ellipse, fit_line,
 };
-use vision_metrology::{Circle2f, Ellipse2f, LsdConfig, LsdDetector};
+use vision_metrology::lsd::{LsdConfig, LsdDetector};
+use vision_metrology::{Circle2f, Ellipse2f};
 use vision_metrology::{Image, Point2f, Vec2f};
 
 // ---------------------------------------------------------------------------

@@ -15,7 +15,7 @@
 //! ```
 
 use vision_metrology::Image;
-use vision_metrology::{
+use vision_metrology::contour::{
     Connectivity, ContourBuildConfig, NodeKind, build_graph_from_edgels, smooth_polyline,
 };
 use vision_metrology::{Edge2DConfig, Edge2DDetector};

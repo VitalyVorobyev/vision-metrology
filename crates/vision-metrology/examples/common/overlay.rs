@@ -21,8 +21,9 @@
 // root uses a subset of it, so per-root dead-code analysis is meaningless.
 #![allow(dead_code)]
 
+use vision_metrology::matching::{ShapeMatch, ShapeModel};
 use vision_metrology::{
-    BorderMode, Image, Point2f, Rect2f, ShapeMatch, ShapeModel, sample_bilinear_f32,
+    BorderMode, Image, Point2f, Rect2f, sample_bilinear_at, sample_bilinear_f32,
 };
 
 pub const GREEN: [u8; 3] = [40, 220, 60];
@@ -89,7 +90,7 @@ pub fn diagnostic(
     let radius = model
         .levels()
         .first()
-        .map_or(64.0, |l| l.radius * m.scale());
+        .map_or(64.0, |l| l.radius() * m.scale());
     let half = (radius + 16.0).ceil() as i32;
     let cx = m.position.x.round() as i32;
     let cy = m.position.y.round() as i32;
@@ -133,7 +134,7 @@ pub fn diagnostic(
                     && r.x < reference.width() as f32
                     && r.y < reference.height() as f32
                 {
-                    sample_bilinear_f32(&ref_view, r.x, r.y, BorderMode::Clamp)
+                    sample_bilinear_at(&ref_view, r, BorderMode::Clamp)
                         .round()
                         .clamp(0.0, 255.0) as u8
                 } else {

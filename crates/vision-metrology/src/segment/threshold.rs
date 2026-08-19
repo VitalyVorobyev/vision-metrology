@@ -21,7 +21,7 @@ use vm_primitives::{Image, ImageView};
 /// # Example
 /// ```
 /// use vm_primitives::{Image, ImageView};
-/// use vision_metrology::otsu_threshold_u8;
+/// use vision_metrology::segment::otsu_threshold_u8;
 ///
 /// // Bimodal image: half dark (50), half bright (200).
 /// let mut data = vec![50u8; 64];
@@ -132,7 +132,7 @@ impl Default for AdaptiveThreshConfig {
 /// # Example
 /// ```
 /// use vm_primitives::{Image, ImageView};
-/// use vision_metrology::{adaptive_threshold_u8, AdaptiveThreshConfig};
+/// use vision_metrology::segment::{AdaptiveThreshConfig, adaptive_threshold_u8};
 ///
 /// // Uniform image with positive offset: pixel > (mean - offset) = 128 > 127 → all foreground.
 /// let data = vec![128u8; 64];

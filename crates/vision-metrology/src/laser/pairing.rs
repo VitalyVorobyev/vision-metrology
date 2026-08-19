@@ -14,14 +14,14 @@ pub(super) fn detect_pair<P: Pixel>(
     x_offset: usize,
     scan_i: usize,
 ) -> Option<LaserSample> {
-    let peaks = detector.detect_in_ref(line, &cfg.edge_cfg);
+    let peaks = detector.detect_in_ref(line, &cfg.tuning.edge_cfg);
     let pair = best_pair_with_prior_offset(
         peaks,
         x_offset as f32,
         cfg.min_width,
         cfg.max_width,
         predicted,
-        cfg.prior_weight,
+        cfg.tuning.prior_weight,
     )?;
 
     accept_pair(pair, predicted, tracking, cfg, scan_i)
@@ -38,7 +38,7 @@ fn accept_pair(
         return None;
     }
 
-    if tracking && (pair.center_x - predicted).abs() > cfg.max_jump_px {
+    if tracking && (pair.center_x - predicted).abs() > cfg.tuning.max_jump_px {
         return None;
     }
 
@@ -51,27 +51,6 @@ fn accept_pair(
         right: pair.right.x,
         valid: true,
     })
-}
-
-/// Find the best bright-on-dark edge pair given a predicted centre position.
-///
-/// Scores each pair as `(left.strength + right.strength) - prior_weight * |centre - predicted|`.
-/// Returns `None` when no valid pair exists within `[min_width, max_width]`.
-pub fn best_pair_with_prior(
-    peaks: &[EdgePeak],
-    min_width: f32,
-    max_width: f32,
-    predicted_center: f32,
-    prior_weight: f32,
-) -> Option<EdgePair1D> {
-    best_pair_with_prior_offset(
-        peaks,
-        0.0,
-        min_width,
-        max_width,
-        predicted_center,
-        prior_weight,
-    )
 }
 
 fn best_pair_with_prior_offset(

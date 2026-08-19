@@ -11,21 +11,20 @@
 //! configure thresholds for your sensor/illumination or add auto-thresholding
 //! on top.
 
-/// 1-D signal convolution utility (Gaussian and DoG).
-pub mod conv1d;
-/// 1-D DoG edge detector: convolution, NMS, subpixel refinement.
-pub mod edge1d;
-/// 2-D Scharr-gradient edge detector with NMS and subpixel localisation.
-pub mod edge2d;
-/// Dense unit gradient direction field for orientation-based similarity.
-pub mod gradient;
-/// 1-D Gaussian and derivative-of-Gaussian kernels.
-pub mod kernels1d;
-/// 1-D edge-pair primitives for laser stripe detection.
-pub mod laser1d;
+// Submodules are private: every name lives at `edge::…`, one canonical path
+// (invariant 17). The split is a file-size concern, not an API one.
+mod conv1d;
+mod edge1d;
+mod edge2d;
+mod gradient;
+mod kernels1d;
+mod laser1d;
 
+pub use conv1d::convolve_f32;
 pub use edge1d::{Edge1DConfig, Edge1DDetector, EdgePeak, EdgePolarity, SubpixRefine};
-pub use edge2d::{Edge2DConfig, Edge2DDetector, Edgel, GradientBuffers, SmoothKind, Subpix2D};
-pub use gradient::DirectionField;
+pub use edge2d::{
+    Edge2DConfig, Edge2DDetector, Edgel, GradientBuffers, Hysteresis, SmoothKind, Subpix2D,
+};
+pub use gradient::{DirectionField, TiledField};
 pub use kernels1d::DoGKernel1D;
 pub use laser1d::{EdgePair1D, EdgePairConfig, best_edge_pair, best_edge_pair_in_row_u8};

@@ -11,6 +11,8 @@
 //! *its* points land on an already-stamped cell. That is rotation-aware,
 //! shape-faithful, and linear in the model size.
 
+use core::num::NonZeroUsize;
+
 use super::matcher::ShapeMatch;
 use super::model::ModelPoint;
 
@@ -79,7 +81,7 @@ pub(crate) fn suppress(
     points: &[ModelPoint],
     mut matches: Vec<ShapeMatch>,
     max_overlap: f32,
-    max_matches: usize,
+    max_matches: Option<NonZeroUsize>,
     scratch: &mut Vec<(i32, i32)>,
 ) -> Vec<ShapeMatch> {
     matches.sort_unstable_by(|a, b| {
@@ -103,12 +105,9 @@ pub(crate) fn suppress(
     // A single-instance search needs no mask: after sorting, the answer is the
     // first element. This is the common case, and it is why the mask is lazily
     // allocated rather than sized up front.
-    if max_matches == 1 || matches.len() < 2 {
-        matches.truncate(if max_matches == 0 {
-            matches.len()
-        } else {
-            max_matches
-        });
+    let cap = max_matches.map(NonZeroUsize::get);
+    if cap == Some(1) || matches.len() < 2 {
+        matches.truncate(cap.unwrap_or(matches.len()));
         return matches;
     }
 
@@ -117,7 +116,7 @@ pub(crate) fn suppress(
     let n = points.len().max(1);
 
     for m in matches {
-        if max_matches != 0 && kept.len() >= max_matches {
+        if cap.is_some_and(|c| kept.len() >= c) {
             break;
         }
         let (sn, cs) = m.angle().sin_cos();
@@ -144,6 +143,8 @@ pub(crate) fn suppress(
 
 #[cfg(test)]
 mod tests {
+    use core::num::NonZeroUsize;
+
     use super::{InstanceMask, suppress};
     use crate::matching::matcher::ShapeMatch;
     use crate::matching::model::ModelPoint;
@@ -182,7 +183,7 @@ mod tests {
             &ring(),
             vec![at(100.0, 100.0, 0.8), at(101.0, 100.0, 0.9)],
             0.5,
-            0,
+            None,
             &mut scratch,
         );
         assert_eq!(out.len(), 1);
@@ -199,7 +200,7 @@ mod tests {
             &ring(),
             vec![at(60.0, 60.0, 0.8), at(220.0, 220.0, 0.9)],
             0.5,
-            0,
+            None,
             &mut scratch,
         );
         assert_eq!(out.len(), 2);
@@ -230,7 +231,7 @@ mod tests {
             &big,
             vec![at(100.0, 100.0, 0.9)],
             0.5,
-            0,
+            None,
             &mut scratch,
         );
         assert_eq!(out.len(), 1);
@@ -241,7 +242,7 @@ mod tests {
             &small,
             vec![at(100.0, 100.0, 0.9), at(100.0, 100.0, 0.8)],
             0.5,
-            0,
+            None,
             &mut scratch,
         );
         assert_eq!(out.len(), 1, "the two identical small rings must collapse");
@@ -261,7 +262,7 @@ mod tests {
                 at(60.0, 200.0, 0.8),
             ],
             0.5,
-            2,
+            NonZeroUsize::new(2),
             &mut scratch,
         );
         assert_eq!(out.len(), 2);
@@ -284,10 +285,18 @@ mod tests {
             &ring(),
             input.clone(),
             0.5,
-            0,
+            None,
             &mut scratch,
         );
-        let b = suppress(&mut mask, (400, 400), &ring(), input, 0.5, 0, &mut scratch);
+        let b = suppress(
+            &mut mask,
+            (400, 400),
+            &ring(),
+            input,
+            0.5,
+            None,
+            &mut scratch,
+        );
         let key = |v: &Vec<ShapeMatch>| {
             v.iter()
                 .map(|m| (m.position.x, m.position.y))

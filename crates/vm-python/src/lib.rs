@@ -44,17 +44,6 @@ fn vision_metrology(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Result types
     m.add_class::<Edgel>()?;
     m.add_class::<LineSegment>()?;
-    // Exposed so Python tests can gate on the format version instead of
-    // hard-coding it — the mistake that silently disabled the Rust and Python
-    // version-gate assertions when the format was bumped to 2.
-    //
-    // The leading `::` is required: the `#[pymodule]` function below is itself
-    // named `vision_metrology`, which shadows the crate name inside this
-    // module. A bare `vision_metrology::…` here fails to resolve.
-    m.add(
-        "SHAPE_MODEL_FORMAT_VERSION",
-        ::vision_metrology::SHAPE_MODEL_FORMAT_VERSION,
-    )?;
     m.add_class::<Circle>()?;
     m.add_class::<Ellipse>()?;
     m.add_class::<ShapeMatch>()?;

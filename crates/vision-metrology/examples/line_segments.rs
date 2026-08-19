@@ -18,7 +18,7 @@
 //! ```
 
 use vision_metrology::Image;
-use vision_metrology::{LsdConfig, LsdDetector};
+use vision_metrology::lsd::{LsdConfig, LsdDetector};
 
 fn main() {
     let (w, h) = (128usize, 128usize);

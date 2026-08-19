@@ -4,9 +4,10 @@
 //! module level rather than per submodule.
 
 use vm_primitives::Image;
-use vm_primitives::{DoGKernel1D, edge::conv1d::convolve_f32};
+use vm_primitives::{DoGKernel1D, edge::convolve_f32};
 
-use crate::{ColAccess, Error, LaserExtractConfig, LaserExtractor, ScanAxis};
+use crate::Error;
+use crate::laser::{ColAccess, LaserExtractConfig, LaserExtractTuning, LaserExtractor, ScanAxis};
 
 fn frac_overlap(i: usize, left: f32, right: f32) -> f32 {
     let x0 = i as f32 - 0.5;
@@ -194,8 +195,11 @@ fn sloped_gaps_reflections_rows_and_cols() {
     let mut ext = LaserExtractor::new(1.2);
     let cfg_rows = LaserExtractConfig {
         axis: ScanAxis::Rows,
-        max_gap_scans: 4,
-        max_jump_px: 8.0,
+        tuning: LaserExtractTuning {
+            max_gap_scans: 4,
+            max_jump_px: 8.0,
+            ..LaserExtractTuning::default()
+        },
         ..LaserExtractConfig::default()
     };
     let line_r = ext
@@ -251,8 +255,11 @@ fn sloped_gaps_reflections_rows_and_cols() {
         axis: ScanAxis::Cols {
             access: ColAccess::Gather,
         },
-        max_gap_scans: 4,
-        max_jump_px: 8.0,
+        tuning: LaserExtractTuning {
+            max_gap_scans: 4,
+            max_jump_px: 8.0,
+            ..LaserExtractTuning::default()
+        },
         ..LaserExtractConfig::default()
     };
     let line_c = ext

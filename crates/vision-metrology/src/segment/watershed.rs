@@ -89,7 +89,7 @@ impl PartialOrd for Entry {
 /// # Example
 /// ```
 /// use vm_primitives::{Image, ImageView};
-/// use vision_metrology::watershed;
+/// use vision_metrology::segment::watershed;
 ///
 /// // 10×5 gradient image, uniform zero gradient.
 /// let data = vec![0.0f32; 10 * 5];

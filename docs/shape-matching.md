@@ -4,16 +4,17 @@ Locate a modelled contour in an image under translation, rotation and uniform
 scale — robustly against occlusion, clutter and changes in illumination.
 
 ```rust
-use vision_metrology::{
-    Rect2f, ShapeMatcher, ShapeModelBuilder, ShapeModelConfig, ShapeSearchConfig,
+use vision_metrology::Rect2f;
+use vision_metrology::matching::{
+    ShapeMatcher, ShapeModelBuilder, ShapeModelConfig, ShapeSearchConfig,
 };
 
 let roi = Rect2f { x: 420.0, y: 350.0, width: 420.0, height: 320.0 };
 let model = ShapeModelBuilder::new()
-    .build_u8(&reference.as_view(), roi, &ShapeModelConfig::default())?;
+    .build(&reference.as_view(), roi, &ShapeModelConfig::default())?;
 
 let cfg = ShapeSearchConfig { min_score: 0.6, ..Default::default() };
-for m in ShapeMatcher::new().find_u8(&scene.as_view(), &model, &cfg) {
+for m in ShapeMatcher::new().find(&scene.as_view(), &model, &cfg) {
     println!("score {:.3} at {:?}, {:.1} deg", m.score, m.position, m.angle().to_degrees());
 }
 ```
@@ -142,17 +143,23 @@ reports when it did, which distinguishes "not present" from "gave up".
 
 ## Persisting a model
 
-With the `serde` feature, a model built offline ships to the machine as a
-versioned JSON document:
+With the `serde` feature, a model built offline ships to the machine as an
+opaque, version-gated document:
 
 ```rust
-let json = model.to_json()?;              // {"format_version":2,"model":{...}}
-let model = ShapeModel::from_json(&json)?; // refuses unknown versions
+model.save("bracket.model")?;
+let model = ShapeModel::load("bracket.model")?; // refuses foreign documents
+
+let bytes = model.to_bytes()?;                  // for your own transport
+let model = ShapeModel::from_bytes(&bytes)?;
 ```
 
-Python mirrors this as `model.save(path)` / `ShapeModel.load(path)`. The
-`format_version` gate means an old runtime refuses a newer document instead of
-silently mis-reading it.
+The encoding is deliberately **not** documented: it is a private channel
+between this crate's writer and its reader, and the only promise it makes is
+that a document it cannot read is an error rather than a mis-read model. A
+model saved by one version of the crate loads only in that version.
+
+Python mirrors this as `model.save(path)` / `ShapeModel.load(path)`.
 
 ## Pose and coordinates
 

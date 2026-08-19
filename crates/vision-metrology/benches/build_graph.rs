@@ -1,7 +1,7 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 use vision_metrology::Edgel;
-use vision_metrology::{
+use vision_metrology::contour::{
     Connectivity, ContourBuildConfig, build_graph_from_edgels, smooth_polyline,
 };
 use vision_metrology::{Point2f, Vec2f};
