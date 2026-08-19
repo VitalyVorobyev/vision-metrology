@@ -72,7 +72,7 @@ One breaking wave over the whole surface, taken while nothing is published.
 Each module ships with its own bench, doc example, Python parity, and an accuracy entry
 in Track C1.
 
-### B1 — `fit`: robust primitive fitting
+### B1 — `fit`: robust primitive fitting — `done`
 Absorbs `shape/{conic,fit_conic,ransac,fitter}`. Adds what is simply missing: **there is
 no line fit and no circle fit today**, the two most common metrology measurements.
 
@@ -91,11 +91,13 @@ reports its residual**. The geometric (orthogonal-distance) refinement stage is 
 separates a metrology fit from an algebraic one; the current ellipse path stops at
 algebraic + RANSAC.
 
-**Accept:** on synthetic ground truth, `fit_circle` recovers radius within 0.01 px and
-centre within 0.005 px at zero noise, degrades gracefully with 30% outliers, and its `rms`
-tracks the injected noise.
+**Landed.** Taubin → Gauss–Newton on the true residual; `fit_line` (TLS + IRLS + RANSAC),
+`fit_circle`, `fit_ellipse`, all reporting `rms` / `max_dev` / `n_used`. Two findings
+recorded in system-design: Tukey needs graduated non-convexity to start from a contaminated
+fit, and a gross outlier flips a TLS line's principal axis, which only RANSAC recovers.
+Short arcs (30°–180°) stay within 0.05 px.
 
-### B2 — `measure`: calipers and the metrology model  ← the headline
+### B2 — `measure`: calipers and the metrology model — `done`
 A geometric wrapper over the existing `Edge1DDetector` and `sample_bilinear_f32`.
 
 ```rust
@@ -120,8 +122,16 @@ perpendicular into a 1-D profile, then hand it to the existing detector. `find` 
 `apply` → fitted circle + rms → `metric` → millimetres closes the loop from "I found the
 part" to "the hole is 12.03 mm ± 0.01".
 
-**Accept:** caliper edge position unbiased to < 0.02 px on a synthetic step across the full
-angle sweep; a metrology model recovers a known circle from a rotated, translated fixture.
+**Landed.** `Caliper` over rect / arc / **radial** placements, typed `RejectReason`, an
+obliquity gate and sub-pixel stepping (the last three adapted from the `rtvt-pano` caliper).
+`MetrologyModel` applies nominal geometry at a fixture pose and fits robustly.
+
+The finding that shaped it: a rect caliper averages along a *chord*, which biases a curved
+edge inward — 39.88 px on a nominal-40 disc. `MeasureRadial` averages along the arc:
+39.990 px. See system-design.
+
+`examples/inspect_canend` runs the whole chain on real frames: 100/100 measured across two
+lighting conditions, σ ≈ 0.3 px on the rim radius, every caliper surviving the robust fit.
 
 ### B3 — `filter`: the absent workhorse
 Separable and recursive (Deriche / van Vliet) Gaussian, sliding-window box mean, histogram
@@ -156,8 +166,8 @@ Mirror `PinholeIntrinsics`, `BrownConrady5`, `LaserPlane` on nalgebra 0.35; allo
 **Accept:** golden-file numeric parity with a real calibration-rs export; the laser →
 3-D-profile demo runs from Python.
 
-**Track B accept:** a new `examples/inspect_canend.rs` runs find → fixture → metrology
-model → millimetres → pass/fail on real canend data.
+**Track B accept:** `examples/inspect_canend` runs find → fixture → metrology model →
+pass/fail on real canend data — **done in pixels**; the millimetre step waits on B5.
 
 ---
 
