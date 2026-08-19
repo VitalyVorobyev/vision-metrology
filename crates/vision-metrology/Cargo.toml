@@ -36,8 +36,8 @@ segment = ["contour"]
 ## LSD line segments, conic and ellipse fitting.
 shape = []
 
-## Versioned ShapeModel persistence (`ShapeModel::to_json` / `from_json`) plus
-## Serialize/Deserialize derives on the model types. Enables the same feature
+## Versioned ShapeModel persistence: `save` / `load` and `to_bytes` /
+## `from_bytes` over an opaque, version-gated document. Enables the same feature
 ## in vm-primitives for the geometry types the model embeds.
 serde = ["dep:serde", "dep:serde_json", "vm-primitives/serde", "matching"]
 ## Internal diagnostics: per-level candidate counts on stderr. Dev only.

@@ -78,6 +78,4 @@ pub use config::{
     Contrast, Polarity, Refinement, ShapeModelConfig, ShapeSearchConfig, ShapeSearchTuning,
 };
 pub use matcher::{ShapeMatch, ShapeMatcher};
-#[cfg(feature = "serde")]
-pub use model::SHAPE_MODEL_FORMAT_VERSION;
 pub use model::{ModelPoint, ShapeModel, ShapeModelLevel};

@@ -1,8 +1,8 @@
 //! Shape model creation, from a reference image or from geometry alone.
 
 use vm_primitives::{
-    Edge2DDetector, Edgel, Error, ImageView, Pixel, Point2f, Polyline2f, Pyramid, Rect2f, Vec2f,
-    Vec2fExt,
+    Edge2DDetector, Edgel, Error, ImageView, Pixel, Point2f, Polyline2f, Pyramid, PyramidConfig,
+    Rect2f, Vec2f, Vec2fExt,
 };
 
 use super::config::ShapeModelConfig;
@@ -125,7 +125,13 @@ impl ShapeModelBuilder {
         // whole frame: the background the part sits on is not the contrast the
         // model is made of.
         let min_contrast = cfg.min_contrast.resolve(&sub);
-        self.pyr.build(&sub, crop.levels);
+        self.pyr.build_with(
+            &sub,
+            crop.levels,
+            &PyramidConfig {
+                pre_smooth: cfg.pre_smooth,
+            },
+        );
         self.finish(crop, roi, cfg, min_contrast)
     }
 
@@ -503,6 +509,7 @@ fn assemble(
         cfg.scale_range,
         cfg.polarity,
         smooth,
+        cfg.pre_smooth,
     ))
 }
 

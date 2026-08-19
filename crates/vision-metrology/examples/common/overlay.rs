@@ -88,7 +88,7 @@ pub fn diagnostic(
     let radius = model
         .levels()
         .first()
-        .map_or(64.0, |l| l.radius * m.scale());
+        .map_or(64.0, |l| l.radius() * m.scale());
     let half = (radius + 16.0).ceil() as i32;
     let cx = m.position.x.round() as i32;
     let cy = m.position.y.round() as i32;

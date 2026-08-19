@@ -272,6 +272,34 @@ The gates are only worth having if they are checked. `--all-features` can never 
 
 `Error` is `#[non_exhaustive]`, so adding a variant stops being a breaking change.
 
+### One model-format bump, batched — opacity, read-only levels, R3 (2026-08)
+A stored `ShapeModel` is the one artefact of this crate that outlives a build, so every
+change to it invalidates files on disk. The v0.3 reset therefore did all of them at once:
+`FORMAT_VERSION` 2 → **3**, and no more bumps in this series.
+
+**The format is opaque.** `to_json` / `from_json` and the public
+`SHAPE_MODEL_FORMAT_VERSION` are replaced by `save` / `load` and `to_bytes` /
+`from_bytes`. The encoding is JSON today and that is not a promise: a documented wire
+format makes every internal field of the model a compatibility obligation, and the version
+constant existed only to let callers hand-assemble an envelope this crate should be the
+only writer of. Nothing a caller could do with the number is not better answered by `load`
+returning an error, so the constant is `pub(crate)` and the Rust and Python tests now
+assert the property that matters — a foreign document is refused, not mis-read.
+
+**`ModelPoint` and `ShapeModelLevel` are readable, not writable.** Their fields are
+`pub(crate)` with public accessors. The lab and the overlay code draw model points, so
+reading them has to stay easy; *writing* them does not, because the point order is
+load-bearing (greedy termination evaluates a prefix, which must sample the whole contour)
+and `radius` / `angle_step` / `scale_step` are derived quantities the search trusts.
+
+**R3 is wired (backlog item closed).** `ShapeModelConfig::pre_smooth` chooses the pyramid
+pre-filter, the built model stores it, and `ShapeMatcher::find` reads it off the *model*
+rather than from its own config. That is invariant 3 made unbreakable: a model taught with
+`Binomial121` cannot be searched against a box-mean scene, whatever the caller's search
+config says. The default stays `PreSmooth::None`, so nothing about existing behaviour
+moves; `Binomial121` is now available for the fine-toothed contours that alias away at
+levels 3–4.
+
 ### A measurement that found nothing is a result, not an empty slice (2026-08)
 `Caliper` had `measure` returning `&[MeasureEdge]` and `measure_checked` returning
 `Result<&[MeasureEdge], RejectReason>` — the same computation, one of them throwing away

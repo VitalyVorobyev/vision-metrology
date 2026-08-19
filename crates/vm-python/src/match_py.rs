@@ -65,7 +65,11 @@ impl ShapeModel {
     /// Points per pyramid level, finest first.
     #[getter]
     pub fn point_counts(&self) -> Vec<usize> {
-        self.inner.levels().iter().map(|l| l.points.len()).collect()
+        self.inner
+            .levels()
+            .iter()
+            .map(|l| l.points().len())
+            .collect()
     }
 
     /// Level-0 model points in reference-image coordinates, as a list of `(x, y)`.
@@ -77,25 +81,20 @@ impl ShapeModel {
             .collect()
     }
 
-    /// Persist the model to a versioned JSON file.
+    /// Persist the model to a file.
     ///
-    /// The file carries a ``format_version`` field; :meth:`load` refuses
-    /// documents written by an incompatible future format instead of
-    /// silently mis-reading them.
+    /// The encoding is opaque and versioned; :meth:`load` refuses a document
+    /// written by an incompatible format instead of mis-reading it.
     pub fn save(&self, path: &str) -> PyResult<()> {
-        let json = self
-            .inner
-            .to_json()
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
-        std::fs::write(path, json).map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))
+        self.inner
+            .save(path)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
     }
 
     /// Load a model previously written by :meth:`save`.
     #[staticmethod]
     pub fn load(path: &str) -> PyResult<Self> {
-        let json = std::fs::read_to_string(path)
-            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
-        let inner = NativeShapeModel::from_json(&json)
+        let inner = NativeShapeModel::load(path)
             .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
         Ok(Self { inner })
     }

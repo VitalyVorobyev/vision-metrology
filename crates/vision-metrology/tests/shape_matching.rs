@@ -6,7 +6,6 @@
 //! to arbitrary subpixel precision.
 
 #[cfg(feature = "serde")]
-use vision_metrology::matching::SHAPE_MODEL_FORMAT_VERSION;
 use vision_metrology::matching::{
     ContourOrientation, Polarity, Refinement, ShapeMatch, ShapeMatcher, ShapeModel,
     ShapeModelBuilder, ShapeModelConfig, ShapeSearchConfig, ShapeSearchTuning,
@@ -309,7 +308,7 @@ fn t17_auto_level_count_shrinks_with_the_model() {
     // the 6 px floor at which one angle step sweeps the whole model past
     // itself. Four levels is the honest answer, not five.
     assert_eq!(big.num_levels(), 4, "levels: {:?}", level_radii(&big));
-    assert!(big.levels()[3].radius >= 6.0);
+    assert!(big.levels()[3].radius() >= 6.0);
 
     let small = render(
         &|p| sdf_box(p, (12.0, 12.0)),
@@ -337,7 +336,7 @@ fn t17_auto_level_count_shrinks_with_the_model() {
 }
 
 fn level_radii(m: &ShapeModel) -> Vec<f32> {
-    m.levels().iter().map(|l| l.radius).collect()
+    m.levels().iter().map(|l| l.radius()).collect()
 }
 
 #[test]
@@ -828,8 +827,8 @@ fn r3_fine_toothed_model_survives_the_pyramid() {
 #[test]
 fn a_persisted_model_matches_identically() {
     let model = build_bracket_model(&ShapeModelConfig::default());
-    let json = model.to_json().expect("serializes");
-    let restored = ShapeModel::from_json(&json).expect("deserializes");
+    let bytes = model.to_bytes().expect("serializes");
+    let restored = ShapeModel::from_bytes(&bytes).expect("deserializes");
 
     let scene = bracket_at(300.0, 220.0, 0.6, 1.0);
     let a = find_one(&scene, &model, &ShapeSearchConfig::default()).expect("original finds");
@@ -839,16 +838,46 @@ fn a_persisted_model_matches_identically() {
     assert_eq!(a.angle(), b.angle());
 
     // Version gate: a document from another format version must be refused,
-    // not mis-read. Derive the needle from the constant — hard-coding
-    // `"format_version":1` meant the bump to 2 silently turned this assertion
-    // into a no-op, because the replacement stopped matching anything.
-    let needle = format!("\"format_version\":{SHAPE_MODEL_FORMAT_VERSION}");
-    assert!(
-        json.contains(&needle),
-        "envelope shape changed: {needle} not in {json:.120}"
-    );
-    let bad = json.replacen(&needle, "\"format_version\":999", 1);
-    assert_ne!(bad, json, "version substitution did not fire");
-    assert!(ShapeModel::from_json(&bad).is_err());
-    assert!(ShapeModel::from_json("{}").is_err());
+    // not mis-read. The encoding is opaque, so this pokes at the *only* thing
+    // the format promises — that a version mismatch is an error — by finding
+    // whatever version number the writer emitted and changing it.
+    let text = String::from_utf8(bytes.clone()).expect("the encoding is text today");
+    let needle = text
+        .split_once("\"format_version\":")
+        .map(|(_, tail)| {
+            let n: String = tail.chars().take_while(char::is_ascii_digit).collect();
+            format!("\"format_version\":{n}")
+        })
+        .expect("envelope carries a version");
+    let bad = text.replacen(&needle, "\"format_version\":999", 1);
+    assert_ne!(bad, text, "version substitution did not fire");
+    assert!(ShapeModel::from_bytes(bad.as_bytes()).is_err());
+    assert!(ShapeModel::from_bytes(b"{}").is_err());
+    assert!(ShapeModel::from_bytes(b"not a model at all").is_err());
+}
+
+/// The pyramid pre-filter travels with the model, because invariant 3 says the
+/// scene must be decimated with the same kernel. A model taught with
+/// `Binomial121` and searched by a matcher that knows nothing about it would
+/// otherwise score against a differently band-limited scene.
+#[cfg(feature = "serde")]
+#[test]
+fn the_pyramid_kernel_survives_persistence() {
+    use vm_primitives::PreSmooth;
+
+    let cfg = ShapeModelConfig {
+        pre_smooth: PreSmooth::Binomial121,
+        ..Default::default()
+    };
+    let model = build_bracket_model(&cfg);
+    assert_eq!(model.pre_smooth(), PreSmooth::Binomial121);
+
+    let restored =
+        ShapeModel::from_bytes(&model.to_bytes().expect("serializes")).expect("deserializes");
+    assert_eq!(restored.pre_smooth(), PreSmooth::Binomial121);
+
+    let scene = bracket_at(300.0, 220.0, 0.6, 1.0);
+    let a = find_one(&scene, &model, &ShapeSearchConfig::default()).expect("original finds");
+    let b = find_one(&scene, &restored, &ShapeSearchConfig::default()).expect("restored finds");
+    assert_eq!(a.score, b.score);
 }

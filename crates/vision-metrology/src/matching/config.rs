@@ -2,7 +2,7 @@
 
 use core::num::NonZeroUsize;
 
-use vm_primitives::{Edge2DConfig, ImageView, Pixel, Point2f, Rect2f};
+use vm_primitives::{Edge2DConfig, ImageView, Pixel, Point2f, PreSmooth, Rect2f};
 
 /// How the sign of the gradient direction is treated when scoring.
 ///
@@ -137,6 +137,13 @@ pub struct ShapeModelConfig {
     pub num_levels: Option<NonZeroUsize>,
     /// Edge detector configuration used at every pyramid level.
     pub edge: Edge2DConfig,
+    /// Pre-filter applied before each pyramid decimation.
+    ///
+    /// Stored in the finished model, and the search reads it from there —
+    /// invariant 3 requires model and scene to share the downsample kernel.
+    /// [`PreSmooth::Binomial121`] is what keeps a fine-toothed contour alive at
+    /// levels 3–4, where a plain box mean aliases it away.
+    pub pre_smooth: PreSmooth,
     /// Additional gradient-magnitude floor for a point to enter the model.
     ///
     /// The single most consequential setting on low-relief parts: because the
@@ -174,6 +181,7 @@ impl Default for ShapeModelConfig {
         Self {
             num_levels: None,
             edge: Edge2DConfig::default(),
+            pre_smooth: PreSmooth::None,
             min_contrast: Contrast::Raw(0.0),
             max_points: NonZeroUsize::new(512),
             origin: None,

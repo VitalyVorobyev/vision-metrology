@@ -177,9 +177,9 @@ fn build_model(args: &Args, model_path: &Path, roi: Rect2f) -> Result<ShapeModel
     for (i, lvl) in model.levels().iter().enumerate() {
         println!(
             "  level {i}: {:4} points, radius {:6.1} px, angle step {:.4} rad",
-            lvl.points.len(),
-            lvl.radius,
-            lvl.angle_step
+            lvl.points().len(),
+            lvl.radius(),
+            lvl.angle_step()
         );
     }
     Ok(model)

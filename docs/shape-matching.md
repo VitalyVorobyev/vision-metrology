@@ -143,17 +143,23 @@ reports when it did, which distinguishes "not present" from "gave up".
 
 ## Persisting a model
 
-With the `serde` feature, a model built offline ships to the machine as a
-versioned JSON document:
+With the `serde` feature, a model built offline ships to the machine as an
+opaque, version-gated document:
 
 ```rust
-let json = model.to_json()?;              // {"format_version":2,"model":{...}}
-let model = ShapeModel::from_json(&json)?; // refuses unknown versions
+model.save("bracket.model")?;
+let model = ShapeModel::load("bracket.model")?; // refuses foreign documents
+
+let bytes = model.to_bytes()?;                  // for your own transport
+let model = ShapeModel::from_bytes(&bytes)?;
 ```
 
-Python mirrors this as `model.save(path)` / `ShapeModel.load(path)`. The
-`format_version` gate means an old runtime refuses a newer document instead of
-silently mis-reading it.
+The encoding is deliberately **not** documented: it is a private channel
+between this crate's writer and its reader, and the only promise it makes is
+that a document it cannot read is an error rather than a mis-read model. A
+model saved by one version of the crate loads only in that version.
+
+Python mirrors this as `model.save(path)` / `ShapeModel.load(path)`.
 
 ## Pose and coordinates
 

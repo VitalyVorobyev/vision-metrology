@@ -1,8 +1,8 @@
 //! Coarse-to-fine shape search.
 
 use vm_primitives::{
-    DirectionField, ImageView, Pixel, Point2f, Pyramid, Similarity2f, Vec2f, similarity_from_parts,
-    wrap_angle,
+    DirectionField, ImageView, Pixel, Point2f, Pyramid, PyramidConfig, Similarity2f, Vec2f,
+    similarity_from_parts, wrap_angle,
 };
 
 use super::config::{Polarity, Refinement, ShapeSearchConfig};
@@ -143,7 +143,16 @@ impl ShapeMatcher {
         #[cfg(feature = "trace-cands")]
         let t = std::time::Instant::now();
         let min_contrast = cfg.min_contrast.resolve(img);
-        self.pyr.build(img, model.num_levels());
+        // Invariant 3: the scene must be decimated with the same kernel the
+        // model was, so the choice is read off the model rather than from this
+        // call's config.
+        self.pyr.build_with(
+            img,
+            model.num_levels(),
+            &PyramidConfig {
+                pre_smooth: model.pre_smooth(),
+            },
+        );
         #[cfg(feature = "trace-cands")]
         eprintln!("pyr build: {:.3} ms", t.elapsed().as_secs_f64() * 1e3);
         self.run(model, cfg, min_contrast)

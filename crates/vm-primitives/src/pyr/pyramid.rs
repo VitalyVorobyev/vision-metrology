@@ -12,6 +12,7 @@ use super::downsample::{downsample2x2_mean_to_f32_into, dst_dims};
 /// The filter is symmetric about the pixel centre, so it does **not** move the
 /// level-to-level coordinate mapping — [`level_to_base`] is unaffected.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum PreSmooth {
     /// No pre-filter: each level is exactly the 2×2 mean of the one below.
     ///
