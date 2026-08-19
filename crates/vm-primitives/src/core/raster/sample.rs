@@ -109,9 +109,8 @@ fn sample_at_f32<T: Pixel>(
 
 #[cfg(test)]
 mod tests {
-    use crate::BorderMode;
-    use crate::Image;
-    use crate::{sample_bilinear_f32, sample_nearest};
+    use super::{sample_bilinear_f32, sample_nearest};
+    use crate::core::{BorderMode, Image};
 
     #[test]
     fn nearest_on_3x3_with_clamp_and_constant() {

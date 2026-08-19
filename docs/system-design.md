@@ -19,7 +19,7 @@ vm-primitives  ──►  vision-metrology  ──►  vm-python
 
 | Crate | Modules | Contents |
 |---|---|---|
-| `vm-primitives` | `core` | `Image<T>`/`ImageView<T>`, `Pixel` (sealed: u8/u16/f32), sampling, `BorderMode`, geometry as nalgebra aliases (`Point2f`, `Vec2f`, `Similarity2f`, …), `Circle2f`/`Ellipse2f`/`Conic2f`, `Error` |
+| `vm-primitives` | `core` | Two private halves, one public path: `raster` (`Image<T>`/`ImageView<T>`, `Pixel` sealed over u8/u16/f32, sampling, `BorderMode`, `Error` — **no nalgebra**) and `geom` (nalgebra aliases `Point2f`/`Vec2f`/`Similarity2f`, `Vec2fExt`, transforms, `Circle2f`/`Ellipse2f`/`Conic2f`) |
 | | `pyr` | `Pyramid`: 2×2 box-mean pyramid generic over `Pixel`, optional binomial pre-smooth, `level_to_base` |
 | | `edge` | 1D/2D subpixel DoG edges, edgels, edge pairs, `DirectionField` |
 | | `morph` | binary morphology (parameterized SE), chamfer distance, Zhang-Suen thinning |
@@ -271,6 +271,29 @@ The gates are only worth having if they are checked. `--all-features` can never 
 `vision-metrology` and a `--feature-powerset` over `vm-primitives`.
 
 `Error` is `#[non_exhaustive]`, so adding a variant stops being a breaking change.
+
+### `core` splits into `raster` and `geom`, and the raster half names no nalgebra (2026-08)
+`core` was seven flat files in which the dependency on nalgebra was invisible. It is now
+two private submodules with one rule between them: **`core::raster` mentions no
+linear-algebra type at all.** Buffers, pixel types, borders and sampling on one side;
+aliases, transforms and shapes on the other.
+
+The rule is not aesthetic. The ecosystem around this workspace already carries five
+near-duplicate `ImageView` types, and `rtvt-image` is a knowing fork of this very crate
+that exists *only* because it is pinned to nalgebra 0.34 while this one is on 0.35. An
+image buffer has nothing to do with linear algebra; the reason it could not be shared was
+that the two were in the same module. A raster layer that names no nalgebra type is the
+piece that can cross a major-version boundary, and this split is what makes extracting it
+later a move rather than a rewrite.
+
+The audit came out clean: `sample_bilinear_f32` and friends already took bare `f32`
+coordinates, so nothing had to change to satisfy the rule. `core::sample_bilinear_at`
+(taking a `Point2f`) is the geometry-side convenience that keeps the raster signature
+that way rather than "improving" it later.
+
+Both submodules stay **private** — every name keeps its single canonical `core::…` path
+(invariant 17). This is a rule about dependencies, not about import paths, and no public
+path changed.
 
 ### One model-format bump, batched — opacity, read-only levels, R3 (2026-08)
 A stored `ShapeModel` is the one artefact of this crate that outlives a build, so every

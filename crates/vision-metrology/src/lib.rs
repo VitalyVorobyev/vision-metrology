@@ -109,6 +109,7 @@ pub use vm_primitives::{
     Angle, BorderMode, Circle2f, Conic2f, Edge1DConfig, Edge1DDetector, Edge2DConfig,
     Edge2DDetector, EdgePolarity, Edgel, Ellipse2f, Error, Image, ImageView, ImageViewMut,
     Isometry2f, Line2f, Pixel, Point2f, Polyline2f, PreSmooth, Pyramid, PyramidConfig, Rect2f,
-    Similarity2f, SmoothKind, SubpixRefine, Vec2f, Vec2fExt, sample_bilinear_f32, sample_nearest,
-    similarity_from_parts, similarity_parts, transform_point, transform_vec, wrap_angle,
+    Similarity2f, SmoothKind, SubpixRefine, Vec2f, Vec2fExt, sample_bilinear_at,
+    sample_bilinear_f32, sample_nearest, similarity_from_parts, similarity_parts, transform_point,
+    transform_vec, wrap_angle,
 };

@@ -17,7 +17,8 @@
 //! ratios; scale invariance is maintained by the fitting constraint (Bookstein
 //! or Fitzgibbon) applied during fitting.
 
-use super::{Error, Point2f, Vec2f};
+use super::transform::{Point2f, Vec2f};
+use crate::core::raster::Error;
 
 // ---------------------------------------------------------------------------
 // Conic2f

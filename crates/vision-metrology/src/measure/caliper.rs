@@ -2,7 +2,7 @@
 
 use vm_primitives::{
     BorderMode, Edge1DConfig, Edge1DDetector, EdgePolarity, ImageView, Pixel, Point2f,
-    SubpixRefine, Vec2f, Vec2fExt, sample_bilinear_f32,
+    SubpixRefine, Vec2f, Vec2fExt, sample_bilinear_at, sample_bilinear_f32,
 };
 
 /// A rectangular measurement region.
@@ -433,7 +433,7 @@ impl Caliper {
                 if q.x < 0.0 || q.y < 0.0 || q.x > w - 1.0 || q.y > h - 1.0 {
                     inside = false;
                 }
-                acc += sample_bilinear_f32(img, q.x, q.y, self.cfg.border);
+                acc += sample_bilinear_at(img, q, self.cfg.border);
             }
             self.profile[i] = acc / across as f32;
         }

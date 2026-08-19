@@ -53,9 +53,9 @@ pub mod prelude {
 pub use core::{
     Affine2f, Angle, BorderMode, Circle2f, Conic2f, Ellipse2f, Error, Image, ImageView,
     ImageViewMut, Isometry2f, Line2f, Pixel, Point2f, Polyline2f, Projective2f, Rect2f,
-    Similarity2f, Vec2f, Vec2fExt, map_index, parabolic_peak_offset, sample_bilinear_f32,
-    sample_nearest, similarity_from_parts, similarity_parts, to_f32, to_f32_u16, transform_point,
-    transform_vec, wrap_angle,
+    Similarity2f, Vec2f, Vec2fExt, map_index, parabolic_peak_offset, sample_bilinear_at,
+    sample_bilinear_f32, sample_nearest, similarity_from_parts, similarity_parts, to_f32,
+    to_f32_u16, transform_point, transform_vec, wrap_angle,
 };
 pub use edge::{
     DirectionField, DoGKernel1D, Edge1DConfig, Edge1DDetector, Edge2DConfig, Edge2DDetector,
