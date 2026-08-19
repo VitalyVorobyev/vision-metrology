@@ -5,7 +5,8 @@
 //! configurable threshold).
 //!
 //! The random state is a seeded LCG for full reproducibility (no external RNG
-//! dependency). The seed is stored in [`ConicFitter`] and can be overridden.
+//! dependency). The seed is stored in [`RansacConfig`](super::RansacConfig)
+//! and can be overridden.
 //!
 //! # Inlier distance
 //! We use the Sampson (first-order) approximation to the geometric distance:

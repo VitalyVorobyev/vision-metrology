@@ -33,8 +33,10 @@ No OpenCV, no FFI. All coordinates follow the **pixel-center** convention: integ
 | Module | Content |
 |---|---|
 | `contour` | Junction-aware contour graph (T/Y junctions, loops), per-edge tangent and curvature, polyline smoothing |
+| `fit` | Robust line / circle / ellipse fitting, algebraic-init then geometric refine, every fit reports `rms` / `max_dev` / `n_used` |
 | `laser` | Laser stripe extraction using opposite-polarity edge pairs, with ROI and prior tracking |
 | `matching` | Shape-based object detection: gradient-orientation model, coarse-to-fine search over translation / rotation / scale, subpixel pose refinement — see the [guide](docs/shape-matching.md) |
+| `measure` | Calipers (rect / arc / radial) and metrology models: measure a located part and fit the result — see the [guide](docs/measure.md) |
 | `segment` | Otsu and adaptive thresholding, connected-component labeling, watershed, edgel region growing |
 | `lsd` | LSD line-segment detection |
 
@@ -56,11 +58,18 @@ contour       topology graph — T/Y junctions, loops, polyline smoothing
   │
   ├─────►  segment    thresholding, CCL, watershed, per-component stats
   │
+  ├─────►  fit        robust line / circle / ellipse fitting, residuals
+  │
   └─────►  matching   shape model, coarse-to-fine search, pose refinement
+                 │
+                 ▼
+            measure    calipers at the found pose, fit primitives, pass/fail
 ```
 
 `laser` consumes `edge` directly — it scans rows or columns for opposite-polarity
-1-D edge pairs rather than going through the 2-D pipeline.
+1-D edge pairs rather than going through the 2-D pipeline. `fit` also runs
+directly off `edge`/`contour` output; `measure` is the module that closes the
+loop, applying calipers at a `matching` pose and fitting the result with `fit`.
 
 ## Quick start
 
@@ -76,7 +85,7 @@ use vision_metrology::{Edge2DConfig, Edge2DDetector, Image};
 
 let img = Image::<u8>::new_fill(64, 64, 0);
 let mut det = Edge2DDetector::new();
-let edgels = det.detect_u8(&img.as_view(), &Edge2DConfig::default());
+let edgels = det.detect(&img.as_view(), &Edge2DConfig::default());
 ```
 
 Runnable examples live in [`crates/vision-metrology/examples/`](crates/vision-metrology/examples):
@@ -92,6 +101,8 @@ cargo run -p vision-metrology --example laserline -- --help
 
 - [Shape-based object detection](docs/shape-matching.md) — building a shape
   model, choosing a polarity, tuning contrast, reading the score.
+- [Measuring a located part](docs/measure.md) — calipers, rect vs. arc vs.
+  radial placement, the metrology model, reading `RejectReason`.
 
 Project direction and internals: [system design](docs/system-design.md),
 [roadmap](docs/roadmap.md), [backlog](docs/backlog.md).
