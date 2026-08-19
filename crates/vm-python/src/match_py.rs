@@ -8,7 +8,7 @@ use vision_metrology::matching::{
 };
 use vm_primitives::Rect2f;
 
-use crate::config_py::{ShapeModelConfig, ShapeSearchConfig};
+use crate::config::{ShapeModelConfig, ShapeSearchConfig};
 use crate::convert::image_from_numpy_u8;
 use crate::types::ShapeMatch;
 

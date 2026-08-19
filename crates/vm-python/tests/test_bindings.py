@@ -285,6 +285,65 @@ if __name__ == "__main__":
     pytest.main([__file__, "-v"])
 
 
+def test_contrast_is_a_tagged_type_not_a_bare_float():
+    raw = vm.Contrast.raw(12.0)
+    frac = vm.Contrast.fraction_of_range(0.1)
+    assert "raw" in repr(raw)
+    assert "fraction_of_range" in repr(frac)
+    # Both variants plug into a config without error.
+    vm.ShapeModelConfig(min_contrast=raw)
+    vm.ShapeSearchConfig(min_contrast=frac)
+
+
+def test_shape_search_config_has_nested_tuning():
+    tuning = vm.ShapeSearchTuning(greediness=0.3, max_candidates=64, last_level=1)
+    cfg = vm.ShapeSearchConfig(min_score=0.6, tuning=tuning)
+    assert abs(cfg.tuning.greediness - 0.3) < 1e-6
+    assert cfg.tuning.max_candidates == 64
+    assert cfg.tuning.last_level == 1
+    # The default is independent and unaffected.
+    assert vm.ShapeSearchConfig().tuning.greediness != 0.3
+
+
+def test_shape_model_config_carries_an_edge_config():
+    cfg = vm.ShapeModelConfig(edge=vm.EdgeConfig(smooth_kind="none"))
+    assert cfg.edge.smooth_kind == "none"
+    model = vm.ShapeModel(make_bracket(), BRACKET_ROI, cfg)
+    assert model.num_levels >= 1
+
+
+def test_shape_search_config_roi_restricts_matches():
+    import math
+
+    # Two brackets, far enough apart that a wide search finds both.
+    w, h = 320, 240
+    left = make_bracket(w, h, cx=90.0, cy=90.0)
+    right_only = make_bracket(w, h, cx=230.0, cy=150.0)
+    scene = np.maximum(left, right_only)
+
+    model = vm.ShapeModel(make_bracket(), BRACKET_ROI)
+    wide = vm.ShapeMatcher(vm.ShapeSearchConfig(min_score=0.6, max_matches=5))
+    both = wide.find(scene, model)
+    assert len(both) == 2
+
+    # Restrict the ROI to a box around the left instance only.
+    narrow = vm.ShapeMatcher(
+        vm.ShapeSearchConfig(min_score=0.6, max_matches=5, roi=(40.0, 40.0, 100.0, 100.0))
+    )
+    left_only = narrow.find(scene, model)
+    assert len(left_only) == 1
+    assert abs(left_only[0].x - 90.0) < 15.0
+    assert abs(left_only[0].y - 90.0) < 15.0
+
+    # A rotation range that excludes the model's own (unrotated) angle finds nothing.
+    off_angle = vm.ShapeMatcher(
+        vm.ShapeSearchConfig(
+            min_score=0.6, angle_range=(math.radians(90.0), math.radians(150.0))
+        )
+    )
+    assert off_angle.find(scene, model) == []
+
+
 def test_shape_model_save_load_roundtrip(tmp_path):
     """A persisted model must match at the identical pose and score."""
     model = vm.ShapeModel(make_bracket(), BRACKET_ROI)

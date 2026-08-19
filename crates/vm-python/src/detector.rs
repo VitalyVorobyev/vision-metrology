@@ -5,7 +5,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyList;
 use vm_primitives::edge::Edge2DDetector;
 
-use crate::config_py::EdgeConfig;
+use crate::config::EdgeConfig;
 use crate::convert::image_from_numpy_u8;
 use crate::types::Edgel;
 

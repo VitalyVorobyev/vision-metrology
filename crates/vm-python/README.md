@@ -59,8 +59,31 @@ edgels_fn = vm.detect_edges_u8(img, vm.EdgeConfig())
 - `EdgeConfig`
 - `LsdConfig`
 - `FitConfig`
-- `ShapeModelConfig`
-- `ShapeSearchConfig`
+- `MeasureConfig`
+- `ShapeModelConfig` (nests `EdgeConfig` as `.edge`)
+- `ShapeSearchConfig` (nests `ShapeSearchTuning` as `.tuning`; `.roi`,
+  `.angle_range`, `.scale_range` narrow the search)
+- `Contrast` — `Contrast.raw(v)` / `Contrast.fraction_of_range(f)`, the two
+  variants of `min_contrast` on `ShapeModelConfig` and `ShapeSearchConfig`
+
+### Config design notes
+
+- **Sentinels are `None`.** Every "auto" / "unlimited" Rust `Option<T>` is a
+  Python `None` — `num_levels=None` picks the pyramid depth automatically,
+  `max_matches=None` reports every instance, and so on.
+- **`Hysteresis` is a pair of optionals, not its own type.** `EdgeConfig`'s
+  `low_thresh` / `high_thresh` are both `None` for automatic thresholding, or
+  both set for manual — the familiar `argparse`-style optional-pair idiom,
+  rather than a second small enum type for one either/or choice.
+- **`Contrast` *is* its own type.** A bare `float` for `min_contrast` would
+  have to silently pick a unit, and picking the wrong one changes behaviour
+  by up to 257x between `uint8` and `uint16` images — exactly the ambiguity
+  the Rust `Contrast` type exists to remove. Construct with the two static
+  methods.
+- **Search effort is nested.** `ShapeSearchConfig`'s top-level fields say
+  *what* to look for (`min_score`, `roi`, `angle_range`, ...); the six fields
+  on `ShapeSearchConfig.tuning` say *how hard* the search works
+  (`greediness`, `max_candidates`, ...) and are rarely touched.
 
 ## Free functions
 

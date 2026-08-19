@@ -5,7 +5,7 @@
 //! This module exposes both object-oriented detector/matcher classes and
 //! declarative free functions.
 
-mod config_py;
+mod config;
 mod convert;
 mod detector;
 mod functions;
@@ -16,7 +16,10 @@ mod types;
 
 use pyo3::prelude::*;
 
-use config_py::{EdgeConfig, FitConfig, LsdConfig, ShapeModelConfig, ShapeSearchConfig};
+use config::{
+    Contrast, EdgeConfig, FitConfig, LsdConfig, MeasureConfig, ShapeModelConfig, ShapeSearchConfig,
+    ShapeSearchTuning,
+};
 use detector::EdgeDetector;
 use match_py::{ShapeMatcher, ShapeModel};
 use segment::Segmenter;
@@ -30,8 +33,11 @@ fn vision_metrology(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<EdgeConfig>()?;
     m.add_class::<LsdConfig>()?;
     m.add_class::<FitConfig>()?;
+    m.add_class::<Contrast>()?;
     m.add_class::<ShapeModelConfig>()?;
+    m.add_class::<ShapeSearchTuning>()?;
     m.add_class::<ShapeSearchConfig>()?;
+    m.add_class::<MeasureConfig>()?;
 
     // Stateful classes
     m.add_class::<EdgeDetector>()?;

@@ -7,7 +7,7 @@ use vision_metrology::fit::{fit_circle, fit_ellipse};
 use vision_metrology::lsd::LsdDetector as NativeLsdDetector;
 use vm_primitives::Point2f;
 
-use crate::config_py::{FitConfig, LsdConfig};
+use crate::config::{FitConfig, LsdConfig};
 use crate::convert::image_from_numpy_u8;
 use crate::types::{Circle, Ellipse, LineSegment};
 

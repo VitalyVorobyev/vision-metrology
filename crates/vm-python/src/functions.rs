@@ -5,7 +5,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyList;
 use pyo3::wrap_pyfunction;
 
-use crate::config_py::{EdgeConfig, FitConfig, LsdConfig};
+use crate::config::{EdgeConfig, FitConfig, LsdConfig};
 use crate::detector::detect_edges_u8_impl;
 use crate::segment::{
     component_stats_impl, label_components_impl, otsu_threshold_impl, threshold_binary_impl,
