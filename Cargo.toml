@@ -23,3 +23,14 @@ unsafe_op_in_unsafe_fn = "deny"
 [workspace.lints.clippy]
 dbg_macro = "deny"
 todo = "deny"
+
+# Detection runs inside a ~30 ms budget for a whole multi-stage frame analysis,
+# so release builds are tuned for run time rather than compile time. Measured on
+# the match_shape benches before adopting; see docs/system-design.md.
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
+# Benches inherit `release`; keep them identical to what users ship.
+[profile.bench]
+inherits = "release"

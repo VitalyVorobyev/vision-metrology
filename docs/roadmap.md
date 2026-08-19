@@ -15,7 +15,7 @@ deferred items and known debt in [`backlog.md`](backlog.md).
 
 ## Current tracks
 
-### Track 1 — B-track closure + de-spaghettification — `in review`
+### Track 1 — B-track closure + de-spaghettification — `done` (PR #20)
 Split `laser/extractor.rs` (1717 lines) into `laser/{types, extractor, scan, pairing,
 coarse, gather, postprocess, tests}` with a private `ScanPixel` trait collapsing the
 u8/u16/f32 triplication (public API unchanged, extract bench regression gate ≤2%).
@@ -30,7 +30,7 @@ versioned `ShapeModel` save/load, Python parity.
 **Accept:** all quality gates green; extractor files ≤ ~400 lines; no
 `too_many_arguments` allows in contour; extract bench within 2% of baseline.
 
-### Track 2 — detection performance — `in review`
+### Track 2 — detection performance — `done` (PRs #21, #23)
 Direction (per user): pay serious attention to performance; ~5 ms full-360° detection is
 the aspiration, and the hard context is a ~30 ms budget for the *whole* multi-stage
 analysis of a frame, of which detection is stage 1.

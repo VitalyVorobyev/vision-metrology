@@ -127,6 +127,13 @@ around candidates, so full-frame fine-level fields are mostly wasted work. The p
 plan (roadmap Track 2) is lazy tiled fields first, integer u8 Scharr second, quantized
 directions + SIMD only if still needed — in that order, each gated on measurement.
 
+### Release profile is tuned, and benches inherit it (2026-08)
+`[profile.release] lto = "thin", codegen-units = 1` in the root manifest, with
+`[profile.bench] inherits = "release"` so measurements match what users ship. Measured on
+`match_shape` before adopting: clean 360° 3.51 → 3.42 ms (−2.6%), clutter 6.74 → 6.61 ms
+(−1.9%). Small, but free and permanent; all later numbers are against this profile. It costs
+release build time, which is the trade we want on a library whose detection budget is ~5 ms.
+
 ## Performance numbers (M4 Pro, single thread, release)
 
 Record per release. The target use case budgets ~30 ms for a full multi-stage

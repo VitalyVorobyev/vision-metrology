@@ -37,16 +37,21 @@ agent) can pick it up cold. When an item is scheduled it moves into
 
 ## Code health
 
-- **File-size offenders** (soft cap ~600 lines, see system-design invariant 14):
-  `contour/build.rs` (1103), `shape/lsd.rs` (983), `vm-primitives/edge/edge2d.rs` (858),
-  `vision-metrology/matching/build.rs` (737), `vm-python/config_py.rs` (588). Split
-  opportunistically when a track touches them; `laser/extractor.rs` is handled by Track 1.
+- **File-size offenders.** Invariant 14 counts *code* lines (tests excluded), so measure
+  that way, not by raw total. Over the cap today: `contour/build.rs` (802 code / 1175 total),
+  `shape/lsd.rs` (757 / 983), `matching/build.rs` (737 / 737), `matching/matcher.rs`
+  (653 / 692). Under it despite a large total: `edge/edge2d.rs` (578 / 859),
+  `edge/gradient.rs` (527 / 783), `matching/score.rs` (423 / 683). Split opportunistically
+  when a track touches them.
 - **`Edge2DDetector` should consume `DirectionField`** and delete its private
   `compute_scharr` — the Scharr kernel exists twice (three times counting LSD). Pure
   refactor, no behavior change; verify with the existing edge2d tests + bench.
-- **miri job** for the unsafe gather paths in `laser/` (all workspace unsafe lives there).
-  Slow — scope it to `cargo miri test -p vision-metrology laser::` on a weekly schedule
-  next to the audit workflow, not on every PR.
+- **miri job** for the unsafe paths. `unsafe` is *not* confined to `laser/` — it lives in
+  `vm-primitives/core/image.rs` (the `get_unchecked` family), `core/sample.rs`,
+  `pyr/downsample.rs` (the contiguous-even kernels) and `edge/conv1d.rs`, with
+  `laser/gather.rs` holding the fewest blocks. Scope a weekly job to
+  `cargo miri test -p vm-primitives` plus `-p vision-metrology laser::`, next to the audit
+  workflow, not on every PR.
 
 ## Testing
 

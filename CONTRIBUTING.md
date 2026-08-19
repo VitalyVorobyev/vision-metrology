@@ -32,7 +32,7 @@ CI runs all four, and additionally:
 
 | Job | Command |
 |-----|---------|
-| MSRV | `cargo +1.89.0 check --workspace --all-targets --all-features` |
+| MSRV | `cargo +1.91.0 check --workspace --all-targets --all-features` |
 | Examples | every self-asserting example under `crates/vision-metrology/examples/` |
 | Python bindings | `pip install crates/vm-python` then `pytest crates/vm-python/tests` |
 | Cross-platform | build and test on Windows and macOS |
@@ -123,7 +123,7 @@ cargo bench -p vision-metrology --bench build_graph
 cargo bench -p vision-metrology --bench detect_multiscale
 cargo bench -p vision-metrology --bench detect_shape
 cargo bench -p vision-metrology --bench extract
-cargo bench -p vision-metrology --bench match_
+cargo bench -p vision-metrology --bench match_shape
 cargo bench -p vision-metrology --bench segment
 
 # a single benchmark function

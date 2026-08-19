@@ -23,6 +23,9 @@ publish = false
 # `module-name = "vision_metrology"`.
 name = "vm_python"
 crate-type = ["cdylib", "rlib"]
+# No doctests here: this crate is a thin PyO3 shim whose examples are Python,
+# and its lib name is deliberately not the package name (see above).
+doctest = false
 
 [dependencies]
 vm-primitives    = { path = "../vm-primitives", version = "0.1.0" }
