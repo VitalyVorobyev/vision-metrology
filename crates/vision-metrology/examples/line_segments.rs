@@ -44,12 +44,13 @@ fn main() {
 
     let img = Image::from_vec(w, h, data).expect("valid image");
 
-    // --- Step 2: run LSD with scale=1.0 (no image downscale) ---
-    // scale=1.0 ensures 1-px sampling; density_th lowered slightly for clean synthetic edges.
-    println!("Running LsdDetector (scale=1.0, density_th=0.5)...");
+    // --- Step 2: run LSD at full resolution ---
+    // downscale_levels=0 keeps 1-px sampling; density_th lowered slightly for
+    // clean synthetic edges.
+    println!("Running LsdDetector (full resolution, density_th=0.5)...");
     let mut det = LsdDetector::new();
     let cfg = LsdConfig {
-        scale: 1.0,
+        downscale_levels: 0,
         density_th: 0.5,
         ..LsdConfig::default()
     };

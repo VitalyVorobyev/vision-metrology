@@ -22,7 +22,7 @@
 //! let img = Image::from_vec(w, h, data).expect("valid image");
 //!
 //! let mut det = LsdDetector::new();
-//! let cfg = LsdConfig { scale: 1.0, ..LsdConfig::default() };
+//! let cfg = LsdConfig { downscale_levels: 0, ..LsdConfig::default() };
 //! let segs = det.detect(&img.as_view(), &cfg);
 //! // At least one segment should be detected on a clean step edge.
 //! assert!(!segs.is_empty());

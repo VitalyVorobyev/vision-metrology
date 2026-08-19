@@ -8,6 +8,7 @@ use vision_metrology::ShapeModelConfig as NativeShapeModelConfig;
 use vision_metrology::ShapeSearchConfig as NativeShapeSearchConfig;
 use vision_metrology::{ConicFitConfig as NativeConicFitConfig, LsdConfig as NativeLsdConfig};
 use vm_primitives::BorderMode;
+use vm_primitives::PreSmooth as NativePreSmooth;
 use vm_primitives::edge::edge2d::{Edge2DConfig, SmoothKind, Subpix2D};
 
 #[pyclass(get_all, set_all, from_py_object)]
@@ -131,8 +132,8 @@ impl EdgeConfig {
 #[pyclass(get_all, set_all, from_py_object)]
 #[derive(Debug, Clone)]
 pub struct LsdConfig {
-    pub scale: f32,
-    pub sigma_scale: f32,
+    pub downscale_levels: u32,
+    pub pre_smooth: String,
     pub ang_th: f32,
     pub log_eps: f32,
     pub density_th: f32,
@@ -144,8 +145,8 @@ pub struct LsdConfig {
 impl LsdConfig {
     #[new]
     #[pyo3(signature = (
-        scale=None,
-        sigma_scale=None,
+        downscale_levels=None,
+        pre_smooth=None,
         ang_th=None,
         log_eps=None,
         density_th=None,
@@ -153,8 +154,8 @@ impl LsdConfig {
         min_length=None
     ))]
     pub fn new(
-        scale: Option<f32>,
-        sigma_scale: Option<f32>,
+        downscale_levels: Option<u32>,
+        pre_smooth: Option<String>,
         ang_th: Option<f32>,
         log_eps: Option<f32>,
         density_th: Option<f32>,
@@ -163,8 +164,8 @@ impl LsdConfig {
     ) -> Self {
         let default = Self::default();
         Self {
-            scale: scale.unwrap_or(default.scale),
-            sigma_scale: sigma_scale.unwrap_or(default.sigma_scale),
+            downscale_levels: downscale_levels.unwrap_or(default.downscale_levels),
+            pre_smooth: pre_smooth.unwrap_or(default.pre_smooth),
             ang_th: ang_th.unwrap_or(default.ang_th),
             log_eps: log_eps.unwrap_or(default.log_eps),
             density_th: density_th.unwrap_or(default.density_th),
@@ -175,9 +176,9 @@ impl LsdConfig {
 
     fn __repr__(&self) -> String {
         format!(
-            "LsdConfig(scale={:.3}, sigma_scale={:.3}, ang_th={:.3}, log_eps={:.3}, density_th={:.3}, n_bins={}, min_length={:.3})",
-            self.scale,
-            self.sigma_scale,
+            "LsdConfig(downscale_levels={}, pre_smooth={:?}, ang_th={:.3}, log_eps={:.3}, density_th={:.3}, n_bins={}, min_length={:.3})",
+            self.downscale_levels,
+            self.pre_smooth,
             self.ang_th,
             self.log_eps,
             self.density_th,
@@ -191,8 +192,11 @@ impl Default for LsdConfig {
     fn default() -> Self {
         let native = NativeLsdConfig::default();
         Self {
-            scale: native.scale,
-            sigma_scale: native.sigma_scale,
+            downscale_levels: native.downscale_levels,
+            pre_smooth: match native.pre_smooth {
+                NativePreSmooth::None => "none".to_string(),
+                NativePreSmooth::Binomial121 => "binomial121".to_string(),
+            },
             ang_th: native.ang_th,
             log_eps: native.log_eps,
             density_th: native.density_th,
@@ -204,12 +208,18 @@ impl Default for LsdConfig {
 
 impl LsdConfig {
     pub fn to_native(&self) -> PyResult<NativeLsdConfig> {
-        if !(self.scale > 0.0 && self.scale <= 1.0) {
-            return Err(PyValueError::new_err("scale must be in (0.0, 1.0]"));
-        }
+        let pre_smooth = match self.pre_smooth.as_str() {
+            "none" => NativePreSmooth::None,
+            "binomial121" => NativePreSmooth::Binomial121,
+            other => {
+                return Err(PyValueError::new_err(format!(
+                    "pre_smooth must be 'none' or 'binomial121', got {other:?}"
+                )));
+            }
+        };
         Ok(NativeLsdConfig {
-            scale: self.scale,
-            sigma_scale: self.sigma_scale,
+            downscale_levels: self.downscale_levels,
+            pre_smooth,
             ang_th: self.ang_th,
             log_eps: self.log_eps,
             density_th: self.density_th,

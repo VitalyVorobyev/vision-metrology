@@ -44,8 +44,9 @@ agent) can pick it up cold. When an item is scheduled it moves into
   `edge/gradient.rs` (527 / 783), `matching/score.rs` (423 / 683). Split opportunistically
   when a track touches them.
 - **`Edge2DDetector` should consume `DirectionField`** and delete its private
-  `compute_scharr` — the Scharr kernel exists twice (three times counting LSD). Pure
-  refactor, no behavior change; verify with the existing edge2d tests + bench.
+  `compute_scharr` — the Scharr kernel still exists twice (`edge2d.rs` and `gradient.rs`).
+  LSD's third copy of the *downsample* is gone (it uses `pyr` now), but it still has its own
+  Scharr. Pure refactor, no behavior change; verify with the existing edge2d tests + bench.
 - **miri job** for the unsafe paths. `unsafe` is *not* confined to `laser/` — it lives in
   `vm-primitives/core/image.rs` (the `get_unchecked` family), `core/sample.rs`,
   `pyr/downsample.rs` (the contiguous-even kernels) and `edge/conv1d.rs`, with
@@ -61,8 +62,10 @@ agent) can pick it up cold. When an item is scheduled it moves into
   is a band-aid; the real fix is an optional binomial pre-smooth on the pyramid. The comb
   fixture test (`r3_fine_toothed_model_survives_the_pyramid`) pins the current behavior —
   an 8 px tooth pitch survives today because the auto level count stops where coarse
-  points destabilize. The pyramid pre-smooth remains unscheduled; a part with even finer
-  teeth than the fixture may still need it.
+  points destabilize. **Half done:** `PreSmooth::Binomial121` now exists on `Pyramid` and is
+  the LSD default. What remains is wiring it into `ShapeModel`: invariant 3 means the model
+  and the scene must share the kernel, so the choice has to be stored in the model and the
+  serialization format version bumped.
 - **Laser extractor u16/f32 depth**: after the Track 1 split, the generic scan loop makes
   it cheap to run the full test matrix over all three pixel types — today u16/f32 have one
   cross-check test each.

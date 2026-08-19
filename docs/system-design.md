@@ -126,6 +126,34 @@ around candidates, so full-frame fine-level fields are mostly wasted work. The p
 plan (roadmap Track 2) is lazy tiled fields first, integer u8 Scharr second, quantized
 directions + SIMD only if still needed — in that order, each gated on measurement.
 
+### LSD downsamples through `pyr`, and its config stopped lying (2026-08)
+`shape/lsd.rs` carried its own 2×2 downsample under a comment claiming it was "the same as a
+`vm_primitives::pyr` level". It was not: `div_ceil` + border clamp against `pyr`'s drop-odd,
+so on odd input the two disagreed on both output size and edge values. It then mapped
+positions back with a bare `p · (W / w)`, missing the `(2^l − 1)/2` term of invariant 2.
+
+Measured on a vertical step edge whose true subpixel position is 59.5, mean reported endpoint
+x, at the **default** config:
+
+| width | before | after |
+|---|---|---|
+| 128 (even) | −0.500 px | 0.000 px |
+| 129 (odd) | −0.954 px | 0.000 px |
+
+Two config fields were also fiction. `scale: f32` was documented as a downscale factor and
+defaulted to `0.8`, but the code only tested `scale < 1.0` and then always halved — so the
+default meant 0.5, not 0.8. `sigma_scale: f32` was documented as a Gaussian pre-smooth,
+defaulted to `0.6`, and was **never read**. Both are replaced by
+`downscale_levels: u32` (0 = full resolution) and `pre_smooth: PreSmooth`, which say what
+they do and are honoured. `pre_smooth` defaults to `Binomial121`, delivering the
+anti-aliasing `sigma_scale` had only promised.
+
+`detect_u8` / `detect_f32` collapse into one generic `detect<P: Pixel>`. The detector now owns
+a `Pyramid`, so there is one downsample kernel in the workspace instead of two.
+`lsd_detect_u8_1280x1024` 1.49 ms (was 1.49 ms — the pyramid replaces an equivalent copy).
+Pinned by `endpoints_are_unbiased_at_every_downscale_level`, which sweeps levels 0–2 × both
+pre-smooth modes × even/odd widths.
+
 ### `multiscale` deleted, not fixed (2026-08)
 `MultiScaleEdgeDetector` ran the 2-D detector on every pyramid level and merged the results
 back to level 0. Three things were wrong with it and only the first was a bug:
