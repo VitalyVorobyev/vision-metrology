@@ -13,6 +13,7 @@
 //! | [`matching`]  | Shape-based object detection: gradient-orientation model matching |
 //! | [`segment`]   | Otsu / adaptive threshold, CCL, watershed, region growing |
 //! | [`fit`]       | Robust line / circle / ellipse fitting with reported residuals |
+//! | [`measure`]   | Calipers and metrology models — measuring a located part |
 //! | [`shape`]     | LSD line-segment detection |
 //!
 //! ## Features
@@ -29,6 +30,7 @@
 //! |---|---|---|
 //! | `contour` | [`contour`] | — |
 //! | `fit` | [`fit`] | — |
+//! | `measure` | [`measure`] | `fit` (measured points are fitted) |
 //! | `laser` | [`laser`] | — |
 //! | `matching` | [`matching`] | — |
 //! | `segment` | [`segment`] | `contour` (region growing consumes a `ContourGraph`) |
@@ -49,6 +51,8 @@ pub mod fit;
 pub mod laser;
 #[cfg(feature = "matching")]
 pub mod matching;
+#[cfg(feature = "measure")]
+pub mod measure;
 #[cfg(feature = "segment")]
 pub mod segment;
 #[cfg(feature = "shape")]
@@ -117,6 +121,11 @@ pub use matching::{
     ContourOrientation, ModelPoint, Polarity, Refinement, ShapeMatch, ShapeMatcher, ShapeModel,
     ShapeModelBuilder, ShapeModelConfig, ShapeModelLevel, ShapeSearchConfig, create_shape_model,
     match_point_scores,
+};
+#[cfg(feature = "measure")]
+pub use measure::{
+    Caliper, MeasureArc, MeasureConfig, MeasureEdge, MeasurePair, MeasureRadial, MeasureRect,
+    MetrologyModel, MetrologyObject, MetrologyResult, MetrologyShape, RejectReason,
 };
 #[cfg(feature = "segment")]
 pub use segment::{

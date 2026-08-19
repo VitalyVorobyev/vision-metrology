@@ -54,6 +54,21 @@ agent) can pick it up cold. When an item is scheduled it moves into
   `cargo miri test -p vm-primitives` plus `-p vision-metrology laser::`, next to the audit
   workflow, not on every PR.
 
+## Measurement
+
+- **Background-padding gate for calipers.** The `rtvt-pano` caliper additionally requires
+  clean background for a few px beyond each edge and rejects rays that leave the image,
+  which is what makes it robust to FOV truncation. Here that needs a mask or a region type
+  to check against, so it waits on the `segment` rework. `RejectReason::OffImage` covers the
+  leaving-the-image half already.
+- **Two-pass centreline refinement.** Also from `rtvt-pano`: refine caliper centres from a
+  rough polyline, then re-measure from the refined one so tangents stay continuous. That is
+  a property of a tracked contour, not of a caliper — it belongs in a bead/stripe tool built
+  on `measure`, whenever one exists.
+- **`MeasureArc` obliquity** is checked against the arc *tangent*, which is right for
+  features crossing the arc. A future "measure the arc's own edge" mode would want the
+  radial direction instead.
+
 ## Testing
 
 - **R3 — coarse-level aliasing on fine-toothed contours.** `PyramidF32` is a plain 2×2 box

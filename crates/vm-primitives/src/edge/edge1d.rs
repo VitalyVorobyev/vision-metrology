@@ -139,7 +139,7 @@ impl Edge1DDetector {
             signal,
             &self.kernel.dg,
             self.kernel.radius,
-            cfg.border.clone(),
+            cfg.border,
             &mut self.resp,
         );
 
@@ -159,7 +159,7 @@ impl Edge1DDetector {
             &self.tmp,
             &self.kernel.dg,
             self.kernel.radius,
-            cfg.border.clone(),
+            cfg.border,
             &mut self.resp,
         );
 

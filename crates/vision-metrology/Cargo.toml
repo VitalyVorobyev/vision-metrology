@@ -18,12 +18,14 @@ serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
 
 [features]
-default = ["contour", "fit", "laser", "matching", "segment", "shape"]
+default = ["contour", "fit", "laser", "matching", "measure", "segment", "shape"]
 
 ## Junction-aware contour graph from 2-D edgels.
 contour = []
 ## Robust line / circle / ellipse fitting with reported residuals.
 fit = []
+## Calipers and metrology models. Measured points are fitted, so this implies `fit`.
+measure = ["fit"]
 ## Laser stripe extraction via opposite-polarity edge pairs.
 laser = []
 ## Shape-based object detection (ShapeModel / ShapeMatcher).

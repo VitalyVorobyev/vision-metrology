@@ -478,18 +478,10 @@ impl Edge2DDetector {
                 let mut t = 0.0f32;
                 if cfg.subpix == Subpix2D::ParabolicAlongNormal {
                     let s0 = nms_data[idx];
-                    let sp = sample_bilinear_f32(
-                        &nms_view,
-                        x as f32 + n.x,
-                        y as f32 + n.y,
-                        cfg.border.clone(),
-                    );
-                    let sm = sample_bilinear_f32(
-                        &nms_view,
-                        x as f32 - n.x,
-                        y as f32 - n.y,
-                        cfg.border.clone(),
-                    );
+                    let sp =
+                        sample_bilinear_f32(&nms_view, x as f32 + n.x, y as f32 + n.y, cfg.border);
+                    let sm =
+                        sample_bilinear_f32(&nms_view, x as f32 - n.x, y as f32 - n.y, cfg.border);
                     if let Some(tt) = parabolic_peak_offset(sm, s0, sp) {
                         t = tt.clamp(-1.0, 1.0);
                     }

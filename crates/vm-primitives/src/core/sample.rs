@@ -1,5 +1,6 @@
 use super::border::{BorderMode, map_index};
 use super::image::ImageView;
+use super::pixel::Pixel;
 
 /// Sample image `img` at continuous position `(x, y)` using nearest-neighbor interpolation.
 ///
@@ -45,7 +46,7 @@ pub fn sample_nearest<T: Copy>(img: &ImageView<'_, T>, x: f32, y: f32, border: B
 ///
 /// # Panics
 /// Panics when the image is empty and `border` is not [`BorderMode::Constant`].
-pub fn sample_bilinear_f32<T: Copy + Into<f32>>(
+pub fn sample_bilinear_f32<T: Pixel>(
     img: &ImageView<'_, T>,
     x: f32,
     y: f32,
@@ -76,7 +77,7 @@ pub fn sample_bilinear_f32<T: Copy + Into<f32>>(
     top * (1.0 - dy) + bottom * dy
 }
 
-fn sample_at_f32<T: Copy + Into<f32>>(
+fn sample_at_f32<T: Pixel>(
     img: &ImageView<'_, T>,
     x: isize,
     y: isize,
@@ -88,20 +89,20 @@ fn sample_at_f32<T: Copy + Into<f32>>(
                 *c
             } else {
                 // SAFETY: Bounds are checked immediately above.
-                unsafe { (*img.get_unchecked(x as usize, y as usize)).into() }
+                unsafe { img.get_unchecked(x as usize, y as usize).to_f32() }
             }
         }
         BorderMode::Clamp => {
             let xi = map_index(x, img.width(), border).expect("mapped x index should exist");
             let yi = map_index(y, img.height(), border).expect("mapped y index should exist");
             // SAFETY: `map_index` returns indices in `[0, len)` for non-empty images.
-            unsafe { (*img.get_unchecked(xi, yi)).into() }
+            unsafe { img.get_unchecked(xi, yi).to_f32() }
         }
         BorderMode::Reflect101 => {
             let xi = map_index(x, img.width(), border).expect("mapped x index should exist");
             let yi = map_index(y, img.height(), border).expect("mapped y index should exist");
             // SAFETY: `map_index` returns indices in `[0, len)` for non-empty images.
-            unsafe { (*img.get_unchecked(xi, yi)).into() }
+            unsafe { img.get_unchecked(xi, yi).to_f32() }
         }
     }
 }

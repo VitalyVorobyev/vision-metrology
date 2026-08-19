@@ -28,6 +28,7 @@ vm-primitives  ──►  vision-metrology  ──►  vm-python
 | | `matching` | `ShapeModel`/`ShapeMatcher`: gradient-orientation shape-based detection |
 | | `segment` | Otsu/adaptive thresholding, CCL, watershed, edgel region growing |
 | | `fit` | robust line / circle / ellipse fitting, residuals reported |
+| | `measure` | calipers (rect / arc / radial), metrology model applied at a fixture pose |
 | | `shape` | LSD line-segment detection |
 | `vm-python` | — | numpy-in/numpy-out detectors; lib target named `vm_python` (see invariants) |
 
@@ -145,6 +146,42 @@ pyramid + ~2.5 ms search. Below the top pyramid level the search reads only smal
 around candidates, so full-frame fine-level fields are mostly wasted work. The performance
 plan (roadmap Track 2) is lazy tiled fields first, integer u8 Scharr second, quantized
 directions + SIMD only if still needed — in that order, each gated on measurement.
+
+### `measure`: calipers, and why a curved edge needs its own placement (2026-08)
+The module that turns detection into inspection. [`Caliper`] places a geometry, averages
+intensity across it into a 1-D profile, and runs the existing `Edge1DDetector` along that
+profile; [`MetrologyModel`] distributes calipers over nominal primitives held in the part's
+own frame, applies them at a fixture pose (`ShapeMatch::pose`), and fits the measured points
+with the `fit` module. `find → pose → apply → Fit + residuals` is now a closed loop.
+
+**`MeasureRadial` exists because a rectangle cannot measure a circle without bias.** A rect
+averages along a straight *chord*: on a circle of radius 40, a sample 5 px to the side sits
+at radius 40.31 — the wrong side of the edge — so the averaged profile is contaminated and
+the measured radius reads low. Measured on an anti-aliased disc, a 32-caliper circle fit
+came out **39.88 px instead of 40.00**. `MeasureRadial` scans radially and averages *along
+the arc*, so every averaged sample sits at the same radius: **39.990 px**, a twelvefold
+reduction, and the bias no longer grows with caliper width. `MetrologyShape::Circle` uses it.
+
+This also forced the test fixtures to change. A hard-thresholded disc puts its edge wherever
+the pixel grid falls — 0 to 0.5 px inside the nominal radius, depending on the centre's
+sub-pixel offset — so it cannot be used to assert subpixel accuracy at all. The fixtures are
+anti-aliased now (coverage ramps across one pixel), which puts the true edge exactly at the
+nominal radius and let the tolerances drop from 0.3 px to 0.03 px.
+
+**Ideas taken from the `rtvt-pano` caliper** (`crates/rtvt-glue/src/caliper.rs`), which
+solves the same problem for glue-bead cross-sections:
+- **Typed rejection reasons.** A caliper that finds nothing is a *result*, and which gate
+  rejected it is the difference between "the part is missing" and "the search window is too
+  short". `Caliper::measure_checked` returns `Err(RejectReason)`.
+- **An obliquity gate.** A caliper crossing an edge at a glancing angle reports a position
+  along its own axis rather than the edge normal, and the two differ by `1/cos θ`; at a
+  corner there is no meaningful crossing at all. `max_obliquity_deg` compares the local image
+  gradient against the scan direction and rejects the rest.
+- **Sub-pixel profile stepping** (`step`), for oversampling a sharp edge.
+
+Not taken: the two-pass centreline refinement and the mask-based background-padding gate.
+Both are properties of a *tracked contour* rather than of a caliper, and belong in whatever
+bead/stripe tool is built on top of this one.
 
 ### `fit`: geometric refinement, and what robustness actually requires (2026-08)
 `shape` held algebraic conic fitting and a RANSAC ellipse wrapper; there was **no line fit
