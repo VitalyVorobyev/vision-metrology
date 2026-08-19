@@ -12,7 +12,7 @@
 //! cargo run -p vision-metrology --example edge_1d
 //! ```
 
-use vision_metrology::edge::edge1d::{Edge1DConfig, Edge1DDetector, EdgePolarity};
+use vision_metrology::{Edge1DConfig, Edge1DDetector, EdgePolarity};
 
 fn main() {
     // --- Step 1: create a 64-sample step-edge signal ---
@@ -32,7 +32,7 @@ fn main() {
         ..Edge1DConfig::default()
     };
 
-    let peaks = det.detect_in_f32(&signal, &cfg);
+    let peaks = det.detect_in(&signal, &cfg);
 
     // --- Step 3: print results ---
     println!("Detected {} edge peak(s):", peaks.len());

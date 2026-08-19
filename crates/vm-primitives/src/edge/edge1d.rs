@@ -1,4 +1,4 @@
-use crate::core::BorderMode;
+use crate::core::{BorderMode, Pixel};
 
 use super::conv1d::convolve_f32;
 use super::kernels1d::DoGKernel1D;
@@ -97,79 +97,36 @@ impl Edge1DDetector {
         }
     }
 
-    /// Detect edges in an `f32` signal; returns an owned `Vec<EdgePeak>`.
-    pub fn detect_in_f32(&mut self, signal: &[f32], cfg: &Edge1DConfig) -> Vec<EdgePeak> {
-        self.detect_in_f32_borrowed(signal, cfg).to_vec()
+    /// Detect edges in a 1-D signal of any [`Pixel`] type; owned result.
+    ///
+    /// Prefer [`detect_in_ref`](Self::detect_in_ref) in a scan loop — it hands
+    /// back the internal buffer instead of allocating per line.
+    pub fn detect_in<P: Pixel>(&mut self, signal: &[P], cfg: &Edge1DConfig) -> Vec<EdgePeak> {
+        self.detect_in_ref(signal, cfg).to_vec()
     }
 
-    /// Detect edges in an `f32` signal; borrows the internal peak buffer.
+    /// Detect edges in a 1-D signal of any [`Pixel`] type, borrowing the
+    /// internal peak buffer.
     ///
-    /// The returned slice is valid until the next call to any `detect_*` method.
-    pub fn detect_in_f32_ref<'a>(
+    /// The returned slice is valid until the next `detect_in*` call. An `f32`
+    /// signal is convolved in place; `u8`/`u16` are widened into scratch first.
+    pub fn detect_in_ref<'a, P: Pixel>(
         &'a mut self,
-        signal: &[f32],
+        signal: &[P],
         cfg: &Edge1DConfig,
     ) -> &'a [EdgePeak] {
-        self.detect_in_f32_borrowed(signal, cfg)
-    }
-
-    /// Detect edges in a `u8` signal; returns an owned `Vec<EdgePeak>`.
-    pub fn detect_in_u8(&mut self, signal: &[u8], cfg: &Edge1DConfig) -> Vec<EdgePeak> {
-        self.detect_in_u8_borrowed(signal, cfg).to_vec()
-    }
-
-    /// Detect edges in a `u8` signal; borrows the internal peak buffer.
-    ///
-    /// The returned slice is valid until the next call to any `detect_*` method.
-    pub fn detect_in_u8_ref<'a>(&'a mut self, signal: &[u8], cfg: &Edge1DConfig) -> &'a [EdgePeak] {
-        self.detect_in_u8_borrowed(signal, cfg)
-    }
-
-    /// Detect edges in a `u16` signal; returns an owned `Vec<EdgePeak>`.
-    pub fn detect_in_u16(&mut self, signal: &[u16], cfg: &Edge1DConfig) -> Vec<EdgePeak> {
-        self.detect_in_u16_borrowed(signal, cfg).to_vec()
-    }
-
-    /// Detect edges in a `u16` signal; borrows the internal peak buffer.
-    ///
-    /// The returned slice is valid until the next call to any `detect_*` method.
-    pub fn detect_in_u16_ref<'a>(
-        &'a mut self,
-        signal: &[u16],
-        cfg: &Edge1DConfig,
-    ) -> &'a [EdgePeak] {
-        self.detect_in_u16_borrowed(signal, cfg)
-    }
-
-    pub(crate) fn detect_in_u8_borrowed<'a>(
-        &'a mut self,
-        signal: &[u8],
-        cfg: &Edge1DConfig,
-    ) -> &'a [EdgePeak] {
+        // `f32` needs no widening, and a laser scan calls this once per row.
+        if let Some(direct) = P::as_f32_slice(signal) {
+            return self.detect_f32_slice(direct, cfg);
+        }
         self.tmp.resize(signal.len(), 0.0);
-        for (dst, &src) in self.tmp.iter_mut().zip(signal.iter()) {
-            *dst = src as f32;
+        for (dst, src) in self.tmp.iter_mut().zip(signal) {
+            *dst = src.to_f32();
         }
         self.detect_tmp(cfg)
     }
 
-    pub(crate) fn detect_in_u16_borrowed<'a>(
-        &'a mut self,
-        signal: &[u16],
-        cfg: &Edge1DConfig,
-    ) -> &'a [EdgePeak] {
-        self.tmp.resize(signal.len(), 0.0);
-        for (dst, &src) in self.tmp.iter_mut().zip(signal.iter()) {
-            *dst = src as f32;
-        }
-        self.detect_tmp(cfg)
-    }
-
-    pub(crate) fn detect_in_f32_borrowed<'a>(
-        &'a mut self,
-        signal: &[f32],
-        cfg: &Edge1DConfig,
-    ) -> &'a [EdgePeak] {
+    fn detect_f32_slice<'a>(&'a mut self, signal: &[f32], cfg: &Edge1DConfig) -> &'a [EdgePeak] {
         self.set_sigma(cfg.sigma);
 
         self.resp.resize(signal.len(), 0.0);
@@ -182,7 +139,7 @@ impl Edge1DDetector {
             signal,
             &self.kernel.dg,
             self.kernel.radius,
-            cfg.border.clone(),
+            cfg.border,
             &mut self.resp,
         );
 
@@ -202,7 +159,7 @@ impl Edge1DDetector {
             &self.tmp,
             &self.kernel.dg,
             self.kernel.radius,
-            cfg.border.clone(),
+            cfg.border,
             &mut self.resp,
         );
 
@@ -338,7 +295,7 @@ mod tests {
             refine: SubpixRefine::None,
         };
 
-        let peaks = det.detect_in_f32(&sig, &cfg);
+        let peaks = det.detect_in(&sig, &cfg);
         let rise = nearest_peak_x(&peaks, EdgePolarity::Rising, x_l);
         let fall = nearest_peak_x(&peaks, EdgePolarity::Falling, x_r);
         // Integer-only extrema are quantized to pixel centers.
@@ -346,7 +303,7 @@ mod tests {
         assert!((fall - x_r).abs() <= 0.3);
 
         cfg.refine = SubpixRefine::Parabolic3;
-        let peaks_ref = det.detect_in_f32(&sig, &cfg);
+        let peaks_ref = det.detect_in(&sig, &cfg);
         let rise_ref = nearest_peak_x(&peaks_ref, EdgePolarity::Rising, x_l);
         let fall_ref = nearest_peak_x(&peaks_ref, EdgePolarity::Falling, x_r);
         assert!((rise_ref - x_l).abs() <= 0.1);
@@ -372,7 +329,7 @@ mod tests {
             refine: SubpixRefine::Centroid { radius: 2 },
         };
 
-        let peaks = det.detect_in_f32(&sig, &cfg);
+        let peaks = det.detect_in(&sig, &cfg);
         let rise = nearest_peak_x(&peaks, EdgePolarity::Rising, x_l);
         let fall = nearest_peak_x(&peaks, EdgePolarity::Falling, x_r);
         assert!((rise - x_l).abs() <= 0.25, "rise {rise} vs {x_l}");
@@ -403,34 +360,18 @@ mod tests {
         // Scale-invariant thresholds: keep them below the weakest response in
         // every scaling.
         let mut det = Edge1DDetector::new(sigma);
-        let f_rise = nearest_peak_x(&det.detect_in_f32(&sig_f, &cfg), EdgePolarity::Rising, x_l);
-        let f_fall = nearest_peak_x(&det.detect_in_f32(&sig_f, &cfg), EdgePolarity::Falling, x_r);
+        let f_rise = nearest_peak_x(&det.detect_in(&sig_f, &cfg), EdgePolarity::Rising, x_l);
+        let f_fall = nearest_peak_x(&det.detect_in(&sig_f, &cfg), EdgePolarity::Falling, x_r);
 
         let cfg_u = Edge1DConfig {
             pos_thresh: 1.0,
             neg_thresh: 1.0,
             ..cfg.clone()
         };
-        let u8_rise = nearest_peak_x(
-            &det.detect_in_u8(&sig_u8, &cfg_u),
-            EdgePolarity::Rising,
-            x_l,
-        );
-        let u8_fall = nearest_peak_x(
-            &det.detect_in_u8(&sig_u8, &cfg_u),
-            EdgePolarity::Falling,
-            x_r,
-        );
-        let u16_rise = nearest_peak_x(
-            &det.detect_in_u16(&sig_u16, &cfg_u),
-            EdgePolarity::Rising,
-            x_l,
-        );
-        let u16_fall = nearest_peak_x(
-            &det.detect_in_u16(&sig_u16, &cfg_u),
-            EdgePolarity::Falling,
-            x_r,
-        );
+        let u8_rise = nearest_peak_x(&det.detect_in(&sig_u8, &cfg_u), EdgePolarity::Rising, x_l);
+        let u8_fall = nearest_peak_x(&det.detect_in(&sig_u8, &cfg_u), EdgePolarity::Falling, x_r);
+        let u16_rise = nearest_peak_x(&det.detect_in(&sig_u16, &cfg_u), EdgePolarity::Rising, x_l);
+        let u16_fall = nearest_peak_x(&det.detect_in(&sig_u16, &cfg_u), EdgePolarity::Falling, x_r);
 
         // u8 quantization moves the parabola vertex slightly; u16 barely.
         assert!((u8_rise - f_rise).abs() <= 0.05, "{u8_rise} vs {f_rise}");
@@ -460,7 +401,7 @@ mod tests {
             neg_thresh: 0.0,
             refine: SubpixRefine::Parabolic3,
         };
-        let all = det.detect_in_f32(&sig, &permissive);
+        let all = det.detect_in(&sig, &permissive);
         let strong_rise = all
             .iter()
             .filter(|p| p.polarity == EdgePolarity::Rising)
@@ -483,7 +424,7 @@ mod tests {
             neg_thresh: thr,
             ..permissive
         };
-        let kept = det.detect_in_f32(&sig, &strict);
+        let kept = det.detect_in(&sig, &strict);
         assert!(!kept.is_empty());
         for p in &kept {
             assert!(
@@ -499,11 +440,11 @@ mod tests {
         let mut det = Edge1DDetector::new(1.2);
         let cfg = Edge1DConfig::default();
 
-        assert!(det.detect_in_f32(&[], &cfg).is_empty());
-        assert!(det.detect_in_f32(&[1.0, 2.0], &cfg).is_empty());
-        assert!(det.detect_in_u8(&[], &cfg).is_empty());
-        assert!(det.detect_in_u8(&[10, 200], &cfg).is_empty());
-        assert!(det.detect_in_u16(&[], &cfg).is_empty());
+        assert!(det.detect_in::<f32>(&[], &cfg).is_empty());
+        assert!(det.detect_in(&[1.0f32, 2.0], &cfg).is_empty());
+        assert!(det.detect_in::<u8>(&[], &cfg).is_empty());
+        assert!(det.detect_in(&[10u8, 200], &cfg).is_empty());
+        assert!(det.detect_in::<u16>(&[], &cfg).is_empty());
     }
 
     #[test]
@@ -522,11 +463,11 @@ mod tests {
             };
 
             let mut reused = Edge1DDetector::new(0.8);
-            reused.detect_in_f32(&[0.0; 16], &Edge1DConfig::default());
-            let a = nearest_peak_x(&reused.detect_in_f32(&sig, &cfg), EdgePolarity::Rising, x_l);
+            reused.detect_in(&[0.0; 16], &Edge1DConfig::default());
+            let a = nearest_peak_x(&reused.detect_in(&sig, &cfg), EdgePolarity::Rising, x_l);
 
             let mut fresh = Edge1DDetector::new(sigma);
-            let b = nearest_peak_x(&fresh.detect_in_f32(&sig, &cfg), EdgePolarity::Rising, x_l);
+            let b = nearest_peak_x(&fresh.detect_in(&sig, &cfg), EdgePolarity::Rising, x_l);
             assert_eq!(a, b, "sigma {sigma}");
         }
     }

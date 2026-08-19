@@ -15,9 +15,10 @@ nalgebra = { workspace = true }
 serde = { version = "1", features = ["derive"], optional = true }
 
 [features]
-## Serde derives on the plain geometry/config types (Point2f, Vec2f,
-## Rect2f, SmoothKind) so downstream model types can persist them.
-serde = ["dep:serde"]
+## Serde derives on the geometry/config types (Rect2f, SmoothKind) plus
+## nalgebra's own, since Point2f/Vec2f are nalgebra aliases. Lets downstream
+## model types persist them.
+serde = ["dep:serde", "nalgebra/serde-serialize"]
 
 [dev-dependencies]
 criterion = { workspace = true }

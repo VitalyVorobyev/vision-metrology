@@ -33,16 +33,16 @@
 //! `(x, y)`. Directions point **dark to bright**, the same convention as
 //! [`Edgel::n`](crate::Edgel).
 
-use crate::core::{Image, ImageView};
+use crate::core::{Image, ImageView, Pixel};
 
 use super::edge2d::SmoothKind;
 
 /// Dense per-pixel unit gradient direction with a magnitude gate.
 ///
-/// Build with [`DirectionField::build_u8`] / [`build_u16`](Self::build_u16) /
-/// [`build_f32`](Self::build_f32); the internal buffers are reused across
-/// calls, so a field kept in a long-lived struct allocates only when the image
-/// dimensions change.
+/// Build with [`DirectionField::build`] for any pixel type, or
+/// [`build_image_f32`](Self::build_image_f32) for a pyramid level; the internal
+/// buffers are reused across calls, so a field kept in a long-lived struct
+/// allocates only when the image dimensions change.
 ///
 /// # Example
 /// ```
@@ -58,7 +58,7 @@ use super::edge2d::SmoothKind;
 /// let img = Image::from_vec(32, 16, data).unwrap();
 ///
 /// let mut field = DirectionField::new();
-/// field.build_u8(&img.as_view(), SmoothKind::None, 10.0);
+/// field.build(&img.as_view(), SmoothKind::None, 10.0);
 ///
 /// // On the step the direction points along +x (dark to bright)...
 /// let (nx, ny) = field.dir_at(15, 8);
@@ -192,52 +192,28 @@ impl DirectionField {
         top * (1.0 - fy) + bot * fy
     }
 
-    /// Build from a `u8` image.
+    /// Build the field from a grayscale image of any [`Pixel`] type.
     ///
     /// `min_mag` is expressed in **Scharr response units on the input pixel
     /// scale**: a clean black/white step in `u8` gives `|∇I| ≈ 8·255 ≈ 2000`, so
     /// a gate of 10 sits well above 8-bit sensor noise while keeping faint but
     /// real edges. Re-tune it for `u16` and `f32` inputs, whose pixel scales
     /// differ by orders of magnitude.
-    pub fn build_u8(&mut self, img: &ImageView<'_, u8>, smooth: SmoothKind, min_mag: f32) {
+    pub fn build<P: Pixel>(&mut self, img: &ImageView<'_, P>, smooth: SmoothKind, min_mag: f32) {
         self.ensure(img.width(), img.height());
+        let width = self.width;
         for y in 0..img.height() {
-            let src = img.row(y);
-            let dst = &mut self.tmp[y * self.width..(y + 1) * self.width];
-            for (d, &s) in dst.iter_mut().zip(src.iter()) {
-                *d = f32::from(s);
+            let dst = &mut self.tmp[y * width..(y + 1) * width];
+            for (d, s) in dst.iter_mut().zip(img.row(y)) {
+                *d = s.to_f32();
             }
         }
         self.finish(smooth, min_mag);
     }
 
-    /// Build from a `u16` image. See [`build_u8`](Self::build_u8) on `min_mag`.
-    pub fn build_u16(&mut self, img: &ImageView<'_, u16>, smooth: SmoothKind, min_mag: f32) {
-        self.ensure(img.width(), img.height());
-        for y in 0..img.height() {
-            let src = img.row(y);
-            let dst = &mut self.tmp[y * self.width..(y + 1) * self.width];
-            for (d, &s) in dst.iter_mut().zip(src.iter()) {
-                *d = f32::from(s);
-            }
-        }
-        self.finish(smooth, min_mag);
-    }
-
-    /// Build from an `f32` image. See [`build_u8`](Self::build_u8) on `min_mag`.
-    pub fn build_f32(&mut self, img: &ImageView<'_, f32>, smooth: SmoothKind, min_mag: f32) {
-        self.ensure(img.width(), img.height());
-        for y in 0..img.height() {
-            let src = img.row(y);
-            let dst = &mut self.tmp[y * self.width..(y + 1) * self.width];
-            dst.copy_from_slice(src);
-        }
-        self.finish(smooth, min_mag);
-    }
-
-    /// Build from an owned image (convenience for pyramid levels).
+    /// Build from an owned image — convenience for pyramid levels.
     pub fn build_image_f32(&mut self, img: &Image<f32>, smooth: SmoothKind, min_mag: f32) {
-        self.build_f32(&img.as_view(), smooth, min_mag);
+        self.build(&img.as_view(), smooth, min_mag);
     }
 
     fn ensure(&mut self, w: usize, h: usize) {
@@ -553,7 +529,7 @@ mod tests {
         }
         let img = Image::from_vec(24, 24, data).unwrap();
         let mut f = DirectionField::new();
-        f.build_f32(&img.as_view(), SmoothKind::None, 1.0);
+        f.build(&img.as_view(), SmoothKind::None, 1.0);
 
         // The Scharr response straddles the step at x = 11 and x = 12.
         for x in [11usize, 12] {
@@ -570,7 +546,7 @@ mod tests {
     fn directions_are_unit_length_wherever_they_are_not_gated() {
         let img = disc(64, 20.0);
         let mut f = DirectionField::new();
-        f.build_f32(&img.as_view(), SmoothKind::Binomial3, 20.0);
+        f.build(&img.as_view(), SmoothKind::Binomial3, 20.0);
 
         let mut nonzero = 0usize;
         for i in 0..64 * 64 {
@@ -592,7 +568,7 @@ mod tests {
         // gradient at radius r points towards the centre.
         let img = disc(64, 20.0);
         let mut f = DirectionField::new();
-        f.build_f32(&img.as_view(), SmoothKind::Binomial3, 50.0);
+        f.build(&img.as_view(), SmoothKind::Binomial3, 50.0);
 
         let c = 32.0f32;
         let mut checked = 0usize;
@@ -621,8 +597,8 @@ mod tests {
         let img = disc(48, 12.0);
         let mut lo = DirectionField::new();
         let mut hi = DirectionField::new();
-        lo.build_f32(&img.as_view(), SmoothKind::None, 0.0);
-        hi.build_f32(&img.as_view(), SmoothKind::None, 500.0);
+        lo.build(&img.as_view(), SmoothKind::None, 0.0);
+        hi.build(&img.as_view(), SmoothKind::None, 500.0);
 
         for i in 0..48 * 48 {
             let gated = hi.dir()[2 * i] == 0.0 && hi.dir()[2 * i + 1] == 0.0;
@@ -637,7 +613,7 @@ mod tests {
     fn matches_a_naive_scharr_reference() {
         let img = disc(40, 13.0);
         let mut f = DirectionField::new();
-        f.build_f32(&img.as_view(), SmoothKind::None, 0.0);
+        f.build(&img.as_view(), SmoothKind::None, 0.0);
 
         let src = img.data();
         let (w, h) = (40usize, 40usize);
@@ -670,7 +646,7 @@ mod tests {
         }
         let img = Image::from_vec(8, 8, data).unwrap();
         let mut f = DirectionField::new();
-        f.build_f32(&img.as_view(), SmoothKind::None, 0.0);
+        f.build(&img.as_view(), SmoothKind::None, 0.0);
 
         let a = f.mag_at(3, 3);
         let b = f.mag_at(4, 3);
@@ -686,11 +662,11 @@ mod tests {
     #[test]
     fn rebuilding_at_a_new_size_reallocates() {
         let mut f = DirectionField::new();
-        f.build_f32(&disc(32, 10.0).as_view(), SmoothKind::None, 1.0);
+        f.build(&disc(32, 10.0).as_view(), SmoothKind::None, 1.0);
         assert_eq!((f.width(), f.height()), (32, 32));
         assert_eq!(f.dir().len(), 2 * 32 * 32);
 
-        f.build_f32(&disc(16, 5.0).as_view(), SmoothKind::None, 1.0);
+        f.build(&disc(16, 5.0).as_view(), SmoothKind::None, 1.0);
         assert_eq!((f.width(), f.height()), (16, 16));
         assert_eq!(f.dir().len(), 2 * 16 * 16);
         assert_eq!(f.mag().len(), 16 * 16);

@@ -1,6 +1,6 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
-use vision_metrology::edge::edge2d::Edgel;
+use vision_metrology::Edgel;
 use vision_metrology::{
     Connectivity, ContourBuildConfig, build_graph_from_edgels, smooth_polyline,
 };
@@ -12,11 +12,8 @@ fn synthetic_edgels(width: usize, height: usize) -> Vec<Edgel> {
     for y in (16..height.saturating_sub(16)).step_by(20) {
         for x in 32..width.saturating_sub(32) {
             out.push(Edgel {
-                p: Point2f {
-                    x: x as f32,
-                    y: y as f32,
-                },
-                n: Vec2f { x: 1.0, y: 0.0 },
+                p: Point2f::new(x as f32, y as f32),
+                n: Vec2f::new(1.0, 0.0),
                 strength: 1.0,
                 idx: (x, y),
             });
@@ -27,11 +24,8 @@ fn synthetic_edgels(width: usize, height: usize) -> Vec<Edgel> {
         for y in 64..height.saturating_sub(64) {
             if y % 8 == 0 {
                 out.push(Edgel {
-                    p: Point2f {
-                        x: x as f32,
-                        y: y as f32,
-                    },
-                    n: Vec2f { x: 0.0, y: 1.0 },
+                    p: Point2f::new(x as f32, y as f32),
+                    n: Vec2f::new(0.0, 1.0),
                     strength: 0.8,
                     idx: (x, y),
                 });
@@ -69,10 +63,10 @@ fn bench_smooth_polyline(c: &mut Criterion) {
     let points: Vec<Point2f> = (0..5000)
         .map(|i| {
             let t = i as f32 * 0.02;
-            Point2f {
-                x: 640.0 + (300.0 + 5.0 * (13.0 * t).sin()) * t.cos(),
-                y: 512.0 + (300.0 + 5.0 * (13.0 * t).sin()) * t.sin(),
-            }
+            Point2f::new(
+                640.0 + (300.0 + 5.0 * (13.0 * t).sin()) * t.cos(),
+                512.0 + (300.0 + 5.0 * (13.0 * t).sin()) * t.sin(),
+            )
         })
         .collect();
 

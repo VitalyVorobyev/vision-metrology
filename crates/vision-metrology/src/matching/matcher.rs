@@ -1,7 +1,7 @@
 //! Coarse-to-fine shape search.
 
 use vm_primitives::{
-    DirectionField, ImageView, Point2f, PyramidF32, Similarity2f, Vec2f, similarity_from_parts,
+    DirectionField, ImageView, Pixel, Point2f, Pyramid, Similarity2f, Vec2f, similarity_from_parts,
     wrap_angle,
 };
 
@@ -87,14 +87,14 @@ impl MapBuffers {
 /// let mut matcher = ShapeMatcher::new();
 /// let cfg = ShapeSearchConfig { min_score: 0.6, max_matches: 4, ..Default::default() };
 ///
-/// for m in matcher.find_u8(&scene.as_view(), model, &cfg) {
+/// for m in matcher.find(&scene.as_view(), model, &cfg) {
 ///     println!("{:?} at {:.1} deg, score {:.2}", m.position, m.angle().to_degrees(), m.score);
 /// }
 /// # }
 /// ```
 #[derive(Debug, Default)]
 pub struct ShapeMatcher {
-    pyr: PyramidF32,
+    pyr: Pyramid,
     fields: Vec<DirectionField>,
     rot: Vec<RotPoint>,
     cands: Vec<Candidate>,
@@ -121,46 +121,21 @@ impl ShapeMatcher {
         self.truncated
     }
 
-    /// Find instances of `model` in a `u8` scene.
-    pub fn find_u8(
+    /// Find instances of `model` in a scene of any [`Pixel`] type.
+    ///
+    /// [`ShapeSearchConfig::min_contrast`] is expressed on the input pixel
+    /// scale, so it needs raising for 16-bit data and re-tuning for `f32`.
+    pub fn find<P: Pixel>(
         &mut self,
-        img: &ImageView<'_, u8>,
+        img: &ImageView<'_, P>,
         model: &ShapeModel,
         cfg: &ShapeSearchConfig,
     ) -> Vec<ShapeMatch> {
         #[cfg(feature = "trace-cands")]
         let t = std::time::Instant::now();
-        self.pyr.build_from_u8(img, model.num_levels());
+        self.pyr.build(img, model.num_levels());
         #[cfg(feature = "trace-cands")]
-        eprintln!(
-            "pyr build_from_u8: {:.3} ms",
-            t.elapsed().as_secs_f64() * 1e3
-        );
-        self.run(model, cfg)
-    }
-
-    /// Find instances of `model` in a `u16` scene.
-    ///
-    /// Remember that [`ShapeSearchConfig::min_contrast`] is on the input pixel
-    /// scale and needs raising for 16-bit data.
-    pub fn find_u16(
-        &mut self,
-        img: &ImageView<'_, u16>,
-        model: &ShapeModel,
-        cfg: &ShapeSearchConfig,
-    ) -> Vec<ShapeMatch> {
-        self.pyr.build_from_u16(img, model.num_levels());
-        self.run(model, cfg)
-    }
-
-    /// Find instances of `model` in an `f32` scene.
-    pub fn find_f32(
-        &mut self,
-        img: &ImageView<'_, f32>,
-        model: &ShapeModel,
-        cfg: &ShapeSearchConfig,
-    ) -> Vec<ShapeMatch> {
-        self.pyr.build_from_f32(img, model.num_levels());
+        eprintln!("pyr build: {:.3} ms", t.elapsed().as_secs_f64() * 1e3);
         self.run(model, cfg)
     }
 
@@ -383,10 +358,7 @@ impl ShapeMatcher {
                 continue;
             }
 
-            let position = Point2f {
-                x: up * pose.x + shift,
-                y: up * pose.y + shift,
-            };
+            let position = Point2f::new(up * pose.x + shift, up * pose.y + shift);
             out.push(ShapeMatch {
                 pose: pose_from(position, pose.angle, pose.scale, model.origin()),
                 position,
@@ -442,10 +414,10 @@ fn ensure_tiles_at(
 /// `Translation(position) ∘ sR ∘ Translation(−origin)`, as a similarity.
 fn pose_from(position: Point2f, angle: f32, scale: f32, origin: Point2f) -> Similarity2f {
     let (sn, cs) = wrap_angle(angle).sin_cos();
-    let t = Vec2f {
-        x: position.x - scale * (cs * origin.x - sn * origin.y),
-        y: position.y - scale * (sn * origin.x + cs * origin.y),
-    };
+    let t = Vec2f::new(
+        position.x - scale * (cs * origin.x - sn * origin.y),
+        position.y - scale * (sn * origin.x + cs * origin.y),
+    );
     similarity_from_parts(t, wrap_angle(angle), scale)
 }
 
@@ -658,8 +630,8 @@ mod tests {
 
     #[test]
     fn pose_maps_the_model_origin_onto_the_reported_position() {
-        let origin = Point2f { x: 30.0, y: -12.0 };
-        let position = Point2f { x: 640.0, y: 512.0 };
+        let origin = Point2f::new(30.0, -12.0);
+        let position = Point2f::new(640.0, 512.0);
         let pose = pose_from(position, 0.7, 1.3, origin);
         let q = pose * nalgebra::Point2::new(origin.x, origin.y);
         assert!((q.x - position.x).abs() < 1e-3, "{q}");
@@ -668,7 +640,7 @@ mod tests {
 
     #[test]
     fn pose_carries_the_requested_angle_and_scale() {
-        let pose = pose_from(Point2f { x: 5.0, y: 5.0 }, -0.4, 0.75, Point2f::default());
+        let pose = pose_from(Point2f::new(5.0, 5.0), -0.4, 0.75, Point2f::default());
         assert!((pose.isometry.rotation.angle() + 0.4).abs() < 1e-5);
         assert!((pose.scaling() - 0.75).abs() < 1e-5);
     }

@@ -13,7 +13,7 @@
 //! ```
 
 use vision_metrology::Image;
-use vision_metrology::{
+use vision_metrology::vm_primitives::morph::{
     StructuringElement, chamfer_distance_u8, dilate_binary_u8, erode_binary_u8, thin_binary_u8,
 };
 

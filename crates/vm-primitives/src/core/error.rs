@@ -4,7 +4,10 @@ use core::fmt;
 ///
 /// All public fallible functions in this workspace return `Result<T, Error>`.
 /// Internal programmer-error invariants use `assert!` or `Option` instead.
+/// Marked `#[non_exhaustive]`: matching on it must carry a `_` arm, so adding a
+/// variant is not a breaking change.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Error {
     /// Buffer or dimension mismatch between two operands.
     SizeMismatch {

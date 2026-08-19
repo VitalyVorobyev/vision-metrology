@@ -44,7 +44,7 @@ impl ShapeModel {
         let cfg = config.unwrap_or_default().to_native()?;
         let img = image_from_numpy_u8(py, &image)?;
         let inner = ShapeModelBuilder::new()
-            .build_u8(&img.as_view(), to_rect(roi), &cfg)
+            .build(&img.as_view(), to_rect(roi), &cfg)
             .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
         Ok(Self { inner })
     }
@@ -139,7 +139,7 @@ impl ShapeMatcher {
     ) -> PyResult<Bound<'py, PyList>> {
         let native = self.cfg.to_native()?;
         let img = image_from_numpy_u8(py, &image)?;
-        let out = self.matcher.find_u8(&img.as_view(), &model.inner, &native);
+        let out = self.matcher.find(&img.as_view(), &model.inner, &native);
         PyList::new(py, out.into_iter().map(ShapeMatch::from))
     }
 

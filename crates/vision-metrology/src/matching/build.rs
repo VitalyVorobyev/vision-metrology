@@ -1,8 +1,8 @@
 //! Shape model creation, from a reference image or from geometry alone.
 
 use vm_primitives::{
-    Edge2DDetector, Edgel, Error, ImageView, Point2f, Polyline2f, PyramidF32, Rect2f, SmoothKind,
-    Vec2f,
+    Edge2DDetector, Edgel, Error, ImageView, Pixel, Point2f, Polyline2f, Pyramid, Rect2f,
+    SmoothKind, Vec2f, Vec2fExt,
 };
 
 use super::config::ShapeModelConfig;
@@ -80,14 +80,14 @@ fn to_level(v: f32, level: usize) -> f32 {
 /// let roi = Rect2f { x: 220.0, y: 160.0, width: 200.0, height: 160.0 };
 ///
 /// let mut builder = ShapeModelBuilder::new();
-/// let model = builder.build_u8(&img.as_view(), roi, &ShapeModelConfig::default())?;
+/// let model = builder.build(&img.as_view(), roi, &ShapeModelConfig::default())?;
 /// println!("{} levels, {} points at level 0", model.num_levels(), model.point_count(0));
 /// # Ok(())
 /// # }
 /// ```
 #[derive(Debug, Default)]
 pub struct ShapeModelBuilder {
-    pyr: PyramidF32,
+    pyr: Pyramid,
     det: Edge2DDetector,
 }
 
@@ -95,59 +95,32 @@ impl ShapeModelBuilder {
     /// Create a builder with empty scratch buffers.
     pub fn new() -> Self {
         Self {
-            pyr: PyramidF32::new(),
+            pyr: Pyramid::new(),
             det: Edge2DDetector::new(),
         }
     }
 
-    /// Build a model from a `u8` reference image and a rectangular ROI.
+    /// Build a model from a reference image of any [`Pixel`] type and a
+    /// rectangular ROI.
+    ///
+    /// The ROI's own pyramid is what the model points are detected on — see
+    /// system-design invariant 3: model and scene must suffer identical
+    /// box-downsample aliasing.
     ///
     /// # Errors
     /// - [`Error::InvalidConfig`] for a non-positive ROI, a reversed or
     ///   non-positive `scale_range`, or a reversed `angle_range`.
     /// - [`Error::OutOfBounds`] when the ROI does not lie inside the image.
     /// - [`Error::InsufficientData`] when too few edge points survive.
-    pub fn build_u8(
+    pub fn build<P: Pixel>(
         &mut self,
-        img: &ImageView<'_, u8>,
+        img: &ImageView<'_, P>,
         roi: Rect2f,
         cfg: &ShapeModelConfig,
     ) -> Result<ShapeModel, Error> {
         let crop = validate(img.width(), img.height(), roi, cfg)?;
         let sub = img.subview(crop.x0, crop.y0, crop.w, crop.h)?;
-        self.pyr.build_from_u8(&sub, crop.levels);
-        self.finish(crop, roi, cfg)
-    }
-
-    /// Build a model from a `u16` reference image. See [`build_u8`](Self::build_u8).
-    ///
-    /// # Errors
-    /// Same as [`build_u8`](Self::build_u8).
-    pub fn build_u16(
-        &mut self,
-        img: &ImageView<'_, u16>,
-        roi: Rect2f,
-        cfg: &ShapeModelConfig,
-    ) -> Result<ShapeModel, Error> {
-        let crop = validate(img.width(), img.height(), roi, cfg)?;
-        let sub = img.subview(crop.x0, crop.y0, crop.w, crop.h)?;
-        self.pyr.build_from_u16(&sub, crop.levels);
-        self.finish(crop, roi, cfg)
-    }
-
-    /// Build a model from an `f32` reference image. See [`build_u8`](Self::build_u8).
-    ///
-    /// # Errors
-    /// Same as [`build_u8`](Self::build_u8).
-    pub fn build_f32(
-        &mut self,
-        img: &ImageView<'_, f32>,
-        roi: Rect2f,
-        cfg: &ShapeModelConfig,
-    ) -> Result<ShapeModel, Error> {
-        let crop = validate(img.width(), img.height(), roi, cfg)?;
-        let sub = img.subview(crop.x0, crop.y0, crop.w, crop.h)?;
-        self.pyr.build_from_f32(&sub, crop.levels);
+        self.pyr.build(&sub, crop.levels);
         self.finish(crop, roi, cfg)
     }
 
@@ -163,7 +136,7 @@ impl ShapeModelBuilder {
         for level in 0..built {
             let img = self.pyr.level(level).expect("level < num_levels");
             let (lw, lh) = (img.width(), img.height());
-            let edgels = self.det.detect_f32(&img.as_view(), &cfg.edge);
+            let edgels = self.det.detect(&img.as_view(), &cfg.edge);
 
             // Sub-image level-l coordinates translate to full-image level-l
             // coordinates by a pure shift, because the crop origin was aligned
@@ -193,10 +166,7 @@ impl ShapeModelBuilder {
                 {
                     continue;
                 }
-                let p = Point2f {
-                    x: e.p.x + shift.0,
-                    y: e.p.y + shift.1,
-                };
+                let p = Point2f::new(e.p.x + shift.0, e.p.y + shift.1);
                 if !roi_l.contains(p) {
                     continue;
                 }
@@ -223,40 +193,19 @@ impl ShapeModelBuilder {
     }
 }
 
-/// One-shot [`ShapeModelBuilder::build_u8`] for callers that build one model.
+/// One-shot [`ShapeModelBuilder::build`] for callers that build a single model.
+///
+/// Reuse a [`ShapeModelBuilder`] instead when building several — it keeps its
+/// pyramid and edge-detector scratch between calls.
 ///
 /// # Errors
-/// Same as [`ShapeModelBuilder::build_u8`].
-pub fn create_shape_model_u8(
-    img: &ImageView<'_, u8>,
+/// Same as [`ShapeModelBuilder::build`].
+pub fn create_shape_model<P: Pixel>(
+    img: &ImageView<'_, P>,
     roi: Rect2f,
     cfg: &ShapeModelConfig,
 ) -> Result<ShapeModel, Error> {
-    ShapeModelBuilder::new().build_u8(img, roi, cfg)
-}
-
-/// One-shot [`ShapeModelBuilder::build_u16`].
-///
-/// # Errors
-/// Same as [`ShapeModelBuilder::build_u16`].
-pub fn create_shape_model_u16(
-    img: &ImageView<'_, u16>,
-    roi: Rect2f,
-    cfg: &ShapeModelConfig,
-) -> Result<ShapeModel, Error> {
-    ShapeModelBuilder::new().build_u16(img, roi, cfg)
-}
-
-/// One-shot [`ShapeModelBuilder::build_f32`].
-///
-/// # Errors
-/// Same as [`ShapeModelBuilder::build_f32`].
-pub fn create_shape_model_f32(
-    img: &ImageView<'_, f32>,
-    roi: Rect2f,
-    cfg: &ShapeModelConfig,
-) -> Result<ShapeModel, Error> {
-    ShapeModelBuilder::new().build_f32(img, roi, cfg)
+    ShapeModelBuilder::new().build(img, roi, cfg)
 }
 
 impl ShapeModel {
@@ -304,7 +253,7 @@ impl ShapeModel {
             .iter()
             .zip(dirs)
             .filter_map(|(&p, &d)| {
-                let t = d.normalize();
+                let t = d.normalized_or_zero();
                 (t.norm() > 0.5).then_some(RawPoint {
                     p,
                     t,
@@ -318,7 +267,7 @@ impl ShapeModel {
     /// Build a model from contour polylines.
     ///
     /// Tangents come from the same symmetric finite difference
-    /// [`GraphEdge::compute_geometry`](crate::contour::GraphEdge) uses, and the
+    /// `contour::GraphEdge::compute_geometry` uses, and the
     /// normal is the tangent rotated by 90°, with the sign fixed by the signed
     /// area of the polyline.
     ///
@@ -365,7 +314,7 @@ impl ShapeModel {
             for i in 0..p.len() {
                 let prev = p[(i + p.len() - 1) % p.len()];
                 let next = p[(i + 1) % p.len()];
-                let t = (next - prev).normalize();
+                let t = (next - prev).normalized_or_zero();
                 if t.norm() < 0.5 {
                     continue;
                 }
@@ -457,10 +406,7 @@ fn centroid(pts: &[RawPoint]) -> Option<Point2f> {
     let (sx, sy) = pts
         .iter()
         .fold((0.0f32, 0.0f32), |(ax, ay), p| (ax + p.p.x, ay + p.p.y));
-    Some(Point2f {
-        x: sx / n,
-        y: sy / n,
-    })
+    Some(Point2f::new(sx / n, sy / n))
 }
 
 /// Build a model from a single level-0 point set by decimating it per level.
@@ -490,10 +436,7 @@ fn from_raw(pts: Vec<RawPoint>, cfg: &ShapeModelConfig) -> Result<ShapeModel, Er
         let at_level: Vec<RawPoint> = pts
             .iter()
             .map(|r| RawPoint {
-                p: Point2f {
-                    x: to_level(r.p.x, level),
-                    y: to_level(r.p.y, level),
-                },
+                p: Point2f::new(to_level(r.p.x, level), to_level(r.p.y, level)),
                 t: r.t,
                 strength: r.strength,
             })
@@ -519,10 +462,7 @@ fn assemble(
     let mut levels: Vec<ShapeModelLevel> = Vec::with_capacity(raw.len());
 
     for (level, pts) in raw.into_iter().enumerate() {
-        let ref_l = Point2f {
-            x: to_level(origin.x, level),
-            y: to_level(origin.y, level),
-        };
+        let ref_l = Point2f::new(to_level(origin.x, level), to_level(origin.y, level));
         let kept = if cfg.max_points == 0 || pts.len() <= cfg.max_points {
             pts
         } else {
@@ -649,7 +589,7 @@ fn merge_into_cells(pts: &[RawPoint], cell: f32) -> Vec<RawPoint> {
         let cx = (((p.p.x - x0) / cell).floor() as usize).min(nx - 1);
         let cy = (((p.p.y - y0) / cell).floor() as usize).min(ny - 1);
         let c = cy * nx + cx;
-        acc[c] = acc[c] + p.t;
+        acc[c] += p.t;
         count[c] += 1;
         let b = best[c];
         if b < 0 {
@@ -672,7 +612,7 @@ fn merge_into_cells(pts: &[RawPoint], cell: f32) -> Vec<RawPoint> {
         if agreement < MIN_MEAN_DIR {
             continue;
         }
-        let t = acc[c].normalize();
+        let t = acc[c].normalized_or_zero();
         if t.norm() < 0.5 {
             continue;
         }

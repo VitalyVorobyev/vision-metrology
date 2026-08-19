@@ -1,7 +1,7 @@
 /// Border replication strategy used when sampling outside image bounds.
 ///
 /// Applies to both 1-D convolution helpers and 2-D sampling functions.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BorderMode<T> {
     /// Replicate the nearest edge pixel for out-of-bounds coordinates.
     Clamp,

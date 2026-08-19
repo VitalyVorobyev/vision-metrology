@@ -12,7 +12,7 @@ re-exports this crate in full alongside the high-level algorithms.
 | Module | Content |
 |---|---|
 | `core` | `Image` / `ImageView` / `ImageViewMut`, nearest and bilinear sampling, `BorderMode`, `Point2f` / `Vec2f` / `Rect2f` / `Angle`, nalgebra type aliases (`Isometry2f`, `Similarity2f`, `Affine2f`, `Projective2f`), and the shared `Error` type |
-| `pyr` | `PyramidF32` — 2×2 mean downsample, drop-odd policy, buffers reused across calls |
+| `pyr` | `Pyramid` — 2×2 mean downsample generic over pixel type, drop-odd policy, optional binomial pre-smooth, buffers reused across calls |
 | `edge` | `Edge1DDetector` (DoG), `Edge2DDetector` (Scharr + NMS + hysteresis) producing subpixel `Edgel`s with unit gradient normals, `GradientBuffers`, and opposite-polarity `EdgePair1D` for laser stripes |
 | `morph` | Erode / dilate / open / close over a parameterized `StructuringElement`, Borgefors 3-4-5 chamfer distance, Zhang–Suen thinning |
 
@@ -37,7 +37,7 @@ let data: Vec<u8> = (0..64 * 64).map(|i| if i % 64 >= 32 { 200 } else { 0 }).col
 let img = Image::from_vec(64, 64, data).expect("valid image");
 
 let mut det = Edge2DDetector::new();
-let edgels = det.detect_u8(&img.as_view(), &Edge2DConfig::default());
+let edgels = det.detect(&img.as_view(), &Edge2DConfig::default());
 assert!(edgels.iter().all(|e| (e.p.x - 31.5).abs() < 1.0));
 ```
 

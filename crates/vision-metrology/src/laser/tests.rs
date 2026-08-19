@@ -90,7 +90,7 @@ fn rows_mode_basic() {
     };
 
     let line = ext
-        .extract_line_u8(&img.as_view(), 0..h, &cfg, None)
+        .extract_line(&img.as_view(), 0..h, &cfg, None)
         .expect("valid extractor arguments");
 
     let exp_c = 0.5 * (x_l + x_r);
@@ -141,7 +141,7 @@ fn cols_mode_basic_gather() {
     };
 
     let line = ext
-        .extract_line_u8(&img.as_view(), 0..w, &cfg, None)
+        .extract_line(&img.as_view(), 0..w, &cfg, None)
         .expect("valid extractor arguments");
 
     let exp_c = 0.5 * (y_l + y_r);
@@ -199,7 +199,7 @@ fn sloped_gaps_reflections_rows_and_cols() {
         ..LaserExtractConfig::default()
     };
     let line_r = ext
-        .extract_line_u8(&img_r.as_view(), 0..h, &cfg_rows, None)
+        .extract_line(&img_r.as_view(), 0..h, &cfg_rows, None)
         .expect("valid extractor arguments");
 
     let gap_valid = line_r.samples[28..=34].iter().filter(|s| s.valid).count();
@@ -256,7 +256,7 @@ fn sloped_gaps_reflections_rows_and_cols() {
         ..LaserExtractConfig::default()
     };
     let line_c = ext
-        .extract_line_u8(&img_c.as_view(), 0..w, &cfg_cols, None)
+        .extract_line(&img_c.as_view(), 0..w, &cfg_cols, None)
         .expect("valid extractor arguments");
 
     let gap_valid_c = line_c.samples[22..=28].iter().filter(|s| s.valid).count();
@@ -292,7 +292,7 @@ fn cols_transposed_matches_gather() {
         ..LaserExtractConfig::default()
     };
     let out_g = ext
-        .extract_line_u8(&img.as_view(), 0..w, &cfg_g, None)
+        .extract_line(&img.as_view(), 0..w, &cfg_g, None)
         .expect("valid extractor arguments");
 
     let cfg_t = LaserExtractConfig {
@@ -302,7 +302,7 @@ fn cols_transposed_matches_gather() {
         ..LaserExtractConfig::default()
     };
     let out_t = ext
-        .extract_line_u8(&img.as_view(), 0..w, &cfg_t, Some(&img_t.as_view()))
+        .extract_line(&img.as_view(), 0..w, &cfg_t, Some(&img_t.as_view()))
         .expect("valid extractor arguments");
 
     assert_eq!(out_g.samples.len(), out_t.samples.len());
@@ -327,7 +327,7 @@ fn transposed_access_without_a_transposed_image_is_an_error() {
         ..Default::default()
     };
     assert!(matches!(
-        ext.extract_line_u8(&img.as_view(), 0..8, &cfg, None),
+        ext.extract_line(&img.as_view(), 0..8, &cfg, None),
         Err(Error::InvalidConfig(_))
     ));
 }
@@ -345,7 +345,7 @@ fn transposed_image_with_wrong_dimensions_is_an_error() {
         ..Default::default()
     };
     assert!(matches!(
-        ext.extract_line_u8(&img.as_view(), 0..8, &cfg, Some(&bad.as_view())),
+        ext.extract_line(&img.as_view(), 0..8, &cfg, Some(&bad.as_view())),
         Err(Error::InvalidConfig(_))
     ));
 }
@@ -400,13 +400,13 @@ fn u16_and_f32_paths_agree_with_u8() {
     };
     let mut ext = LaserExtractor::new(1.2);
     let a = ext
-        .extract_line_u8(&img_u8.as_view(), 0..h, &cfg, None)
+        .extract_line(&img_u8.as_view(), 0..h, &cfg, None)
         .expect("valid extractor arguments");
     let b = ext
-        .extract_line_u16(&img_u16.as_view(), 0..h, &cfg, None)
+        .extract_line(&img_u16.as_view(), 0..h, &cfg, None)
         .expect("valid extractor arguments");
     let c = ext
-        .extract_line_f32(&img_f32.as_view(), 0..h, &cfg, None)
+        .extract_line(&img_f32.as_view(), 0..h, &cfg, None)
         .expect("valid extractor arguments");
 
     assert_eq!(a.samples.len(), h);
@@ -474,7 +474,7 @@ fn u16_transposed_access_matches_gather() {
 
     let mut ext = LaserExtractor::new(1.2);
     let gather = ext
-        .extract_line_u16(
+        .extract_line(
             &img.as_view(),
             0..w,
             &LaserExtractConfig {
@@ -487,7 +487,7 @@ fn u16_transposed_access_matches_gather() {
         )
         .expect("valid extractor arguments");
     let transposed = ext
-        .extract_line_u16(
+        .extract_line(
             &img.as_view(),
             0..w,
             &LaserExtractConfig {

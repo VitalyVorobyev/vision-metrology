@@ -1,4 +1,5 @@
-//! Algebraic conic types: [`Conic2f`] and conversion to [`Ellipse2f`].
+//! Geometric primitives: [`Circle2f`], [`Ellipse2f`] and the algebraic
+//! [`Conic2f`] they convert through.
 //!
 //! A conic is represented by the general equation
 //!
@@ -16,7 +17,7 @@
 //! ratios; scale invariance is maintained by the fitting constraint (Bookstein
 //! or Fitzgibbon) applied during fitting.
 
-use vm_primitives::{Error, Point2f, Vec2f};
+use super::{Error, Point2f, Vec2f};
 
 // ---------------------------------------------------------------------------
 // Conic2f
@@ -92,6 +93,54 @@ impl Conic2f {
 }
 
 // ---------------------------------------------------------------------------
+// Circle2f
+// ---------------------------------------------------------------------------
+
+/// A circle in pixel coordinates.
+///
+/// The most-measured primitive in industrial metrology — hole diameters, boss
+/// positions, rim fits — and one this crate had no type for until now.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Circle2f {
+    /// Centre in pixel coordinates.
+    pub center: Point2f,
+    /// Radius in pixels.
+    pub radius: f32,
+}
+
+impl Circle2f {
+    /// Point on the circle at parameter `t` radians.
+    #[inline]
+    pub fn point_at(&self, t: f32) -> Point2f {
+        Point2f::new(
+            self.center.x + self.radius * t.cos(),
+            self.center.y + self.radius * t.sin(),
+        )
+    }
+
+    /// Signed distance from `p` to the circle: positive outside, negative inside.
+    ///
+    /// This is the residual a geometric (orthogonal-distance) fit minimises, so
+    /// it is what such a fit's `rms` is computed from.
+    #[inline]
+    pub fn signed_distance(&self, p: Point2f) -> f32 {
+        (p - self.center).norm() - self.radius
+    }
+
+    /// Circumference `2πr`.
+    #[inline]
+    pub fn circumference(&self) -> f32 {
+        2.0 * core::f32::consts::PI * self.radius
+    }
+
+    /// Area `πr²`.
+    #[inline]
+    pub fn area(&self) -> f32 {
+        core::f32::consts::PI * self.radius * self.radius
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Ellipse2f
 // ---------------------------------------------------------------------------
 
@@ -135,10 +184,10 @@ impl Ellipse2f {
         let (ca, sa) = (self.angle.cos(), self.angle.sin());
         let a = self.semi_major();
         let b = self.semi_minor();
-        Point2f {
-            x: self.center.x + a * ct * ca - b * st * sa,
-            y: self.center.y + a * ct * sa + b * st * ca,
-        }
+        Point2f::new(
+            self.center.x + a * ct * ca - b * st * sa,
+            self.center.y + a * ct * sa + b * st * ca,
+        )
     }
 
     /// Returns `true` when `p` is within `tol` pixels of the ellipse boundary.
@@ -266,14 +315,8 @@ impl Ellipse2f {
         let angle = f64::atan2(vy, vx) as f32;
 
         Ok(Ellipse2f {
-            center: Point2f {
-                x: cx as f32,
-                y: cy as f32,
-            },
-            semi_axes: Vec2f {
-                x: semi_major as f32,
-                y: semi_minor as f32,
-            },
+            center: Point2f::new(cx as f32, cy as f32),
+            semi_axes: Vec2f::new(semi_major as f32, semi_minor as f32),
             angle,
         })
     }
@@ -290,8 +333,8 @@ mod tests {
 
     fn make_circle(cx: f32, cy: f32, r: f32) -> Ellipse2f {
         Ellipse2f {
-            center: Point2f { x: cx, y: cy },
-            semi_axes: Vec2f { x: r, y: r },
+            center: Point2f::new(cx, cy),
+            semi_axes: Vec2f::new(r, r),
             angle: 0.0,
         }
     }
@@ -317,8 +360,8 @@ mod tests {
     fn ellipse_roundtrip_rotated() {
         // An ellipse with semi-axes (20, 8), rotated 30°, centred at (50, 40).
         let ell = Ellipse2f {
-            center: Point2f { x: 50.0, y: 40.0 },
-            semi_axes: Vec2f { x: 20.0, y: 8.0 },
+            center: Point2f::new(50.0, 40.0),
+            semi_axes: Vec2f::new(20.0, 8.0),
             angle: PI / 6.0,
         };
         let conic = ell.to_conic().expect("to_conic");
@@ -343,8 +386,8 @@ mod tests {
     fn conic_eval_on_ellipse_boundary() {
         // Points exactly on the ellipse boundary should evaluate to near zero.
         let ell = Ellipse2f {
-            center: Point2f { x: 10.0, y: 10.0 },
-            semi_axes: Vec2f { x: 5.0, y: 3.0 },
+            center: Point2f::new(10.0, 10.0),
+            semi_axes: Vec2f::new(5.0, 3.0),
             angle: 0.0,
         };
         let conic = ell.to_conic().expect("to_conic");
@@ -372,8 +415,8 @@ mod tests {
     #[test]
     fn ellipse_contains_boundary_points() {
         let ell = Ellipse2f {
-            center: Point2f { x: 0.0, y: 0.0 },
-            semi_axes: Vec2f { x: 8.0, y: 4.0 },
+            center: Point2f::new(0.0, 0.0),
+            semi_axes: Vec2f::new(8.0, 4.0),
             angle: 0.0,
         };
         // Points on the boundary (t = 0, π/2, π, 3π/2) should be within 0.5 px.
@@ -386,6 +429,6 @@ mod tests {
             );
         }
         // A point far away should not be contained.
-        assert!(!ell.contains(Point2f { x: 100.0, y: 100.0 }, 0.5));
+        assert!(!ell.contains(Point2f::new(100.0, 100.0), 0.5));
     }
 }

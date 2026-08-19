@@ -31,19 +31,16 @@ use vision_metrology::{Image, Point2f, Rect2f};
 /// of the (unrotated-size) placement rectangle, so:
 /// `top_left = center − (tw/2 − 0.5, th/2 − 0.5)` in pixel-centre coordinates.
 pub fn center_to_corr_topleft(center: Point2f, tw: usize, th: usize) -> Point2f {
-    Point2f {
-        x: center.x - 0.5 * (tw as f32 - 1.0),
-        y: center.y - 0.5 * (th as f32 - 1.0),
-    }
+    Point2f::new(
+        center.x - 0.5 * (tw as f32 - 1.0),
+        center.y - 0.5 * (th as f32 - 1.0),
+    )
 }
 
 /// Inverse of [`center_to_corr_topleft`]: corrmatch `Match{x, y}` → the scene
 /// position of the template centre.
 pub fn corr_to_center(x: f32, y: f32, tw: usize, th: usize) -> Point2f {
-    Point2f {
-        x: x + 0.5 * (tw as f32 - 1.0),
-        y: y + 0.5 * (th as f32 - 1.0),
-    }
+    Point2f::new(x + 0.5 * (tw as f32 - 1.0), y + 0.5 * (th as f32 - 1.0))
 }
 
 /// Extract the reference ROI as an owned patch (u8, row-major).
@@ -85,10 +82,10 @@ pub fn zncc_at_pose(
     // The rotated raster keeps the template dimensions; its centre stays the
     // template centre, so the placement is centre-anchored.
     let (pw, ph) = (rotated.width(), rotated.height());
-    let top_left = Point2f {
-        x: roi_center_in_scene.x - 0.5 * (pw as f32 - 1.0),
-        y: roi_center_in_scene.y - 0.5 * (ph as f32 - 1.0),
-    };
+    let top_left = Point2f::new(
+        roi_center_in_scene.x - 0.5 * (pw as f32 - 1.0),
+        roi_center_in_scene.y - 0.5 * (ph as f32 - 1.0),
+    );
     let x = top_left.x.round();
     let y = top_left.y.round();
     if x < 0.0 || y < 0.0 {

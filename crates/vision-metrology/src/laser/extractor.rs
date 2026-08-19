@@ -2,19 +2,11 @@
 
 use std::ops::Range;
 
-use vm_primitives::{Edge1DDetector, Error, ImageView};
+use vm_primitives::{Edge1DDetector, Error, ImageView, Pixel};
 
 use super::postprocess::{build_points, smooth_valid_centers};
-use super::scan::{ScanPixel, extract_cols_gather_samples, extract_rows_samples};
+use super::scan::{extract_cols_gather_samples, extract_rows_samples};
 use super::types::{ColAccess, LaserExtractConfig, LaserLine, ScanAxis};
-
-/// Reusable gather scratch, one buffer per supported pixel type.
-#[derive(Debug, Clone, Default)]
-pub(super) struct ColBufs {
-    pub(super) u8: Vec<u8>,
-    pub(super) u16: Vec<u16>,
-    pub(super) f32: Vec<f32>,
-}
 
 /// Reusable laser stripe extractor.
 ///
@@ -24,7 +16,6 @@ pub(super) struct ColBufs {
 #[derive(Debug, Clone)]
 pub struct LaserExtractor {
     detector: Edge1DDetector,
-    bufs: ColBufs,
 }
 
 /// Resolve the transposed view that [`ColAccess::Transposed`] requires.
@@ -52,7 +43,6 @@ impl LaserExtractor {
     pub fn new(sigma: f32) -> Self {
         Self {
             detector: Edge1DDetector::new(sigma),
-            bufs: ColBufs::default(),
         }
     }
 
@@ -61,7 +51,8 @@ impl LaserExtractor {
         self.detector.set_sigma(sigma);
     }
 
-    /// Extract a laser stripe from a `u8` image over `scan_range` rows or columns.
+    /// Extract a laser stripe over `scan_range` rows or columns, from an image
+    /// of any [`Pixel`] type.
     ///
     /// Pass `transposed` when using `ColAccess::Transposed` (the transposed
     /// image must have dimensions swapped relative to `img`).
@@ -70,61 +61,19 @@ impl LaserExtractor {
     /// Returns [`Error::InvalidConfig`] when `cfg.axis` selects
     /// `ColAccess::Transposed` but `transposed` is `None`, or when the supplied
     /// view is not the transpose of `img`. All other axis modes never fail.
-    pub fn extract_line_u8(
+    pub fn extract_line<P: Pixel>(
         &mut self,
-        img: &ImageView<'_, u8>,
+        img: &ImageView<'_, P>,
         scan_range: Range<usize>,
         cfg: &LaserExtractConfig,
-        transposed: Option<&ImageView<'_, u8>>,
-    ) -> Result<LaserLine, Error> {
-        self.extract_line(img, scan_range, cfg, transposed)
-    }
-
-    /// Extract a laser stripe from a `u16` image over `scan_range` rows or columns.
-    ///
-    /// See [`extract_line_u8`][Self::extract_line_u8] for parameter details.
-    pub fn extract_line_u16(
-        &mut self,
-        img: &ImageView<'_, u16>,
-        scan_range: Range<usize>,
-        cfg: &LaserExtractConfig,
-        transposed: Option<&ImageView<'_, u16>>,
-    ) -> Result<LaserLine, Error> {
-        self.extract_line(img, scan_range, cfg, transposed)
-    }
-
-    /// Extract a laser stripe from an `f32` image over `scan_range` rows or columns.
-    ///
-    /// See [`extract_line_u8`][Self::extract_line_u8] for parameter details.
-    pub fn extract_line_f32(
-        &mut self,
-        img: &ImageView<'_, f32>,
-        scan_range: Range<usize>,
-        cfg: &LaserExtractConfig,
-        transposed: Option<&ImageView<'_, f32>>,
-    ) -> Result<LaserLine, Error> {
-        self.extract_line(img, scan_range, cfg, transposed)
-    }
-
-    fn extract_line<T: ScanPixel>(
-        &mut self,
-        img: &ImageView<'_, T>,
-        scan_range: Range<usize>,
-        cfg: &LaserExtractConfig,
-        transposed: Option<&ImageView<'_, T>>,
+        transposed: Option<&ImageView<'_, P>>,
     ) -> Result<LaserLine, Error> {
         self.detector.set_sigma(cfg.edge_cfg.sigma);
         let mut samples = match cfg.axis {
             ScanAxis::Rows => extract_rows_samples(&mut self.detector, img, scan_range, cfg),
             ScanAxis::Cols {
                 access: ColAccess::Gather,
-            } => extract_cols_gather_samples(
-                &mut self.detector,
-                &mut self.bufs,
-                img,
-                scan_range,
-                cfg,
-            ),
+            } => extract_cols_gather_samples(&mut self.detector, img, scan_range, cfg),
             ScanAxis::Cols {
                 access: ColAccess::Transposed,
             } => {

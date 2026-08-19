@@ -30,7 +30,7 @@ fn bench_edge1d(c: &mut Criterion) {
 
     c.bench_function("edge1d_detect_u8_row1280", |b| {
         b.iter(|| {
-            let peaks = det.detect_in_u8_ref(black_box(&row), black_box(&cfg));
+            let peaks = det.detect_in_ref(black_box(&row), black_box(&cfg));
             black_box(peaks.len());
         });
     });

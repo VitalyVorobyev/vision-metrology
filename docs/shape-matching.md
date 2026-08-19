@@ -146,7 +146,7 @@ With the `serde` feature, a model built offline ships to the machine as a
 versioned JSON document:
 
 ```rust
-let json = model.to_json()?;              // {"format_version":1,"model":{...}}
+let json = model.to_json()?;              // {"format_version":2,"model":{...}}
 let model = ShapeModel::from_json(&json)?; // refuses unknown versions
 ```
 

@@ -76,14 +76,48 @@ pub struct Ellipse {
     pub b: f32,
     /// Rotation angle of the major axis in radians.
     pub angle: f32,
+    /// RMS orthogonal deviation of the fitted points, in pixels.
+    pub rms: f32,
+    /// Largest orthogonal deviation, in pixels. Read this for form tolerance.
+    pub max_dev: f32,
+    /// How many input points the fit used.
+    pub n_used: usize,
+}
+
+/// A fitted circle with the residual statistics that qualify it.
+#[pyclass(get_all, skip_from_py_object)]
+#[derive(Debug, Clone, Copy)]
+pub struct Circle {
+    /// X coordinate of the centre (pixel-centre convention).
+    pub cx: f32,
+    /// Y coordinate of the centre.
+    pub cy: f32,
+    /// Radius in pixels.
+    pub r: f32,
+    /// RMS radial deviation of the fitted points, in pixels.
+    pub rms: f32,
+    /// Largest radial deviation, in pixels. Read this for roundness.
+    pub max_dev: f32,
+    /// How many input points the fit used.
+    pub n_used: usize,
+}
+
+#[pymethods]
+impl Circle {
+    fn __repr__(&self) -> String {
+        format!(
+            "Circle(cx={:.3}, cy={:.3}, r={:.3}, rms={:.4}, max_dev={:.4}, n_used={})",
+            self.cx, self.cy, self.r, self.rms, self.max_dev, self.n_used
+        )
+    }
 }
 
 #[pymethods]
 impl Ellipse {
     fn __repr__(&self) -> String {
         format!(
-            "Ellipse(cx={:.2}, cy={:.2}, a={:.2}, b={:.2}, angle={:.4})",
-            self.cx, self.cy, self.a, self.b, self.angle
+            "Ellipse(cx={:.3}, cy={:.3}, a={:.3}, b={:.3}, angle={:.4}, rms={:.4}, max_dev={:.4}, n_used={})",
+            self.cx, self.cy, self.a, self.b, self.angle, self.rms, self.max_dev, self.n_used
         )
     }
 }

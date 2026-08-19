@@ -37,16 +37,37 @@ agent) can pick it up cold. When an item is scheduled it moves into
 
 ## Code health
 
-- **File-size offenders** (soft cap ~600 lines, see system-design invariant 14):
-  `contour/build.rs` (1103), `shape/lsd.rs` (983), `vm-primitives/edge/edge2d.rs` (858),
-  `vision-metrology/matching/build.rs` (737), `vm-python/config_py.rs` (588). Split
-  opportunistically when a track touches them; `laser/extractor.rs` is handled by Track 1.
+- **File-size offenders.** Invariant 14 counts *code* lines (tests excluded), so measure
+  that way, not by raw total. Over the cap today: `contour/build.rs` (802 code / 1175 total),
+  `shape/lsd.rs` (757 / 983), `matching/build.rs` (737 / 737), `matching/matcher.rs`
+  (653 / 692). Under it despite a large total: `edge/edge2d.rs` (578 / 859),
+  `edge/gradient.rs` (527 / 783), `matching/score.rs` (423 / 683). Split opportunistically
+  when a track touches them.
 - **`Edge2DDetector` should consume `DirectionField`** and delete its private
-  `compute_scharr` — the Scharr kernel exists twice (three times counting LSD). Pure
-  refactor, no behavior change; verify with the existing edge2d tests + bench.
-- **miri job** for the unsafe gather paths in `laser/` (all workspace unsafe lives there).
-  Slow — scope it to `cargo miri test -p vision-metrology laser::` on a weekly schedule
-  next to the audit workflow, not on every PR.
+  `compute_scharr` — the Scharr kernel still exists twice (`edge2d.rs` and `gradient.rs`).
+  LSD's third copy of the *downsample* is gone (it uses `pyr` now), but it still has its own
+  Scharr. Pure refactor, no behavior change; verify with the existing edge2d tests + bench.
+- **miri job** for the unsafe paths. `unsafe` is *not* confined to `laser/` — it lives in
+  `vm-primitives/core/image.rs` (the `get_unchecked` family), `core/sample.rs`,
+  `pyr/downsample.rs` (the contiguous-even kernels) and `edge/conv1d.rs`, with
+  `laser/gather.rs` holding the fewest blocks. Scope a weekly job to
+  `cargo miri test -p vm-primitives` plus `-p vision-metrology laser::`, next to the audit
+  workflow, not on every PR.
+
+## Measurement
+
+- **Background-padding gate for calipers.** The `rtvt-pano` caliper additionally requires
+  clean background for a few px beyond each edge and rejects rays that leave the image,
+  which is what makes it robust to FOV truncation. Here that needs a mask or a region type
+  to check against, so it waits on the `segment` rework. `RejectReason::OffImage` covers the
+  leaving-the-image half already.
+- **Two-pass centreline refinement.** Also from `rtvt-pano`: refine caliper centres from a
+  rough polyline, then re-measure from the refined one so tangents stay continuous. That is
+  a property of a tracked contour, not of a caliper — it belongs in a bead/stripe tool built
+  on `measure`, whenever one exists.
+- **`MeasureArc` obliquity** is checked against the arc *tangent*, which is right for
+  features crossing the arc. A future "measure the arc's own edge" mode would want the
+  radial direction instead.
 
 ## Testing
 
@@ -56,8 +77,10 @@ agent) can pick it up cold. When an item is scheduled it moves into
   is a band-aid; the real fix is an optional binomial pre-smooth on the pyramid. The comb
   fixture test (`r3_fine_toothed_model_survives_the_pyramid`) pins the current behavior —
   an 8 px tooth pitch survives today because the auto level count stops where coarse
-  points destabilize. The pyramid pre-smooth remains unscheduled; a part with even finer
-  teeth than the fixture may still need it.
+  points destabilize. **Half done:** `PreSmooth::Binomial121` now exists on `Pyramid` and is
+  the LSD default. What remains is wiring it into `ShapeModel`: invariant 3 means the model
+  and the scene must share the kernel, so the choice has to be stored in the model and the
+  serialization format version bumped.
 - **Laser extractor u16/f32 depth**: after the Track 1 split, the generic scan loop makes
   it cheap to run the full test matrix over all three pixel types — today u16/f32 have one
   cross-check test each.

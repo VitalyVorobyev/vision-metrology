@@ -5,9 +5,8 @@ use pyo3::prelude::*;
 use pyo3::types::PyList;
 use pyo3::wrap_pyfunction;
 
-use crate::config_py::{ConicFitConfig, EdgeConfig, LsdConfig, MultiScaleConfig};
+use crate::config_py::{EdgeConfig, FitConfig, LsdConfig};
 use crate::detector::detect_edges_u8_impl;
-use crate::multiscale::detect_multiscale_edges_u8_impl;
 use crate::segment::{
     component_stats_impl, label_components_impl, otsu_threshold_impl, threshold_binary_impl,
 };
@@ -23,15 +22,6 @@ pub fn detect_edges_u8<'py>(
 }
 
 #[pyfunction]
-pub fn detect_multiscale_edges_u8<'py>(
-    py: Python<'py>,
-    img: PyReadonlyArray2<'py, u8>,
-    config: MultiScaleConfig,
-) -> PyResult<Bound<'py, PyList>> {
-    detect_multiscale_edges_u8_impl(py, img, config)
-}
-
-#[pyfunction]
 pub fn detect_line_segments_u8<'py>(
     py: Python<'py>,
     img: PyReadonlyArray2<'py, u8>,
@@ -44,7 +34,7 @@ pub fn detect_line_segments_u8<'py>(
 pub fn fit_ellipse<'py>(
     py: Python<'py>,
     pts: PyReadonlyArray2<'py, f32>,
-    config: ConicFitConfig,
+    config: FitConfig,
 ) -> PyResult<Option<Py<PyAny>>> {
     fit_ellipse_impl(py, pts, config)
 }
@@ -86,7 +76,6 @@ pub fn component_stats<'py>(
 
 pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(detect_edges_u8, m)?)?;
-    m.add_function(wrap_pyfunction!(detect_multiscale_edges_u8, m)?)?;
     m.add_function(wrap_pyfunction!(detect_line_segments_u8, m)?)?;
     m.add_function(wrap_pyfunction!(fit_ellipse, m)?)?;
     m.add_function(wrap_pyfunction!(crate::match_py::find_shape_model, m)?)?;

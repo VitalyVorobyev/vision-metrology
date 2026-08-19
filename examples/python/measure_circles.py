@@ -27,8 +27,8 @@ def main():
     print(f"Generating {w}x{h} synthetic image with 3 circles (r=40, 60, 80)...")
     img = generate_image(w, h)
 
-    print("Running MultiScaleDetector (3 levels)...")
-    edgels = vm.detect_multiscale_edges_u8(img, vm.MultiScaleConfig(num_levels=3))
+    print("Running EdgeDetector...")
+    edgels = vm.detect_edges_u8(img, vm.EdgeConfig())
     print(f"  Detected {len(edgels)} edgels")
 
     if not edgels:
@@ -37,7 +37,9 @@ def main():
 
     pts = np.array([[e.x, e.y] for e in edgels], dtype=np.float32)
 
-    fitter_cfg = vm.ConicFitConfig(use_bookstein=False, ransac_iters=200, inlier_tol=1.5)
+    # Circles, so fit circles — three parameters instead of five.
+    fitter_cfg = vm.FitConfig(ransac_iters=200, inlier_tol=1.5)
+    fitter = vm.Fitter(fitter_cfg)
     results = []
     for cx, cy, r in CIRCLES:
         dist = np.sqrt((pts[:, 0] - cx) ** 2 + (pts[:, 1] - cy) ** 2)
@@ -47,11 +49,12 @@ def main():
             print(f"  Circle r={r}: not enough edgels ({len(cluster)})")
             continue
 
-        result = vm.fit_ellipse(cluster, fitter_cfg)
+        result = fitter.fit_circle(cluster)
         if result is not None:
-            r_fit = (result.a + result.b) / 2.0
             print(
-                f"  Circle r={r:.0f}: measured r={r_fit:.2f}, center=({result.cx:.1f}, {result.cy:.1f})"
+                f"  Circle r={r:.0f}: measured r={result.r:.3f}, "
+                f"center=({result.cx:.2f}, {result.cy:.2f}), "
+                f"rms={result.rms:.3f} max_dev={result.max_dev:.3f}"
             )
             results.append((cx, cy, r, result))
         else:

@@ -36,10 +36,11 @@ use corrmatch::{
     CompileConfig, MatchConfig as CorrMatchConfig, Matcher as CorrMatcher, RotationMode,
     Template as CorrTemplate,
 };
+use vision_metrology::fit::{FitConfig, RansacConfig, fit_ellipse};
 use vision_metrology::{
-    ConicFitConfig, ConicFitter, Edge2DConfig, Edge2DDetector, Image, Point2f, Polarity, Rect2f,
-    ShapeMatch, ShapeMatcher, ShapeModel, ShapeModelBuilder, ShapeModelConfig, ShapeSearchConfig,
-    match_point_scores, wrap_angle,
+    Edge2DConfig, Edge2DDetector, Image, Point2f, Polarity, Rect2f, ShapeMatch, ShapeMatcher,
+    ShapeModel, ShapeModelBuilder, ShapeModelConfig, ShapeSearchConfig, match_point_scores,
+    wrap_angle,
 };
 
 #[derive(Parser)]
@@ -170,7 +171,7 @@ fn setup(common: &CommonArgs) -> Result<Setup> {
         ..Default::default()
     };
     let model = ShapeModelBuilder::new()
-        .build_u8(&reference.as_view(), common.roi, &model_cfg)
+        .build(&reference.as_view(), common.roi, &model_cfg)
         .map_err(|e| anyhow::anyhow!("model build: {e}"))?;
     let search = ShapeSearchConfig {
         min_score: common.min_score,
@@ -198,14 +199,10 @@ fn audit(args: AuditArgs) -> Result<()> {
     let frames = frames_in(&args.common.scene_dir)?;
     std::fs::create_dir_all(&args.out_dir)?;
 
-    let roi_center = Point2f {
-        x: s.roi.x + 0.5 * s.roi.width,
-        y: s.roi.y + 0.5 * s.roi.height,
-    };
+    let roi_center = Point2f::new(s.roi.x + 0.5 * s.roi.width, s.roi.y + 0.5 * s.roi.height);
 
     let mut matcher = ShapeMatcher::new();
     let mut det = Edge2DDetector::new();
-    let mut fitter = ConicFitter::new();
 
     let mut scores = Vec::new();
     let mut znccs = Vec::new();
@@ -223,7 +220,7 @@ fn audit(args: AuditArgs) -> Result<()> {
     for (i, path) in frames.iter().enumerate() {
         let scene = load_gray(path)?;
         let t = Instant::now();
-        let found = matcher.find_u8(&scene.as_view(), &s.model, &s.search);
+        let found = matcher.find(&scene.as_view(), &s.model, &s.search);
         let dt = t.elapsed().as_secs_f64() * 1e3;
         times.push(dt);
         let name = path.file_stem().unwrap_or_default().to_string_lossy();
@@ -245,7 +242,7 @@ fn audit(args: AuditArgs) -> Result<()> {
             &scene,
             &s.reference,
             s.roi,
-            Point2f { x: c.x, y: c.y },
+            Point2f::new(c.x, c.y),
             m.angle().to_degrees(),
         );
 
@@ -256,7 +253,7 @@ fn audit(args: AuditArgs) -> Result<()> {
 
         // Rim-relative repeatability.
         if let Some(r_hint) = args.rim_radius
-            && let Some((rr, dphi)) = rim_relative(&mut det, &mut fitter, &scene, m, r_hint)
+            && let Some((rr, dphi)) = rim_relative(&mut det, &scene, m, r_hint)
         {
             rim_r.push(f64::from(rr));
             rim_dphi.push(f64::from(dphi));
@@ -313,17 +310,13 @@ fn audit(args: AuditArgs) -> Result<()> {
 /// rim + tab measurement.
 fn rim_relative(
     det: &mut Edge2DDetector,
-    fitter: &mut ConicFitter,
     scene: &Image<u8>,
     m: &ShapeMatch,
     r_hint: f32,
 ) -> Option<(f32, f32)> {
-    let edgels = det.detect_u8(&scene.as_view(), &Edge2DConfig::default());
+    let edgels = det.detect(&scene.as_view(), &Edge2DConfig::default());
     // The rim circles the image centre region; seed with the frame centre.
-    let seed = Point2f {
-        x: scene.width() as f32 * 0.5,
-        y: scene.height() as f32 * 0.5,
-    };
+    let seed = Point2f::new(scene.width() as f32 * 0.5, scene.height() as f32 * 0.5);
     let band: Vec<Point2f> = edgels
         .iter()
         .map(|e| e.p)
@@ -335,9 +328,18 @@ fn rim_relative(
     if band.len() < 50 {
         return None;
     }
-    let ellipse = fitter
-        .fit_ellipse_ransac(&band, &ConicFitConfig::default())
-        .ok()?;
+    // The rim is a circle in the world but an ellipse in the image under
+    // perspective, so fit the more general primitive. RANSAC because the band
+    // also catches print and lighting edges.
+    let fit = fit_ellipse(
+        &band,
+        &FitConfig {
+            ransac: Some(RansacConfig::default()),
+            ..FitConfig::default()
+        },
+    )
+    .ok()?;
+    let ellipse = fit.model;
     let dx = m.position.x - ellipse.center.x;
     let dy = m.position.y - ellipse.center.y;
     let r = (dx * dx + dy * dy).sqrt();
@@ -352,10 +354,7 @@ fn xcheck(args: XcheckArgs) -> Result<()> {
     let frames = frames_in(&args.common.scene_dir)?;
     let n = frames.len().min(args.max_frames);
 
-    let roi_center = Point2f {
-        x: s.roi.x + 0.5 * s.roi.width,
-        y: s.roi.y + 0.5 * s.roi.height,
-    };
+    let roi_center = Point2f::new(s.roi.x + 0.5 * s.roi.width, s.roi.y + 0.5 * s.roi.height);
 
     // corrmatch: template = the reference ROI patch, full rotation search.
     let (tpl, tw, th) = corr::roi_patch(&s.reference, s.roi);
@@ -381,7 +380,7 @@ fn xcheck(args: XcheckArgs) -> Result<()> {
         let name = path.file_stem().unwrap_or_default().to_string_lossy();
 
         let Some(m) = matcher
-            .find_u8(&scene.as_view(), &s.model, &s.search)
+            .find(&scene.as_view(), &s.model, &s.search)
             .into_iter()
             .next()
         else {

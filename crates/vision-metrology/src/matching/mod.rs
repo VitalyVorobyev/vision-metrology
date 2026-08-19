@@ -21,14 +21,14 @@
 //! let reference: Image<u8> = Image::new_fill(1280, 1024, 0);
 //! let roi = Rect2f { x: 500.0, y: 380.0, width: 300.0, height: 270.0 };
 //! let mut builder = ShapeModelBuilder::new();
-//! let model = builder.build_u8(&reference.as_view(), roi, &ShapeModelConfig::default())?;
+//! let model = builder.build(&reference.as_view(), roi, &ShapeModelConfig::default())?;
 //!
 //! // 2. Search a scene.
 //! let scene: Image<u8> = Image::new_fill(1280, 1024, 0);
 //! let mut matcher = ShapeMatcher::new();
 //! let cfg = ShapeSearchConfig { min_score: 0.6, ..Default::default() };
 //!
-//! for m in matcher.find_u8(&scene.as_view(), &model, &cfg) {
+//! for m in matcher.find(&scene.as_view(), &model, &cfg) {
 //!     // `pose` maps reference-image coordinates straight into the scene.
 //!     println!("score {:.2} at {:?}, {:.1} deg", m.score, m.position, m.angle().to_degrees());
 //! }
@@ -72,10 +72,7 @@ mod refine;
 mod score;
 mod search;
 
-pub use build::{
-    ContourOrientation, ShapeModelBuilder, create_shape_model_f32, create_shape_model_u8,
-    create_shape_model_u16,
-};
+pub use build::{ContourOrientation, ShapeModelBuilder, create_shape_model};
 pub use config::{Polarity, Refinement, ShapeModelConfig, ShapeSearchConfig};
 pub use diagnostics::match_point_scores;
 pub use matcher::{ShapeMatch, ShapeMatcher};

@@ -1,8 +1,8 @@
-//! Example: PyramidF32 — build a 4-level pyramid from a synthetic gradient image.
+//! Example: Pyramid — build a 4-level pyramid from a synthetic gradient image.
 //!
 //! ## Pipeline
 //! 1. Generate a 128×128 grayscale image where `pixel = (x + y) % 256`.
-//! 2. Build a 4-level pyramid with `PyramidF32::build_from_u8`.
+//! 2. Build a 4-level pyramid with `Pyramid::build_from_u8`.
 //! 3. Print each level's index, (width, height), and mean pixel value.
 //! 4. Assert that each level's dimensions are half those of the previous level.
 //!
@@ -12,7 +12,7 @@
 //! ```
 
 use vision_metrology::Image;
-use vision_metrology::PyramidF32;
+use vision_metrology::Pyramid;
 
 fn main() {
     let (w, h) = (128usize, 128usize);
@@ -25,9 +25,9 @@ fn main() {
     let img = Image::from_vec(w, h, data).expect("valid image dimensions");
 
     // --- Step 2: build 4-level pyramid ---
-    println!("Building 4-level PyramidF32...");
-    let mut pyr = PyramidF32::new();
-    pyr.build_from_u8(&img.as_view(), 4);
+    println!("Building 4-level Pyramid...");
+    let mut pyr = Pyramid::new();
+    pyr.build(&img.as_view(), 4);
 
     println!("  Built {} levels.", pyr.num_levels());
     assert_eq!(pyr.num_levels(), 4, "expected exactly 4 levels");

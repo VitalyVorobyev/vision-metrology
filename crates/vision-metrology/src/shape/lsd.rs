@@ -24,7 +24,8 @@
 
 use core::f32::consts::PI;
 
-use vm_primitives::{ImageView, Point2f, Vec2f};
+use vm_primitives::pyr::level_to_base;
+use vm_primitives::{ImageView, Pixel, Point2f, PreSmooth, Pyramid, PyramidConfig, Vec2f};
 
 use super::nfa::log10_nfa;
 
@@ -68,16 +69,23 @@ pub struct LineSegment2f {
 /// starting point and override individual fields.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LsdConfig {
-    /// Image downscale factor before gradient computation.
+    /// Pyramid levels to descend before detecting. `0` runs at full resolution.
     ///
-    /// A value of `0.8` reduces the image to 80% of its linear dimensions,
-    /// which suppresses high-frequency noise while retaining most edges.
-    /// Must be in `(0.0, 1.0]`. Values outside this range return no segments.
-    pub scale: f32,
+    /// Each level halves both dimensions. Detecting on a coarser level is
+    /// cheaper and suppresses high-frequency noise; endpoints are always
+    /// reported in full-resolution coordinates via
+    /// [`pyr::level_to_base`](vm_primitives::pyr::level_to_base).
+    ///
+    /// Default `1`, matching the reference implementation's intent of
+    /// detecting on a reduced image.
+    pub downscale_levels: u32,
 
-    /// Gaussian sigma = `sigma_scale / scale` applied before gradient computation
-    /// when `scale < 1.0`. Set to `0.0` to disable pre-smoothing.
-    pub sigma_scale: f32,
+    /// Anti-alias pre-filter applied before each decimation step.
+    ///
+    /// Only meaningful when `downscale_levels > 0`. A plain box mean has no
+    /// stop-band, so unfiltered decimation can turn fine texture into spurious
+    /// coherent gradients. Default [`PreSmooth::Binomial121`].
+    pub pre_smooth: PreSmooth,
 
     /// Gradient-angle tolerance in **degrees**.
     ///
@@ -112,8 +120,8 @@ pub struct LsdConfig {
 impl Default for LsdConfig {
     fn default() -> Self {
         Self {
-            scale: 0.8,
-            sigma_scale: 0.6,
+            downscale_levels: 1,
+            pre_smooth: PreSmooth::Binomial121,
             ang_th: 22.5,
             log_eps: 0.0,
             density_th: 0.7,
@@ -193,59 +201,6 @@ fn angle_diff(a: f32, b: f32) -> f32 {
         d = (PI - d).abs();
     }
     d
-}
-
-// ---------------------------------------------------------------------------
-// Simple 2×2 downscale (2×2 mean, same as a `vm_primitives::pyr` level)
-// ---------------------------------------------------------------------------
-
-fn downscale_u8_to_f32(
-    src: &ImageView<'_, u8>,
-    dst: &mut Vec<f32>,
-    dst_w: &mut usize,
-    dst_h: &mut usize,
-) {
-    let sw = src.width();
-    let sh = src.height();
-    *dst_w = sw.div_ceil(2);
-    *dst_h = sh.div_ceil(2);
-    dst.resize(*dst_w * *dst_h, 0.0);
-    for dy in 0..*dst_h {
-        let sy0 = (dy * 2).min(sh - 1);
-        let sy1 = (dy * 2 + 1).min(sh - 1);
-        for dx in 0..*dst_w {
-            let sx0 = (dx * 2).min(sw - 1);
-            let sx1 = (dx * 2 + 1).min(sw - 1);
-            let v = src.row(sy0)[sx0] as f32
-                + src.row(sy0)[sx1] as f32
-                + src.row(sy1)[sx0] as f32
-                + src.row(sy1)[sx1] as f32;
-            dst[dy * *dst_w + dx] = v * 0.25;
-        }
-    }
-}
-
-fn downscale_f32_to_f32(
-    src: &ImageView<'_, f32>,
-    dst: &mut Vec<f32>,
-    dst_w: &mut usize,
-    dst_h: &mut usize,
-) {
-    let sw = src.width();
-    let sh = src.height();
-    *dst_w = sw.div_ceil(2);
-    *dst_h = sh.div_ceil(2);
-    dst.resize(*dst_w * *dst_h, 0.0);
-    for dy in 0..*dst_h {
-        let sy0 = (dy * 2).min(sh - 1);
-        let sy1 = (dy * 2 + 1).min(sh - 1);
-        for dx in 0..*dst_w {
-            let sx0 = (dx * 2).min(sw - 1);
-            let sx1 = (dx * 2 + 1).min(sw - 1);
-            let v = src.row(sy0)[sx0] + src.row(sy0)[sx1] + src.row(sy1)[sx0] + src.row(sy1)[sx1];
-            dst[dy * *dst_w + dx] = v * 0.25;
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -331,14 +286,8 @@ fn fit_line_to_region(stats: &RegionStats) -> Option<(Point2f, Vec2f, f32)> {
     // For ixy=0, iyy > ixx: atan2(0, negative) = π → θ=π/2 → dir=(0,1) (vertical). Correct.
     let theta = 0.5 * f64::atan2(2.0 * stats.ixy, stats.ixx - stats.iyy);
     let (cos_t, sin_t) = (theta.cos(), theta.sin());
-    let dir = Vec2f {
-        x: cos_t as f32,
-        y: sin_t as f32,
-    };
-    let center = Point2f {
-        x: stats.cx as f32,
-        y: stats.cy as f32,
-    };
+    let dir = Vec2f::new(cos_t as f32, sin_t as f32);
+    let center = Point2f::new(stats.cx as f32, stats.cy as f32);
     // Normalise line angle to (-π/2, π/2]
     let angle = theta as f32;
     let angle = if angle <= -PI / 2.0 {
@@ -362,10 +311,7 @@ fn region_endpoints_and_width(
     region_angle: f32,
     w: usize,
 ) -> (Point2f, Point2f, f32, usize) {
-    let perp = Vec2f {
-        x: -dir.y,
-        y: dir.x,
-    };
+    let perp = Vec2f::new(-dir.y, dir.x);
     let mut proj_min = f32::MAX;
     let mut proj_max = f32::MIN;
     let mut perp_max = 0.0f32;
@@ -394,14 +340,8 @@ fn region_endpoints_and_width(
         }
     }
 
-    let p1 = Point2f {
-        x: center.x + proj_min * dir.x,
-        y: center.y + proj_min * dir.y,
-    };
-    let p2 = Point2f {
-        x: center.x + proj_max * dir.x,
-        y: center.y + proj_max * dir.y,
-    };
+    let p1 = Point2f::new(center.x + proj_min * dir.x, center.y + proj_min * dir.y);
+    let p2 = Point2f::new(center.x + proj_max * dir.x, center.y + proj_max * dir.y);
     // Width = 2× max perpendicular extent (one-sided → full width)
     let width = (2.0 * perp_max + 1.0).max(1.0);
 
@@ -415,9 +355,11 @@ fn region_endpoints_and_width(
 /// Reusable scratch buffers for LSD.
 ///
 /// Create once with [`LsdDetector::new`] and call [`LsdDetector::detect`] /
-/// [`LsdDetector::detect_f32`] on each frame.
+/// [`LsdDetector::detect`] on each frame.
 pub struct LsdDetector {
-    /// Packed f32 pixel buffer (downscaled if `scale < 1`).
+    /// Source pyramid; only levels `0..=downscale_levels` are built.
+    pyr: Pyramid,
+    /// Packed f32 pixel buffer for the level being detected on.
     buf: Vec<f32>,
     /// Gradient x-component.
     gx: Vec<f32>,
@@ -441,6 +383,7 @@ impl LsdDetector {
     /// Create a new detector with empty scratch buffers.
     pub fn new() -> Self {
         Self {
+            pyr: Pyramid::new(),
             buf: Vec::new(),
             gx: Vec::new(),
             gy: Vec::new(),
@@ -453,67 +396,45 @@ impl LsdDetector {
         }
     }
 
-    /// Detect line segments in an 8-bit grayscale image.
+    /// Detect line segments in a grayscale image of any [`Pixel`] type.
     ///
-    /// Returns a `Vec<LineSegment2f>` in input-image pixel coordinates.
-    pub fn detect(&mut self, img: &ImageView<'_, u8>, cfg: &LsdConfig) -> Vec<LineSegment2f> {
-        if cfg.scale <= 0.0 || img.width() == 0 || img.height() == 0 {
+    /// Endpoints are returned in **input-image** coordinates regardless of
+    /// `cfg.downscale_levels`.
+    pub fn detect<P: Pixel>(
+        &mut self,
+        img: &ImageView<'_, P>,
+        cfg: &LsdConfig,
+    ) -> Vec<LineSegment2f> {
+        if img.width() == 0 || img.height() == 0 {
             return Vec::new();
         }
-        let (w, h) = if cfg.scale < 1.0 {
-            let mut dw = 0;
-            let mut dh = 0;
-            downscale_u8_to_f32(img, &mut self.buf, &mut dw, &mut dh);
-            (dw, dh)
-        } else {
-            let w = img.width();
-            let h = img.height();
-            self.buf.resize(w * h, 0.0);
-            for y in 0..h {
-                let row = img.row(y);
-                let base = y * w;
-                for (x, &pix) in row.iter().enumerate().take(w) {
-                    self.buf[base + x] = pix as f32;
-                }
-            }
-            (w, h)
-        };
-        let scale_inv = img.width() as f32 / w as f32; // map back to original coords
-        self.run(w, h, scale_inv, cfg)
-    }
 
-    /// Detect line segments in an f32 image.
-    ///
-    /// Returns a `Vec<LineSegment2f>` in input-image pixel coordinates.
-    pub fn detect_f32(&mut self, img: &ImageView<'_, f32>, cfg: &LsdConfig) -> Vec<LineSegment2f> {
-        if cfg.scale <= 0.0 || img.width() == 0 || img.height() == 0 {
+        let level = cfg.downscale_levels as usize;
+        self.pyr.build_with(
+            img,
+            level + 1,
+            &PyramidConfig {
+                pre_smooth: cfg.pre_smooth,
+            },
+        );
+
+        // The pyramid stops early on small images; detecting on a level that
+        // does not exist would silently change the reported scale.
+        let Some(src) = self.pyr.level(level) else {
             return Vec::new();
-        }
-        let (w, h) = if cfg.scale < 1.0 {
-            let mut dw = 0;
-            let mut dh = 0;
-            downscale_f32_to_f32(img, &mut self.buf, &mut dw, &mut dh);
-            (dw, dh)
-        } else {
-            let w = img.width();
-            let h = img.height();
-            self.buf.resize(w * h, 0.0);
-            for y in 0..h {
-                let row = img.row(y);
-                let base = y * w;
-                self.buf[base..base + w].copy_from_slice(row);
-            }
-            (w, h)
         };
-        let scale_inv = img.width() as f32 / w as f32;
-        self.run(w, h, scale_inv, cfg)
+        let (w, h) = (src.width(), src.height());
+        self.buf.clear();
+        self.buf.extend_from_slice(src.data());
+
+        self.run(w, h, cfg.downscale_levels, cfg)
     }
 
     // ------------------------------------------------------------------
     // Internal: main detection loop
     // ------------------------------------------------------------------
 
-    fn run(&mut self, w: usize, h: usize, scale_inv: f32, cfg: &LsdConfig) -> Vec<LineSegment2f> {
+    fn run(&mut self, w: usize, h: usize, level: u32, cfg: &LsdConfig) -> Vec<LineSegment2f> {
         let n = w * h;
         if n == 0 {
             return Vec::new();
@@ -567,7 +488,8 @@ impl LsdDetector {
         // covering a total arc of 2*ang_th. Probability of a random pixel falling
         // inside:  p = 2 * ang_th / π.
         let p_align = 2.0 * ang_th_rad as f64 / core::f64::consts::PI;
-        let min_len_in_buf = (cfg.min_length / scale_inv).max(2.0);
+        let step = (1u32 << level) as f32;
+        let min_len_in_buf = (cfg.min_length / step).max(2.0);
 
         let mut segments = Vec::new();
 
@@ -707,22 +629,19 @@ impl LsdDetector {
                 }
 
                 // ---- Map back to input-image coordinates ----
-                let p1 = Point2f {
-                    x: p1_buf.x * scale_inv,
-                    y: p1_buf.y * scale_inv,
-                };
-                let p2 = Point2f {
-                    x: p2_buf.x * scale_inv,
-                    y: p2_buf.y * scale_inv,
-                };
-                let length = length_buf * scale_inv;
-                let width = width_buf * scale_inv;
+                let p1 = Point2f::new(
+                    level_to_base(p1_buf.x, level),
+                    level_to_base(p1_buf.y, level),
+                );
+                let p2 = Point2f::new(
+                    level_to_base(p2_buf.x, level),
+                    level_to_base(p2_buf.y, level),
+                );
+                let length = length_buf * step;
+                let width = width_buf * step;
 
                 // Unit normal (perpendicular to line direction)
-                let normal = Vec2f {
-                    x: -dir.y,
-                    y: dir.x,
-                };
+                let normal = Vec2f::new(-dir.y, dir.x);
 
                 segments.push(LineSegment2f {
                     p1,
@@ -757,6 +676,59 @@ impl Default for LsdDetector {
 
 #[cfg(test)]
 mod tests {
+    use super::{LsdConfig, LsdDetector};
+    use vm_primitives::PreSmooth;
+
+    /// Endpoints must land on the true edge at every downscale level, on both
+    /// even and odd image widths.
+    ///
+    /// Before LSD used the pyramid it had its own `div_ceil` + border-clamp
+    /// downsample and mapped positions back with a bare `p * (W / w)`, missing
+    /// the `(2^l - 1)/2` term. At the default config that put every endpoint
+    /// 0.50 px low on an even width and 0.95 px low on an odd one — silently,
+    /// because no test looked at absolute position.
+    #[test]
+    fn endpoints_are_unbiased_at_every_downscale_level() {
+        // Vertical step: x < 60 dark, x >= 60 bright. Under the pixel-centre
+        // convention the edge sits at 59.5.
+        const TRUE_X: f32 = 59.5;
+
+        for w in [128usize, 129] {
+            for levels in [0u32, 1, 2] {
+                for pre in [PreSmooth::None, PreSmooth::Binomial121] {
+                    let h = 128usize;
+                    let data: Vec<u8> = (0..w * h)
+                        .map(|i| if (i % w) >= 60 { 200u8 } else { 20 })
+                        .collect();
+                    let img = Image::from_vec(w, h, data).expect("valid image");
+
+                    let mut det = LsdDetector::new();
+                    let segs = det.detect(
+                        &img.as_view(),
+                        &LsdConfig {
+                            downscale_levels: levels,
+                            pre_smooth: pre,
+                            ..LsdConfig::default()
+                        },
+                    );
+                    assert!(
+                        !segs.is_empty(),
+                        "w={w} levels={levels} pre={pre:?}: no segments"
+                    );
+
+                    let xs: Vec<f32> = segs.iter().flat_map(|s| [s.p1.x, s.p2.x]).collect();
+                    let mean = xs.iter().sum::<f32>() / xs.len() as f32;
+                    assert!(
+                        (mean - TRUE_X).abs() < 0.05,
+                        "w={w} levels={levels} pre={pre:?}: mean endpoint x {mean:.4}, \
+                         expected {TRUE_X} (bias {:+.4})",
+                        mean - TRUE_X
+                    );
+                }
+            }
+        }
+    }
+
     use super::*;
     use vm_primitives::Image;
 
@@ -814,7 +786,7 @@ mod tests {
 
         let mut det = LsdDetector::new();
         let cfg = LsdConfig {
-            scale: 1.0, // no downscale so we stay in exact coordinates
+            downscale_levels: 0, // full resolution so we stay in exact coordinates
             ..LsdConfig::default()
         };
         let segs = det.detect(&img.as_view(), &cfg);
@@ -864,7 +836,7 @@ mod tests {
 
         let mut det = LsdDetector::new();
         let cfg = LsdConfig {
-            scale: 1.0,
+            downscale_levels: 0,
             ..LsdConfig::default()
         };
         let segs = det.detect(&img.as_view(), &cfg);
@@ -897,7 +869,7 @@ mod tests {
         let img = horizontal_step_image(16, 8, 4);
         let mut det = LsdDetector::new();
         let cfg = LsdConfig {
-            scale: 1.0,
+            downscale_levels: 0,
             min_length: 200.0, // far larger than image dimensions
             ..LsdConfig::default()
         };
@@ -912,7 +884,7 @@ mod tests {
         let img = noise_image(64, 64);
         let mut det = LsdDetector::new();
         let cfg = LsdConfig {
-            scale: 1.0,
+            downscale_levels: 0,
             log_eps: -1.0, // stricter threshold: NFA < 0.1
             ..LsdConfig::default()
         };
@@ -932,7 +904,7 @@ mod tests {
         let img = horizontal_step_image(64, 64, 32);
         let mut det = LsdDetector::new();
         let cfg = LsdConfig {
-            scale: 1.0,
+            downscale_levels: 0,
             ..LsdConfig::default()
         };
         let segs = det.detect(&img.as_view(), &cfg);
@@ -957,12 +929,12 @@ mod tests {
 
         let mut det = LsdDetector::new();
         let cfg = LsdConfig {
-            scale: 1.0,
+            downscale_levels: 0,
             ..LsdConfig::default()
         };
 
         let segs_u8 = det.detect(&img_u8.as_view(), &cfg);
-        let segs_f32 = det.detect_f32(&img_f32.as_view(), &cfg);
+        let segs_f32 = det.detect(&img_f32.as_view(), &cfg);
 
         // Both should find at least one segment; counts should match (same data, same gradients)
         assert!(!segs_u8.is_empty());

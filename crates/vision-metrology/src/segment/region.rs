@@ -163,11 +163,8 @@ mod tests {
 
     fn make_edgel(x: usize, y: usize) -> Edgel {
         Edgel {
-            p: Point2f {
-                x: x as f32,
-                y: y as f32,
-            },
-            n: Vec2f { x: 1.0, y: 0.0 },
+            p: Point2f::new(x as f32, y as f32),
+            n: Vec2f::new(1.0, 0.0),
             strength: 1.0,
             idx: (x, y),
         }

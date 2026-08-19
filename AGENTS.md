@@ -18,15 +18,14 @@ across sessions — trust them over reconstructing state from git history.
 Three publishable crates with clear layering:
 
 - `crates/vm-primitives`: low-level building blocks.
-  - `core`: image views, sampling, border modes, geometry + nalgebra type aliases.
-  - `pyr`: 2×2 mean pyramid (no Gaussian downsample).
+  - `core`: image views, `Pixel` trait, sampling, border modes, geometry (nalgebra aliases).
+  - `pyr`: `Pyramid`, 2×2 mean, generic over `Pixel`, optional binomial pre-smooth.
   - `edge`: 1D/2D subpixel edges (DoG), edgels, edge-pairs.
   - `morph`: binary morphology (parameterized SE), chamfer distance, Zhang-Suen thinning.
 - `crates/vision-metrology`: high-level algorithms; depends on `vm-primitives`; re-exports it entirely.
   - `contour`: contour graph, junctions, per-edge tangent/curvature geometry, polyline smoothing.
   - `laser`: laser stripe extraction (rows/cols, ROI+prior tracking).
   - `matching`: `ShapeModel` + `ShapeMatcher`, gradient-orientation shape-based object detection.
-  - `multiscale`: multi-scale edge detection across pyramid levels.
   - `segment`: Otsu/adaptive thresholding, CCL, watershed, edgel region growing.
   - `shape`: LSD, Bookstein/Fitzgibbon conic fitting, RANSAC ellipse fitting.
 - `crates/vm-python`: PyO3 extension module; depends on both above crates.
@@ -115,7 +114,6 @@ cargo test -p vision-metrology
 cargo bench -p vm-primitives --bench downsample
 cargo bench -p vm-primitives --bench edge2d
 cargo bench -p vision-metrology --bench extract
-cargo bench -p vision-metrology --bench detect_multiscale
 cargo bench -p vision-metrology --bench detect_shape
 cargo bench -p vision-metrology --bench segment
 cargo bench -p vision-metrology --bench build_graph

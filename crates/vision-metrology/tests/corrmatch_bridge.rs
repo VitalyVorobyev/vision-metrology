@@ -74,10 +74,7 @@ fn corr_search(scene: &Image<u8>, reference: &Image<u8>) -> corrmatch::Match {
 #[test]
 fn the_two_matchers_agree_through_the_bridge() {
     let reference = bracket(REF_C.0, REF_C.1, 0.0);
-    let roi_center = Point2f {
-        x: ROI.x + 0.5 * ROI.width,
-        y: ROI.y + 0.5 * ROI.height,
-    };
+    let roi_center = Point2f::new(ROI.x + 0.5 * ROI.width, ROI.y + 0.5 * ROI.height);
     let (tw, th) = (ROI.width as usize, ROI.height as usize);
 
     // Object translated and rotated by a known amount.
@@ -87,10 +84,10 @@ fn the_two_matchers_agree_through_the_bridge() {
 
     // Shape matcher.
     let model = ShapeModelBuilder::new()
-        .build_u8(&reference.as_view(), ROI, &ShapeModelConfig::default())
+        .build(&reference.as_view(), ROI, &ShapeModelConfig::default())
         .expect("model");
     let m = ShapeMatcher::new()
-        .find_u8(&scene.as_view(), &model, &ShapeSearchConfig::default())
+        .find(&scene.as_view(), &model, &ShapeSearchConfig::default())
         .into_iter()
         .next()
         .expect("shape match");
@@ -134,20 +131,17 @@ fn zncc_scores_the_true_pose_high_and_a_wrong_pose_low() {
     let scene = bracket(230.0, 190.0, truth_angle);
 
     let model = ShapeModelBuilder::new()
-        .build_u8(&reference.as_view(), ROI, &ShapeModelConfig::default())
+        .build(&reference.as_view(), ROI, &ShapeModelConfig::default())
         .expect("model");
     let m = ShapeMatcher::new()
-        .find_u8(&scene.as_view(), &model, &ShapeSearchConfig::default())
+        .find(&scene.as_view(), &model, &ShapeSearchConfig::default())
         .into_iter()
         .next()
         .expect("shape match");
 
-    let roi_center = Point2f {
-        x: ROI.x + 0.5 * ROI.width,
-        y: ROI.y + 0.5 * ROI.height,
-    };
+    let roi_center = Point2f::new(ROI.x + 0.5 * ROI.width, ROI.y + 0.5 * ROI.height);
     let c = m.pose * nalgebra::Point2::new(roi_center.x, roi_center.y);
-    let center = Point2f { x: c.x, y: c.y };
+    let center = Point2f::new(c.x, c.y);
 
     let good = corr::zncc_at_pose(&scene, &reference, ROI, center, m.angle().to_degrees())
         .expect("zncc at pose");
@@ -172,10 +166,7 @@ fn zncc_scores_the_true_pose_high_and_a_wrong_pose_low() {
         &scene,
         &reference,
         ROI,
-        Point2f {
-            x: center.x + 25.0,
-            y: center.y,
-        },
+        Point2f::new(center.x + 25.0, center.y),
         m.angle().to_degrees(),
     )
     .expect("zncc offset");

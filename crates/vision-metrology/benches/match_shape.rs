@@ -42,7 +42,7 @@ fn model_and_scene() -> (ShapeModel, Image<u8>) {
         ..Default::default()
     };
     let model = ShapeModelBuilder::new()
-        .build_u8(&reference.as_view(), roi, &cfg)
+        .build(&reference.as_view(), roi, &cfg)
         .expect("model builds");
     let scene = render_bracket(W, H, 700.0, 470.0, 0.9, 1.0);
     (model, scene)
@@ -112,7 +112,7 @@ fn bench_create(c: &mut Criterion) {
     c.bench_function("shape_model_create_1280x1024", |b| {
         b.iter(|| {
             let m = builder
-                .build_u8(black_box(&view), roi, &cfg)
+                .build(black_box(&view), roi, &cfg)
                 .expect("model builds");
             black_box(m.point_count(0));
         });
@@ -136,10 +136,10 @@ fn bench_find_tracked(c: &mut Criterion) {
         ..Default::default()
     };
     let mut matcher = ShapeMatcher::new();
-    assert!(!matcher.find_u8(&view, &model, &cfg).is_empty());
+    assert!(!matcher.find(&view, &model, &cfg).is_empty());
     c.bench_function("shape_find_1280x1024_tracked_roi", |b| {
         b.iter(|| {
-            let out = matcher.find_u8(black_box(&view), black_box(&model), black_box(&cfg));
+            let out = matcher.find(black_box(&view), black_box(&model), black_box(&cfg));
             black_box(out.len());
         });
     });
@@ -154,12 +154,12 @@ fn bench_find_360_clutter(c: &mut Criterion) {
     // Fail loudly if the fixture stops finding the object -- a perf number
     // for a search that no longer succeeds would be meaningless.
     assert!(
-        !matcher.find_u8(&view, &model, &cfg).is_empty(),
+        !matcher.find(&view, &model, &cfg).is_empty(),
         "cluttered fixture must still contain a findable object"
     );
     c.bench_function("shape_find_1280x1024_360deg_clutter", |b| {
         b.iter(|| {
-            let out = matcher.find_u8(black_box(&view), black_box(&model), black_box(&cfg));
+            let out = matcher.find(black_box(&view), black_box(&model), black_box(&cfg));
             black_box(out.len());
         });
     });
@@ -172,7 +172,7 @@ fn bench_find_360(c: &mut Criterion) {
     let mut matcher = ShapeMatcher::new();
     c.bench_function("shape_find_1280x1024_360deg", |b| {
         b.iter(|| {
-            let out = matcher.find_u8(black_box(&view), &model, &cfg);
+            let out = matcher.find(black_box(&view), &model, &cfg);
             black_box(out.len());
         });
     });
@@ -189,7 +189,7 @@ fn bench_find_greedy0(c: &mut Criterion) {
     let mut matcher = ShapeMatcher::new();
     c.bench_function("shape_find_1280x1024_360deg_greedy0", |b| {
         b.iter(|| {
-            let out = matcher.find_u8(black_box(&view), &model, &cfg);
+            let out = matcher.find(black_box(&view), &model, &cfg);
             black_box(out.len());
         });
     });
@@ -209,7 +209,7 @@ fn bench_find_scale(c: &mut Criterion) {
         ..Default::default()
     };
     let model = ShapeModelBuilder::new()
-        .build_u8(&reference.as_view(), roi, &cfg)
+        .build(&reference.as_view(), roi, &cfg)
         .expect("model builds");
     let scene = render_bracket(W, H, 700.0, 470.0, 0.9, 1.1);
     let view = scene.as_view();
@@ -217,7 +217,7 @@ fn bench_find_scale(c: &mut Criterion) {
     let mut matcher = ShapeMatcher::new();
     c.bench_function("shape_find_1280x1024_scale_0p8_1p25", |b| {
         b.iter(|| {
-            let out = matcher.find_u8(black_box(&view), &model, &search);
+            let out = matcher.find(black_box(&view), &model, &search);
             black_box(out.len());
         });
     });

@@ -81,21 +81,64 @@ def test_conic_fitter_object_and_function():
         np.float32
     )
 
-    cfg = vm.ConicFitConfig(use_bookstein=False, ransac_iters=200, inlier_tol=1.5)
-    obj_fit = vm.ConicFitter(cfg).fit_ellipse(pts)
+    cfg = vm.FitConfig(ransac_iters=200, inlier_tol=1.5)
+    obj_fit = vm.Fitter(cfg).fit_ellipse(pts)
     fn_fit = vm.fit_ellipse(pts, cfg)
 
     assert obj_fit is not None
     assert fn_fit is not None
     assert abs(obj_fit.cx - fn_fit.cx) < 1e-3
     assert abs(obj_fit.cy - fn_fit.cy) < 1e-3
+    # Every fit reports what qualifies it.
+    assert obj_fit.rms < 0.05
+    assert obj_fit.max_dev < 0.1
+    assert obj_fit.n_used == n
 
 
 def test_conic_fitter_too_few_points_returns_none():
     pts = np.array([[0.0, 0.0], [1.0, 1.0]], dtype=np.float32)
-    cfg = vm.ConicFitConfig(use_bookstein=False, ransac_iters=10, inlier_tol=1.0)
-    result = vm.fit_ellipse(pts, cfg)
-    assert result is None
+    cfg = vm.FitConfig(ransac_iters=10, inlier_tol=1.0)
+    assert vm.fit_ellipse(pts, cfg) is None
+
+
+def test_circle_fit_reports_residuals():
+    """The circle fit the library had no implementation of until now."""
+    n = 60
+    t = np.linspace(0, 2 * np.pi, n, endpoint=False)
+    pts = np.column_stack([70.0 + 25.0 * np.cos(t), 55.0 + 25.0 * np.sin(t)]).astype(
+        np.float32
+    )
+
+    fit = vm.Fitter().fit_circle(pts)
+    assert fit is not None
+    assert abs(fit.cx - 70.0) < 1e-2
+    assert abs(fit.cy - 55.0) < 1e-2
+    assert abs(fit.r - 25.0) < 1e-2
+    assert fit.rms < 1e-2
+    assert fit.n_used == n
+
+
+def test_robust_loss_rejects_an_outlier():
+    t = np.linspace(0, 2 * np.pi, 40, endpoint=False)
+    pts = np.column_stack([50.0 + 20.0 * np.cos(t), 50.0 + 20.0 * np.sin(t)])
+    pts = np.vstack([pts, [[120.0, 120.0]]]).astype(np.float32)
+
+    plain = vm.Fitter(vm.FitConfig()).fit_circle(pts)
+    robust = vm.Fitter(
+        vm.FitConfig(loss="tukey", loss_scale=2.0, ransac_iters=300, inlier_tol=1.0)
+    ).fit_circle(pts)
+    assert plain is not None and robust is not None
+    assert robust.n_used == 40, "the outlier should be dropped"
+    assert robust.rms < plain.rms
+
+
+def test_fit_config_validates_the_loss_name():
+    import pytest
+
+    with pytest.raises(ValueError):
+        vm.Fitter(vm.FitConfig(loss="nonsense")).fit_circle(
+            np.zeros((10, 2), dtype=np.float32)
+        )
 
 
 def test_segmentation_free_functions():
@@ -261,7 +304,13 @@ def test_shape_model_save_load_roundtrip(tmp_path):
     assert (a[0].x, a[0].y) == (b[0].x, b[0].y)
 
     # A tampered format_version must be refused.
-    doc = open(path).read().replace('"format_version":1', '"format_version":999', 1)
+    # Derive the needle from the module constant: hard-coding version 1 made
+    # this assertion silently stop testing anything when the format was bumped.
+    needle = f'"format_version":{vm.SHAPE_MODEL_FORMAT_VERSION}'
+    original = open(path).read()
+    assert needle in original, f"envelope shape changed: {needle} not found"
+    doc = original.replace(needle, '"format_version":999', 1)
+    assert doc != original, "version substitution did not fire"
     bad = str(tmp_path / "bad.json")
     open(bad, "w").write(doc)
     try:
