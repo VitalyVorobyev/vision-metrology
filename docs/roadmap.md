@@ -182,13 +182,13 @@ edge inward — 39.88 px on a nominal-40 disc. `MeasureRadial` averages along th
 lighting conditions, σ ≈ 0.3 px on the rim radius, every caliper surviving the robust fit.
 
 ### B3 — `filter`: the absent workhorse
-Separable and recursive (Deriche / van Vliet) Gaussian, sliding-window box mean, histogram
-median and rank (O(1) per pixel), grayscale erode/dilate/open/close/tophat
-(van Herk–Gil-Werman). `edge/conv1d.rs` folds in here. Feeds the pyramid pre-smooth and
-illumination correction.
+Separable and recursive (Deriche / van Vliet) Gaussian, sliding-window box mean, an O(1)-per-radius
+histogram **median**, grayscale erode/dilate/open/close/tophat (van Herk–Gil-Werman).
+`edge/conv1d.rs` folds in here. Feeds the pyramid pre-smooth and illumination correction.
+Scope is deliberately median only, not the full rank-order family — see `backlog.md`.
 
-**Accept:** each filter matches a naive reference bit-for-bit on random fixtures; median and
-rank are O(1) in radius, measured rather than asserted.
+**Accept:** each filter matches a naive reference bit-for-bit on random fixtures; median is
+O(1) in radius, measured rather than asserted.
 
 ### B4 — `warp`: build once, apply per frame
 ```rust

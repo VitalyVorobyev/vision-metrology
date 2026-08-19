@@ -7,11 +7,23 @@ agent) can pick it up cold. When an item is scheduled it moves into
 
 ## Shape matching
 
-- **Arbitrary-region model ROI (mask).** Models are built from a rectangle; on
-  non-rectangular parts (the canend tab) the model picks up background edges near the
-  corners. Mitigated today by the 2 px border drop + `min_contrast`; the real fix is
-  `mask: Option<&ImageView<u8>>` on `ShapeModelConfig`. Needs the same mask handling on
-  every pyramid level of the reference ROI.
+- **Arbitrary-region model ROI (mask) — priority raised (2026-08).** Models are built
+  from a rectangle; on non-rectangular parts (the canend tab) the model picks up
+  background edges near the corners. Mitigated today by the 2 px border drop +
+  `min_contrast`, but that is a per-dataset tuning workaround, not a fix — the v0.3
+  review flagged this as the highest-value item left in `matching` now that the config
+  split and `Contrast` unit are landed. The real fix is `mask: Option<&ImageView<u8>>`
+  on `ShapeModelConfig`. Needs the same mask handling on every pyramid level of the
+  reference ROI.
+- **`Contrast::FractionOfRange` needs a real-data calibration sweep before docs
+  recommend it as the default advice.** `Contrast::Raw(400.0)` ≈
+  `Contrast::FractionOfRange(0.098)` on the canend dataset (see `shape-matching.md`),
+  but that equivalence rests on `SCHARR_FULL_STEP_GAIN = 16.0`, the unsmoothed Scharr
+  operator's response to an *ideal, unblurred* unit step — real edges under
+  `PreSmooth::Binomial121` or camera blur reach only a fraction of that gain, so the
+  16× conversion is optimistic on real data. Sweep `FractionOfRange` against `Raw` on
+  more than one dataset (ideally one with `PreSmooth::Binomial121` on) before the docs
+  say more than "it exists and transfers across pixel types."
 - **Anisotropic scale.** 5-DOF search with a different refinement Jacobian; deliberately
   excluded from v1. Design from scratch when a use case exists — do not bolt onto the
   4-DOF pose structs.
@@ -34,6 +46,36 @@ agent) can pick it up cold. When an item is scheduled it moves into
   deterministic (stable reduction order) if added.
 - **Timeout / anytime search** was deliberately rejected: non-deterministic results break
   the test contract. Revisit only with a deterministic budget (e.g. max poses evaluated).
+
+## Contour
+
+- **Contour → primitive segmentation.** `contour` traces topology and reports per-edge
+  tangent/curvature, but nothing turns a traced polyline into typed geometric primitives
+  the way HALCON's `segment_contours_xld` does: split a `GraphEdge`'s polyline into runs
+  at curvature breakpoints, classify each run as a line or an arc, and fit it with the
+  `fit` module (`fit_line` / `fit_circle`). This is the piece that would let a caller go
+  straight from "a contour was traced" to "here are its line segments and arcs, each
+  with a fitted model and residuals" without hand-picking which polyline stretch to feed
+  to `MetrologyObject`. Estimated ~300 lines over `contour` + `fit` — a curvature-breakpoint
+  segmenter, per-run primitive classification (arc vs. line by curvature magnitude and
+  variance), and the fit call. Not on any current track; add to `roadmap.md` Track B or C
+  when it is scheduled.
+
+## Filtering and segmentation — deliberately not investing further
+
+- **Watershed.** `segment::watershed` already exists and is the segmentation module's
+  region-splitting tool; marker-controlled or hierarchical variants are not planned.
+  Revisit only if a concrete inspection case needs a segmentation `watershed` cannot
+  produce with a reasonable marker set.
+- **Rank filters beyond median.** B3 (`filter`, planned) scopes to the separable/recursive
+  Gaussian, box mean, and an O(1)-per-radius histogram **median** — not the full
+  rank-order family (min/max-of-k, percentile-k). Median covers the metrology use case
+  (impulse-noise rejection on a caliper profile or an image pre-filter); the rest is
+  unused generality until a concrete need appears.
+- **FFT-based methods.** No planned use case in this workspace (no periodic-pattern
+  removal, no frequency-domain correlation); pulling in an FFT dependency for one is not
+  worth it pre-emptively. `corrmatch` (spatial-domain ZNCC) already covers the
+  correlation need this crate has.
 
 ## Code health
 
@@ -68,6 +110,21 @@ agent) can pick it up cold. When an item is scheduled it moves into
 - **`MeasureArc` obliquity** is checked against the arc *tangent*, which is right for
   features crossing the arc. A future "measure the arc's own edge" mode would want the
   radial direction instead.
+- **Fuzzy / expected-position caliper scoring.** Today a caliper reports the strongest
+  (or first/last/all) edge that clears `threshold` — there is no way to prefer an edge
+  near where the nominal geometry predicts it over an equally strong but wrongly placed
+  one. HALCON's `fuzzy_measure_pos` scores each candidate edge against an expected
+  position/amplitude profile instead of a hard threshold, which is what keeps a caliper
+  from latching onto a print mark or a highlight *of similar amplitude* to the real edge.
+  Would need a scoring function on `MeasureEdge` positions relative to `MetrologyObject`'s
+  nominal geometry, evaluated before `EdgeSelect` narrows the candidates.
+- **Variation-model golden template (after B4).** A per-pixel tolerance band learned from
+  a set of good parts (HALCON's `create_variation_model` family): teach on N reference
+  frames, warp each to a common pose with `warp::Map` (B4), and store a per-pixel
+  mean/σ. Inspection then flags pixels outside the learned band instead of comparing
+  against nominal CAD geometry — useful for texture/print defects a caliper model can't
+  describe. Blocked on B4 (`warp`), which supplies the pose-normalizing step; no design
+  work started.
 
 ## Testing
 

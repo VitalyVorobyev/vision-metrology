@@ -11,7 +11,7 @@ Legacy names were removed:
 - `import vm_python` -> `import vision_metrology as vm`
 - `PyEdgeDetector` -> `EdgeDetector`
 - `PyLsdDetector` -> `LsdDetector`
-- `PyConicFitter` -> `ConicFitter`
+- `PyConicFitter` -> `Fitter` (also gained `fit_circle`, matching the Rust `fit` module)
 - `PySegmenter` -> `Segmenter`
 - `PyEdgel` -> `Edgel`
 - `PyLineSegment` -> `LineSegment`
@@ -58,7 +58,7 @@ edgels_fn = vm.detect_edges_u8(img, vm.EdgeConfig())
 
 - `EdgeConfig`
 - `LsdConfig`
-- `ConicFitConfig`
+- `FitConfig`
 - `ShapeModelConfig`
 - `ShapeSearchConfig`
 

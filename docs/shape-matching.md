@@ -3,6 +3,8 @@
 Locate a modelled contour in an image under translation, rotation and uniform
 scale — robustly against occlusion, clutter and changes in illumination.
 
+![Shape matching: a model contour overlaid on a synthetic scene, with two found poses and their scores](assets/shape-matching.png)
+
 ```rust
 use vision_metrology::Rect2f;
 use vision_metrology::matching::{
@@ -77,7 +79,13 @@ score near zero — a failure that looks like a bug. Build contour models with
 ## Getting a clean model
 
 The single most effective knob is `ShapeModelConfig::min_contrast`, the gradient
-floor a reference-image edge must clear to enter the model.
+floor a reference-image edge must clear to enter the model. It is a
+`Contrast`, not a bare `f32`: `Contrast::Raw(v)` is `v` Scharr response units
+on the input pixel scale — the historical behaviour, and the default —
+while `Contrast::FractionOfRange(f)` resolves to `f · 16 · (max − min)` of the
+image being processed, so the same `f` transfers between `u8`, `u16` and `f32`
+input unchanged. `ShapeSearchConfig::min_contrast`, which gates the *scene*
+instead of the model, is the same type and needs the same tuning.
 
 On a low-relief part — a stamped metal surface, say — the edge detector's
 automatic threshold also admits faint shading gradients. Those do not repeat
@@ -87,15 +95,15 @@ them. Measured on 1280×1024 can-end frames, with everything else at its default
 
 | `min_contrast` | frames found | median score |
 |---|---|---|
-| 0 (default) | 50 / 50 | 0.785 |
-| 200 | 50 / 50 | 0.863 |
-| 400 | 50 / 50 | **0.998** |
+| `Contrast::Raw(0.0)` (default) | 50 / 50 | 0.785 |
+| `Contrast::Raw(200.0)` | 50 / 50 | 0.863 |
+| `Contrast::Raw(400.0)` | 50 / 50 | **0.998** |
 
-The units are Scharr response on the input pixel scale: a clean black/white step
-in `u8` gives a gradient magnitude of about 2000. Re-tune for `u16` and `f32`
-input, whose pixel scales differ by orders of magnitude — and note that
-`ShapeSearchConfig::min_contrast`, which gates the *scene*, needs the same
-treatment.
+`Contrast::Raw(400.0)` is roughly `Contrast::FractionOfRange(0.098)` on this
+dataset — but that equivalence is dataset-specific (it assumes an unsmoothed,
+near-ideal step) and has not been swept across other contrast profiles, so
+prefer `Raw` with a value re-tuned per pixel type until that calibration
+exists (see `backlog.md`).
 
 Two further model knobs:
 
@@ -108,7 +116,7 @@ Two further model knobs:
 
 ## Speed
 
-`greediness` controls early termination. At `0.0` the abort bound is provably
+`ShapeSearchTuning::greediness` controls early termination. At `0.0` the abort bound is provably
 safe: it never rejects a pose that would have scored at least `min_score`, which
 makes it the reference for tests. The default `0.9` is much faster and *can*
 miss a match whose first-evaluated points are the occluded ones — which is why
@@ -121,8 +129,8 @@ On a 1280×1024 scene with an 800-point model (M4 Pro, single thread):
 
 | | Time |
 |---|---|
-| full 360° `find_u8`, clean scene | 3.5 ms |
-| full 360° `find_u8`, heavily cluttered scene | 6.6 ms |
+| full 360° `find`, clean scene | 3.5 ms |
+| full 360° `find`, heavily cluttered scene | 6.6 ms |
 | tracked mode (±60 px ROI + ±10° prior from the previous frame) | 1.5 ms |
 | same clean call at `greediness = 0.0` | 5.5 ms |
 | model creation | 0.49 ms |
@@ -137,9 +145,10 @@ On heavily textured scenes the remaining cost is split between the exhaustive
 coarse sweep and refining candidates that score well enough to escape the
 greedy abort — that part is proportional to genuine structure in the scene.
 
-`max_candidates` (default 128) bounds how many coarse-level candidates descend
-the pyramid. On a textured scene the cap can bite; `ShapeMatcher::truncated()`
-reports when it did, which distinguishes "not present" from "gave up".
+`ShapeSearchTuning::max_candidates` (default 128) bounds how many coarse-level
+candidates descend the pyramid. On a textured scene the cap can bite;
+`ShapeMatcher::truncated()` reports when it did, which distinguishes "not
+present" from "gave up".
 
 ## Persisting a model
 
@@ -239,6 +248,11 @@ with `Polarity::Match`. The independent ZNCC of those poses is **negative**
 (median −0.52): an anti-correlated intensity patch at a high-scoring gradient
 pose is exactly what a correct pose under inverted illumination must look
 like.
+
+## Next: measuring the located part
+
+A `ShapeMatch::pose` is a fixture. [`measure`](measure.md) applies calipers at
+that pose and fits the result — `find → pose → apply → Fit + residuals`.
 
 ## Reference
 

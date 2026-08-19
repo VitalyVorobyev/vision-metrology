@@ -17,22 +17,26 @@ vision-metrology = "0.1"
 | Module | Content |
 |---|---|
 | `contour` | `ContourGraph` — junction-aware topology (T/Y junctions, loops) built from edgels, with per-edge tangent, curvature, arc-length parameterization, and Gaussian polyline smoothing |
+| `fit` | `fit_line` / `fit_circle` / `fit_ellipse` — algebraic-init then geometric refine, optional `RobustLoss` (Huber/Tukey) and `RansacConfig`, every `Fit<M>` reports `rms` / `max_dev` / `n_used` |
 | `laser` | `LaserExtractor` — laser stripe centerlines from opposite-polarity 1-D edge pairs, scanning rows or columns, with ROI and prior tracking |
 | `matching` | `ShapeModel` + `ShapeMatcher` — gradient-orientation similarity, coarse-to-fine search over translation / rotation / uniform scale, occlusion-proportional scoring, subpixel pose refinement |
+| `measure` | `Caliper` (rect / arc / radial placements) + `MetrologyModel` — measure a located part and fit the result, typed `RejectReason` on a caliper that finds nothing |
 | `segment` | Otsu and adaptive thresholding, connected-component labeling with per-component stats, watershed, edgel region growing |
-| `shape` | `LsdDetector` (line-segment detection with NFA validation), `ConicFitter` (Bookstein / Fitzgibbon), RANSAC ellipse fitting |
+| `lsd` | `LsdDetector` — line-segment detection with NFA validation |
 
-Everything from `vm_primitives` — `Image`, `Edge2DDetector`, `Pyramid`, morphology,
-geometry — is re-exported at this crate's root as well, and each module's own types
-are re-exported flat. So `vision_metrology::ContourGraph` and
-`vision_metrology::contour::ContourGraph` are the same type.
+The `vm_primitives` crate most callers need by name — `Image`, `Edge2DDetector`,
+`Pyramid`, morphology, geometry — is re-exported at this crate's root as an
+explicit curated list; the full lower crate is always reachable as
+`vision_metrology::vm_primitives`. Every other name lives at its module path
+only (`vision_metrology::contour::ContourGraph`, not a second flattened path) —
+`use vision_metrology::prelude::*;` is the convenience for the common set.
 
 ## Example
 
 ```rust
-use vision_metrology::{
-    Connectivity, Image, component_stats, label_connected_components_u8, otsu_threshold_u8,
-};
+use vision_metrology::Image;
+use vision_metrology::contour::Connectivity;
+use vision_metrology::segment::{component_stats, label_connected_components_u8, otsu_threshold_u8};
 
 // Two 32×32 bright squares on a dark background.
 let mut data = vec![20u8; 128 * 128];

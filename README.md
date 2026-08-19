@@ -11,6 +11,23 @@ shape fitting, segmentation, and shape-based object detection — with Python bi
 No OpenCV, no FFI. All coordinates follow the **pixel-center** convention: integer
 `i` means coordinate `i as f32`.
 
+<table>
+<tr>
+<td width="33%"><img src="docs/assets/shape-matching.png" alt="Shape matching"><br>Shape-based matching: model contour found at two poses, scored</td>
+<td width="33%"><img src="docs/assets/caliper-anatomy.png" alt="Caliper anatomy"><br>A caliper: the placed box and its cross-averaged 1-D profile</td>
+<td width="33%"><img src="docs/assets/laser-stripe.png" alt="Laser stripe extraction"><br>Laser stripe extraction: subpixel centerline over the stripe</td>
+</tr>
+<tr>
+<td width="33%"><img src="docs/assets/circle-fit.png" alt="Robust circle fit"><br>Robust circle fit: noisy points, outliers rejected, residual whiskers</td>
+<td width="33%"><img src="docs/assets/contour-graph.png" alt="Contour graph"><br>Contour graph: a T-junction traced into three colored edges</td>
+<td width="33%"><img src="docs/assets/pyramid-levels.png" alt="Pyramid levels"><br>A 5-level image pyramid, coarse-to-fine</td>
+</tr>
+</table>
+
+All rendered deterministically from synthetic fixtures by
+[`gen_illustrations`](crates/vision-metrology/examples/gen_illustrations.rs) — see
+[CONTRIBUTING.md](CONTRIBUTING.md#documentation-illustrations) to regenerate.
+
 ## Crates
 
 | Crate | Description |
@@ -33,8 +50,10 @@ No OpenCV, no FFI. All coordinates follow the **pixel-center** convention: integ
 | Module | Content |
 |---|---|
 | `contour` | Junction-aware contour graph (T/Y junctions, loops), per-edge tangent and curvature, polyline smoothing |
+| `fit` | Robust line / circle / ellipse fitting, algebraic-init then geometric refine, every fit reports `rms` / `max_dev` / `n_used` |
 | `laser` | Laser stripe extraction using opposite-polarity edge pairs, with ROI and prior tracking |
 | `matching` | Shape-based object detection: gradient-orientation model, coarse-to-fine search over translation / rotation / scale, subpixel pose refinement — see the [guide](docs/shape-matching.md) |
+| `measure` | Calipers (rect / arc / radial) and metrology models: measure a located part and fit the result — see the [guide](docs/measure.md) |
 | `segment` | Otsu and adaptive thresholding, connected-component labeling, watershed, edgel region growing |
 | `lsd` | LSD line-segment detection |
 
@@ -56,11 +75,18 @@ contour       topology graph — T/Y junctions, loops, polyline smoothing
   │
   ├─────►  segment    thresholding, CCL, watershed, per-component stats
   │
+  ├─────►  fit        robust line / circle / ellipse fitting, residuals
+  │
   └─────►  matching   shape model, coarse-to-fine search, pose refinement
+                 │
+                 ▼
+            measure    calipers at the found pose, fit primitives, pass/fail
 ```
 
 `laser` consumes `edge` directly — it scans rows or columns for opposite-polarity
-1-D edge pairs rather than going through the 2-D pipeline.
+1-D edge pairs rather than going through the 2-D pipeline. `fit` also runs
+directly off `edge`/`contour` output; `measure` is the module that closes the
+loop, applying calipers at a `matching` pose and fitting the result with `fit`.
 
 ## Quick start
 
@@ -76,7 +102,7 @@ use vision_metrology::{Edge2DConfig, Edge2DDetector, Image};
 
 let img = Image::<u8>::new_fill(64, 64, 0);
 let mut det = Edge2DDetector::new();
-let edgels = det.detect_u8(&img.as_view(), &Edge2DConfig::default());
+let edgels = det.detect(&img.as_view(), &Edge2DConfig::default());
 ```
 
 Runnable examples live in [`crates/vision-metrology/examples/`](crates/vision-metrology/examples):
@@ -92,6 +118,8 @@ cargo run -p vision-metrology --example laserline -- --help
 
 - [Shape-based object detection](docs/shape-matching.md) — building a shape
   model, choosing a polarity, tuning contrast, reading the score.
+- [Measuring a located part](docs/measure.md) — calipers, rect vs. arc vs.
+  radial placement, the metrology model, reading `RejectReason`.
 
 Project direction and internals: [system design](docs/system-design.md),
 [roadmap](docs/roadmap.md), [backlog](docs/backlog.md).
