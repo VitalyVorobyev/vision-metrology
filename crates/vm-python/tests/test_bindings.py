@@ -344,6 +344,140 @@ def test_shape_search_config_roi_restricts_matches():
     assert off_angle.find(scene, model) == []
 
 
+def make_disc(w: int, h: int, cx: float, cy: float, r: float) -> np.ndarray:
+    """Anti-aliased disc: the true edge sits at exactly `r`, every direction."""
+    ys, xs = np.mgrid[0:h, 0:w]
+    d = np.sqrt((xs - cx) ** 2 + (ys - cy) ** 2)
+    cover = np.clip(r + 0.5 - d, 0.0, 1.0)
+    return (20 + 180 * cover).astype(np.uint8)
+
+
+def test_caliper_rect_finds_a_step_edge():
+    img = np.zeros((64, 64), dtype=np.uint8)
+    img[:, 30:] = 200
+    cal = vm.Caliper.rect((32.0, 32.0), 0.0, 20.0, 10.0)
+    edges = cal.measure(img)
+    assert len(edges) == 1
+    assert abs(edges[0].x - 29.5) < 0.05
+    assert edges[0].polarity == "rising"
+
+
+def test_caliper_measure_raises_reject_reason_on_a_flat_field():
+    flat = np.full((64, 64), 128, dtype=np.uint8)
+    cal = vm.Caliper.rect((32.0, 32.0), 0.0, 20.0, 4.0)
+    with pytest.raises(vm.MeasureRejected) as exc_info:
+        cal.measure(flat)
+    assert exc_info.value.args[0] == "no_edge"
+
+
+def test_caliper_radial_and_measure_pairs():
+    disc = make_disc(160, 160, 80.0, 80.0, 40.0)
+    cal = vm.Caliper.radial((80.0, 80.0), 40.0, 0.0, 8.0, 3.0)
+    edges = cal.measure(disc)
+    assert len(edges) == 1
+    assert abs(edges[0].x - 120.0) < 0.1  # centre.x + radius
+
+    bar = np.zeros((96, 128), dtype=np.uint8)
+    bar[:, 40:70] = 200
+    pairs = vm.Caliper.rect((64.0, 48.0), 0.0, 50.0, 10.0).measure_pairs(bar)
+    assert len(pairs) == 1
+    assert abs(pairs[0].width - 30.0) < 0.05
+
+
+def test_caliper_dtype_dispatch_agrees_on_a_synthetic_edge():
+    """u8, u16 and f32 views of the same edge must agree to the bit."""
+    img8 = np.zeros((64, 64), dtype=np.uint8)
+    img8[:, 30:] = 200
+    img16 = img8.astype(np.uint16)
+    img32 = img8.astype(np.float32)
+
+    xs = [
+        vm.Caliper.rect((32.0, 32.0), 0.0, 20.0, 6.0).measure(im)[0].x
+        for im in (img8, img16, img32)
+    ]
+    assert xs[0] == xs[1] == xs[2]
+
+
+def test_caliper_unsupported_dtype_names_the_supported_ones():
+    bad = np.zeros((16, 16), dtype=np.int32)
+    with pytest.raises(ValueError, match="uint8|uint16|float32"):
+        vm.Caliper.rect((8.0, 8.0), 0.0, 4.0, 2.0).measure(bad)
+
+
+def test_fit_line_object_and_function():
+    pts = np.array([[float(i), 2.0] for i in range(10)], dtype=np.float32)
+    obj = vm.Fitter().fit_line(pts)
+    fn = vm.fit_line(pts, vm.FitConfig())
+    assert obj is not None and fn is not None
+    assert abs(obj.dy) < 1e-4, "should be horizontal"
+    assert obj.rms < 1e-4
+    assert obj.n_used == 10
+
+
+def test_metrology_model_measures_a_circle():
+    """The measurement chain: synthetic disc -> radial calipers -> circle fit."""
+    c = (80.0, 80.0)
+    disc = make_disc(160, 160, c[0], c[1], 40.0)
+
+    model = vm.MetrologyModel()
+    model.add(vm.MetrologyObject(vm.MetrologyShape.circle((0.0, 0.0), 40.0)))
+    assert model.num_objects == 1
+
+    results = model.apply(disc, c[0], c[1])
+    assert len(results) == 1
+    r = results[0]
+    assert isinstance(r, vm.MetrologyResult)
+    assert r.kind == "circle"
+    assert abs(r.circle.r - 40.0) < 0.05
+    assert r.rms < 0.05
+    assert len(r.hits) == 32
+
+
+def test_metrology_model_reports_a_failed_object_without_dropping_others():
+    flat = np.full((64, 64), 128, dtype=np.uint8)
+    model = vm.MetrologyModel()
+    model.add(vm.MetrologyObject(vm.MetrologyShape.circle((0.0, 0.0), 20.0)))
+    model.add(vm.MetrologyObject(vm.MetrologyShape.line((10.0, 10.0), (10.0, 50.0))))
+    outcomes = model.apply(flat, 32.0, 32.0)
+    assert len(outcomes) == 2
+    assert all(isinstance(o, vm.MetrologyError) for o in outcomes)
+    assert all(isinstance(o.message, str) and o.message for o in outcomes)
+
+
+def test_contour_graph_build_and_smooth():
+    disc = make_disc(160, 160, 80.0, 80.0, 40.0)
+    g = vm.build_contour_graph(disc)
+    assert g.num_edges >= 1
+    assert g.num_junctions == 0
+
+    polylines = g.polylines()
+    assert len(polylines) == g.num_edges
+    poly = polylines[0]
+    assert poly.ndim == 2 and poly.shape[1] == 2
+    assert poly.dtype == np.float32
+
+    smoothed = vm.smooth_polyline(poly, 1.5)
+    assert smoothed.shape == poly.shape
+
+
+def test_morph_basics_round_trip_shapes():
+    disc = make_disc(96, 96, 48.0, 48.0, 30.0)
+    binary = (disc > 100).astype(np.uint8) * 255
+
+    for fn in (vm.erode, vm.dilate, vm.open, vm.close):
+        out = fn(binary, shape="disk", radius=2)
+        assert out.shape == binary.shape
+        assert out.dtype == np.uint8
+
+    thinned = vm.thin(binary)
+    assert thinned.shape == binary.shape
+
+    dist = vm.chamfer_distance(binary)
+    assert dist.shape == binary.shape
+    assert dist.dtype == np.float32
+    assert dist.max() > 0
+
+
 def test_shape_model_save_load_roundtrip(tmp_path):
     """A persisted model must match at the identical pose and score."""
     model = vm.ShapeModel(make_bracket(), BRACKET_ROI)

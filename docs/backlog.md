@@ -138,6 +138,15 @@ agent) can pick it up cold. When an item is scheduled it moves into
   Python README (users keep asking the equivalent HALCON question).
 - **Wheel smoke on Windows** in python-wheels.yml (currently built but only imported on
   Linux).
+- **`laser` has no Python binding.** Deliberately out of scope for the v0.3 Python-parity
+  wave (config mirror, measure/fit/contour/morph, dtype dispatch, stubs) — every other
+  default-on domain module got one. Add `LaserExtractor`/`LaserExtractConfig` bindings
+  (nested `tuning`, same pattern as `ShapeSearchConfig`) when a caller needs it.
+- **`segment::watershed` and edgel region growing have no Python binding.** `Segmenter`
+  covers Otsu/adaptive threshold, CCL and component stats only.
+- **`contour::build_graph_from_edgels`** (the raw-edgel constructor) isn't bound, only the
+  detector-output convenience `build_contour_graph`. Add if a caller has edgels from
+  somewhere other than `Edge2DDetector` (e.g. a laser stripe).
 
 ## Waiting on upstream
 

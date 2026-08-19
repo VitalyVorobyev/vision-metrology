@@ -1,6 +1,7 @@
 //! Native Python return types for the `vision_metrology` module.
 
 use pyo3::prelude::*;
+use vm_primitives::edge::EdgePolarity;
 
 /// A single 2-D subpixel edge detection result.
 ///
@@ -108,6 +109,114 @@ impl Circle {
         format!(
             "Circle(cx={:.3}, cy={:.3}, r={:.3}, rms={:.4}, max_dev={:.4}, n_used={})",
             self.cx, self.cy, self.r, self.rms, self.max_dev, self.n_used
+        )
+    }
+}
+
+/// A fitted line with the residual statistics that qualify it.
+#[pyclass(get_all, skip_from_py_object)]
+#[derive(Debug, Clone, Copy)]
+pub struct Line {
+    /// X coordinate of a point on the line (pixel-centre convention).
+    pub px: f32,
+    /// Y coordinate of a point on the line.
+    pub py: f32,
+    /// X component of the unit direction vector.
+    pub dx: f32,
+    /// Y component of the unit direction vector.
+    pub dy: f32,
+    /// RMS orthogonal deviation of the fitted points, in pixels.
+    pub rms: f32,
+    /// Largest orthogonal deviation, in pixels.
+    pub max_dev: f32,
+    /// How many input points the fit used.
+    pub n_used: usize,
+}
+
+#[pymethods]
+impl Line {
+    fn __repr__(&self) -> String {
+        format!(
+            "Line(p=({:.3},{:.3}), dir=({:.4},{:.4}), rms={:.4}, max_dev={:.4}, n_used={})",
+            self.px, self.py, self.dx, self.dy, self.rms, self.max_dev, self.n_used
+        )
+    }
+}
+
+/// One edge found by a [`Caliper`](crate::measure_py::Caliper).
+#[pyclass(get_all, skip_from_py_object)]
+#[derive(Debug, Clone, Copy)]
+pub struct MeasureEdge {
+    /// Subpixel x coordinate in image coordinates.
+    pub x: f32,
+    /// Subpixel y coordinate in image coordinates.
+    pub y: f32,
+    /// Signed distance from the caliper centre along the scan axis, in pixels.
+    pub t: f32,
+    /// `|DoG response|` at the edge — the local contrast.
+    pub amplitude: f32,
+    /// `"rising"` (dark-to-bright) or `"falling"` (bright-to-dark) along the
+    /// scan direction.
+    pub polarity: &'static str,
+}
+
+impl From<vision_metrology::measure::MeasureEdge> for MeasureEdge {
+    fn from(e: vision_metrology::measure::MeasureEdge) -> Self {
+        Self {
+            x: e.p.x,
+            y: e.p.y,
+            t: e.t,
+            amplitude: e.amplitude,
+            polarity: match e.polarity {
+                EdgePolarity::Rising => "rising",
+                EdgePolarity::Falling => "falling",
+            },
+        }
+    }
+}
+
+#[pymethods]
+impl MeasureEdge {
+    fn __repr__(&self) -> String {
+        format!(
+            "MeasureEdge(x={:.3}, y={:.3}, t={:.3}, amplitude={:.3}, polarity='{}')",
+            self.x, self.y, self.t, self.amplitude, self.polarity
+        )
+    }
+}
+
+/// A pair of opposite-polarity edges, i.e. one bar or gap.
+#[pyclass(get_all, skip_from_py_object)]
+#[derive(Debug, Clone, Copy)]
+pub struct MeasurePair {
+    pub first: MeasureEdge,
+    pub second: MeasureEdge,
+    /// Midpoint x coordinate, in image coordinates.
+    pub cx: f32,
+    /// Midpoint y coordinate.
+    pub cy: f32,
+    /// Distance between the two edges along the scan axis, in pixels.
+    pub width: f32,
+}
+
+impl From<vision_metrology::measure::MeasurePair> for MeasurePair {
+    fn from(p: vision_metrology::measure::MeasurePair) -> Self {
+        Self {
+            first: p.first.into(),
+            second: p.second.into(),
+            cx: p.center.x,
+            cy: p.center.y,
+            width: p.width,
+        }
+    }
+}
+
+#[pymethods]
+impl MeasurePair {
+    fn __repr__(&self) -> String {
+        format!(
+            "MeasurePair(width={:.3}, center=({:.3},{:.3}))",
+            self.width, self.cx, self.cy
         )
     }
 }

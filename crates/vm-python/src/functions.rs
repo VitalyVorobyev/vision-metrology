@@ -10,7 +10,7 @@ use crate::detector::detect_edges_u8_impl;
 use crate::segment::{
     component_stats_impl, label_components_impl, otsu_threshold_impl, threshold_binary_impl,
 };
-use crate::shape::{detect_line_segments_u8_impl, fit_ellipse_impl};
+use crate::shape::{detect_line_segments_u8_impl, fit_ellipse_impl, fit_line_impl};
 
 #[pyfunction]
 pub fn detect_edges_u8<'py>(
@@ -37,6 +37,15 @@ pub fn fit_ellipse<'py>(
     config: FitConfig,
 ) -> PyResult<Option<Py<PyAny>>> {
     fit_ellipse_impl(py, pts, config)
+}
+
+#[pyfunction]
+pub fn fit_line<'py>(
+    py: Python<'py>,
+    pts: PyReadonlyArray2<'py, f32>,
+    config: FitConfig,
+) -> PyResult<Option<Py<PyAny>>> {
+    fit_line_impl(py, pts, config)
 }
 
 #[pyfunction]
@@ -78,10 +87,13 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(detect_edges_u8, m)?)?;
     m.add_function(wrap_pyfunction!(detect_line_segments_u8, m)?)?;
     m.add_function(wrap_pyfunction!(fit_ellipse, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_line, m)?)?;
     m.add_function(wrap_pyfunction!(crate::match_py::find_shape_model, m)?)?;
     m.add_function(wrap_pyfunction!(otsu_threshold, m)?)?;
     m.add_function(wrap_pyfunction!(threshold_binary, m)?)?;
     m.add_function(wrap_pyfunction!(label_components, m)?)?;
     m.add_function(wrap_pyfunction!(component_stats, m)?)?;
+    crate::contour_py::register(m)?;
+    crate::morph_py::register(m)?;
     Ok(())
 }
