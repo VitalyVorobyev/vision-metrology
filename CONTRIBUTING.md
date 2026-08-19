@@ -10,12 +10,15 @@ Three publishable crates, two layers:
 
 ```
 crates/vm-primitives     core · pyr · edge · morph
-crates/vision-metrology  contour · laser · matching · segment · shape
+crates/vision-metrology  contour · fit · laser · matching · measure · segment · lsd
 crates/vm-python         PyO3 bindings (depends on both)
 ```
 
-Both `vm-primitives` and `vision-metrology` provide flat crate-root re-exports in
-addition to module paths.
+`vision-metrology` re-exports the curated set of `vm_primitives` names most callers
+need at its own crate root, plus the `vm_primitives` crate itself and a `prelude`.
+Every other name — including everything inside `vision-metrology`'s own domain
+modules — lives at its module path only; there is no flat re-export block (invariant
+17 in `docs/system-design.md`).
 
 ## Quality gates
 
@@ -131,6 +134,22 @@ cargo bench -p vm-primitives --bench downsample -- downsample2x2_mean_u8_to_f32_
 
 Add a benchmark whenever you add or change a hot path. Benchmark numbers are
 machine-specific; record them in the PR description rather than in tracked files.
+
+## Documentation illustrations
+
+The PNGs under `docs/assets/` (embedded in the README and the `docs/*.md` guides)
+are rendered deterministically from synthetic fixtures by one example — never
+committed from a private dataset frame:
+
+```bash
+cargo run --release --example gen_illustrations --all-features
+```
+
+Re-run it and commit the results whenever a change alters what one of the six
+illustrations shows (shape matching, caliper anatomy, laser stripe extraction,
+robust circle fit, contour graph, pyramid levels). The renderer asserts its own
+fixtures (found match count, junction count, fit radius, …), so a silent behavior
+change there fails the run instead of quietly changing the picture.
 
 ## Commits and PRs
 

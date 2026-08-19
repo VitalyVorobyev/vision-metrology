@@ -11,6 +11,23 @@ shape fitting, segmentation, and shape-based object detection — with Python bi
 No OpenCV, no FFI. All coordinates follow the **pixel-center** convention: integer
 `i` means coordinate `i as f32`.
 
+<table>
+<tr>
+<td width="33%"><img src="docs/assets/shape-matching.png" alt="Shape matching"><br>Shape-based matching: model contour found at two poses, scored</td>
+<td width="33%"><img src="docs/assets/caliper-anatomy.png" alt="Caliper anatomy"><br>A caliper: the placed box and its cross-averaged 1-D profile</td>
+<td width="33%"><img src="docs/assets/laser-stripe.png" alt="Laser stripe extraction"><br>Laser stripe extraction: subpixel centerline over the stripe</td>
+</tr>
+<tr>
+<td width="33%"><img src="docs/assets/circle-fit.png" alt="Robust circle fit"><br>Robust circle fit: noisy points, outliers rejected, residual whiskers</td>
+<td width="33%"><img src="docs/assets/contour-graph.png" alt="Contour graph"><br>Contour graph: a T-junction traced into three colored edges</td>
+<td width="33%"><img src="docs/assets/pyramid-levels.png" alt="Pyramid levels"><br>A 5-level image pyramid, coarse-to-fine</td>
+</tr>
+</table>
+
+All rendered deterministically from synthetic fixtures by
+[`gen_illustrations`](crates/vision-metrology/examples/gen_illustrations.rs) — see
+[CONTRIBUTING.md](CONTRIBUTING.md#documentation-illustrations) to regenerate.
+
 ## Crates
 
 | Crate | Description |

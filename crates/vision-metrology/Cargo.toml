@@ -124,6 +124,10 @@ required-features = ["fit", "matching", "measure"]
 name = "pose_audit"
 required-features = ["fit", "matching"]
 
+[[example]]
+name = "gen_illustrations"
+required-features = ["contour", "fit", "laser", "matching", "measure"]
+
 [[test]]
 name = "shape_matching"
 required-features = ["matching"]

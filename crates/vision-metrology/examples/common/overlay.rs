@@ -262,7 +262,7 @@ fn axes_arrow(canvas: &mut image::RgbImage, m: &ShapeMatch, x_off: usize) {
 
 // ── primitives ──────────────────────────────────────────────────────────────
 
-fn blit(canvas: &mut image::RgbImage, src: &Image<u8>, x_off: usize) {
+pub fn blit(canvas: &mut image::RgbImage, src: &Image<u8>, x_off: usize) {
     for y in 0..src.height() {
         let row = src.as_view().row(y);
         for (x, &v) in row.iter().enumerate() {
@@ -282,13 +282,13 @@ fn put(canvas: &mut image::RgbImage, x: f32, y: f32, x_off: usize, c: [u8; 3]) {
     }
 }
 
-fn put_px(canvas: &mut image::RgbImage, x: f32, y: f32, c: [u8; 3]) {
+pub fn put_px(canvas: &mut image::RgbImage, x: f32, y: f32, c: [u8; 3]) {
     put(canvas, x, y, 0, c);
 }
 
 /// A 2x2 block, so a single model point stays visible when the overlay is
 /// viewed scaled down.
-fn dot(canvas: &mut image::RgbImage, x: f32, y: f32, x_off: usize, c: [u8; 3]) {
+pub fn dot(canvas: &mut image::RgbImage, x: f32, y: f32, x_off: usize, c: [u8; 3]) {
     for dy in 0..2 {
         for dx in 0..2 {
             put(canvas, x + dx as f32, y + dy as f32, x_off, c);
@@ -307,7 +307,7 @@ fn cross_px(canvas: &mut image::RgbImage, x: f32, y: f32, c: [u8; 3]) {
     cross(canvas, x, y, 0, c);
 }
 
-fn line(
+pub fn line(
     canvas: &mut image::RgbImage,
     x0: f32,
     y0: f32,
@@ -327,7 +327,7 @@ fn line_px(canvas: &mut image::RgbImage, x0: f32, y0: f32, x1: f32, y1: f32, c: 
     line(canvas, x0, y0, x1, y1, 0, c);
 }
 
-fn rect(canvas: &mut image::RgbImage, r: Rect2f, x_off: usize, c: [u8; 3]) {
+pub fn rect(canvas: &mut image::RgbImage, r: Rect2f, x_off: usize, c: [u8; 3]) {
     for (a, b) in rect_edges(r) {
         line(canvas, a.x, a.y, b.x, b.y, x_off, c);
     }
