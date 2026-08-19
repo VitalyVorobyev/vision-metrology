@@ -147,6 +147,30 @@ around candidates, so full-frame fine-level fields are mostly wasted work. The p
 plan (roadmap Track 2) is lazy tiled fields first, integer u8 Scharr second, quantized
 directions + SIMD only if still needed — in that order, each gated on measurement.
 
+### The chain runs end to end on real data (2026-08)
+`examples/inspect_canend` closes the loop the library exists for, on the can-end frames
+rather than a synthetic fixture: find the tab → take its pose as a fixture → measure the can
+rim **in the tab's frame** → report the fit and its residuals → pass/fail on `max_dev`.
+
+Teaching the rim relative to the tab is what makes the numbers mean something: every frame
+re-derives the rim from wherever the tab turned up, so the spread across frames measures the
+fixture *and* the measurement, not where the part happened to sit.
+
+set1, 96 calipers, Tukey(2 px), tolerance 2 px on `max_dev`:
+
+| folder | frames | measured | mean radius | σ | per-frame rms |
+|---|---|---|---|---|---|
+| normal/dome | 50 | 50/50 | 365.24 px | 0.28 px | 0.20–0.54 px |
+| normal/dark | 50 | 50/50 | 365.70 px | 0.31 px | 0.28–0.60 px |
+
+All 96 calipers survived the robust fit in every frame. σ ≈ 0.3 px is an upper bound on
+repeatability — it is measured over *different physical cans*, so real part-to-part rim
+variation is inside it. For comparison, the Track 3 rim-relative σ was 0.8–3.3 px; that
+statistic measured the tab's position relative to the rim, which compounds two locations,
+where this measures the rim directly.
+
+Units are pixels. Millimetres arrive with `metric` (B5).
+
 ### `measure`: calipers, and why a curved edge needs its own placement (2026-08)
 The module that turns detection into inspection. [`Caliper`] places a geometry, averages
 intensity across it into a 1-D profile, and runs the existing `Edge1DDetector` along that

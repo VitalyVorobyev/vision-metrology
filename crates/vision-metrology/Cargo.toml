@@ -118,6 +118,10 @@ name = "stage_timing"
 required-features = ["matching"]
 
 [[example]]
+name = "inspect_canend"
+required-features = ["fit", "matching", "measure"]
+
+[[example]]
 name = "pose_audit"
 required-features = ["fit", "matching"]
 

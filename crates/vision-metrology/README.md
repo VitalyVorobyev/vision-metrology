@@ -70,6 +70,7 @@ Runnable end-to-end programs in [`examples/`](examples):
 | `contour_graph` | Contour topology, junctions, curvature |
 | `morphology` | Erode / dilate / open / close, chamfer distance |
 | `line_segments` | LSD line-segment detection |
+| `inspect_canend` | Locate → fixture → measure → pass/fail on real frames (needs a dataset) |
 | `measure_circles` | End-to-end circle metrology with ellipse fitting |
 | `segmentation` | Thresholding, labeling, component statistics |
 | `shape_matching` | Building a shape model and locating it, rotated, in a scene |
