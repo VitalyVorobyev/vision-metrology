@@ -3,7 +3,7 @@ PyO3 Python bindings for the vision-metrology workspace.
 This package is published as `vision-metrology` and imported as `vision_metrology`.
 It provides both:
 - stateful object APIs (`EdgeDetector`, `ShapeMatcher`, ...), and
-- declarative free functions (`detect_edges_u8`, `find_shape_model`, ...).
+- declarative free functions (`detect_edges`, `find_shape_model`, ...).
 
 ## Breaking change (hard break)
 
@@ -33,6 +33,22 @@ for m in vm.ShapeMatcher(vm.ShapeSearchConfig(min_score=0.6)).find(scene, model)
 - Requires Python `>=3.10`.
 - Built as ABI3 (`abi3-py310`) wheels.
 
+## Type stubs
+
+The wheel ships `vision_metrology/__init__.pyi` and `py.typed` (PEP 561), so
+mypy/pyright and IDE autocomplete see the real signatures without importing
+the compiled extension. This is maturin's documented layout for a pure Rust
+extension with hand-written stubs: `python-source = "python"` in
+`pyproject.toml` points at `python/vision_metrology/`, which holds
+`__init__.pyi` + `py.typed` plus a thin `__init__.py` that re-exports the
+compiled submodule maturin places alongside them (`from .vision_metrology
+import *`) — the bridge is needed because the extension's own module name
+matches the wrapping package's, so nothing imports it automatically. The
+stub is hand-maintained: it must be updated in the same PR as any change to
+`src/lib.rs`'s `#[pymodule]` registration list, and a test
+(`test_package_ships_py_typed_and_a_stub_matching_the_runtime_surface`)
+checks every name the stub declares actually exists at runtime.
+
 ## Quick start
 
 ```bash
@@ -51,26 +67,97 @@ img[:, 32:] = 200
 edgels_obj = vm.EdgeDetector(vm.EdgeConfig()).detect(img)
 
 # Free-function API
-edgels_fn = vm.detect_edges_u8(img, vm.EdgeConfig())
+edgels_fn = vm.detect_edges(img, vm.EdgeConfig())
 ```
+
+`detect` / `detect_edges` and every other entry point onto a Rust function
+generic over `Pixel` accepts `uint8`, `uint16` or `float32` arrays — dispatch
+happens on the array's own dtype, no `_u8`/`_u16`/`_f32` suffix. An
+unsupported dtype raises `ValueError` naming the three that work.
 
 ## Config classes
 
 - `EdgeConfig`
 - `LsdConfig`
 - `FitConfig`
-- `ShapeModelConfig`
-- `ShapeSearchConfig`
+- `MeasureConfig`
+- `ShapeModelConfig` (nests `EdgeConfig` as `.edge`)
+- `ShapeSearchConfig` (nests `ShapeSearchTuning` as `.tuning`; `.roi`,
+  `.angle_range`, `.scale_range` narrow the search)
+- `Contrast` — `Contrast.raw(v)` / `Contrast.fraction_of_range(f)`, the two
+  variants of `min_contrast` on `ShapeModelConfig` and `ShapeSearchConfig`
+
+### Config design notes
+
+- **Sentinels are `None`.** Every "auto" / "unlimited" Rust `Option<T>` is a
+  Python `None` — `num_levels=None` picks the pyramid depth automatically,
+  `max_matches=None` reports every instance, and so on.
+- **`Hysteresis` is a pair of optionals, not its own type.** `EdgeConfig`'s
+  `low_thresh` / `high_thresh` are both `None` for automatic thresholding, or
+  both set for manual — the familiar `argparse`-style optional-pair idiom,
+  rather than a second small enum type for one either/or choice.
+- **`Contrast` *is* its own type.** A bare `float` for `min_contrast` would
+  have to silently pick a unit, and picking the wrong one changes behaviour
+  by up to 257x between `uint8` and `uint16` images — exactly the ambiguity
+  the Rust `Contrast` type exists to remove. Construct with the two static
+  methods.
+- **Search effort is nested.** `ShapeSearchConfig`'s top-level fields say
+  *what* to look for (`min_score`, `roi`, `angle_range`, ...); the six fields
+  on `ShapeSearchConfig.tuning` say *how hard* the search works
+  (`greediness`, `max_candidates`, ...) and are rarely touched.
 
 ## Free functions
 
-- `detect_edges_u8(img, config)`
-- `detect_line_segments_u8(img, config)`
+- `detect_edges(img, config)` — `uint8`/`uint16`/`float32`
+- `detect_line_segments(img, config)` — `uint8`/`uint16`/`float32`
 - `fit_ellipse(pts, config)`
+- `fit_line(pts, config)`
 - `find_shape_model(model_image, roi, scene_image, model_config=None, search_config=None)`
 - `otsu_threshold(img)`
 - `threshold_binary(img, threshold)`
 - `label_components(img, connectivity=8)`
 - `component_stats(label_img, n_labels, min_area=1)`
+- `build_contour_graph(img, edge_config=None, connectivity="c8", ...)`
+- `smooth_polyline(points, sigma)`
+- `erode(img, shape="square", radius=1)` / `dilate(...)` / `open(...)` / `close(...)`
+- `thin(img)`, `chamfer_distance(img)`
+
+## Measuring: `Caliper` and `MetrologyModel`
+
+`Caliper.rect(...)` / `.arc(...)` / `.radial(...)` place a caliper and
+`.measure(img)` runs it, returning a list of `MeasureEdge`. A caliper that
+finds nothing raises `MeasureRejected` — `except vm.MeasureRejected as e:
+e.args[0]` names the gate (`"no_edge"`, `"too_oblique"`, ...). See the
+`measure_py` module docstring for why this is an exception while
+`MetrologyModel.apply` is not.
+
+```python
+disc = ...  # (H, W) uint8
+model = vm.MetrologyModel()
+model.add(vm.MetrologyObject(vm.MetrologyShape.circle((0.0, 0.0), 40.0)))
+# fixture = (x, y, angle, scale), typically a ShapeMatch's own fields
+results = model.apply(disc, x=80.0, y=80.0)
+r = results[0]  # MetrologyResult or MetrologyError, one per object, in order
+print(r.kind, r.circle.r, r.rms, len(r.hits))
+```
+
+## Python surface coverage
+
+Every public `vision-metrology` / `vm-primitives` domain module has a Python
+path, except where noted:
+
+| Rust module | Python surface | Notes |
+|---|---|---|
+| `edge` (2D) | `EdgeDetector`, `detect_edges` | `uint8`/`uint16`/`float32` dispatch |
+| `edge` (1D) | via `Caliper` | not exposed standalone |
+| `lsd` | `LsdDetector`, `detect_line_segments` | `uint8`/`uint16`/`float32` dispatch |
+| `fit` | `Fitter`, `fit_ellipse`, `fit_line` | `fit_circle` via `Fitter` only |
+| `matching` | `ShapeModel`, `ShapeMatcher`, `find_shape_model` | `uint8`/`uint16`/`float32` dispatch on build and find |
+| `measure` | `Caliper`, `MetrologyModel`, `MetrologyObject`, `MetrologyShape`, `MetrologyResult` | |
+| `contour` | `build_contour_graph`, `ContourGraph`, `smooth_polyline` | detector-output variant only, not the raw-edgel constructor |
+| `segment` | `Segmenter`, free functions | watershed and edgel region growing not yet bound |
+| `morph` | `erode`/`dilate`/`open`/`close`/`thin`/`chamfer_distance` | |
+| `laser` | — | **deliberately excluded this wave** — no laser detector was in scope for the v0.3 Python parity pass; tracked for a future wave |
+| `pyr`, `core::raster` internals, `DirectionField` | — | implementation details, never meant to be public even in Rust |
 
 See `examples/python/` for runnable scripts.

@@ -1,6 +1,5 @@
 //! Python bindings for shape-based object detection.
 
-use numpy::PyReadonlyArray2;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 use vision_metrology::matching::{
@@ -8,8 +7,8 @@ use vision_metrology::matching::{
 };
 use vm_primitives::Rect2f;
 
-use crate::config_py::{ShapeModelConfig, ShapeSearchConfig};
-use crate::convert::image_from_numpy_u8;
+use crate::config::{ShapeModelConfig, ShapeSearchConfig};
+use crate::convert::{any_image_from_numpy, with_any_image};
 use crate::types::ShapeMatch;
 
 fn to_rect(roi: (f32, f32, f32, f32)) -> Rect2f {
@@ -32,20 +31,22 @@ pub struct ShapeModel {
 
 #[pymethods]
 impl ShapeModel {
-    /// Build from a `(H, W)` uint8 array and an `(x, y, width, height)` ROI.
+    /// Build from a `(H, W)` `uint8`/`uint16`/`float32` array and an
+    /// `(x, y, width, height)` ROI.
     #[new]
     #[pyo3(signature = (image, roi, config=None))]
     pub fn new(
         py: Python<'_>,
-        image: PyReadonlyArray2<'_, u8>,
+        image: &Bound<'_, PyAny>,
         roi: (f32, f32, f32, f32),
         config: Option<ShapeModelConfig>,
     ) -> PyResult<Self> {
         let cfg = config.unwrap_or_default().to_native()?;
-        let img = image_from_numpy_u8(py, &image)?;
-        let inner = ShapeModelBuilder::new()
-            .build(&img.as_view(), to_rect(roi), &cfg)
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+        let any = any_image_from_numpy(py, image)?;
+        let inner = with_any_image!(any, view => {
+            ShapeModelBuilder::new().build(&view, to_rect(roi), &cfg)
+        })
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
         Ok(Self { inner })
     }
 
@@ -129,16 +130,17 @@ impl ShapeMatcher {
         }
     }
 
-    /// Locate `model` in a `(H, W)` uint8 image; returns a list of `ShapeMatch`.
+    /// Locate `model` in a `(H, W)` `uint8`/`uint16`/`float32` image; returns
+    /// a list of `ShapeMatch`.
     pub fn find<'py>(
         &mut self,
         py: Python<'py>,
-        image: PyReadonlyArray2<'py, u8>,
+        image: &Bound<'py, PyAny>,
         model: &ShapeModel,
     ) -> PyResult<Bound<'py, PyList>> {
         let native = self.cfg.to_native()?;
-        let img = image_from_numpy_u8(py, &image)?;
-        let out = self.matcher.find(&img.as_view(), &model.inner, &native);
+        let any = any_image_from_numpy(py, image)?;
+        let out = with_any_image!(any, view => self.matcher.find(&view, &model.inner, &native));
         PyList::new(py, out.into_iter().map(ShapeMatch::from))
     }
 
@@ -168,9 +170,9 @@ impl ShapeMatcher {
 #[pyo3(signature = (model_image, roi, scene_image, model_config=None, search_config=None))]
 pub fn find_shape_model<'py>(
     py: Python<'py>,
-    model_image: PyReadonlyArray2<'py, u8>,
+    model_image: &Bound<'py, PyAny>,
     roi: (f32, f32, f32, f32),
-    scene_image: PyReadonlyArray2<'py, u8>,
+    scene_image: &Bound<'py, PyAny>,
     model_config: Option<ShapeModelConfig>,
     search_config: Option<ShapeSearchConfig>,
 ) -> PyResult<Bound<'py, PyList>> {

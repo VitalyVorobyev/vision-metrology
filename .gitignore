@@ -12,3 +12,10 @@ dist/
 
 # Local datasets and generated outputs (not distributed)
 data/
+
+# `maturin develop`/`build` places the compiled extension directly in the
+# mixed-layout source tree (python-source = "python" in vm-python's
+# pyproject.toml); only the hand-written __init__.py/.pyi/py.typed are checked in.
+crates/vm-python/python/vision_metrology/*.so
+crates/vm-python/python/vision_metrology/*.pyd
+crates/vm-python/python/vision_metrology/*.dylib

@@ -3,13 +3,13 @@
 use numpy::{PyReadonlyArray2, PyUntypedArrayMethods};
 use pyo3::prelude::*;
 use pyo3::types::PyList;
-use vision_metrology::fit::{fit_circle, fit_ellipse};
+use vision_metrology::fit::{fit_circle, fit_ellipse, fit_line};
 use vision_metrology::lsd::LsdDetector as NativeLsdDetector;
 use vm_primitives::Point2f;
 
-use crate::config_py::{FitConfig, LsdConfig};
-use crate::convert::image_from_numpy_u8;
-use crate::types::{Circle, Ellipse, LineSegment};
+use crate::config::{FitConfig, LsdConfig};
+use crate::convert::{any_image_from_numpy, with_any_image};
+use crate::types::{Circle, Ellipse, Line, LineSegment};
 
 fn segments_to_pylist<'py>(
     py: Python<'py>,
@@ -74,15 +74,15 @@ impl LsdDetector {
         }
     }
 
-    /// Detect line segments in a 2-D `uint8` numpy array.
-    pub fn detect_u8<'py>(
+    /// Detect line segments in a 2-D `uint8`, `uint16` or `float32` numpy array.
+    pub fn detect<'py>(
         &mut self,
         py: Python<'py>,
-        img: PyReadonlyArray2<'py, u8>,
+        img: &Bound<'py, PyAny>,
     ) -> PyResult<Bound<'py, PyList>> {
-        let image = image_from_numpy_u8(py, &img)?;
+        let any = any_image_from_numpy(py, img)?;
         let cfg = self.cfg.to_native()?;
-        let segs = self.det.detect(&image.as_view(), &cfg);
+        let segs = with_any_image!(any, view => self.det.detect(&view, &cfg));
         segments_to_pylist(py, &segs)
     }
 
@@ -178,6 +178,37 @@ impl Fitter {
         }
     }
 
+    /// Fit a line to an `(N, 2)` float32 array by total least squares.
+    ///
+    /// Returns a `Line` carrying the residual statistics, or `None` when the
+    /// fit fails (fewer than 2 points, or all points coincident/down-weighted).
+    pub fn fit_line<'py>(
+        &mut self,
+        py: Python<'py>,
+        pts: PyReadonlyArray2<'py, f32>,
+    ) -> PyResult<Option<Py<PyAny>>> {
+        let points = points_from_numpy(pts)?;
+        let cfg = self.cfg.to_native()?;
+        match fit_line(&points, &cfg) {
+            Ok(f) => {
+                let obj = Py::new(
+                    py,
+                    Line {
+                        px: f.model.p.x,
+                        py: f.model.p.y,
+                        dx: f.model.dir.x,
+                        dy: f.model.dir.y,
+                        rms: f.rms,
+                        max_dev: f.max_dev,
+                        n_used: f.n_used,
+                    },
+                )?;
+                Ok(Some(obj.into()))
+            }
+            Err(_) => Ok(None),
+        }
+    }
+
     /// Return a copy of the current config.
     pub fn config(&self) -> FitConfig {
         self.cfg.clone()
@@ -189,13 +220,13 @@ impl Fitter {
     }
 }
 
-pub(crate) fn detect_line_segments_u8_impl<'py>(
+pub(crate) fn detect_line_segments_impl<'py>(
     py: Python<'py>,
-    img: PyReadonlyArray2<'py, u8>,
+    img: &Bound<'py, PyAny>,
     config: LsdConfig,
 ) -> PyResult<Bound<'py, PyList>> {
     let mut det = LsdDetector::new(Some(config));
-    det.detect_u8(py, img)
+    det.detect(py, img)
 }
 
 pub(crate) fn fit_ellipse_impl<'py>(
@@ -204,4 +235,12 @@ pub(crate) fn fit_ellipse_impl<'py>(
     config: FitConfig,
 ) -> PyResult<Option<Py<PyAny>>> {
     Fitter::new(Some(config)).fit_ellipse(py, pts)
+}
+
+pub(crate) fn fit_line_impl<'py>(
+    py: Python<'py>,
+    pts: PyReadonlyArray2<'py, f32>,
+    config: FitConfig,
+) -> PyResult<Option<Py<PyAny>>> {
+    Fitter::new(Some(config)).fit_line(py, pts)
 }
