@@ -19,8 +19,8 @@ vm-primitives  ──►  vision-metrology  ──►  vm-python
 
 | Crate | Modules | Contents |
 |---|---|---|
-| `vm-primitives` | `core` | `Image<T>`/`ImageView<T>`, sampling (nearest/bilinear), `BorderMode`, geometry + nalgebra aliases (`Isometry2f`, `Similarity2f`, …), `Error` |
-| | `pyr` | `PyramidF32`: 2×2 box-mean pyramid, f32 levels from u8/u16/f32 sources |
+| `vm-primitives` | `core` | `Image<T>`/`ImageView<T>`, `Pixel` (sealed: u8/u16/f32), sampling, `BorderMode`, geometry as nalgebra aliases (`Point2f`, `Vec2f`, `Similarity2f`, …), `Error` |
+| | `pyr` | `Pyramid`: 2×2 box-mean pyramid generic over `Pixel`, optional binomial pre-smooth, `level_to_base` |
 | | `edge` | 1D/2D subpixel DoG edges, edgels, edge pairs, `DirectionField` |
 | | `morph` | binary morphology (parameterized SE), chamfer distance, Zhang-Suen thinning |
 | `vision-metrology` | `contour` | contour graph with T/Y junctions, per-edge geometry, polyline smoothing |
@@ -30,7 +30,9 @@ vm-primitives  ──►  vision-metrology  ──►  vm-python
 | | `shape` | LSD, Bookstein/Fitzgibbon conic fitting, RANSAC ellipse fitting |
 | `vm-python` | — | numpy-in/numpy-out detectors; lib target named `vm_python` (see invariants) |
 
-Both library crates re-export their full module APIs at the crate root.
+Each `vision-metrology` module is a default-on feature (see invariant 18). Names live at
+their module path; `prelude` is a curated convenience and any crate-root re-export is an
+explicit list, never a glob (invariant 17).
 
 ## Invariants
 
@@ -72,6 +74,16 @@ matching update here.
     test in the same PR.
 16. **Docs-as-memory.** A PR that changes scope, decisions, or invariants updates
     `system-design.md` / `roadmap.md` / `backlog.md` in the same PR.
+17. **One canonical path per name.** No glob re-exports across crate boundaries. A name
+    lives in its module; `prelude` is a curated convenience, and any crate-root re-export
+    is an explicit list. `vision-metrology` re-exports the `vm_primitives` *crate*, not its
+    contents.
+18. **Every domain module is feature-gated**, default-on. A new module ships with its
+    feature, its `required-features` on any example/bench/test that uses it, and a row in
+    the crate-doc feature table. CI checks each feature alone, not just `--all-features`.
+19. **One entry point per algorithm**, generic over `Pixel`. No `_u8`/`_u16`/`_f32`
+    variants of the same operation; a `_f32` suffix is only for something that genuinely
+    only takes `f32` (a pyramid level).
 
 ## Decisions and why
 
@@ -125,6 +137,24 @@ pyramid + ~2.5 ms search. Below the top pyramid level the search reads only smal
 around candidates, so full-frame fine-level fields are mostly wasted work. The performance
 plan (roadmap Track 2) is lazy tiled fields first, integer u8 Scharr second, quantized
 directions + SIMD only if still needed — in that order, each gated on measurement.
+
+### Module hygiene: preludes, explicit re-exports, feature gates (2026-08)
+`vision-metrology` re-exported `vm_primitives::*` with a glob. That gave every name two
+paths, made every addition upstream a potential collision downstream, and hid what this
+crate's surface actually was. Replaced by three things: `pub use vm_primitives;` (the crate
+itself, so one dependency is still enough), an explicit curated re-export list, and a
+`prelude` on both crates whose contents follow the feature gates.
+
+Every domain module is now an opt-in feature, default-on: `contour`, `laser`, `matching`,
+`segment` (implies `contour` — region growing consumes a `ContourGraph`), `shape`, and
+`serde` (implies `matching`). Examples, benches and integration tests carry
+`required-features`, so `--no-default-features` skips them instead of failing.
+
+The gates are only worth having if they are checked. `--all-features` can never catch a
+`#[cfg]` that forgot a gated import, so CI gained a `cargo hack --each-feature` job over
+`vision-metrology` and a `--feature-powerset` over `vm-primitives`.
+
+`Error` is `#[non_exhaustive]`, so adding a variant stops being a breaking change.
 
 ### `Point2f` / `Vec2f` are nalgebra aliases (2026-08)
 ```rust

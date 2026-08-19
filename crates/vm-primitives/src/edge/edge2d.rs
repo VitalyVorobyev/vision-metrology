@@ -112,8 +112,7 @@ pub struct Edge2DDetector {
 
 /// Read-only view into the internal gradient buffers of an [`Edge2DDetector`].
 ///
-/// Returned by [`Edge2DDetector::detect_f32_with_gradients`] and
-/// [`Edge2DDetector::detect_u8_with_gradients`].
+/// Returned by [`Edge2DDetector::detect_with_gradients`].
 ///
 /// # Validity
 /// The slices are borrowed from the detector's internal scratch memory.

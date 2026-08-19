@@ -355,7 +355,7 @@ fn region_endpoints_and_width(
 /// Reusable scratch buffers for LSD.
 ///
 /// Create once with [`LsdDetector::new`] and call [`LsdDetector::detect`] /
-/// [`LsdDetector::detect_f32`] on each frame.
+/// [`LsdDetector::detect`] on each frame.
 pub struct LsdDetector {
     /// Source pyramid; only levels `0..=downscale_levels` are built.
     pyr: Pyramid,

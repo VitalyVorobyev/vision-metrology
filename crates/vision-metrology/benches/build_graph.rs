@@ -1,6 +1,6 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
-use vision_metrology::edge::edge2d::Edgel;
+use vision_metrology::Edgel;
 use vision_metrology::{
     Connectivity, ContourBuildConfig, build_graph_from_edgels, smooth_polyline,
 };

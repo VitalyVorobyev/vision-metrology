@@ -44,6 +44,33 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
 
+  features:
+    name: Feature matrix (ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@cargo-hack
+
+      # Every domain module in vision-metrology is opt-in. Building only
+      # `--all-features` would never catch a `#[cfg]` that forgot a gated
+      # import, so check each feature alone and the empty set too.
+      - name: Check each feature
+        run: cargo hack clippy -p vision-metrology --each-feature --all-targets -- -D warnings
+
+      - name: Check vm-primitives features
+        run: cargo hack clippy -p vm-primitives --feature-powerset --all-targets -- -D warnings
+
   msrv:
     name: MSRV
     runs-on: ubuntu-latest

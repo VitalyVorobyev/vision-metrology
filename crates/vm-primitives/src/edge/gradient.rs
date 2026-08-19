@@ -39,10 +39,10 @@ use super::edge2d::SmoothKind;
 
 /// Dense per-pixel unit gradient direction with a magnitude gate.
 ///
-/// Build with [`DirectionField::build_u8`] / [`build_u16`](Self::build_u16) /
-/// [`build_f32`](Self::build_f32); the internal buffers are reused across
-/// calls, so a field kept in a long-lived struct allocates only when the image
-/// dimensions change.
+/// Build with [`DirectionField::build`] for any pixel type, or
+/// [`build_image_f32`](Self::build_image_f32) for a pyramid level; the internal
+/// buffers are reused across calls, so a field kept in a long-lived struct
+/// allocates only when the image dimensions change.
 ///
 /// # Example
 /// ```

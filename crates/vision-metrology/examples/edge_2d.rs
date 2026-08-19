@@ -12,7 +12,7 @@
 //! ```
 
 use vision_metrology::Image;
-use vision_metrology::edge::edge2d::{Edge2DConfig, Edge2DDetector};
+use vision_metrology::{Edge2DConfig, Edge2DDetector};
 
 fn main() {
     let (w, h) = (64usize, 64usize);

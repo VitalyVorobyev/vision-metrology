@@ -69,7 +69,7 @@ impl Default for ContourBuildConfig {
 
 /// Run edge detection on `img` and build a contour graph in one step.
 ///
-/// Equivalent to calling [`Edge2DDetector::detect_u8`] followed by
+/// Equivalent to calling [`Edge2DDetector::detect`] followed by
 /// [`build_graph_from_edgels`].
 pub fn build_graph_from_detector_output(
     img: &ImageView<'_, u8>,

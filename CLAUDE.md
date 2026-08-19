@@ -11,8 +11,8 @@ start of a session and keep them updated when scope or decisions change.
 Three published crates, two layers:
 
 * `crates/vm-primitives`: low-level building blocks
-  * `::core` — image views, sampling, border modes, geometry + nalgebra type aliases
-  * `::pyr`  — ultra-fast 2×2 mean pyramid
+  * `::core` — image views, `Pixel` trait, sampling, border modes, geometry (nalgebra aliases)
+  * `::pyr`  — `Pyramid`, 2×2 mean, generic over `Pixel`, optional pre-smooth
   * `::edge` — 1D/2D subpixel edges (DoG), edgels, edge-pairs
   * `::morph` — binary morphology (parameterized SE), chamfer distance, Zhang-Suen thinning
 * `crates/vision-metrology`: high-level domain modules (depends on `vm-primitives`)
@@ -23,7 +23,7 @@ Three published crates, two layers:
   * `::shape`     — LSD, Bookstein/Fitzgibbon conic fitting, RANSAC ellipse fitting
 * `crates/vm-python`: PyO3 extension module exposing detectors with numpy array I/O
 
-Both `vm-primitives` and `vision-metrology` provide flat crate-root re-exports in addition to module paths.
+Names live at their module path. Both crates ship a `prelude`; crate-root re-exports are explicit lists, never globs. Every `vision-metrology` module is a default-on feature.
 
 ## Key decisions
 

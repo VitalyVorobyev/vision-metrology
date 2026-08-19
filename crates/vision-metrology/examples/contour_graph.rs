@@ -15,10 +15,10 @@
 //! ```
 
 use vision_metrology::Image;
-use vision_metrology::edge::edge2d::{Edge2DConfig, Edge2DDetector};
 use vision_metrology::{
     Connectivity, ContourBuildConfig, NodeKind, build_graph_from_edgels, smooth_polyline,
 };
+use vision_metrology::{Edge2DConfig, Edge2DDetector};
 
 fn main() {
     let (w, h) = (128usize, 128usize);

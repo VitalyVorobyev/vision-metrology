@@ -28,6 +28,24 @@ pub mod edge;
 pub mod morph;
 pub mod pyr;
 
+/// The working set, for `use vm_primitives::prelude::*;`.
+///
+/// Everything here is also reachable by its module path — the prelude is a
+/// convenience, not a second API. Types that only a few callers need
+/// (`DoGKernel1D`, `StructuringElement`, the morphology functions) are
+/// deliberately left out; import those from their module.
+pub mod prelude {
+    pub use crate::core::{
+        BorderMode, Error, Image, ImageView, ImageViewMut, Pixel, Point2f, Rect2f, Similarity2f,
+        Vec2f, Vec2fExt,
+    };
+    pub use crate::edge::{
+        DirectionField, Edge1DConfig, Edge1DDetector, Edge2DConfig, Edge2DDetector, EdgePolarity,
+        Edgel, SmoothKind,
+    };
+    pub use crate::pyr::{PreSmooth, Pyramid, PyramidConfig};
+}
+
 // ---------------------------------------------------------------------------
 // Flat re-exports — everything available at crate root
 // ---------------------------------------------------------------------------

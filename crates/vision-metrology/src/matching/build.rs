@@ -267,7 +267,7 @@ impl ShapeModel {
     /// Build a model from contour polylines.
     ///
     /// Tangents come from the same symmetric finite difference
-    /// [`GraphEdge::compute_geometry`](crate::contour::GraphEdge) uses, and the
+    /// `contour::GraphEdge::compute_geometry` uses, and the
     /// normal is the tangent rotated by 90°, with the sign fixed by the signed
     /// area of the polyline.
     ///
