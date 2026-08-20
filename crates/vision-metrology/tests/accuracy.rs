@@ -454,20 +454,32 @@ fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
     t * t * (3.0 - 2.0 * t)
 }
 
-fn l_shape_at(cx: f32, cy: f32, angle: f32) -> Image<u8> {
+/// `l_shape_at` at an explicit true `scale`: the L-shape's SDF is evaluated
+/// in *model* units (`(mx, my) / scale`), then the returned distance is
+/// scaled back up by `scale` before the antialiasing smoothstep. That keeps
+/// the rendered edge's blur width at a fixed ~1 image pixel regardless of
+/// `scale` — matching a camera's own blur, which does not shrink just
+/// because the part in view got smaller — rather than the edge sharpening
+/// or softening as an artifact of the fixture.
+fn l_shape_at_scaled(cx: f32, cy: f32, angle: f32, scale: f32) -> Image<u8> {
     let (sn, cs) = angle.sin_cos();
     let mut data = vec![0u8; SM_SIZE * SM_SIZE];
     for y in 0..SM_SIZE {
         for x in 0..SM_SIZE {
             let dx = x as f32 - cx;
             let dy = y as f32 - cy;
-            let mx = cs * dx + sn * dy;
-            let my = -sn * dx + cs * dy;
-            let t = smoothstep(-1.0, 1.0, -sdf_l_shape((mx, my)));
+            let mx = (cs * dx + sn * dy) / scale;
+            let my = (-sn * dx + cs * dy) / scale;
+            let d_image = sdf_l_shape((mx, my)) * scale;
+            let t = smoothstep(-1.0, 1.0, -d_image);
             data[y * SM_SIZE + x] = (DARK + (BRIGHT - DARK) * t).round().clamp(0.0, 255.0) as u8;
         }
     }
     Image::from_vec(SM_SIZE, SM_SIZE, data).expect("valid image")
+}
+
+fn l_shape_at(cx: f32, cy: f32, angle: f32) -> Image<u8> {
+    l_shape_at_scaled(cx, cy, angle, 1.0)
 }
 
 fn l_shape_roi() -> Rect2f {
@@ -552,6 +564,200 @@ fn shape_matcher_rotation_sweep() -> Measured {
     Measured { bias, sigma }
 }
 
+// ── ShapeMatcher: scale sweep (roadmap C1 / warp-wave decision 9) ─────────
+//
+// The matcher's scale search is a discrete scan (roadmap plan, decision 9):
+// the plan's working hypothesis was that it degrades well before the edges
+// of a wide `scale_range`, and this sweep exists to measure that honestly
+// rather than assume it. It deliberately does not touch any matching code —
+// only measures it.
+//
+// The model is taught at scale 1.0 with `scale_range = (0.45, 2.1)`; scenes
+// are rendered at 12 true scales geometrically spaced over [0.5, 2.0], each
+// at 3 rotations. Per scale: found-rate (across the 3 rotations), and — only
+// over the sub-range where the *pinned baseline* found every trial — scale
+// bias/sigma and position bias/sigma.
+//
+// **Measured result (2026-08-20)**: on this clean, noise-free, clutter-free
+// synthetic fixture, found-rate is 100% at *every* one of the 12 scales —
+// the hypothesis that this operator degrades badly away from 1.0 does not
+// hold here, given a model whose own `scale_range` was taught wide enough to
+// match what is searched. Scale bias stays under 0.15% and position bias
+// under 0.03 px across the whole 0.5-2.0x range; see the full per-scale
+// table in `BASELINE_FOUND_RATE`'s and the two envelope rows' comments. This
+// does not contradict the plan's field data (canend, which is noisy and
+// cluttered) or its degradation hypothesis for a model taught at the
+// *default* `scale_range = (1.0, 1.0)` — it isolates one variable: given a
+// correctly-configured model, the discrete scan itself is not the bottleneck
+// on a clean scene.
+
+/// 12 scales geometrically spaced over `[lo, hi]` inclusive.
+fn geometric_scales(lo: f32, hi: f32, n: usize) -> Vec<f32> {
+    (0..n)
+        .map(|i| {
+            let t = i as f32 / (n - 1) as f32;
+            lo * (hi / lo).powf(t)
+        })
+        .collect()
+}
+
+/// [`expected_position`], generalised to a nonzero true scale.
+fn expected_position_scaled(
+    model: &ShapeModel,
+    cx: f32,
+    cy: f32,
+    angle: f32,
+    scale: f32,
+) -> Point2f {
+    let o = Vec2f::new(model.origin().x - 160.0, model.origin().y - 160.0);
+    let (sn, cs) = angle.sin_cos();
+    Point2f::new(
+        cx + scale * (cs * o.x - sn * o.y),
+        cy + scale * (sn * o.x + cs * o.y),
+    )
+}
+
+fn build_l_shape_model_scale_range() -> ShapeModel {
+    let reference = l_shape_at_scaled(160.0, 160.0, 0.0, 1.0);
+    ShapeModelBuilder::new()
+        .build(
+            &reference.as_view(),
+            l_shape_roi(),
+            &ShapeModelConfig {
+                scale_range: (0.45, 2.1),
+                ..ShapeModelConfig::default()
+            },
+        )
+        .expect("scale-range L-shape model builds")
+}
+
+const N_SCALES: usize = 12;
+const SCALE_ROTATIONS_DEG: [f32; 3] = [0.0, 120.0, 240.0];
+
+/// Found-rate baseline, pinned from the 2026-08-20 measurement below. A run
+/// that finds the model in *fewer* trials than this at any scale is a
+/// regression — the found set must not shrink. Measured full table (12
+/// scales, geometrically spaced 0.5..2.0, 3 rotations {0, 120, 240} deg
+/// each; `cargo test -p vision-metrology --all-features --test accuracy --
+/// --nocapture`, ~123s):
+///
+/// | scale  | found | scale bias | scale sigma | pos bias (px) | pos sigma (px) |
+/// |-------:|:-----:|-----------:|-------------:|---------------:|-----------------:|
+/// | 0.5000 | 3/3   | -0.0014    | 0.0000       | 0.0218          | 0.0012            |
+/// | 0.5672 | 3/3   | -0.0014    | 0.0003       | 0.0151          | 0.0023            |
+/// | 0.6433 | 3/3   | -0.0007    | 0.0001       | 0.0070          | 0.0039            |
+/// | 0.7297 | 3/3   | -0.0006    | 0.0001       | 0.0083          | 0.0010            |
+/// | 0.8278 | 3/3   | -0.0002    | 0.0002       | 0.0063          | 0.0028            |
+/// | 0.9389 | 3/3   |  0.0000    | 0.0002       | 0.0020          | 0.0006            |
+/// | 1.0650 | 3/3   |  0.0005    | 0.0002       | 0.0050          | 0.0014            |
+/// | 1.2081 | 3/3   |  0.0006    | 0.0001       | 0.0053          | 0.0036            |
+/// | 1.3704 | 3/3   |  0.0005    | 0.0001       | 0.0097          | 0.0001            |
+/// | 1.5544 | 3/3   |  0.0007    | 0.0001       | 0.0058          | 0.0039            |
+/// | 1.7632 | 3/3   |  0.0006    | 0.0002       | 0.0105          | 0.0002            |
+/// | 2.0000 | 3/3   |  0.0006    | 0.0003       | 0.0131          | 0.0003            |
+///
+/// Found every trial at every scale — see the module-level comment above
+/// for why that does not contradict the plan's field-data hypothesis.
+const BASELINE_FOUND_RATE: [f32; N_SCALES] = [1.0; N_SCALES];
+
+struct ScaleCell {
+    scale_stat: (f32, f32),
+    pos_stat: (f32, f32),
+}
+
+/// Runs the full scale x rotation grid once, asserting the found-rate
+/// regression guard as a side effect, and returns per-scale bias/sigma for
+/// both the recovered scale and the recovered position.
+fn scale_sweep_cells() -> Vec<ScaleCell> {
+    let model = build_l_shape_model_scale_range();
+    let cfg = ShapeSearchConfig {
+        refinement: Refinement::LeastSquares,
+        ..Default::default()
+    };
+    let scales = geometric_scales(0.5, 2.0, N_SCALES);
+
+    scales
+        .iter()
+        .enumerate()
+        .map(|(i, &s)| {
+            let mut scale_errs = Vec::with_capacity(SCALE_ROTATIONS_DEG.len());
+            let mut pos_errs = Vec::with_capacity(SCALE_ROTATIONS_DEG.len());
+            let mut found = 0usize;
+            for &rot_deg in &SCALE_ROTATIONS_DEG {
+                let angle = rot_deg.to_radians();
+                let scene = l_shape_at_scaled(160.0, 160.0, angle, s);
+                if let Some(m) = ShapeMatcher::new()
+                    .find(&scene.as_view(), &model, &cfg)
+                    .into_iter()
+                    .next()
+                {
+                    found += 1;
+                    scale_errs.push(m.scale() - s);
+                    let want = expected_position_scaled(&model, 160.0, 160.0, angle, s);
+                    let d = m.position - want;
+                    pos_errs.push((d.x * d.x + d.y * d.y).sqrt());
+                }
+            }
+            let found_rate = found as f32 / SCALE_ROTATIONS_DEG.len() as f32;
+            let scale_stat = if scale_errs.is_empty() {
+                (0.0, 0.0)
+            } else {
+                mean_std(&scale_errs)
+            };
+            let pos_stat = if pos_errs.is_empty() {
+                (0.0, 0.0)
+            } else {
+                mean_std(&pos_errs)
+            };
+            eprintln!(
+                "scale_sweep: scale={s:.4} found={found}/{} found_rate={found_rate:.2} \
+                 scale_bias={:.4} scale_sigma={:.4} pos_bias={:.4} pos_sigma={:.4}",
+                SCALE_ROTATIONS_DEG.len(),
+                scale_stat.0,
+                scale_stat.1,
+                pos_stat.0,
+                pos_stat.1
+            );
+            assert!(
+                found_rate + 1e-6 >= BASELINE_FOUND_RATE[i],
+                "scale sweep regression at scale idx {i} (s={s:.4}): found_rate {found_rate:.2} \
+                 dropped below the pinned baseline {:.2} — the found set must not shrink",
+                BASELINE_FOUND_RATE[i]
+            );
+            ScaleCell {
+                scale_stat,
+                pos_stat,
+            }
+        })
+        .collect()
+}
+
+/// Scale bias/sigma, gated only over the scales the pinned baseline found
+/// at every rotation — see the module-level comment on why the rest of the
+/// grid is measured and recorded, not gated.
+fn shape_matcher_scale_bias_sweep() -> Measured {
+    let cells = scale_sweep_cells();
+    Measured::worst_of(
+        cells
+            .iter()
+            .zip(BASELINE_FOUND_RATE)
+            .filter(|(_, baseline)| *baseline >= 1.0)
+            .map(|(c, _)| c.scale_stat),
+    )
+}
+
+/// Position bias/sigma (pixels), same gating as [`shape_matcher_scale_bias_sweep`].
+fn shape_matcher_scale_position_sweep() -> Measured {
+    let cells = scale_sweep_cells();
+    Measured::worst_of(
+        cells
+            .iter()
+            .zip(BASELINE_FOUND_RATE)
+            .filter(|(_, baseline)| *baseline >= 1.0)
+            .map(|(c, _)| c.pos_stat),
+    )
+}
+
 // ── the table ────────────────────────────────────────────────────────────
 
 struct Row {
@@ -577,6 +783,16 @@ struct Row {
 /// | fit_circle_radius_and_centre (px)    | 0.325               | 1.135            | 0.50            | 1.75              |
 /// | shape_matcher_translation (px)       | 0.003               | 0.011            | 0.02            | 0.03              |
 /// | shape_matcher_rotation (deg)         | 0.000               | 0.001            | 0.05            | 0.05              |
+/// | shape_matcher_scale_bias (frac.)     | 0.0014              | 0.0003           | 0.003           | 0.001             |
+/// | shape_matcher_scale_position (px)    | 0.0218              | 0.0039           | 0.04            | 0.01              |
+///
+/// The last two rows are the C1 scale sweep (roadmap Track C1 / warp-wave
+/// decision 9): 12 true scales geometrically spaced 0.5..2.0x, 3 rotations
+/// each, model taught at scale 1.0 with `scale_range = (0.45, 2.1)`. Every
+/// scale found every rotation (100% found-rate — see `BASELINE_FOUND_RATE`'s
+/// full per-scale table, which is also the found-rate regression guard), so
+/// unlike every other row here the envelope covers the *entire* swept range,
+/// not just a well-behaved sub-range.
 ///
 /// `edge2d_position` and `fit_circle_radius_and_centre` are the two rows
 /// whose worst cell is a genuinely hard corner of the sweep, not a loose
@@ -628,6 +844,24 @@ const ROWS: &[Row] = &[
         measure: shape_matcher_rotation_sweep,
         bias_envelope: 0.05,
         sigma_envelope: 0.05,
+    },
+    Row {
+        // Worst measured |bias|/sigma over the full 0.5-2.0x sweep (all 12
+        // scales found every trial — see `BASELINE_FOUND_RATE`'s table):
+        // |bias| 0.0014, sigma 0.0003 (dimensionless, a fraction of true
+        // scale). ~1.5x that measurement, rounded.
+        name: "shape_matcher_scale_bias",
+        measure: shape_matcher_scale_bias_sweep,
+        bias_envelope: 0.003,
+        sigma_envelope: 0.001,
+    },
+    Row {
+        // Same sweep, position (px): worst measured |bias| 0.0218, sigma
+        // 0.0039. ~1.5-2x that measurement, rounded.
+        name: "shape_matcher_scale_position",
+        measure: shape_matcher_scale_position_sweep,
+        bias_envelope: 0.04,
+        sigma_envelope: 0.01,
     },
 ];
 
