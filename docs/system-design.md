@@ -618,6 +618,49 @@ into a canonical crop fabricates texture a variation model would then treat as r
 choice belongs to the caller building the map for that purpose, not to `warp` itself, so it
 is recorded here as a heads-up for W2 rather than a decision this wave made.
 
+### `CropSpec` / `ShapeMatch::model_frame_map`: rectify closes the seam (2026-08)
+B4.1 (roadmap), the W2 rectify wave. `matching` says where the part is, `warp` moves pixels
+— `CropSpec { rect: Rect2f, px_per_unit: f32, normalize_scale: bool }` plus
+`ShapeMatch::{model_frame_map, model_frame_pose}` is the seam, in `matching::crop` rather
+than a new `align` module: the geometry is a couple of lines over `Map::from_fn`, and a
+found pose calling straight into `Map` construction (no intermediate type) is simpler than
+inventing an abstraction two functions wide.
+
+**Output size is a property of the spec, never of the match.** `CropSpec::output_size()`
+computes `(rect.width, rect.height) * px_per_unit`, rounded, with no dependence on any
+particular `ShapeMatch` — the requirement driving this (roadmap decision 3) is anomaly
+learning needing identical tensor shapes across every frame a part is found in, regardless
+of the pose it was found at that frame. Fixing size at "spec alone" rather than "spec plus
+match" is what makes that guarantee structural instead of a convention callers have to
+maintain.
+
+**`normalize_scale` reuses the pose's own isometry, not a re-derivation from decomposed
+parts.** `ShapeMatch::pose` is a `Similarity2f` = `Translation(position) ∘ scale·R ∘
+Translation(−origin)`; expanded, its stored `isometry.translation` already equals `position
+− scale·R·origin` — the origin dependence is baked in once, at match time. So
+`model_frame_pose` for `normalize_scale = true` is exactly
+`Similarity2f::from_isometry(pose.isometry, 1.0)`: same rotation, same translation, scale
+forced to `1.0` — no `ShapeModel` (and therefore no `origin`) needs to be threaded through
+`model_frame_map`'s signature at all. Rebuilding the pose from `(x, y, angle, scale)` plus a
+caller-supplied `origin` (the way the existing Python `ShapeMatch.matrix()` binding has to,
+predating this wave) would need that extra parameter and get the *wrong* canonical crop
+besides — zeroing `scale` in the decomposed form without correcting the translation leaves
+a residual offset proportional to `(scale − 1) · R · origin`. Keeping the raw pose is what
+avoids both problems, and is why the Python binding added a hidden (non-`get`) `pose` field
+to its `ShapeMatch` pyclass alongside the existing decomposed ones (`vm-python/src/types.rs`)
+rather than reconstructing a pose in Python.
+
+**`BorderMode::Constant`, deliberately not the workspace's `Clamp` default** — the heads-up
+recorded in the `warp` entry above, exercised here: `model_frame_map`'s docs recommend
+`Map::apply_with_mask` with `Constant`, since `Clamp` would replicate the scene's edge pixel
+into out-of-scene crop area, fabricating texture an anomaly model would learn as normal
+signal rather than "no data here".
+
+**C1 headline: rectify repeatability, 0.88 bias / 1.69 σ (8-bit intensity units) under
+sub-pixel pose jitter** — see roadmap B4.1 for the full sweep description. This is the
+number that decides anomaly-pipeline viability, and it was measured (not assumed) before
+being pinned as a regression envelope, same discipline as every other C1 row.
+
 ## Performance numbers (M4 Pro, single thread, release)
 
 Record per release. The target use case budgets ~30 ms for a full multi-stage

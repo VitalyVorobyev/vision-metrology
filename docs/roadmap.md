@@ -244,6 +244,47 @@ built once outside the timed loop): `affine_apply_640x480_bilinear` ≈ 510 µs,
 `polar_apply_640x480_bilinear` ≈ 494 µs — ~1.6-1.7 ns/destination-pixel, no per-apply
 allocation. `match_shape` re-verified unchanged (this wave does not touch `matching`).
 
+### B4.1 — rectify: canonical-pose crops (`matching` + `warp`) — `done`
+```rust
+pub struct CropSpec { pub rect: Rect2f /* model-frame coords */, pub px_per_unit: f32,
+                       pub normalize_scale: bool /* default true */ }
+impl ShapeMatch {
+    pub fn model_frame_pose(&self, spec: &CropSpec) -> Similarity2f;
+    pub fn model_frame_map(&self, spec: &CropSpec) -> Map;
+}
+```
+`warp` moves pixels, `matching` says where the part is — this is the seam: a found
+`ShapeMatch` rectified into a fixed-size, model-frame crop, the shape an anomaly model
+needs identical across every frame. `spec.rect` is in the same reference-image frame
+`ShapeMatch::pose` already consumes directly (no origin bookkeeping), so `output_size()`
+depends only on the spec, never on which match produced the map. `normalize_scale = true`
+(default) forces the crop to model scale by zeroing the found `Similarity2f`'s scale factor
+while keeping its rotation and translation (`Similarity2f::from_isometry(pose.isometry,
+1.0)`); `false` returns `pose` unchanged. `model_frame_pose` exists to hand back that exact
+`dst -> scene` transform, so a detection made on the rectified crop maps back into the
+scene without re-deriving it.
+
+**Landed.** `crates/vision-metrology/src/matching/crop.rs`; `matching`'s Cargo feature now
+implies `warp` (it was already a default-on transitive dependency; this makes the coupling
+explicit rather than an accident of the default feature set). Recommended usage
+(`Map::apply_with_mask` + `BorderMode::Constant`, not the crate's usual `Clamp` default) is
+documented at the API — `Clamp` would fabricate texture by repeating the scene's edge
+pixel, which an anomaly model trained on these crops would learn as normal.
+
+**C1 headline number — rectify repeatability.** `tests/accuracy.rs`'s
+`rectify_repeatability` row: one taught L-shape, re-rendered at 12 seeded subpixel poses
+(±0.5 px translation, ±1° rotation, ±1% scale), found and rectified each time, per-pixel
+σ across the 12 crops and mean `|crop − reference|` against a direct render of the taught
+patch (valid-mask area only). **Measured (2026-08-20): bias 0.88, σ 1.69 (8-bit intensity
+units, i.e. under 1% of full range)** — envelope pinned at 1.3 / 2.5. This is the number
+that decides anomaly-pipeline viability: sub-pixel pose jitter contributes well under 1% of
+dynamic range to the rectified crop, small enough that a downstream anomaly model's own
+noise floor should dominate.
+
+`examples/align_crops` runs teach → find → rectify on real glue-rig frames
+(`data/42781`, one of the three vertically-stacked camera strips): 20/20 frames found,
+mean crop validity 0.97.
+
 ### B5 — `metric`: the calibration bridge
 Mirror `PinholeIntrinsics`, `BrownConrady5`, `LaserPlane` on nalgebra 0.35; alloc-free
 `undistort_pixel`, `pixel_to_ray`, `ray_plane_intersect`, `laser_line_to_profile`,
@@ -307,6 +348,10 @@ measurement (scale bias 0.003, scale σ 0.001, position bias 0.04 px, position �
 found-rate is pinned as a per-scale regression guard (`BASELINE_FOUND_RATE`) so a future
 change that *shrinks* the found set — even one that stays inside these accuracy envelopes —
 fails CI. Full per-scale table is in `tests/accuracy.rs`'s `BASELINE_FOUND_RATE` doc comment.
+
+**Rectify row (rectify wave).** Added `rectify_repeatability` — see B4.1 above for the full
+description. Measured bias 0.88 / σ 1.69 (8-bit intensity units, not pixels); envelope
+pinned at 1.3 / 2.5.
 
 ### C2 — blob features
 `ComponentStats` is bbox + centroid + count. Add second-order moments → orientation and
