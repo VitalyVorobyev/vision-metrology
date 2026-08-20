@@ -30,6 +30,7 @@ vm-primitives  ──►  vision-metrology  ──►  vm-python
 | | `fit` | robust line / circle / ellipse fitting, residuals reported |
 | | `measure` | calipers (rect / arc / radial), metrology model applied at a fixture pose |
 | | `lsd` | LSD line-segment detection |
+| | `warp` | `Map`: precomputed `dst → src` coordinate table (affine / projective / polar / `from_fn`), `apply`/`apply_with_mask` with a first-class validity mask |
 | `vm-python` | — | numpy-in/numpy-out detectors; lib target named `vm_python` (see invariants) |
 
 Each `vision-metrology` module is a default-on feature (see invariant 18). Names live at
@@ -563,6 +564,59 @@ assertions tightened to 0.02 px on centre and 0.10 px on radius.
 `match_shape` before adopting: clean 360° 3.51 → 3.42 ms (−2.6%), clutter 6.74 → 6.61 ms
 (−1.9%). Small, but free and permanent; all later numbers are against this profile. It costs
 release build time, which is the trade we want on a library whose detection budget is ~5 ms.
+
+### `warp`: `dst → src` gather, the mask as a free by-product, and the Clamp exception (2026-08)
+B4 (roadmap). Every image-warping call in this workspace answers "for this **destination**
+pixel, where in the **source** do I look?" (`dst[y][x] = src.sample(map(x, y))`) rather than
+scattering source pixels forward — the gather direction is what lets `apply` visit every
+destination pixel exactly once with no holes, independent of how the map compresses or
+expands space. `Map::affine`/`Map::projective` therefore take the transform that carries a
+*destination* coordinate to the matching *source* coordinate, the inverse of a fixture pose
+or any other forward (source-into-destination) transform — documented prominently in the
+module doc, with the one-line fix (`nalgebra`'s `.inverse()`) right next to the warning,
+because getting this backwards is a silent, plausible-looking bug: the output has the right
+shape and mostly-right pixels, just mirrored/scaled the wrong way.
+
+**The validity mask is not a second pass, it falls out of the existing branch.** `apply`'s
+inner loop already splits on whether every tap a sample needs (one for `Nearest`, four for
+`Bilinear`) lands inside the source — that split is what lets the fast path skip
+`BorderMode` entirely. `apply_with_mask` writes `255`/`0` from exactly that same branch,
+so correctness of the mask is inseparable from correctness of the fast path, not a
+duplicate bounds check that could drift out of sync with it. This matters because a
+destination pixel that took the border-fallback path is not measurement data — a caliper or
+future variation-model pixel average that mixes `Constant`-fabricated intensity in with real
+image content corrupts the result with no signal that it happened. `apply` (no mask) is
+still offered for callers who only want a filled canvas (e.g. a preview image) and do not
+need to distinguish real from fabricated pixels.
+
+**Every builder routes through `from_fn`.** `affine` and `projective` embed their nalgebra
+transform in a closure, `polar` its `(angle, radius)` bin-center formula — so there is one
+coordinate-precompute path, not four independent ones, and `from_fn` itself is exercised by
+every test the other three constructors have. The cost is paid once, at construction;
+`apply`'s hot loop never touches a matrix or a trig function.
+
+**`polar`'s bin centers, not the range boundaries, are what gets sampled.** Destination `x`
+sweeps `phi` and `y` sweeps `r`, both as `(index + 0.5) / count` fractions of the given
+range — the same convention a histogram uses for its bins. A full-turn `phi` range therefore
+never samples both `0` and `2π` (which would duplicate the seam column); a partial range
+never samples its own end exactly either, which is a deliberate, documented trade rather
+than an oversight — a caller who needs an exact boundary sample can request a fractionally
+wider range.
+
+**Prefiltering is a doc note, not a dependency.** `apply`'s per-pixel gather is a plain
+resample, not a resampling filter — minifying by more than roughly 2× through it aliases the
+same way naive nearest/bilinear scaling always does. `pyr::Pyramid` already covers
+decimation; B3 (`filter`) is not a prerequisite for B4 and is not needed for the common case
+this module exists for (rectifying a fixture pose at roughly unit scale).
+
+**Accepted deviation from invariant 11 is deferred, not taken here.** Invariant 11 defaults
+border handling to `Clamp`; B4 keeps that default (`apply`'s `border` parameter has no
+implicit default — every call states its `BorderMode` explicitly, same as `sample_bilinear_f32`
+and `sample_nearest`). The plan's rectify-crop design (`ShapeMatch::model_frame_map`, wave
+W2) is expected to choose `Constant` + the mask deliberately, since replicating edge pixels
+into a canonical crop fabricates texture a variation model would then treat as real — that
+choice belongs to the caller building the map for that purpose, not to `warp` itself, so it
+is recorded here as a heads-up for W2 rather than a decision this wave made.
 
 ## Performance numbers (M4 Pro, single thread, release)
 

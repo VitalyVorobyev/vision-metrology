@@ -56,6 +56,7 @@ All rendered deterministically from synthetic fixtures by
 | `measure` | Calipers (rect / arc / radial) and metrology models: measure a located part and fit the result — see the [guide](docs/measure.md) |
 | `segment` | Otsu and adaptive thresholding, connected-component labeling, watershed, edgel region growing |
 | `lsd` | LSD line-segment detection |
+| `warp` | Image warping: build a `dst → src` `Map` once (affine / projective / polar / arbitrary `from_fn`), apply it per frame with a first-class validity mask |
 
 ## Pipeline
 
