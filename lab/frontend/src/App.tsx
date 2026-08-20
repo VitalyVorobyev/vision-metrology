@@ -7,12 +7,13 @@ import type { MatchOut, OverlayPrimitiveOut, Roi } from "./api/backend";
 import { CanvasStage } from "./components/CanvasStage";
 import { ImageRail } from "./components/ImageRail";
 import { AlignTab } from "./tabs/AlignTab";
+import { BirdsEyeTab } from "./tabs/BirdsEyeTab";
 import { FindTab } from "./tabs/FindTab";
 import { MeasureTab } from "./tabs/MeasureTab";
 import { MotionTab } from "./tabs/MotionTab";
 import { TeachTab } from "./tabs/TeachTab";
 
-type TabId = "teach" | "find" | "measure" | "align" | "motion";
+type TabId = "teach" | "find" | "measure" | "align" | "motion" | "birdseye";
 
 const TABS: TabItem<TabId>[] = [
   { id: "teach", label: "Teach" },
@@ -20,6 +21,7 @@ const TABS: TabItem<TabId>[] = [
   { id: "measure", label: "Measure" },
   { id: "align", label: "Align" },
   { id: "motion", label: "Motion" },
+  { id: "birdseye", label: "Bird's-eye" },
 ];
 
 export function App() {
@@ -115,8 +117,10 @@ export function App() {
             <MeasureTab image={selectedImage} models={models} calibrations={calibrations} onResult={setOverlay} />
           ) : tab === "align" ? (
             <AlignTab image={selectedImage} models={models} />
-          ) : (
+          ) : tab === "motion" ? (
             <MotionTab images={images} windowRoi={roi} />
+          ) : (
+            <BirdsEyeTab images={images} calibrations={calibrations} />
           )}
           {tab === "find" && matches.length === 0 && overlay.length === 0 && (
             <p className="mt-2 text-xs text-fg-subtle">Run a search to see matches on the image.</p>

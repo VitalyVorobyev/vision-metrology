@@ -777,6 +777,50 @@ nearest-integer report; Lucas-Kanade's contribution is real but modest on top of
 already-reasonable baseline, and the measurement says so rather than assuming a dramatic
 correction.
 
+### Mosaic: nearest-camera-centre priority, no blending (2026-08)
+Roadmap B7, plan decision 6. **Not a library module** — deliberately: `metric::plane_grid_map`
+(per camera) plus `warp::Map::apply_with_mask` are already everything a bird's-eye composite
+needs, so the only genuinely new logic is the *compositing rule*, which is small enough
+(~40 lines) that a module would be more API-surface than the logic it wraps, and which has
+exactly two consumers in this wave (`tests/mosaic.rs`, `examples/birdseye_mosaic.rs`, plus
+the lab's Python `routers/mosaic.py`) — "promote to a module at the second *library*
+consumer" (see the "Later milestones" reasoning elsewhere in this repo for the same
+principle applied to `core`) does not yet apply.
+
+**Priority rule: nearest-camera-centre, ties by index, no blending by default.** For each
+destination grid pixel, among the cameras whose `apply_with_mask` validity is set there,
+keep the one whose reprojection of that plane point (project through `pose`, perspective-
+divide, [`distort_pixel`](crate::metric::distort_pixel) — the same forward geometry
+`plane_grid_map` composes internally) lands closest to its own principal point `(cx, cy)`.
+This is deterministic, needs no new `warp::Map` accessor (the reprojection is recomputed
+from public `metric` functions, not read out of `Map`'s private per-pixel table), and gives
+a physically sensible answer: a camera's own image is most reliable near its optical axis
+(least foreshortening, least distortion, most resolution per plane-mm), so "closest to
+principal point" is a real proxy for "best view of this patch," not an arbitrary tiebreak.
+
+**Why no blending is the important half of the decision.** A metrology library's mosaic
+exists to be measured on, and an averaged pixel at a seam cannot be traced back to one
+camera's calibration — which distortion model, which extrinsic, which pixel produced it
+becomes ambiguous exactly where two independently-calibrated views disagree most. The
+`source_id` map (camera index, or `255` for uncovered) is therefore first-class output,
+not a debugging aid: every mosaic pixel that is not `255` traces to exactly one camera's
+`plane_grid_map`, which is what makes a downstream caliper or fit placed on the mosaic a
+real, attributable measurement. **Feathering exists only as an opt-in, display-only mode**
+(linear, inverse-distance-weighted blend across the overlap) — for a human looking at a
+preview, not for anything that feeds a measurement.
+
+**Fixture-vs-real-data seam disparity gap is the metric's property, not the geometry's.**
+The synthetic fixture (`tests/mosaic.rs`) measures p95 seam disparity of 0.000 on
+antialiased fiducials; the real-data example (`examples/birdseye_mosaic.rs`, a hard-edged
+checkerboard target) measures p95 of 251.00 on the *same* compositing rule. Both numbers
+are correct and expected — see B7 in the roadmap and both files' own doc comments for the
+full reasoning: a razor edge turns any sub-pixel disagreement (real calibration residual,
+an approximate standoff estimate, cascaded bilinear resampling) into a full-range
+intensity swing, where an antialiased pattern turns the same disagreement into a few
+intensity units. This is exactly why C1's own envelope-pinning convention pins to the
+*measured* number for a given fixture rather than to an assumed "small is always right"
+threshold.
+
 ## Performance numbers (M4 Pro, single thread, release)
 
 Record per release. The target use case budgets ~30 ms for a full multi-stage

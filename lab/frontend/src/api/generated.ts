@@ -143,6 +143,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/mosaic": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mosaic */
+        post: operations["mosaic_api_mosaic_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mosaic/{mosaic_id}/image": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Image */
+        get: operations["get_image_api_mosaic__mosaic_id__image_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mosaic/{mosaic_id}/source_id": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Source Id */
+        get: operations["get_source_id_api_mosaic__mosaic_id__source_id_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/rectify": {
         parameters: {
             query?: never;
@@ -610,6 +661,94 @@ export interface components {
                 number
             ];
         };
+        /** MosaicCameraCoverageOut */
+        MosaicCameraCoverageOut: {
+            /** Camera Index */
+            camera_index: number;
+            /**
+             * Coverage Fraction
+             * @description fraction of the grid this camera's mask covers
+             */
+            coverage_fraction: number;
+            /** Image Id */
+            image_id: string;
+        };
+        /** MosaicCameraIn */
+        MosaicCameraIn: {
+            /**
+             * Camera Index
+             * @description Index into the calibration's camera list.
+             */
+            camera_index: number;
+            /** Image Id */
+            image_id: string;
+        };
+        /**
+         * MosaicGridIn
+         * @description Explicit grid spec over the calibration's `z = 0` plane; any field left unset is
+         *     auto-fit from the requested cameras' own image-border footprints on that plane
+         *     (`pixel_to_plane` on a border sample, unioned, plus a small margin).
+         */
+        MosaicGridIn: {
+            /** Height */
+            height?: number | null;
+            /** Mm Per Px */
+            mm_per_px?: number | null;
+            /** Origin Mm */
+            origin_mm?: [
+                number,
+                number
+            ] | null;
+            /** Width */
+            width?: number | null;
+        };
+        /** MosaicRequest */
+        MosaicRequest: {
+            /** Calibration Id */
+            calibration_id: string;
+            /**
+             * Cameras
+             * @description At least 2 cameras -- a mosaic of 1 is just a crop.
+             */
+            cameras: components["schemas"]["MosaicCameraIn"][];
+            grid?: components["schemas"]["MosaicGridIn"];
+        };
+        /** MosaicResponse */
+        MosaicResponse: {
+            /** Cameras */
+            cameras: components["schemas"]["MosaicCameraCoverageOut"][];
+            /** Height */
+            height: number;
+            /** Id */
+            id: string;
+            /** Image Url */
+            image_url: string;
+            /** Mm Per Px */
+            mm_per_px: number;
+            /** Origin Mm */
+            origin_mm: [
+                number,
+                number
+            ];
+            /**
+             * Overlap Fraction
+             * @description fraction of the *union* covered by >= 2 cameras
+             */
+            overlap_fraction: number;
+            /**
+             * Seam Disparity P50
+             * @description null when no pixel is jointly covered by >= 2 cameras
+             */
+            seam_disparity_p50?: number | null;
+            /** Seam Disparity P95 */
+            seam_disparity_p95?: number | null;
+            /** Source Id Url */
+            source_id_url: string;
+            /** Union Coverage Fraction */
+            union_coverage_fraction: number;
+            /** Width */
+            width: number;
+        };
         /**
          * OverlayPrimitiveOut
          * @description Mirrors `@vitavision/lab-ui`'s `MeasurePrimitive` union exactly (field names and
@@ -1065,6 +1204,103 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ModelOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mosaic_api_mosaic_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MosaicRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MosaicResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_image_api_mosaic__mosaic_id__image_get: {
+        parameters: {
+            query?: {
+                feather?: boolean;
+            };
+            header?: never;
+            path: {
+                mosaic_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_source_id_api_mosaic__mosaic_id__source_id_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mosaic_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

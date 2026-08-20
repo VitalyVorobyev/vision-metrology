@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from vm_lab.config import settings
-from vm_lab.routers import calibration, displacement, find, images, measure, models, rectify
+from vm_lab.routers import calibration, displacement, find, images, measure, models, mosaic, rectify
 from vm_lab.store import store
 
 
@@ -35,6 +35,7 @@ def create_app() -> FastAPI:
     app.include_router(measure.router)
     app.include_router(rectify.router)
     app.include_router(displacement.router)
+    app.include_router(mosaic.router)
 
     @app.get("/api/health")
     async def health() -> dict[str, str]:

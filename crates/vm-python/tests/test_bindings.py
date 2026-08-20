@@ -974,6 +974,34 @@ def test_load_table_calibration_rejects_garbage():
         vm.load_table_calibration(b"{}")
 
 
+def test_project_plane_points_is_the_forward_of_pixel_to_plane():
+    camera = _identity_camera()
+    pose = np.eye(4, dtype=np.float64)
+    pose[2, 3] = 1000.0  # camera 1000mm above the z=0 plane
+    plane = vm.Plane3.xy()
+
+    points_mm = np.array([[0.0, 0.0], [100.0, 0.0], [0.0, 200.0]], dtype=np.float32)
+    pixels = vm.project_plane_points(camera, pose, points_mm)
+    assert pixels.shape == (3, 2)
+    assert pixels.dtype == np.float64
+
+    # Plane origin projects to the principal point (no distortion).
+    np.testing.assert_allclose(pixels[0], [320.0, 240.0], atol=1e-2)
+
+    # Round-trip: projecting mm -> pixel -> pixel_to_plane recovers mm.
+    back = vm.pixel_to_plane(camera, pose, plane, pixels.astype(np.float32))
+    np.testing.assert_allclose(back, points_mm, atol=1e-2)
+
+
+def test_project_plane_points_marks_behind_camera_as_nan():
+    camera = _identity_camera()
+    pose = np.eye(4, dtype=np.float64)
+    pose[2, 3] = -1000.0  # camera below the z=0 plane, looking away from it
+    points_mm = np.array([[0.0, 0.0]], dtype=np.float32)
+    pixels = vm.project_plane_points(camera, pose, points_mm)
+    assert np.isnan(pixels).all()
+
+
 # ---------------------------------------------------------------------------
 # corr: cross-correlation matching + displacement
 # ---------------------------------------------------------------------------

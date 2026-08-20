@@ -326,3 +326,58 @@ class DisplacementResponse(BaseModel):
     # the running sum of `pairs[...].dx`/`dy` — the trajectory the Motion tab plots.
     cumulative_x: list[float]
     cumulative_y: list[float]
+
+
+# -- mosaic (bird's-eye composite) ------------------------------------------------------
+
+
+class MosaicCameraIn(BaseModel):
+    camera_index: int = Field(ge=0, description="Index into the calibration's camera list.")
+    image_id: str
+
+
+class MosaicGridIn(BaseModel):
+    """Explicit grid spec over the calibration's `z = 0` plane; any field left unset is
+    auto-fit from the requested cameras' own image-border footprints on that plane
+    (`pixel_to_plane` on a border sample, unioned, plus a small margin)."""
+
+    origin_mm: tuple[float, float] | None = None
+    mm_per_px: float | None = Field(default=None, gt=0)
+    width: int | None = Field(default=None, gt=0, le=2000)
+    height: int | None = Field(default=None, gt=0, le=2000)
+
+
+class MosaicRequest(BaseModel):
+    calibration_id: str
+    cameras: list[MosaicCameraIn] = Field(
+        min_length=2, description="At least 2 cameras -- a mosaic of 1 is just a crop."
+    )
+    grid: MosaicGridIn = Field(default_factory=MosaicGridIn)
+
+
+class MosaicCameraCoverageOut(BaseModel):
+    camera_index: int
+    image_id: str
+    coverage_fraction: float = Field(description="fraction of the grid this camera's mask covers")
+
+
+class MosaicResponse(BaseModel):
+    id: str
+    width: int
+    height: int
+    origin_mm: tuple[float, float]
+    mm_per_px: float
+
+    # `?feather=true` on `image_url` switches from the default no-blend
+    # nearest-camera-centre priority composite to the opt-in display-only
+    # linear feather (see `routers/mosaic.py`'s module docstring).
+    image_url: str
+    source_id_url: str
+
+    cameras: list[MosaicCameraCoverageOut]
+    union_coverage_fraction: float
+    overlap_fraction: float = Field(description="fraction of the *union* covered by >= 2 cameras")
+    seam_disparity_p50: float | None = Field(
+        default=None, description="null when no pixel is jointly covered by >= 2 cameras"
+    )
+    seam_disparity_p95: float | None = None

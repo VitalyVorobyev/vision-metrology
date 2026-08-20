@@ -48,6 +48,11 @@ export type PlaneIn = Schemas["PlaneIn"];
 export type DisplacementRequest = Schemas["DisplacementRequest"];
 export type DisplacementResponse = Schemas["DisplacementResponse"];
 export type DisplacementPairOut = Schemas["DisplacementPairOut"];
+export type MosaicCameraIn = Schemas["MosaicCameraIn"];
+export type MosaicGridIn = Schemas["MosaicGridIn"];
+export type MosaicRequest = Schemas["MosaicRequest"];
+export type MosaicCameraCoverageOut = Schemas["MosaicCameraCoverageOut"];
+export type MosaicResponse = Schemas["MosaicResponse"];
 
 /** The operations every tab/component needs, transport-agnostic. */
 export interface LabBackend {
@@ -69,6 +74,11 @@ export interface LabBackend {
   listCalibrations(): Promise<CalibrationOut[]>;
   uploadCalibration(file: File): Promise<CalibrationOut>;
   displacement(req: DisplacementRequest): Promise<DisplacementResponse>;
+  mosaic(req: MosaicRequest): Promise<MosaicResponse>;
+  /** Built, not fetched — same reasoning as `imageUrl`. `feather=true` switches from the
+   * default no-blend priority composite to the opt-in display-only linear feather. */
+  mosaicImageUrl(mosaicId: string, feather: boolean): string;
+  mosaicSourceIdUrl(mosaicId: string): string;
 }
 
 /**
@@ -184,6 +194,19 @@ function createHttpBackend(): LabBackend {
     async displacement(req: DisplacementRequest) {
       const res = await client.POST("/api/displacement", { body: req });
       return unwrap<DisplacementResponse>(res, "displacement results");
+    },
+
+    async mosaic(req: MosaicRequest) {
+      const res = await client.POST("/api/mosaic", { body: req });
+      return unwrap<MosaicResponse>(res, "mosaic results");
+    },
+
+    mosaicImageUrl(mosaicId: string, feather: boolean) {
+      return `${baseUrl}/api/mosaic/${mosaicId}/image${feather ? "?feather=true" : ""}`;
+    },
+
+    mosaicSourceIdUrl(mosaicId: string) {
+      return `${baseUrl}/api/mosaic/${mosaicId}/source_id`;
     },
   };
 }

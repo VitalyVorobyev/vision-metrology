@@ -399,6 +399,66 @@ image sequence, and a Motion tab (trajectory plot + per-pair score).
 **No API gaps found in corrmatch 0.2.5** for what this wave needed; nothing was reported
 back to that repo.
 
+### B7 — mosaic: bird's-eye composite of N calibrated cameras — `done`
+
+Plan decision 6 (mosaic wave). **Not a library module** — `metric`'s `plane_grid_map` per
+camera plus `warp::Map::apply_with_mask` already have everything a mosaic needs; the only
+new logic is *compositing*, and it lives once in `crates/vision-metrology/tests/mosaic.rs`
+and once (deliberately re-derived, not shared — see that test's own doc comment) in
+`examples/birdseye_mosaic.rs` and the lab's `routers/mosaic.py`.
+
+**Compositing rule: nearest-camera-centre priority, no blending by default.** For each
+destination grid pixel, among the cameras whose validity mask is set there, keep the one
+whose reprojection of that plane point lands closest to its own principal point — computed
+from the camera's own pose/intrinsics/distortion (public `metric` API: project the plane
+point through `pose`, perspective-divide, `distort_pixel`), not by reading `warp::Map`'s
+private per-pixel table. Ties break by camera index. A pixel no camera covers is
+`source_id = 255`. Every measurement traces to exactly one camera, which is the whole
+reason blending is not the default — see system-design's "Mosaic: nearest-camera-centre
+priority, no blending" for the full rationale. Feathering (linear, inverse-distance-weighted
+across the overlap) is opt-in and **display-only**.
+
+**Fixture test (`tests/mosaic.rs`, CI gate).** Three virtual pinhole+BC5 cameras, 80mm
+apart, standing off 500mm, overlapping heavily (single-camera, two-camera and three-camera
+zones by construction); 7 antialiased fiducial discs at known mm positions rendered through
+the forward model and rectified with `plane_grid_map` + `apply_with_mask`. Measured
+(2026-08-20, M4 Pro, release): full coverage inside the designed check rectangle (0
+uncovered pixels); worst-of-7 fiducial centroid position error **0.0067 px** (target
+0.05 px); seam disparity (max − min rectified intensity among jointly-valid cameras) p50
+0.000, p95 0.000, max 7.000 (envelope pinned at 3.0 on p95) — expected near-zero here
+because the fixture's fiducials are antialiased, unlike the real-data example below.
+
+**Real-data example (`examples/birdseye_mosaic.rs`), demo number not a CI gate.** Runs on
+`~/vision/data/25_09_17_Table_Calibration/` (2 real cameras, `table_calibration.json`).
+Two judgment calls, both documented at the example: (1) `cam1`/`cam2` folders pair with
+`calibration.json`'s `camera0`/`camera1` by the only sensible reading of a 1-indexed/
+0-indexed naming pair with no other evidence; (2) the calibration's own reference frame is
+`camera0`'s own frame (per `metric::io::import_table_calibration`'s convention), whose
+`z = 0` sits *at camera0's optical center* — degenerate for `plane_grid_map`. The example
+recovers a physically meaningful standoff instead: the closest-approach distance between
+the two cameras' own optical axes (pure extrinsics geometry, no image content inspected),
+measured at **273.90mm**, with the two axes passing within **0.406mm** of each other there —
+strong evidence the rig really is a verged pair aimed at one target. Measured: coverage
+59.0% / 65.0% per camera, union 66.5%, overlap 86.6% of the covered area (a **converged
+stereo pair**, not a wide-table array — both cameras see nearly the same patch of the
+calibration target); seam disparity p50 47.00, p95 251.00 (large in absolute terms because
+the target is a hard-edged checkerboard, not an antialiased pattern — any sub-pixel
+disagreement swings the full 0-255 range at an edge; the rectified mosaic is nonetheless
+visibly well-registered — see the doc comment for the full reasoning).
+`docs/assets/birdseye-mosaic.png` (source-tinted) is the README gallery row.
+
+**Lab: `POST /api/mosaic` + Bird's-eye tab.** `calibration_id` + `[{camera_index,
+image_id}]` + an optional grid spec (auto-fit from the cameras' own image-border footprints
+on the plane via `pixel_to_plane`, when omitted). Response: `image_url`/`source_id_url`
+(media-tier ETag pattern, same as `rectify`'s crop cache), per-camera coverage fraction,
+union/overlap fractions, seam disparity p50/p95. `?feather=true` on `image_url` switches to
+the opt-in display-only feather; never the default. One tiny binding added
+(`project_plane_points`, `.pyi` + Rust/Python tests) — the vectorized forward reprojection
+the priority rule needs per candidate camera, exposed rather than duplicating the
+distortion formula in Python. Frontend: calibration select, per-camera image pickers, grid
+auto-fit toggle, an overlay `SegmentedControl` (none / source tint / feather) over the same
+three server-rendered views, a coverage `Table`.
+
 ---
 
 ## Track C — credibility and infrastructure — `planned`

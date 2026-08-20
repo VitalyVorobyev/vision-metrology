@@ -122,6 +122,22 @@ agent) can pick it up cold. When an item is scheduled it moves into
   describe. Blocked on B4 (`warp`), which supplies the pose-normalizing step; no design
   work started.
 
+## Mosaic
+
+- **Exposure/gain compensation across cameras.** The mosaic compositor (roadmap B7) picks
+  one camera per pixel (nearest-camera-centre priority, no blending) precisely so a
+  measurement always traces to one camera's own calibration — but it does nothing about
+  two cameras disagreeing on *brightness* for the same physical patch (different exposure
+  time, gain, or vignetting falloff). Real-data seam disparity
+  (`examples/birdseye_mosaic.rs`) is large in absolute terms partly for this reason, on top
+  of the hard-edged-target effect the example's own doc comment explains. A per-camera
+  gain/offset correction (estimated from the overlap region, applied before compositing)
+  would shrink that gap and make the `feather` display mode less visually jarring at a
+  seam; not attempted this wave since the plan's acceptance bar for the real-data example
+  was "produces nonzero overlap," not seam-intensity matching. Would need its own accuracy
+  fixture (known ground-truth exposure ratio) before being trusted the way `fit`/`measure`
+  are.
+
 ## Testing
 
 - **Laser extractor u16/f32 depth**: after the Track 1 split, the generic scan loop makes

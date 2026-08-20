@@ -151,6 +151,15 @@ robust circle fit, contour graph, pyramid levels). The renderer asserts its own
 fixtures (found match count, junction count, fit radius, …), so a silent behavior
 change there fails the run instead of quietly changing the picture.
 
+`docs/assets/birdseye-mosaic.png` is the one exception: it comes from a **real**
+2-camera table calibration (`examples/birdseye_mosaic.rs`), not `gen_illustrations`'
+synthetic fixtures — the dataset itself lives outside this repo (same private-data policy
+as canend/glue-rig), so only the derived PNG is committed:
+
+```bash
+WRITE_ASSETS=1 cargo run --release -p vision-metrology --example birdseye_mosaic
+```
+
 ## Commits and PRs
 
 - Keep commits scoped and descriptive.
