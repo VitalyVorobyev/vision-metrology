@@ -9,15 +9,17 @@ import { ImageRail } from "./components/ImageRail";
 import { AlignTab } from "./tabs/AlignTab";
 import { FindTab } from "./tabs/FindTab";
 import { MeasureTab } from "./tabs/MeasureTab";
+import { MotionTab } from "./tabs/MotionTab";
 import { TeachTab } from "./tabs/TeachTab";
 
-type TabId = "teach" | "find" | "measure" | "align";
+type TabId = "teach" | "find" | "measure" | "align" | "motion";
 
 const TABS: TabItem<TabId>[] = [
   { id: "teach", label: "Teach" },
   { id: "find", label: "Find" },
   { id: "measure", label: "Measure" },
   { id: "align", label: "Align" },
+  { id: "motion", label: "Motion" },
 ];
 
 export function App() {
@@ -87,7 +89,7 @@ export function App() {
             <CanvasStage
               image={selectedImage}
               overlay={overlay}
-              roiMode={tab === "teach"}
+              roiMode={tab === "teach" || tab === "motion"}
               onRoiChange={setRoi}
               roiPreview={roi}
             />
@@ -111,8 +113,10 @@ export function App() {
             />
           ) : tab === "measure" ? (
             <MeasureTab image={selectedImage} models={models} calibrations={calibrations} onResult={setOverlay} />
-          ) : (
+          ) : tab === "align" ? (
             <AlignTab image={selectedImage} models={models} />
+          ) : (
+            <MotionTab images={images} windowRoi={roi} />
           )}
           {tab === "find" && matches.length === 0 && overlay.length === 0 && (
             <p className="mt-2 text-xs text-fg-subtle">Run a search to see matches on the image.</p>

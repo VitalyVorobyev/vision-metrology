@@ -169,6 +169,145 @@
         "title": "CropSpecIn",
         "type": "object"
       },
+      "DisplacementPairOut": {
+        "properties": {
+          "dx": {
+            "title": "Dx",
+            "type": "number"
+          },
+          "dy": {
+            "title": "Dy",
+            "type": "number"
+          },
+          "from_image_id": {
+            "title": "From Image Id",
+            "type": "string"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          },
+          "to_image_id": {
+            "title": "To Image Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from_image_id",
+          "to_image_id",
+          "dx",
+          "dy",
+          "score"
+        ],
+        "title": "DisplacementPairOut",
+        "type": "object"
+      },
+      "DisplacementRequest": {
+        "description": "Ordered sequence of at least 2 images; `window` (level-0 pixel coordinates,\nin the *first* image) is tracked pairwise through the sequence. Mirrors\n`vision_metrology::corr::DisplacementConfig`.",
+        "properties": {
+          "image_ids": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 2,
+            "title": "Image Ids",
+            "type": "array"
+          },
+          "lk_iters": {
+            "default": 3,
+            "maximum": 20.0,
+            "minimum": 1.0,
+            "title": "Lk Iters",
+            "type": "integer"
+          },
+          "min_score": {
+            "default": 0.5,
+            "maximum": 1.0,
+            "minimum": -1.0,
+            "title": "Min Score",
+            "type": "number"
+          },
+          "refine": {
+            "default": "lucas_kanade",
+            "enum": [
+              "none",
+              "lucas_kanade"
+            ],
+            "title": "Refine",
+            "type": "string"
+          },
+          "search_x": {
+            "default": 12,
+            "minimum": 1.0,
+            "title": "Search X",
+            "type": "integer"
+          },
+          "search_y": {
+            "default": 12,
+            "minimum": 1.0,
+            "title": "Search Y",
+            "type": "integer"
+          },
+          "window": {
+            "maxItems": 4,
+            "minItems": 4,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Window",
+            "type": "array"
+          }
+        },
+        "required": [
+          "image_ids",
+          "window"
+        ],
+        "title": "DisplacementRequest",
+        "type": "object"
+      },
+      "DisplacementResponse": {
+        "properties": {
+          "cumulative_x": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Cumulative X",
+            "type": "array"
+          },
+          "cumulative_y": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Cumulative Y",
+            "type": "array"
+          },
+          "pairs": {
+            "items": {
+              "$ref": "#/components/schemas/DisplacementPairOut"
+            },
+            "title": "Pairs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "pairs",
+          "cumulative_x",
+          "cumulative_y"
+        ],
+        "title": "DisplacementResponse",
+        "type": "object"
+      },
       "EdgeMarkOut": {
         "properties": {
           "polarity": {
@@ -1603,6 +1742,47 @@
         "summary": "Upload Calibration",
         "tags": [
           "calibration"
+        ]
+      }
+    },
+    "/api/displacement": {
+      "post": {
+        "operationId": "compute_displacement_api_displacement_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DisplacementRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisplacementResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Compute Displacement",
+        "tags": [
+          "displacement"
         ]
       }
     },

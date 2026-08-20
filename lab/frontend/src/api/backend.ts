@@ -45,6 +45,9 @@ export type Roi = NonNullable<ModelCreateRequest["roi"]>;
 export type AngleRange = NonNullable<FindRequest["angle_range"]>;
 export type CalibrationOut = Schemas["CalibrationOut"];
 export type PlaneIn = Schemas["PlaneIn"];
+export type DisplacementRequest = Schemas["DisplacementRequest"];
+export type DisplacementResponse = Schemas["DisplacementResponse"];
+export type DisplacementPairOut = Schemas["DisplacementPairOut"];
 
 /** The operations every tab/component needs, transport-agnostic. */
 export interface LabBackend {
@@ -65,6 +68,7 @@ export interface LabBackend {
   rectifyCropUrl(imageId: string, modelId: string, index: number): string;
   listCalibrations(): Promise<CalibrationOut[]>;
   uploadCalibration(file: File): Promise<CalibrationOut>;
+  displacement(req: DisplacementRequest): Promise<DisplacementResponse>;
 }
 
 /**
@@ -175,6 +179,11 @@ function createHttpBackend(): LabBackend {
         body: body as unknown as { file: string },
       });
       return unwrap<CalibrationOut>(res, "the uploaded calibration");
+    },
+
+    async displacement(req: DisplacementRequest) {
+      const res = await client.POST("/api/displacement", { body: req });
+      return unwrap<DisplacementResponse>(res, "displacement results");
     },
   };
 }
