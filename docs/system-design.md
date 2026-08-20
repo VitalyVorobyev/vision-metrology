@@ -30,8 +30,10 @@ vm-primitives  ──►  vision-metrology  ──►  vm-python
 | | `fit` | robust line / circle / ellipse fitting, residuals reported |
 | | `measure` | calipers (rect / arc / radial), metrology model applied at a fixture pose |
 | | `lsd` | LSD line-segment detection |
-| | `warp` | `Map`: precomputed `dst → src` coordinate table (affine / projective / polar / `from_fn`), `apply`/`apply_with_mask` with a first-class validity mask |
+| | `warp` | `Map`: precomputed `dst → src` coordinate table (affine / projective / polar / log-polar / `from_fn`), `apply`/`apply_with_mask` with a first-class validity mask |
 | | `metric` | The calibration bridge: mirrored `CameraModel`/`Pose3`/`Plane3`/`PlaneGrid` on nalgebra 0.35, `pixel_to_plane` (exact), `plane_grid_map`/`undistort_map` (runtime `warp::Map` path), `io` importers for calibration-rs and `table_calibration` JSON |
+| | `corr` | Cross-correlation matching + inter-frame `displacement` over `corrmatch` |
+| | `scale` | Scale estimation for `matching` (moments / log-polar) + `find_scale_invariant`: estimate once, resample, verify narrow |
 | `vm-python` | — | numpy-in/numpy-out detectors; lib target named `vm_python` (see invariants) |
 
 Each `vision-metrology` module is a default-on feature (see invariant 18). Names live at
@@ -945,6 +947,173 @@ nearest-camera-centre priority, `source_id` map, opt-in feather display) was not
 available in the desktop build" error — satisfying `LabBackend`'s type contract without
 pretending the feature works, so the Bird's-eye tab fails loudly (browser-only) rather
 than rendering nothing.
+
+### Scale-invariance: estimate-then-verify, not a wider scan (2026-08)
+Roadmap W7, plan decision 9. C1's own scale-sweep row (warp wave) found that a *taught-wide*
+model (`scale_range = (0.45, 2.1)`) already found 100% of a clean synthetic sweep across
+0.5–2.0×, contradicting the plan's working hypothesis that the discrete scan degrades badly
+away from 1.0. That result narrowed this wave's real motivations to the three the plan
+already named as (a)/(b)/(c): search **cost** across a wide range is linear in how wide it
+is; a model taught with the **default** `scale_range = (1, 1)` cannot be found away from 1.0
+by a scan at all, however wide the search config asks for (`matcher::intersect` clamps to
+the model's own range); and `(scale·d).round()` **point-collapse** at `scale < 1` silently
+inflated the score. The strategy is "estimate once, resample, verify narrow" — a constant
+cost regardless of how wide a *would-be* scan would have needed to be, rather than a wider
+one.
+
+**Format 4: the model stores its own pre-decimation level-0 edge points.** Every
+`ShapeModel` already stores `level(0).points()` — but *after* grid decimation, which is
+exactly what a different scale needs to redo (invariant 4's spatially uniform decimation
+assumes the scale it was computed at). `TeachPoint { d, t, strength }` (`matching::model`,
+`pub(crate)`) is the same `RawPoint` triple `ShapeModelBuilder::build`/`from_edgels`/
+`from_directed_points`/`from_polylines` already compute internally before their one-time
+assembly, captured once (at `origin`-relative offsets, level 0) and kept on the model
+afterward. `FORMAT_VERSION` 3 → **4**; unlike the 2→3 bump this one is **backward-loading**:
+`teach_points: Option<Vec<TeachPoint>>` is `#[serde(default)]`, so a format-3 document
+(missing the field entirely) still loads, bit-identically for everything that does not read
+it, with `teach_point_count() == 0`. `resample_at`/`estimate_scale_logpolar` — the two
+functions that need it — report a clear `Error::InvalidConfig` rather than resampling from
+already-decimated (already-scale-1.0-shaped) points, which would silently bias the result.
+`estimate_scale_moments` deliberately needs none of this (see below), so it works on a
+format-3 model unchanged.
+
+**`ShapeModel::resample_at(s)`** (`matching::resample`) rebuilds every level at scale `s` by
+scaling each `TeachPoint.d` by `s` and feeding the result back through
+`matching::build`'s own geometry-only assembly (`from_raw`/`assemble`/`merge_into_cells`/
+`decimate`/`stratify`) — the exact pipeline `ShapeModel::from_directed_points` already uses,
+not a second implementation of "decimate a point cloud into levels." The trick that makes
+this exact rather than approximate: pyramid coordinates are affine
+(`(v − (2^l−1)/2) / 2^l`, invariant 2), so subtracting two points at the same level cancels
+the additive term and leaves a clean `offset / 2^l` — which is what dividing a level-0
+*offset* (not an absolute position) by `2^l` gives directly. Passing `origin: Some((0, 0))`
+into a synthetic `ShapeModelConfig` is what lets `from_raw`'s existing `to_level` + `p −
+ref_l` machinery treat the already-relative `TeachPoint.d * s` values as if they were
+absolute level-0 positions, with the origin's absolute value cancelling out regardless of
+what it is. The resampled model's own `scale_range` is pinned to `(0.95, 1.05)` — a caller
+doing estimate-then-verify searches that narrow band, not a widened one, or the
+constant-cost claim stops holding; `angle_range`/`polarity`/`smooth`/`pre_smooth` carry over
+unchanged (a uniform rescale affects none of them).
+
+**Decision 9g — offset-collapse dedup: three designs tried, all three rejected by
+measurement, none shipped.** Rotating and scaling a model point rounds it to an integer
+pixel (`(scale · d).round()`); at `scale < 1` two points distinct at their build-time grid
+resolution (invariant 4) can round onto the *same* pixel, and reading that scene pixel's
+gradient twice inflates a score for a rounding coincidence rather than real coverage — real,
+but (per the *first* C1 scale-sweep measurement, warp wave) small: worst measured position
+bias 0.022 px, scale bias 0.14%, on the clean synthetic fixture. This crate's own discipline
+is "measure before assuming a fix is worth its cost," and every fix attempted here failed
+that measurement, in three different ways:
+
+1. **Dedup inside `matching::score::rotate_into` whenever `scale < 1`.** Simple, but
+   `refine::interpolate`'s subpixel parabola fit perturbs an *already-found* pose by one
+   `scale_step` in each direction, which dips below 1.0 even when the model's own
+   `scale_range` never leaves `(1, 1)` — canend's own search config — so this version
+   measurably moved `examples/inspect_canend`'s rim radius by 0.002 px on a search that
+   never asked for a scale scan at all. This crate's own gate is "identical to the recorded
+   baseline," not "close to it," so this version was rejected.
+2. **Dedup in `rotate_into`, but only for the coarse-to-fine search sweep** (an explicit
+   `dedup` flag: `matcher::fill_map`/`refine_candidate` pass it, `refine::interpolate`
+   does not) **with a reused scratch buffer** so it does not allocate. This fixed the canend
+   regression, but `rotate_into` is the hot inner loop `match_shape`'s benches measure —
+   called once per (angle, scale) grid point during a scale-swept search — and even a reused
+   `O(m log m)` sort there measured **+35%** on `shape_find_1280x1024_scale_0p8_1p25`
+   (16.83 → 23.4 ms) for a correction whose result is thrown away the moment a better
+   candidate is found: the search sweep's own scores exist only to *rank* candidates, never
+   to report one.
+3. **Dedup in [`score::score_pose`] only** — the function that computes the score actually
+   attached to a reported `ShapeMatch`, called a handful of times per `find()` (once per
+   candidate that survives to the final report), never once per search grid point. Cheap:
+   every `match_shape` bench held within noise. But **measured worse than the bug it fixed**:
+   `matcher::run` rejects a candidate whose `score_pose` result falls below
+   `ShapeSearchConfig::min_score` *after* the search sweep has already picked it as the best
+   candidate using the sweep's own, still-undeduped internal scores. Honestly *lowering* that
+   candidate's final score can push it under `min_score`, discarding the search's actual best
+   answer in favour of whatever next-best candidate — often at a substantially different
+   position or scale — still clears the threshold. Measured on the C1 fixture: position error
+   up to **0.46 px** at some swept scales (worst case, `scale ≈ 0.73`), roughly 20x the
+   ≤0.022 px the *unfixed* inflation ever cost. Reverted.
+
+**What shipped: nothing changed in `matching::score`.** `rotate_into`/`score_pose` are
+bit-for-bit the pre-wave code; the offset-collapse inflation is documented (both functions'
+own doc comments) and pinned by a dedicated regression test
+(`score::tests::offset_collapse_at_reduced_scale_is_a_known_unfixed_score_inflation`) so a
+future change cannot silently reintroduce design 3's regression while believing it "fixed"
+the original bug. `docs/backlog.md` records what a real fourth attempt would need: the
+search sweep's own candidate selection and the final reported score have to agree on
+whether a duplicate counts — either dedup consistently through the whole pipeline (design
+2's cost, unless a genuinely allocation-and-sort-free formulation is found) or change how
+`min_score` interacts with a pose whose score is only known after the fact.
+
+`examples/inspect_canend` and every `match_shape` bench are, as a direct consequence,
+unaffected by this wave: `inspect_canend` matches the recorded baseline **bit-for-bit** on
+both set1 folders (dome 365.237 px / σ 0.282 px, dark 365.696 px / σ 0.307 px), and the C1
+scale-sweep rows (`shape_matcher_scale_bias`/`_position`) match their pre-wave numbers
+exactly (|bias| 0.0014 / 0.0218 px, sigma 0.0003 / 0.0039 px).
+
+**Two independent scale estimators**, because they need different things from a scene
+(`scale` module):
+- **`estimate_scale_moments`** segments an isolated blob (`segment::otsu_threshold_u8` +
+  `label_connected_components_u8`, keeping the component nearest the ROI's own centre) and
+  compares its **outer radius** — maximum distance from its own centroid to any of its own
+  foreground pixels — against `model.level(0).radius()`. The first implementation compared
+  a *radius of gyration* instead (mean squared distance from centroid, the literal "second
+  moment" the plan's own text suggested), and it was wrong by construction: a filled disc's
+  radius of gyration is `R/√2` while its boundary ring's is `R`, so comparing a filled scene
+  silhouette against the model's boundary-only edge points introduced a systematic bias
+  (measured: recovered scale 1.13 instead of the true 1.6 on a synthetic test disc) before
+  outer-radius replaced it. Outer radius needs no filled-area assumption on the model side,
+  which is also why this estimator works on **any** `ShapeModel` (format 3 or 4) — it never
+  reads `teach_points`.
+- **`estimate_scale_logpolar`** needs no segmentation but does need format-4 teach data and
+  an approximate centre. Both sides of the correlation are **synthesized edge-density
+  rasters**, not photometric patches — a deliberate deviation from a literal reading of the
+  plan's "resample the taught patch" text, forced by what the model actually stores: there
+  is no reference *image* patch in a `ShapeModel`, only edge points. The model's own teach
+  points are splatted (Gaussian dab per point, weighted by gradient magnitude) onto a small
+  canvas; the scene side runs `Edge2DDetector` over a crop around the hint centre and splats
+  *its* edgels the same way — comparing two edge-density fields is also what
+  `ShapeMatcher` itself does (gradient direction, not raw intensity), so this keeps the
+  estimator's photometric assumptions consistent with the matcher it feeds. Both rasters are
+  then log-polar-unwrapped (`warp::Map::log_polar`, new this wave — logarithmic radial
+  spacing, so a uniform scale change is a constant additive row shift, the classic
+  Fourier-Mellin trick without an FFT) and correlated with `corr::find` (ZNCC, rotation off);
+  the row shift gives `log(ŝ)`, and an optional column-shift search (`angle_margin`) gives a
+  bounded rotation estimate.
+
+**`find_scale_invariant`** chains one estimator (moments given a ROI hint, log-polar given a
+centre hint), `resample_at`, and a narrow verify search, then rebuilds the returned
+`ShapeMatch::pose` into the **original** (pre-resample) model's own reference-image frame —
+not the resampled model's frame, which is a fictional coordinate system scaled by `ŝ`
+relative to the original and would corrupt anything downstream (`MetrologyModel::apply`,
+`model_frame_map`) that assumes the taught geometry's own coordinates. The reconstruction
+reuses `matcher::pose_from` (re-exported `pub(crate)` for this one caller, gated behind the
+`scale` feature so `matching` alone does not carry a dead re-export) with `true_scale =
+verify_scale · ŝ` and the *original* model's own `origin()` — algebraically the same
+`position + S·R·(p − origin)` form `pose_from` already computes internally, derived by
+composing the resampled model's pose (whose own origin is `(0, 0)`, so its translation term
+has no origin correction) with the `ŝ`-scaling `resample_at` applied to get there.
+
+**C1 numbers (`tests/accuracy.rs`, `estimate_verify_scale_bias`/`_position`).** Same
+12-scale × 3-rotation grid as the scan rows, but on a model taught with the **default**
+`scale_range` (motivation (b)) and recovered via `find_scale_invariant`'s moments hint:
+100% found-rate (matching `BASELINE_FOUND_RATE`, the scan's own regression guard) at every
+scale, |bias| 0.0014 / sigma 0.0003 (scale, fraction) and |bias| 0.0218 / sigma 0.0039 px
+(position) — **identical** to the scan rows' own numbers (decision 9g's offset-collapse
+dedup was not shipped, so "identical to the scan" here is a straightforward equivalence, not
+a "pre-dedup" qualifier). `scale_estimate_vs_scan_cost` (`tests/accuracy.rs`, timed, M4 Pro):
+a wide `scale_range` scan against a taught-wide model took ~1.6 s; estimate-then-verify
+against a default-taught model took 660–745 ms on the identical scene across separate
+measurement runs — **~2.2–2.4x** faster, and (unlike the scan) that cost does not grow with
+how wide a range *would* have needed to be scanned.
+
+**Python bindings.** `ShapeModel.resample_at`/`.teach_point_count`, `Map.log_polar`,
+`estimate_scale_moments`/`estimate_scale_logpolar`, and `find_scale_invariant_roi`/
+`find_scale_invariant_center` (two functions rather than one function plus a tagged-union
+argument — `scale::ScaleHint` is a two-variant Rust enum, and two named functions are
+simpler for a Python caller than modelling that as its own class for one call site).
+`MomentScaleConfig`/`LogPolarScaleConfig`/`ScaleInvariantConfig` mirror the Rust configs
+one-to-one, following the same `String`-tagged-enum convention as `Contrast`/`CorrMetric`
+for `BlobPolarity`.
 
 ## Performance numbers (M4 Pro, single thread, release)
 

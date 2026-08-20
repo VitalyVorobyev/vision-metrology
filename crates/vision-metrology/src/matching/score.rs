@@ -45,6 +45,15 @@ const fn pol_code(p: Polarity) -> u8 {
 }
 
 /// Rotate and scale a level's points into the caller's scratch buffer.
+///
+/// Called once per (angle, scale) grid point during the coarse-to-fine
+/// search sweep — the hot inner loop `match_shape`'s benches measure — so it
+/// does exactly the arithmetic and nothing else. At `scale < 1` two model
+/// points that were spatially distinct at their build-time grid resolution
+/// (invariant 4's uniform decimation) can round onto the same integer
+/// offset here, which [`score_pose`]'s own doc discusses (roadmap W7,
+/// decision 9g) — no dedup happens on this path, deliberately, after three
+/// designs that tried it were each measured and rejected.
 pub(crate) fn rotate_into(points: &[ModelPoint], angle: f32, scale: f32, out: &mut Vec<RotPoint>) {
     let (sn, cs) = angle.sin_cos();
     out.clear();
@@ -370,6 +379,28 @@ fn finish_lane<const POL: u8>(
 /// Used once per reported match so that the score and the support count belong
 /// to the pose actually returned, rather than to the integer grid cell the
 /// search stopped at.
+///
+/// **Does not dedup offset-collapsed points at `scale < 1`** (roadmap W7,
+/// decision 9g) — three designs were tried and measured, and all three were
+/// rejected: dedup unconditionally in `rotate_into` moved
+/// `examples/inspect_canend`'s rim radius (subpixel refinement dips below
+/// scale 1.0 for its own parabola fit regardless of the search's own
+/// `scale_range`); dedup scoped to the search sweep only cost +35% on
+/// `shape_find_1280x1024_scale_0p8_1p25` (a reused scratch buffer removed
+/// the *allocation* cost, not the `O(m log m)` sort itself, run once per
+/// search grid point); dedup scoped to this function only — cheap, called
+/// once per reported candidate — measured **worse** than the original bug
+/// it aimed to fix: honestly lowering a borderline candidate's score can
+/// drop it below `ShapeSearchConfig::min_score` in the caller
+/// (`matcher::run`), rejecting the search sweep's *actual* best candidate
+/// (chosen by the sweep's own, still-undeduped scores) in favour of
+/// whatever next-best candidate still clears the threshold — measured up to
+/// 0.46 px position error at some swept scales, an order of magnitude worse
+/// than the ≤0.022 px the unfixed inflation itself was ever measured to
+/// cost (see roadmap C1's original scale-sweep row). See
+/// `docs/backlog.md`'s "offset-collapse dedup" entry for what a real fix
+/// would need (search-time consistency between candidate selection and the
+/// reported score, not a fix applied to only one of the two).
 pub(crate) fn score_pose(
     field: &DirectionField,
     points: &[ModelPoint],
@@ -423,7 +454,7 @@ pub(crate) fn score_pose(
 
 #[cfg(test)]
 mod tests {
-    use super::{Bound, RotPoint, rotate_into, score_at};
+    use super::{Bound, RotPoint, rotate_into, score_at, score_pose};
     use crate::matching::config::Polarity;
     use crate::matching::model::ModelPoint;
     use vm_primitives::{DirectionField, Image, SmoothKind, Vec2f, Vec2fExt};
@@ -463,6 +494,38 @@ mod tests {
         rotate_into(&pts, 0.0, 2.5, &mut out);
         assert_eq!((out[0].ox, out[0].oy), (25, 0));
         assert!((out[0].tx - 1.0).abs() < 1e-6);
+    }
+
+    /// Two points 0.9 px apart at level-0 scale round onto the *same*
+    /// target pixel at `scale = 0.5` — the known, **deliberately unfixed**
+    /// offset-collapse the module doc above `rotate_into`/`score_pose`
+    /// documents (roadmap W7, decision 9g: three dedup designs were tried
+    /// and each measured worse than this). Pinned here so the behaviour is
+    /// a documented, intentional property rather than something a future
+    /// change silently "fixes" back into the correctness regression that
+    /// was measured and reverted.
+    #[test]
+    fn offset_collapse_at_reduced_scale_is_a_known_unfixed_score_inflation() {
+        let pts = [
+            ModelPoint {
+                d: Vec2f::new(10.0, 0.0),
+                t: unit(1.0, 0.0),
+            },
+            ModelPoint {
+                d: Vec2f::new(10.9, 0.0),
+                t: unit(1.0, 0.0),
+            },
+        ];
+        let field = step_field(10.0);
+        // At scale 0.5, qx = 11.0: offsets 5.0 and 5.45 both round to pixel
+        // x = 16 — right on the step field's edge (dark left, bright right
+        // starting at column 16). Both points read that one pixel's
+        // gradient: sum = 1.0 + 1.0, divided by the full n = 2
+        // (invariant 4) — a perfect 1.0, inflated by the collapse rather
+        // than reflecting two independently-verified points.
+        let (score, support) = score_pose(&field, &pts, 11.0, 16.0, 0.0, 0.5, Polarity::Match);
+        assert!((score - 1.0).abs() < 1e-5, "score={score}");
+        assert_eq!(support, 2);
     }
 
     /// Vertical step edge at x = 16, dark left / bright right.

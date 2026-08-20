@@ -124,6 +124,53 @@ impl Map {
             (center.x + radius * cs, center.y + radius * sn)
         })
     }
+
+    /// Build a log-polar-unwrap map: destination **x** sweeps `phi` linearly,
+    /// destination **y** sweeps `r` **logarithmically**, both at bin centers.
+    ///
+    /// Identical to [`Map::polar`] except radius is interpolated in `ln(r)`
+    /// rather than `r` itself:
+    ///
+    /// ```text
+    /// v      = (y + 0.5) / h
+    /// radius = r_min * (r_max / r_min).powf(v)
+    /// ```
+    ///
+    /// so a fixed number of destination rows always covers the same *ratio*
+    /// `r_max / r_min`, never the same absolute span. That is the whole
+    /// point (Fourier-Mellin's classic trick, applied without an FFT — see
+    /// `vision_metrology::scale`'s log-polar scale estimator): a uniform
+    /// scale change **s** moves every feature's radius by the *same*
+    /// multiplicative factor, which is a constant **additive** shift along
+    /// this row axis (`Δrow = log(s) / log(r_max/r_min) · h`) — independent
+    /// of the feature's own original radius. A linear-`r` unwrap
+    /// ([`Map::polar`]) does not have this property: the same scale change
+    /// shifts a near-center feature by fewer rows than a far one.
+    ///
+    /// `r.start` must be strictly positive and less than `r.end` — radius
+    /// zero has no logarithm, and this is `panic`-free by *validating*
+    /// rather than dividing by zero: an invalid range returns an all-center
+    /// (`r.start`-degenerate) map rather than propagating a `NaN` silently
+    /// through every downstream sample. Prefer a small positive `r.start`
+    /// (a few pixels) over zero even when "the whole disc" is wanted; the
+    /// center few pixels compress into a vanishingly thin ring at any finite
+    /// `r.start` > 0 regardless, so nothing meaningful is lost by not
+    /// reaching exactly 0.
+    pub fn log_polar(center: Point2f, r: Range<f32>, phi: Range<f32>, w: usize, h: usize) -> Self {
+        if !(r.start > 0.0 && r.end > r.start) {
+            return Self::from_fn(w, h, move |_, _| (center.x, center.y));
+        }
+        let log_ratio = (r.end / r.start).ln();
+        let phi_span = phi.end - phi.start;
+        let wf = (w.max(1)) as f32;
+        let hf = (h.max(1)) as f32;
+        Self::from_fn(w, h, move |x, y| {
+            let angle = phi.start + (x + 0.5) / wf * phi_span;
+            let radius = r.start * ((y + 0.5) / hf * log_ratio).exp();
+            let (sn, cs) = angle.sin_cos();
+            (center.x + radius * cs, center.y + radius * sn)
+        })
+    }
 }
 
 #[cfg(test)]
@@ -196,5 +243,57 @@ mod tests {
         let last = map.coords[3];
         let dist = ((got.x - last.x).powi(2) + (got.y - last.y).powi(2)).sqrt();
         assert!(dist > 1.0, "seam column duplicated: {got:?} vs {last:?}");
+    }
+
+    #[test]
+    fn log_polar_row_zero_and_last_row_hit_the_bin_centered_endpoints() {
+        let map = Map::log_polar(Point2f::new(0.0, 0.0), 10.0..40.0, 0.0..0.0, 1, 100);
+        // Row 0's bin center is at v = 0.5/100; row 99's is at v = 99.5/100.
+        let want_r0 = 10.0 * (40.0f32 / 10.0).powf(0.5 / 100.0);
+        let want_r99 = 10.0 * (40.0f32 / 10.0).powf(99.5 / 100.0);
+        assert!((map.coords[0].x - want_r0).abs() < 1e-4);
+        assert!((map.coords[99].x - want_r99).abs() < 1e-2);
+    }
+
+    /// The defining property (Fourier-Mellin, no FFT): a fixed number-of-rows
+    /// step is a fixed *radius ratio*, independent of where in the range it
+    /// happens — unlike a linear-`r` unwrap, where the same row delta covers
+    /// a smaller absolute (and ratio) span near the outer edge than near the
+    /// inner one. Read directly off the map's own sampled coordinates
+    /// (`phi` collapsed to a single angle, so `coords[row].x` is exactly
+    /// that row's radius), not a re-derivation of the formula under test.
+    #[test]
+    fn log_polar_a_fixed_row_delta_is_a_fixed_radius_ratio_anywhere_in_range() {
+        let map = Map::log_polar(Point2f::new(0.0, 0.0), 2.0..200.0, 0.0..0.0, 1, 400);
+        let radius_at = |row: usize| map.coords[row].x;
+
+        let ratio_inner = radius_at(100) / radius_at(50);
+        let ratio_outer = radius_at(300) / radius_at(250);
+        assert!(
+            (ratio_inner - ratio_outer).abs() < 1e-3,
+            "ratio_inner={ratio_inner} ratio_outer={ratio_outer}"
+        );
+
+        // A linear-`r` unwrap does NOT have this property — the control that
+        // shows the log spacing is actually doing something.
+        let linear = Map::polar(Point2f::new(0.0, 0.0), 2.0..200.0, 0.0..0.0, 1, 400);
+        let lin_radius_at = |row: usize| linear.coords[row].x;
+        let lin_ratio_inner = lin_radius_at(100) / lin_radius_at(50);
+        let lin_ratio_outer = lin_radius_at(300) / lin_radius_at(250);
+        assert!(
+            (lin_ratio_inner - lin_ratio_outer).abs() > 0.1,
+            "expected Map::polar's linear spacing to break the ratio-invariance property"
+        );
+    }
+
+    #[test]
+    fn log_polar_rejects_a_non_positive_or_reversed_radius_range_without_nan() {
+        let bad_zero = Map::log_polar(Point2f::new(5.0, 5.0), 0.0..10.0, 0.0..1.0, 2, 2);
+        let bad_reversed = Map::log_polar(Point2f::new(5.0, 5.0), 10.0..2.0, 0.0..1.0, 2, 2);
+        for m in [&bad_zero, &bad_reversed] {
+            for c in &m.coords {
+                assert!(c.x.is_finite() && c.y.is_finite());
+            }
+        }
     }
 }

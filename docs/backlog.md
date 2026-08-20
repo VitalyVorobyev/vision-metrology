@@ -46,6 +46,50 @@ agent) can pick it up cold. When an item is scheduled it moves into
   deterministic (stable reduction order) if added.
 - **Timeout / anytime search** was deliberately rejected: non-deterministic results break
   the test contract. Revisit only with a deterministic budget (e.g. max poses evaluated).
+- **Static scale bank for clutter without priors (roadmap W7).** `scale::find_scale_invariant`
+  needs an estimate first — a segmentable ROI (`estimate_scale_moments`) or an approximate
+  center (`estimate_scale_logpolar`). Neither exists for a cluttered scene with **no** prior
+  on where or how big the object is; the honest answer there remains a coarse discrete
+  scan over `scale_range` at the top pyramid level (cheap there — `ShapeSearchTuning::last_level`
+  already lets a caller stop before descending), or a small static bank of models pre-resampled
+  at K fixed scales (`resample_at` makes building the bank itself trivial; the cost is K× the
+  search, same shape as the plan's original "static bank" idea it deliberately avoided for the
+  common case). Not attempted this wave — remains open for whichever real dataset needs it.
+- **Offset-collapse score inflation at `scale < 1` — investigated, deliberately left unfixed
+  (roadmap W7, decision 9g).** `matching::score::rotate_into` rounds a rotated, scaled model
+  point offset to an integer pixel; at `scale < 1` two points distinct at their build-time
+  grid resolution (invariant 4) can round onto the same pixel, and the un-deduped scorer reads
+  that scene pixel's gradient twice, inflating the score for a rounding coincidence rather
+  than real coverage — a real, if usually small, dishonesty (`tests/accuracy.rs`'s
+  `shape_matcher_scale_*` rows' worst cells, both near scale 0.5, hint at it). Three fixes
+  were designed, implemented, and measured, and all three were rejected:
+  1. Dedup unconditionally in `rotate_into` whenever `scale < 1`: measurably moved
+     `examples/inspect_canend`'s rim radius (0.002 px) even though canend's search never
+     leaves `scale_range = (1, 1)`, because `refine::interpolate`'s subpixel parabola probe
+     perturbs an already-found pose below 1.0 regardless of the search's own range.
+  2. Dedup scoped to the search sweep only (`matcher::fill_map`/`refine_candidate`), with an
+     explicit `dedup` flag and a reused scratch buffer to avoid allocating: fixed (1), but
+     `rotate_into` is the hot loop `match_shape`'s benches measure, and even a reused
+     `O(m log m)` sort there — run once per (angle, scale) search grid point — cost **+35%**
+     on `shape_find_1280x1024_scale_0p8_1p25` (16.8 → 23.4 ms).
+  3. Dedup scoped to `score::score_pose` only (the function that computes the score actually
+     attached to a reported `ShapeMatch`, called a handful of times per `find()`, not once per
+     search grid point): cheap — the benches held within noise — but **measured worse** than
+     the bug it aimed to fix. Honestly lowering a borderline candidate's score can drop it
+     below `ShapeSearchConfig::min_score` inside `matcher::run`, rejecting the search sweep's
+     actual best candidate (chosen by the sweep's own, still-undeduped internal scores) in
+     favour of whatever next-best candidate still clears the threshold. Measured up to 0.46 px
+     position error at some swept scales on the C1 synthetic fixture — an order of magnitude
+     worse than the ≤0.022 px the original, unfixed inflation was ever measured to cost.
+  Design 3's failure mode names the real fix a fourth attempt would need: the search sweep's
+  own candidate selection and the final reported score have to agree on whether a duplicate
+  counts, not just the reported number — either dedup consistently through the whole pipeline
+  (design 2's cost, unless a genuinely allocation-and-sort-free formulation is found) or change
+  how `min_score` interacts with a pose whose score was computed after the fact. Not attempted
+  this wave; `matching::score::score_pose`'s own doc comment and
+  `tests/accuracy.rs::offset_collapse_at_reduced_scale_is_a_known_unfixed_score_inflation`
+  pin the current (unfixed, inflating) behaviour so a future fix is deliberate, not an
+  accidental regression of a regression.
 
 ## Contour
 

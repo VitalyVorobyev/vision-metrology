@@ -30,6 +30,30 @@ impl ModelPoint {
     }
 }
 
+/// One teach-time edge point, stored **before** grid decimation, at level 0.
+///
+/// [`resample_at`](ShapeModel::resample_at) is what this exists for: rebuild
+/// a model's pyramid levels at an arbitrary uniform scale without the
+/// original reference image. It is the same information `RawPoint`
+/// (`matching::build`) carries internally, minus the decimation and
+/// per-level assembly a *fixed*-scale model applies once at build time —
+/// `resample_at` reruns that assembly at a caller-chosen scale instead.
+///
+/// `strength` is the edge detector's own gradient-magnitude units (or `1.0`
+/// for a geometry-only model, which has no such unit) — `decimate` in
+/// `matching::build` uses it only to pick a cell's surviving point, never as
+/// a score input, so its scale never matters outside that tie-break.
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub(crate) struct TeachPoint {
+    /// Offset from the model's origin, level-0 pixel units.
+    pub(crate) d: Vec2f,
+    /// Unit gradient direction, dark-to-bright.
+    pub(crate) t: Vec2f,
+    /// Gradient magnitude (or `1.0` for a direction-only source).
+    pub(crate) strength: f32,
+}
+
 /// One pyramid level of a [`ShapeModel`].
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -102,9 +126,15 @@ pub struct ShapeModel {
     polarity: Polarity,
     smooth: SmoothKind,
     pre_smooth: PreSmooth,
+    /// Level-0 edge points before grid decimation — `None` for a model
+    /// loaded from a format-3 document, which predates this field. See
+    /// [`resample_at`](Self::resample_at).
+    #[cfg_attr(feature = "serde", serde(default))]
+    teach_points: Option<Vec<TeachPoint>>,
 }
 
 impl ShapeModel {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn from_parts(
         levels: Vec<ShapeModelLevel>,
         origin: Point2f,
@@ -113,6 +143,7 @@ impl ShapeModel {
         polarity: Polarity,
         smooth: SmoothKind,
         pre_smooth: PreSmooth,
+        teach_points: Option<Vec<TeachPoint>>,
     ) -> Self {
         Self {
             levels,
@@ -122,7 +153,25 @@ impl ShapeModel {
             polarity,
             smooth,
             pre_smooth,
+            teach_points,
         }
+    }
+
+    /// The level-0 edge points recorded before grid decimation, or `None`
+    /// for a model loaded from a format-3 document (see
+    /// [`resample_at`](Self::resample_at)).
+    pub(crate) fn teach_points(&self) -> Option<&[TeachPoint]> {
+        self.teach_points.as_deref()
+    }
+
+    /// Number of teach-time points [`resample_at`](Self::resample_at) has to
+    /// work with, or `0` when the model carries none (a format-3 document).
+    ///
+    /// Diagnostic only — not the same as [`point_count`](Self::point_count),
+    /// which counts the *decimated* points a level was actually built from.
+    #[inline]
+    pub fn teach_point_count(&self) -> usize {
+        self.teach_points.as_ref().map_or(0, Vec::len)
     }
 
     /// Pre-smoothing the model's own gradients were computed with.
@@ -232,7 +281,19 @@ mod persist {
     /// | 1 | Initial format. `Point2f` / `Vec2f` as `{"x": …, "y": …}`. |
     /// | 2 | `Point2f` / `Vec2f` became nalgebra aliases, which serialize as flat `[x, y]` arrays. |
     /// | 3 | The v0.3 API reset, batched: the document is an opaque byte string rather than documented JSON, `ModelPoint` / `ShapeModelLevel` fields became read-only, and the model carries the pyramid `PreSmooth` it was built with (invariant 3). |
-    pub(crate) const FORMAT_VERSION: u32 = 3;
+    /// | 4 | The scale-invariance wave (roadmap W7): the model additionally carries its level-0 `teach_points` (pre-decimation edge points), which [`ShapeModel::resample_at`] needs. A format-3 document still loads — `teach_points` defaults to `None` on a document that predates the field — but [`resample_at`](ShapeModel::resample_at) on the result returns [`Error::InvalidConfig`]. |
+    pub(crate) const FORMAT_VERSION: u32 = 4;
+
+    /// The oldest format version [`ShapeModel::load`]/[`from_bytes`](ShapeModel::from_bytes)
+    /// still accept. `teach_points` is `#[serde(default)]`, so a version-3
+    /// document (which has no such field at all) deserializes cleanly with
+    /// `teach_points: None` — the only behavioral difference a version-3
+    /// reader sees is that [`ShapeModel::resample_at`] then reports a clear
+    /// error instead of silently inventing teach data. Below this floor a
+    /// document is old enough (pre-nalgebra-alias, `{"x":…,"y":…}` points)
+    /// that its *shape* differs, not just a missing field, so it is refused
+    /// rather than guessed at.
+    const MIN_SUPPORTED_FORMAT_VERSION: u32 = 3;
 
     #[derive(serde::Serialize, serde::Deserialize)]
     struct Envelope {
@@ -268,7 +329,9 @@ mod persist {
         pub fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
             let env: Envelope = serde_json::from_slice(bytes)
                 .map_err(|_| Error::InvalidConfig("not a valid shape model document"))?;
-            if env.format_version != FORMAT_VERSION {
+            if env.format_version < MIN_SUPPORTED_FORMAT_VERSION
+                || env.format_version > FORMAT_VERSION
+            {
                 return Err(Error::InvalidConfig(
                     "unsupported shape model format version",
                 ));

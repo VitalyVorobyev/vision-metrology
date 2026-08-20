@@ -71,6 +71,7 @@ mod matcher;
 mod model;
 mod nms;
 mod refine;
+mod resample;
 mod score;
 mod search;
 
@@ -81,3 +82,9 @@ pub use config::{
 pub use crop::CropSpec;
 pub use matcher::{ShapeMatch, ShapeMatcher};
 pub use model::{ModelPoint, ShapeModel, ShapeModelLevel};
+
+/// Re-exported for `scale::find_scale_invariant` only — not part of this
+/// crate's public API (invariant 17). Gated the same as `scale` itself so
+/// `matching` alone (without `scale`) does not carry a dead re-export.
+#[cfg(feature = "scale")]
+pub(crate) use matcher::pose_from;

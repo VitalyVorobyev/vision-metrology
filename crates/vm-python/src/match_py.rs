@@ -159,6 +159,29 @@ impl ShapeModel {
         Ok(Self { inner })
     }
 
+    /// Number of teach-time points :meth:`resample_at` has to work with, or
+    /// `0` for a model loaded from a format-3 document (predating that
+    /// stored data).
+    #[getter]
+    pub fn teach_point_count(&self) -> usize {
+        self.inner.teach_point_count()
+    }
+
+    /// Rebuild this model with every point resampled at scale `s` (roadmap
+    /// W7, "estimate-then-verify"). The result's own `scale_range` is a
+    /// narrow band around 1.0 — search that, and multiply a found match's
+    /// own `scale` by `s` to recover scale relative to *this* model.
+    ///
+    /// Raises :class:`ValueError` if `s` is not finite and positive, or if
+    /// this model has no stored teach data (see :attr:`teach_point_count`).
+    pub fn resample_at(&self, s: f32) -> PyResult<Self> {
+        let inner = self
+            .inner
+            .resample_at(s)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+        Ok(Self { inner })
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "ShapeModel(levels={}, points={:?}, origin=({:.1}, {:.1}))",
@@ -167,6 +190,14 @@ impl ShapeModel {
             self.inner.origin().x,
             self.inner.origin().y
         )
+    }
+}
+
+impl ShapeModel {
+    /// Borrow the native model — `scale_py`'s estimators/`find_scale_invariant`
+    /// take `&vision_metrology::matching::ShapeModel` directly.
+    pub(crate) fn native(&self) -> &NativeShapeModel {
+        &self.inner
     }
 }
 

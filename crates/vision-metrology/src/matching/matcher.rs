@@ -428,7 +428,16 @@ fn ensure_tiles_at(field: &mut TiledField<'_>, radius: f32, cx: i32, cy: i32, sc
 }
 
 /// `Translation(position) ∘ sR ∘ Translation(−origin)`, as a similarity.
-fn pose_from(position: Point2f, angle: f32, scale: f32, origin: Point2f) -> Similarity2f {
+///
+/// `pub(crate)`: `scale::find_scale_invariant` reuses this to rebuild a
+/// match's pose in the *original* (pre-resample) model's frame after
+/// verifying against a `resample_at`-built model — see that module for why.
+pub(crate) fn pose_from(
+    position: Point2f,
+    angle: f32,
+    scale: f32,
+    origin: Point2f,
+) -> Similarity2f {
     let (sn, cs) = wrap_angle(angle).sin_cos();
     let t = Vec2f::new(
         position.x - scale * (cs * origin.x - sn * origin.y),

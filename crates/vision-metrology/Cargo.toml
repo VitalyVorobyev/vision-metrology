@@ -23,7 +23,7 @@ serde_json = { version = "1", optional = true }
 corrmatch = { version = "0.2", features = ["simd"], optional = true }
 
 [features]
-default = ["contour", "corr", "fit", "laser", "lsd", "matching", "measure", "metric", "segment", "warp"]
+default = ["contour", "corr", "fit", "laser", "lsd", "matching", "measure", "metric", "scale", "segment", "warp"]
 
 ## Junction-aware contour graph from 2-D edgels.
 contour = []
@@ -48,6 +48,12 @@ metric = ["dep:serde", "dep:serde_json", "warp"]
 ## Shape-based object detection (ShapeModel / ShapeMatcher). `ShapeMatch`
 ## rectifies into a canonical crop via `warp::Map`, so this implies `warp`.
 matching = ["warp"]
+## Scale estimation for `matching` ("estimate-then-verify", roadmap W7):
+## `estimate_scale_moments` (segment a blob, compare its size to the taught
+## model) and `estimate_scale_logpolar` (log-polar ZNCC correlation over
+## `corr` + `warp::Map::log_polar`), plus the `find_scale_invariant`
+## convenience wrapper. Implies every module it draws on.
+scale = ["corr", "matching", "segment", "warp"]
 ## Thresholding, CCL, watershed, edgel region growing.
 ## `segment::grow_regions` consumes a `ContourGraph`, so this implies `contour`.
 segment = ["contour"]

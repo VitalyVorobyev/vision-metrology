@@ -166,9 +166,53 @@ let model = ShapeModel::from_bytes(&bytes)?;
 The encoding is deliberately **not** documented: it is a private channel
 between this crate's writer and its reader, and the only promise it makes is
 that a document it cannot read is an error rather than a mis-read model. A
-model saved by one version of the crate loads only in that version.
+document written by an incompatible format is refused, not mis-read; a
+document one format version older (currently: format 3, predating
+`ShapeModel::resample_at`'s stored teach data) still loads, with
+`model.teach_point_count() == 0` and `resample_at`/`estimate_scale_logpolar`
+reporting a clear error rather than resampling from already-decimated points.
 
 Python mirrors this as `model.save(path)` / `ShapeModel.load(path)`.
+
+## Scale invariance: estimate, resample, verify
+
+`ShapeSearchConfig::scale_range` searches scale by discrete scan, and that
+scan's cost is linear in how wide the range is — fine for a narrow band, the
+wrong shape of cost when the true scale is only *approximately* known (a
+segmentable part's own silhouette, or a coarse correlation) rather than
+genuinely unknown. `vision_metrology::scale` (the `scale` feature) is the
+other strategy: estimate the scale once, cheaply, then search a narrow band
+around that estimate instead of a wide one.
+
+```rust
+use vision_metrology::scale::{ScaleHint, ScaleInvariantConfig, find_scale_invariant};
+
+// `model` was taught at its own natural scale, default `scale_range = (1, 1)`.
+let matches = find_scale_invariant(
+    &model,
+    &scene.as_view(),
+    ScaleHint::Roi(part_roi),           // or ScaleHint::Center(approx_center)
+    &ScaleInvariantConfig::default(),
+)?;
+```
+
+`ScaleHint::Roi` estimates via [`estimate_scale_moments`](crate::scale::estimate_scale_moments)
+(segments the ROI, compares the blob's own outer radius to the model's — works on any
+model, format 3 or 4). `ScaleHint::Center` estimates via
+[`estimate_scale_logpolar`](crate::scale::estimate_scale_logpolar) (log-polar ZNCC
+correlation around an approximate centre; needs format-4 teach data). Either estimate
+feeds [`ShapeModel::resample_at`](crate::matching::ShapeModel::resample_at), which rebuilds
+the model at that scale and pins its own `scale_range` to a narrow `(0.95, 1.05)` band — the
+search that follows costs the same regardless of how far the true scale turned out to be
+from 1.0. A synthetic measurement (`tests/accuracy.rs`'s `scale_estimate_vs_scan_cost`)
+found this ~2.2–2.4x faster than the wide-scan alternative on the identical scene, with
+identical found-rate and accuracy to the scan (see `docs/system-design.md`'s W7 entry for
+the full numbers).
+
+Call `estimate_scale_moments`/`estimate_scale_logpolar` and
+`ShapeModel::resample_at`/`ShapeMatcher::find` directly instead of `find_scale_invariant`
+for a `u16`/`f32` scene — the convenience wrapper is `u8`-only, matching `corr`'s own
+convention, even though the underlying `find` call it makes is fully generic.
 
 ## Pose and coordinates
 

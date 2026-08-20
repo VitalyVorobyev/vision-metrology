@@ -30,6 +30,7 @@ mod fit;
 mod lsd;
 mod matching;
 mod measure;
+mod scale;
 
 pub use corr::{
     CorrConfig, CorrSearchTuning, CorrTemplateConfig, CorrTemplateTuning, DisplacementConfig,
@@ -40,3 +41,4 @@ pub use fit::FitConfig;
 pub use lsd::LsdConfig;
 pub use matching::{Contrast, ShapeModelConfig, ShapeSearchConfig, ShapeSearchTuning};
 pub use measure::MeasureConfig;
+pub use scale::{LogPolarScaleConfig, MomentScaleConfig, ScaleInvariantConfig};

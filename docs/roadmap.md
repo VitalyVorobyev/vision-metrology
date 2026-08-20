@@ -484,6 +484,87 @@ distortion formula in Python. Frontend: calibration select, per-camera image pic
 auto-fit toggle, an overlay `SegmentedControl` (none / source tint / feather) over the same
 three server-rendered views, a coverage `Table`.
 
+### B8 — `scale`: estimate-then-verify, not a wider scan — `done`
+
+Plan decision 9 (W7). C1's own scale-sweep row (warp wave) had already found that a
+*taught-wide* model finds 100% of a clean synthetic 0.5–2.0× sweep by discrete scan alone —
+so this wave's real motivations were the other three the plan named: (a) a wide scan's
+**cost** is linear in how wide `scale_range` is; (b) a model taught with the **default**
+`scale_range = (1, 1)` cannot be found away from 1.0 by a scan at all, however wide the
+search config asks for; (c) `(scale·d).round()` **point-collapse** at `scale < 1` silently
+inflated the score. The strategy: estimate the scale once (moments or log-polar), rebuild
+the model at that estimate (`ShapeModel::resample_at`), verify in a narrow band — constant
+cost, not a wider scan.
+
+```rust
+pub fn estimate_scale_moments(model, scene: &ImageView<'_, u8>, roi, cfg)
+    -> Result<ScaleEstimate, Error>;
+pub fn estimate_scale_logpolar(model, scene: &ImageView<'_, u8>, approx_center, cfg)
+    -> Result<ScaleEstimate, Error>;
+pub fn find_scale_invariant(model, scene: &ImageView<'_, u8>, hint: ScaleHint, cfg)
+    -> Result<Vec<ShapeMatch>, Error>;
+impl ShapeModel {
+    pub fn resample_at(&self, s: f32) -> Result<ShapeModel, Error>;
+}
+```
+
+**Landed.** Model format 3 → **4**, backward-loading (a format-3 document still loads,
+`teach_point_count() == 0`, `resample_at`/`estimate_scale_logpolar` refuse cleanly rather
+than resampling from already-decimated points): every model now stores its pre-decimation
+level-0 edge points (`TeachPoint`), the same data the builders already compute internally.
+`resample_at` reruns `matching::build`'s own geometry-only assembly at a scaled offset set,
+exact rather than approximate because pyramid coordinates are affine and the origin term
+cancels; its own `scale_range` is pinned to `(0.95, 1.05)`. `estimate_scale_moments`
+compares a segmented blob's own outer radius to the model's (works on any model, format 3
+or 4 — an earlier radius-of-gyration version was measurably biased comparing a filled scene
+silhouette against boundary-only model points, replaced before landing). `estimate_scale_logpolar`
+builds synthesized edge-density rasters (splatted teach points / scene edgels — a `ShapeModel`
+has no photometric patch to reach for) and correlates them log-polar-unwrapped
+(`warp::Map::log_polar`, new this wave) via `corr::find` ZNCC — Fourier-Mellin without an
+FFT. `find_scale_invariant` composes both, rebuilding the returned pose into the *original*
+model's own frame (`true_scale = ŝ · verify_scale`).
+
+**Decision 9g — offset-collapse dedup: investigated, deliberately left unfixed.**
+`(scale·d).round()` can map two build-time-distinct model points onto the same scene pixel
+at `scale < 1`, inflating the score for a rounding coincidence — motivation (c). Three
+designs were built and measured, and all three were rejected: dedup unconditionally in
+`rotate_into` measurably moved `examples/inspect_canend`'s rim radius (0.002 px) even though
+canend's own search never leaves `scale_range = (1, 1)`, because `refine::interpolate`'s
+subpixel parabola probe itself dips below 1.0 regardless of the search's own range; scoping
+the dedup to the search sweep only (with a reused scratch buffer, so it does not allocate)
+fixed that but cost **+35%** on `shape_find_1280x1024_scale_0p8_1p25` — `rotate_into` is the
+hot loop `match_shape`'s benches measure, called once per (angle, scale) grid point; scoping
+it to `score_pose` only (cheap — called a handful of times per `find()`, not once per grid
+point, so the benches held) turned out to be a **correctness regression worse than the bug
+it fixed**: honestly lowering a borderline candidate's score there can drop it below
+`ShapeSearchConfig::min_score`, discarding the search's actual best candidate (chosen by the
+sweep's own, still-undeduped scores) in favour of a worse one that still clears the
+threshold — measured up to 0.46 px position error on the C1 fixture, an order of magnitude
+worse than the ≤0.022 px the original inflation ever cost. See `docs/backlog.md` for the
+full account and what a real fourth attempt would need. `matching::score::score_pose` keeps
+the original, unfixed (and now explicitly documented + pinned) behaviour.
+
+**C1 (`tests/accuracy.rs`): estimate-then-verify vs. the existing scan, same 12-scale ×
+3-rotation grid, on a model taught with the *default* `scale_range`** (motivation (b)):
+100% found-rate (matching the scan's own `BASELINE_FOUND_RATE` guard) at every scale,
+|bias| 0.0014 (scale, fraction) / 0.0218 px (position), sigma 0.0003 / 0.0039 px —
+**identical** to the scan row's own numbers, because estimate-then-verify always searches
+near the resampled model's own scale ≈ 1.0. `scale_estimate_vs_scan_cost` (timed, M4 Pro):
+wide scan ~1.6 s vs. estimate-then-verify 663–745 ms on the identical scene — **~2.2–2.4x**
+faster, a lower bound since the scan's cost grows with how wide a range would have needed
+scanning while estimate-then-verify's does not.
+
+**canend parity**, bit-for-bit against the recorded baseline: dome 365.237 px / σ 0.282 px,
+dark 365.696 px / σ 0.307 px — both set1 folders, `--tolerance 1.5`.
+
+Python: `ShapeModel.resample_at`/`.teach_point_count`, `Map.log_polar`,
+`estimate_scale_moments`/`estimate_scale_logpolar`, `find_scale_invariant_roi`/
+`find_scale_invariant_center` (two named functions rather than modelling `ScaleHint` as its
+own tagged class), `MomentScaleConfig`/`LogPolarScaleConfig`/`ScaleInvariantConfig` mirrors.
+
+**Deliberately not done here:** a static scale bank for a cluttered scene with no ROI/center
+prior at all — the estimators both need *something* to start from; see `docs/backlog.md`.
+
 ---
 
 ## Track C — credibility and infrastructure — `planned`
@@ -536,6 +617,14 @@ measurement (scale bias 0.003, scale σ 0.001, position bias 0.04 px, position �
 found-rate is pinned as a per-scale regression guard (`BASELINE_FOUND_RATE`) so a future
 change that *shrinks* the found set — even one that stays inside these accuracy envelopes —
 fails CI. Full per-scale table is in `tests/accuracy.rs`'s `BASELINE_FOUND_RATE` doc comment.
+
+**Estimate-then-verify rows (B8, scale-invariance wave).** Added `estimate_verify_scale_bias`/
+`estimate_verify_position` — same 12×3 grid, but on a *default*-taught model
+(`scale_range = (1, 1)`, motivation (b) below) recovered via `find_scale_invariant` instead
+of a scan. Measured identical to the scan row above, cell for cell, at ~2.2x less search
+time — see B8 for the full story, including a dedup fix (decision 9g) that a first cut
+measurably (if very slightly) cost this exact row before `examples/inspect_canend` caught
+the same effect and the fix was scoped correctly.
 
 **Rectify row (rectify wave).** Added `rectify_repeatability` — see B4.1 above for the full
 description. Measured bias 0.88 / σ 1.69 (8-bit intensity units, not pixels); envelope
