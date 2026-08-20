@@ -13,9 +13,15 @@ from pathlib import Path
 _LAB_ROOT = Path(__file__).resolve().parents[3]  # lab/backend/src/vm_lab -> lab/
 
 
+#: The frontend's dev server (vite.config.ts: port 5174, strictPort) and the same host
+#: under 127.0.0.1 — browsers treat localhost and 127.0.0.1 as distinct CORS origins.
+DEFAULT_CORS_ORIGINS = ("http://localhost:5174", "http://127.0.0.1:5174")
+
+
 @dataclass(frozen=True)
 class Settings:
     data_dir: Path = field(default_factory=lambda: _LAB_ROOT / "backend" / "data")
+    cors_origins: tuple[str, ...] = DEFAULT_CORS_ORIGINS
 
     @property
     def images_dir(self) -> Path:

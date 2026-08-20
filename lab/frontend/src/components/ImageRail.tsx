@@ -2,8 +2,8 @@ import { Badge, Button, Empty, cn } from "@vitavision/lab-ui";
 import { useRef } from "react";
 import type { ChangeEvent } from "react";
 
-import { imageTierUrl } from "../api/client";
-import type { ImageOut } from "../api/types";
+import { getBackend } from "../api/backend";
+import type { ImageOut } from "../api/backend";
 
 export function ImageRail({
   images,
@@ -60,7 +60,7 @@ export function ImageRail({
                   )}
                 >
                   <img
-                    src={imageTierUrl(img.id, "thumb")}
+                    src={getBackend().imageUrl(img.id, "thumb")}
                     alt={img.filename}
                     className="aspect-square w-full rounded bg-canvas object-contain"
                   />

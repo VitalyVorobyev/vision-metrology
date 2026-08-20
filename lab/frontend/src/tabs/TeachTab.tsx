@@ -2,8 +2,8 @@ import { Badge, Button, Callout, ErrorBox, Field, NumberInput, Panel, Section } 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
-import { createModel } from "../api/client";
-import type { ImageOut, ModelOut, Roi } from "../api/types";
+import { getBackend } from "../api/backend";
+import type { ImageOut, ModelOut, Roi } from "../api/backend";
 
 export function TeachTab({
   image,
@@ -22,7 +22,7 @@ export function TeachTab({
 
   const mutation = useMutation({
     mutationFn: () =>
-      createModel({
+      getBackend().teachModel({
         image_id: image.id,
         roi: roi as Roi,
         min_contrast: minContrast,

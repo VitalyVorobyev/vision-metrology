@@ -4,7 +4,7 @@
 import type { MeasureTone } from "@vitavision/lab-ui";
 import type { EdgeMark, ProfileSeries } from "@vitavision/lab-ui";
 
-import type { CaliperResultOut, Roi } from "./types";
+import type { CaliperResultOut, Roi } from "./backend";
 
 /** A `ZoomPanCanvas` content-space drag rectangle (screen/content pixels, top-left +
  * size, possibly dragged in any direction) into the backend's `Roi` tuple — always

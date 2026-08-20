@@ -13,8 +13,7 @@ import {
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 
-import { runMeasure } from "../api/client";
-import { caliperToProfile } from "../api/transforms";
+import { getBackend } from "../api/backend";
 import type {
   CaliperResultOut,
   ImageOut,
@@ -22,7 +21,8 @@ import type {
   MeasureObjectResultOut,
   ModelOut,
   OverlayPrimitiveOut,
-} from "../api/types";
+} from "../api/backend";
+import { caliperToProfile } from "../api/transforms";
 
 type Kind = "circle" | "line";
 
@@ -48,9 +48,9 @@ export function MeasureTab({
 
   const mutation = useMutation({
     mutationFn: () =>
-      runMeasure({ image_id: image.id, model_id: modelId, min_score: minScore, objects }),
+      getBackend().measure({ image_id: image.id, model_id: modelId, min_score: minScore, objects }),
     onSuccess: (res) => {
-      onResult(res.objects.flatMap((o) => o.overlay));
+      onResult(res.objects.flatMap((o) => o.overlay ?? []));
       setSelected(null);
     },
   });
@@ -62,7 +62,9 @@ export function MeasureTab({
 
   const results = mutation.data?.objects ?? [];
   const activeCaliper: CaliperResultOut | null =
-    selected && results[selected.object] ? (results[selected.object]?.calipers[selected.caliper] ?? null) : null;
+    selected && results[selected.object]
+      ? (results[selected.object]?.calipers?.[selected.caliper] ?? null)
+      : null;
 
   return (
     <div className="flex flex-col gap-4">
@@ -177,7 +179,7 @@ export function MeasureTab({
                 key: "rejects",
                 header: "rejected",
                 numeric: true,
-                cell: (r) => r.calipers.filter((c) => c.status === "rejected").length,
+                cell: (r) => (r.calipers ?? []).filter((c) => c.status === "rejected").length,
               },
             ]}
             rows={results}
@@ -200,7 +202,7 @@ export function MeasureTab({
             <h3 className="text-xs font-semibold text-fg-muted">Calipers</h3>
             {results.map((r, oi) => (
               <div key={oi} className="flex flex-wrap gap-1.5">
-                {r.calipers.map((c) => (
+                {(r.calipers ?? []).map((c) => (
                   <button
                     key={c.index}
                     type="button"

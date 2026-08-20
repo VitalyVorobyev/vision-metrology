@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import type { CaliperResultOut } from "./backend";
 import { caliperToProfile, rectToRoi } from "./transforms";
-import type { CaliperResultOut } from "./types";
 
 describe("rectToRoi", () => {
   it("normalizes a rectangle dragged in the positive direction", () => {
