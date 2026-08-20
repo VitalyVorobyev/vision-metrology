@@ -18,7 +18,7 @@ serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
 
 [features]
-default = ["contour", "fit", "laser", "lsd", "matching", "measure", "segment", "warp"]
+default = ["contour", "fit", "laser", "lsd", "matching", "measure", "metric", "segment", "warp"]
 
 ## Junction-aware contour graph from 2-D edgels.
 contour = []
@@ -30,6 +30,13 @@ measure = ["fit"]
 laser = []
 ## LSD line-segment detection.
 lsd = []
+## The calibration bridge: pixel <-> millimetre via a mirrored pinhole +
+## Brown-Conrady camera model. `io` (RigExtrinsicsExport / table_calibration
+## import) needs JSON parsing, so this implies `dep:serde` + `dep:serde_json`
+## without pulling in the versioned-ShapeModel `serde` feature's `matching`
+## dependency. `plane_grid_map`/`undistort_map` build a `warp::Map`, so this
+## implies `warp`.
+metric = ["dep:serde", "dep:serde_json", "warp"]
 ## Shape-based object detection (ShapeModel / ShapeMatcher). `ShapeMatch`
 ## rectifies into a canonical crop via `warp::Map`, so this implies `warp`.
 matching = ["warp"]
@@ -157,6 +164,10 @@ required-features = ["matching"]
 [[test]]
 name = "accuracy"
 required-features = ["fit", "measure", "matching"]
+
+[[test]]
+name = "metric_rectify"
+required-features = ["matching", "metric"]
 
 [package.metadata.docs.rs]
 all-features = true
