@@ -1011,6 +1011,7 @@ dependencies = [
 name = "vm-python"
 version = "0.1.0"
 dependencies = [
+ "nalgebra",
  "numpy",
  "pyo3",
  "pyo3-build-config",

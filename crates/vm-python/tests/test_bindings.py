@@ -645,3 +645,114 @@ def test_shape_model_save_load_roundtrip(tmp_path):
     except ValueError:
         pass
 
+
+
+# ---------------------------------------------------------------------------
+# warp: Map
+# ---------------------------------------------------------------------------
+
+
+def test_warp_map_is_in_the_stub():
+    assert hasattr(vm, "Map")
+
+
+def test_warp_map_affine_identity_is_a_copy():
+    img = np.arange(12, dtype=np.uint8).reshape(3, 4)
+    identity = np.eye(3, dtype=np.float32)
+    m = vm.Map.affine(4, 3, identity)
+    assert (m.width, m.height) == (4, 3)
+
+    out = m.apply(img, interp="nearest")
+    assert out.dtype == np.uint8
+    assert out.shape == (3, 4)
+    np.testing.assert_array_equal(out, img)
+
+
+def test_warp_map_affine_translation_shifts_a_ramp():
+    w, h = 8, 8
+    ramp = np.array(
+        [[10.0 * y + x for x in range(w)] for y in range(h)], dtype=np.float32
+    )
+    # dst -> src translation by (+0.5, 0): dst(x, y) samples src(x + 0.5, y).
+    matrix = np.array(
+        [[1.0, 0.0, 0.5], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], dtype=np.float32
+    )
+    m = vm.Map.affine(w, h, matrix)
+    out = m.apply(ramp, interp="bilinear", border_mode="clamp")
+    assert out.dtype == np.float32
+
+    # Interior columns: bilinear reproduces a linear ramp exactly.
+    for y in range(h):
+        for x in range(w - 1):
+            assert abs(out[y, x] - (10.0 * y + x + 0.5)) < 1e-4
+
+
+def test_warp_map_projective_rejects_a_non_3x3_matrix():
+    with pytest.raises(ValueError):
+        vm.Map.affine(4, 4, np.eye(2, dtype=np.float32))
+
+
+def test_warp_map_affine_rejects_a_non_affine_bottom_row():
+    # A genuine homography (nonzero bottom-left entries) is not affine.
+    matrix = np.array(
+        [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.01, 0.0, 1.0]], dtype=np.float32
+    )
+    with pytest.raises(ValueError):
+        vm.Map.affine(4, 4, matrix)
+    # The same matrix is fine through `projective`.
+    m = vm.Map.projective(4, 4, matrix)
+    assert (m.width, m.height) == (4, 4)
+
+
+def test_warp_map_polar_places_a_bump_at_its_expected_bin():
+    """A sharp intensity bump at a known (r, phi) must land at the matching
+    bin-center column/row of the unwrapped strip — the binding-level check
+    that `center`/`r`/`phi`/`w`/`h` reach `Map::polar` in the right order and
+    units (the exact bin-center formula itself is pinned by the Rust unit
+    tests)."""
+    n = 160
+    cx, cy = 80.0, 80.0
+    r_lo, r_hi = 20.0, 60.0
+    r0, phi0 = 40.0, 1.2  # radians, well inside both ranges
+
+    bx = cx + r0 * np.cos(phi0)
+    by = cy + r0 * np.sin(phi0)
+    yy, xx = np.mgrid[0:n, 0:n].astype(np.float32)
+    src = np.exp(-(((xx - bx) ** 2 + (yy - by) ** 2)) / (2.0 * 1.5**2)).astype(np.float32)
+
+    sw, sh = 360, 160
+    forward = vm.Map.polar((cx, cy), (r_lo, r_hi), (0.0, 2 * np.pi), sw, sh)
+    strip = forward.apply(src, interp="bilinear")
+    assert strip.shape == (sh, sw)
+
+    peak_v, peak_u = np.unravel_index(np.argmax(strip), strip.shape)
+    want_u = phi0 / (2 * np.pi) * sw - 0.5
+    want_v = (r0 - r_lo) / (r_hi - r_lo) * sh - 0.5
+    assert abs(peak_u - want_u) < 2.0
+    assert abs(peak_v - want_v) < 2.0
+
+
+def test_warp_map_mask_marks_out_of_source_taps():
+    w, h = 6, 4
+    img = np.full((h, w), 7, dtype=np.uint8)
+    # dst -> src translation by (-3, 0): the leftmost 3 dst columns sample
+    # outside the source under Nearest.
+    matrix = np.array(
+        [[1.0, 0.0, -3.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], dtype=np.float32
+    )
+    m = vm.Map.affine(w, h, matrix)
+    out, mask = m.apply_with_mask(img, interp="nearest", border_mode="constant", border_constant=0.0)
+    assert mask.dtype == np.uint8
+    assert out.shape == mask.shape == (h, w)
+
+    np.testing.assert_array_equal(mask[:, :3], 0)
+    np.testing.assert_array_equal(mask[:, 3:], 255)
+    np.testing.assert_array_equal(out[:, :3], 0)
+    np.testing.assert_array_equal(out[:, 3:], 7)
+
+
+def test_warp_map_unsupported_dtype_names_the_supported_ones():
+    m = vm.Map.affine(2, 2, np.eye(3, dtype=np.float32))
+    bad = np.zeros((2, 2), dtype=np.int32)
+    with pytest.raises(ValueError):
+        m.apply(bad)
