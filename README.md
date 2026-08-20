@@ -65,7 +65,10 @@ elsewhere in these docs).
 | `measure` | Calipers (rect / arc / radial) and metrology models: measure a located part and fit the result — see the [guide](docs/measure.md) |
 | `segment` | Otsu and adaptive thresholding, connected-component labeling, watershed, edgel region growing |
 | `lsd` | LSD line-segment detection |
-| `warp` | Image warping: build a `dst → src` `Map` once (affine / projective / polar / arbitrary `from_fn`), apply it per frame with a first-class validity mask |
+| `warp` | Image warping: build a `dst → src` `Map` once (affine / projective / polar / log-polar / arbitrary `from_fn`), apply it per frame with a first-class validity mask |
+| `metric` | The calibration bridge: pixel ↔ millimetre via a mirrored pinhole + Brown-Conrady camera model |
+| `corr` | Cross-correlation matching and inter-frame subpixel `displacement` over `corrmatch` |
+| `scale` | Scale estimation for `matching` (moments / log-polar) + `find_scale_invariant`: estimate once, resample, verify narrow |
 
 ## Pipeline
 
