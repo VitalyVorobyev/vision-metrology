@@ -1,0 +1,36 @@
+{
+  "description": "POST /api/models over the disc image's ROI -> ModelOut (id normalized).",
+  "operation": "teach",
+  "request": {
+    "image_id": "$IMAGE_ID",
+    "min_contrast": 0.15,
+    "roi": [
+      24.0,
+      24.0,
+      80.0,
+      80.0
+    ]
+  },
+  "response": {
+    "id": "$MODEL_ID",
+    "image_id": "$IMAGE_ID",
+    "min_contrast": 0.15,
+    "num_levels": null,
+    "num_levels_built": 3,
+    "origin": [
+      64.0,
+      63.999996185302734
+    ],
+    "point_counts": [
+      176,
+      88,
+      44
+    ],
+    "roi": [
+      24.0,
+      24.0,
+      80.0,
+      80.0
+    ]
+  }
+}

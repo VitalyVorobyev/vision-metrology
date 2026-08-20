@@ -1,0 +1,38 @@
+{
+  "description": "POST /api/rectify of the taught model's own ROI -> a canonical crop.",
+  "operation": "rectify",
+  "request": {
+    "crop": {
+      "px_per_unit": 1.0,
+      "rect": [
+        24.0,
+        24.0,
+        80.0,
+        80.0
+      ]
+    },
+    "image_id": "$IMAGE_ID",
+    "min_score": 0.5,
+    "model_id": "$MODEL_ID"
+  },
+  "response": {
+    "height": 80,
+    "matches": [
+      {
+        "angle": 1.5708014965057373,
+        "crop_url": "/api/rectify/$IMAGE_ID/$MODEL_ID/0",
+        "height": 80,
+        "index": 0,
+        "level": 0,
+        "scale": 1.001322865486145,
+        "score": 1.0,
+        "support": 176,
+        "validity": 1.0,
+        "width": 80,
+        "x": 63.99995803833008,
+        "y": 63.999916076660156
+      }
+    ],
+    "width": 80
+  }
+}
