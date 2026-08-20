@@ -73,6 +73,13 @@ pub(super) fn to_level(v: f32, level: usize) -> f32 {
     (v - 0.5 * (s - 1.0)) / s
 }
 
+/// Level-0 coordinate of a level-`l` coordinate — the inverse of [`to_level`].
+#[inline]
+fn to_base(v: f32, level: usize) -> f32 {
+    let s = (1usize << level) as f32;
+    v * s + 0.5 * (s - 1.0)
+}
+
 /// Reusable builder for [`ShapeModel`]s.
 ///
 /// Owns the reference-image pyramid and the edge detector, so building many
@@ -126,6 +133,45 @@ impl ShapeModelBuilder {
         roi: Rect2f,
         cfg: &ShapeModelConfig,
     ) -> Result<ShapeModel, Error> {
+        self.build_with_mask(img, roi, None, cfg)
+    }
+
+    /// Build a model from a reference image, an ROI, and an optional
+    /// **inclusion mask**.
+    ///
+    /// A rectangle is the wrong shape for most parts: on a round or L-shaped
+    /// one the ROI's corners sit on background, and the edges found there
+    /// enter the model as points that no scene instance can ever match,
+    /// diluting every later score (the model's own point count is the score's
+    /// denominator). `mask` restricts extraction to an arbitrary region: a
+    /// point survives only where the mask is non-zero.
+    ///
+    /// The mask is in **level-0 reference-image coordinates** and must cover
+    /// the whole image (same `width`/`height` as `img`). Every pyramid level
+    /// is filtered through this one mask rather than through a downsampled
+    /// copy of it: a level-`l` point is tested at the level-0 position it was
+    /// aggregated from (the inverse of the `2^l` box-downsample mapping), so
+    /// coarse levels keep exactly the region the caller drew instead of one
+    /// blurred by `l` successive decimations of the mask itself.
+    ///
+    /// # Errors
+    /// As [`build`](Self::build), plus [`Error::SizeMismatch`] when `mask`'s
+    /// dimensions differ from `img`'s.
+    pub fn build_with_mask<P: Pixel>(
+        &mut self,
+        img: &ImageView<'_, P>,
+        roi: Rect2f,
+        mask: Option<&ImageView<'_, u8>>,
+        cfg: &ShapeModelConfig,
+    ) -> Result<ShapeModel, Error> {
+        if let Some(m) = mask
+            && (m.width() != img.width() || m.height() != img.height())
+        {
+            return Err(Error::SizeMismatch {
+                expected: img.width() * img.height(),
+                actual: m.width() * m.height(),
+            });
+        }
         let crop = validate(img.width(), img.height(), roi, cfg)?;
         let sub = img.subview(crop.x0, crop.y0, crop.w, crop.h)?;
         // A fractional `min_contrast` is measured against the ROI, not the
@@ -139,13 +185,14 @@ impl ShapeModelBuilder {
                 pre_smooth: cfg.pre_smooth,
             },
         );
-        self.finish(crop, roi, cfg, min_contrast)
+        self.finish(crop, roi, mask, cfg, min_contrast)
     }
 
     fn finish(
         &mut self,
         crop: Crop,
         roi: Rect2f,
+        mask: Option<&ImageView<'_, u8>>,
         cfg: &ShapeModelConfig,
         min_contrast: f32,
     ) -> Result<ShapeModel, Error> {
@@ -187,6 +234,11 @@ impl ShapeModelBuilder {
                 }
                 let p = Point2f::new(e.p.x + shift.0, e.p.y + shift.1);
                 if !roi_l.contains(p) {
+                    continue;
+                }
+                if let Some(m) = mask
+                    && !mask_allows(m, to_base(p.x, level), to_base(p.y, level))
+                {
                     continue;
                 }
                 pts.push(RawPoint {
@@ -428,6 +480,23 @@ fn check_ranges(cfg: &ShapeModelConfig) -> Result<(), Error> {
     Ok(())
 }
 
+/// Is the level-0 position `(x, y)` inside the caller's inclusion mask?
+///
+/// Nearest-pixel, and a position outside the mask's own bounds reads as
+/// excluded — a point the caller never drew a region for is not one they asked
+/// to keep.
+fn mask_allows(mask: &ImageView<'_, u8>, x: f32, y: f32) -> bool {
+    let (xi, yi) = (x.round(), y.round());
+    if xi < 0.0 || yi < 0.0 {
+        return false;
+    }
+    let (xi, yi) = (xi as usize, yi as usize);
+    if xi >= mask.width() || yi >= mask.height() {
+        return false;
+    }
+    mask.row(yi)[xi] != 0
+}
+
 fn centroid(pts: &[RawPoint]) -> Option<Point2f> {
     if pts.is_empty() {
         return None;
@@ -496,6 +565,26 @@ pub(super) fn assemble(
     let need = cfg.min_points_per_level.max(1);
     let mut levels: Vec<ShapeModelLevel> = Vec::with_capacity(raw.len());
 
+    // The canonical orientation is applied here, once, to everything that
+    // leaves this function in the model frame: the per-level offsets and
+    // directions below, and the `teach_points` a later `resample_at` rebuilds
+    // from. Rotating by `-reference_angle` puts the caller's chosen direction
+    // on the model's own `+x`, which is what makes a found `angle()` read as
+    // that direction's orientation in the scene. `radius` is rotation-invariant;
+    // `bbox` is computed after the rotation and so describes the model frame,
+    // which is the frame `CropSpec::rect` is stated in.
+    let (sin, cos) = (-cfg.reference_angle).sin_cos();
+    let rot = |v: Vec2f| Vec2f::new(cos * v.x - sin * v.y, sin * v.x + cos * v.y);
+    let teach_points = teach_points.map(|tps| {
+        tps.into_iter()
+            .map(|tp| TeachPoint {
+                d: rot(tp.d),
+                t: rot(tp.t),
+                strength: tp.strength,
+            })
+            .collect::<Vec<_>>()
+    });
+
     for (level, pts) in raw.into_iter().enumerate() {
         let ref_l = Point2f::new(to_level(origin.x, level), to_level(origin.y, level));
         let kept = match cfg.max_points {
@@ -510,8 +599,8 @@ pub(super) fn assemble(
         let mut points: Vec<ModelPoint> = kept
             .iter()
             .map(|r| ModelPoint {
-                d: r.p - ref_l,
-                t: r.t,
+                d: rot(r.p - ref_l),
+                t: rot(r.t),
             })
             .collect();
 
@@ -545,6 +634,7 @@ pub(super) fn assemble(
         smooth,
         cfg.pre_smooth,
         teach_points,
+        cfg.reference_angle,
     ))
 }
 
@@ -706,4 +796,248 @@ fn gcd(mut a: usize, mut b: usize) -> usize {
         b = t;
     }
     a
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::matching::{ShapeModelBuilder, ShapeModelConfig};
+    use vm_primitives::Image;
+
+    /// A bright disc on a dark field, with a bright square parked in one
+    /// corner of the ROI — the square stands in for the background structure a
+    /// rectangular ROI drags in on a round part.
+    fn disc_with_corner_blob(size: usize) -> Image<u8> {
+        let mut data = vec![20u8; size * size];
+        let (cx, cy, r) = (size as f32 / 2.0, size as f32 / 2.0, size as f32 * 0.3);
+        for y in 0..size {
+            for x in 0..size {
+                let (dx, dy) = (x as f32 - cx, y as f32 - cy);
+                if (dx * dx + dy * dy).sqrt() < r {
+                    data[y * size + x] = 220;
+                }
+                if (12..32).contains(&x) && (12..32).contains(&y) {
+                    data[y * size + x] = 220;
+                }
+            }
+        }
+        Image::from_vec(size, size, data).expect("valid image")
+    }
+
+    /// Non-zero everywhere except a square covering the corner blob.
+    fn mask_excluding_corner(size: usize) -> Image<u8> {
+        let mut data = vec![255u8; size * size];
+        for y in 0..size {
+            for x in 0..size {
+                if x < 40 && y < 40 {
+                    data[y * size + x] = 0;
+                }
+            }
+        }
+        Image::from_vec(size, size, data).expect("valid mask")
+    }
+
+    fn full_roi(size: usize) -> Rect2f {
+        Rect2f {
+            x: 4.0,
+            y: 4.0,
+            width: size as f32 - 8.0,
+            height: size as f32 - 8.0,
+        }
+    }
+
+    #[test]
+    fn a_mask_drops_the_points_it_covers_and_keeps_the_rest() {
+        const N: usize = 160;
+        let img = disc_with_corner_blob(N);
+        let mask = mask_excluding_corner(N);
+        // Compare *extracted* point sets, so `max_points` decimation does not
+        // sit between the mask and the assertion: level-0 `point_count` is
+        // post-decimation and is not monotone in the number of points that
+        // survived extraction (a bigger raw set decimates to a smaller one).
+        let cfg = ShapeModelConfig {
+            max_points: None,
+            ..ShapeModelConfig::default()
+        };
+
+        let unmasked = ShapeModelBuilder::new()
+            .build(&img.as_view(), full_roi(N), &cfg)
+            .expect("unmasked model builds");
+        let masked = ShapeModelBuilder::new()
+            .build_with_mask(&img.as_view(), full_roi(N), Some(&mask.as_view()), &cfg)
+            .expect("masked model builds");
+
+        // The blob's own edges are gone...
+        assert!(
+            masked.point_count(0) < unmasked.point_count(0),
+            "masking a structure inside the ROI must remove points: {} vs {}",
+            masked.point_count(0),
+            unmasked.point_count(0)
+        );
+        // ...and nothing that survived sits in the masked-out corner.
+        for p in masked.reference_points() {
+            assert!(
+                !(p.x < 40.0 && p.y < 40.0),
+                "point ({}, {}) survived inside the masked-out corner",
+                p.x,
+                p.y
+            );
+        }
+        // The disc itself is untouched: the mask covers a corner, not the part.
+        assert!(masked.point_count(0) > 50, "the disc should still be there");
+    }
+
+    /// The reason the mask matters, stated as a measurement rather than a
+    /// count: background structure inside a rectangular ROI drags the model's
+    /// default origin (the centroid of its points) off the part, which costs
+    /// search radius and puts `ShapeMatch::position` somewhere that is not the
+    /// feature. Masking it out puts the origin back on the disc's centre.
+    #[test]
+    fn masking_out_background_recentres_the_default_origin_on_the_part() {
+        const N: usize = 160;
+        let centre = Point2f::new(N as f32 / 2.0, N as f32 / 2.0);
+        let img = disc_with_corner_blob(N);
+        let mask = mask_excluding_corner(N);
+        let cfg = ShapeModelConfig::default();
+
+        let unmasked = ShapeModelBuilder::new()
+            .build(&img.as_view(), full_roi(N), &cfg)
+            .expect("unmasked model builds");
+        let masked = ShapeModelBuilder::new()
+            .build_with_mask(&img.as_view(), full_roi(N), Some(&mask.as_view()), &cfg)
+            .expect("masked model builds");
+
+        let off_unmasked = (unmasked.origin() - centre).norm();
+        let off_masked = (masked.origin() - centre).norm();
+        assert!(
+            off_unmasked > 5.0,
+            "the corner blob should pull the centroid well off the disc, got {off_unmasked}"
+        );
+        assert!(
+            off_masked < 1.0,
+            "with the blob masked out the centroid should sit on the disc, got {off_masked}"
+        );
+    }
+
+    #[test]
+    fn the_mask_applies_to_every_pyramid_level_not_just_level_zero() {
+        const N: usize = 160;
+        let img = disc_with_corner_blob(N);
+        let mask = mask_excluding_corner(N);
+        let model = ShapeModelBuilder::new()
+            .build_with_mask(
+                &img.as_view(),
+                full_roi(N),
+                Some(&mask.as_view()),
+                &ShapeModelConfig::default(),
+            )
+            .expect("masked model builds");
+
+        assert!(model.num_levels() > 1, "need a coarse level to test");
+        for level in 0..model.num_levels() {
+            for (p, _) in model.reference_geometry(level) {
+                assert!(
+                    !(p.x < 40.0 && p.y < 40.0),
+                    "level {level}: point ({}, {}) survived inside the masked-out corner",
+                    p.x,
+                    p.y
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_mask_of_the_wrong_size_is_refused() {
+        const N: usize = 160;
+        let img = disc_with_corner_blob(N);
+        let mask = mask_excluding_corner(N / 2);
+        let err = ShapeModelBuilder::new()
+            .build_with_mask(
+                &img.as_view(),
+                full_roi(N),
+                Some(&mask.as_view()),
+                &ShapeModelConfig::default(),
+            )
+            .expect_err("a mask that does not cover the image is an error");
+        assert!(matches!(err, Error::SizeMismatch { .. }));
+    }
+
+    #[test]
+    fn reference_angle_rotates_the_model_frame_but_not_the_reference_geometry() {
+        const N: usize = 160;
+        const THETA: f32 = 0.7;
+        let img = disc_with_corner_blob(N);
+        let plain = ShapeModelBuilder::new()
+            .build(&img.as_view(), full_roi(N), &ShapeModelConfig::default())
+            .expect("model builds");
+        let turned = ShapeModelBuilder::new()
+            .build(
+                &img.as_view(),
+                full_roi(N),
+                &ShapeModelConfig {
+                    reference_angle: THETA,
+                    ..ShapeModelConfig::default()
+                },
+            )
+            .expect("model builds");
+
+        assert_eq!(turned.reference_angle(), THETA);
+        assert_eq!(plain.reference_angle(), 0.0);
+        // Same extraction, so the same points survive in the same order —
+        // `reference_angle` rotates the frame, it does not filter.
+        assert_eq!(plain.point_count(0), turned.point_count(0));
+
+        // In the *reference-image* frame the two models are identical...
+        for (a, b) in plain
+            .reference_geometry(0)
+            .iter()
+            .zip(turned.reference_geometry(0).iter())
+        {
+            assert!((a.0 - b.0).norm() < 1e-3, "{:?} vs {:?}", a.0, b.0);
+            assert!((a.1 - b.1).norm() < 1e-3, "{:?} vs {:?}", a.1, b.1);
+        }
+
+        // ...and in the *model* frame the turned one is the plain one rotated
+        // by -THETA about the origin.
+        let (sin, cos) = (-THETA).sin_cos();
+        let origin = plain.origin();
+        for (a, b) in plain
+            .model_geometry(0)
+            .iter()
+            .zip(turned.model_geometry(0).iter())
+        {
+            let d = a.0 - origin;
+            let want = origin + Vec2f::new(cos * d.x - sin * d.y, sin * d.x + cos * d.y);
+            assert!((want - b.0).norm() < 1e-3, "{want:?} vs {:?}", b.0);
+        }
+    }
+
+    #[test]
+    fn model_geometry_reports_every_level_in_one_comparable_frame() {
+        const N: usize = 160;
+        let img = disc_with_corner_blob(N);
+        let model = ShapeModelBuilder::new()
+            .build(&img.as_view(), full_roi(N), &ShapeModelConfig::default())
+            .expect("model builds");
+
+        assert!(model.num_levels() > 1);
+        let origin = model.origin();
+        let radius0 = model
+            .model_geometry(0)
+            .iter()
+            .fold(0.0f32, |m, (p, _)| m.max((p - origin).norm()));
+        for level in 1..model.num_levels() {
+            let r = model
+                .model_geometry(level)
+                .iter()
+                .fold(0.0f32, |m, (p, _)| m.max((p - origin).norm()));
+            // Levels are scaled back into level-0 units, so every level's
+            // extent is the same object, within a coarse level's own pixel.
+            assert!(
+                (r - radius0).abs() < radius0 * 0.25,
+                "level {level} extent {r} disagrees with level 0's {radius0}"
+            );
+        }
+        assert!(model.model_geometry(model.num_levels()).is_empty());
+    }
 }

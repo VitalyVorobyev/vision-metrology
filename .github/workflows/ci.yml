@@ -13,6 +13,18 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  docs-invariants:
+    name: Invariant numbering
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # Invariant numbers in docs/system-design.md are cited by number from source
+      # files and docs, and nothing in the compiler checks them. This does.
+      - name: Check invariant numbering and citations
+        run: python3 tools/check-invariants.py
+
   rust-quality:
     name: Rust Quality (ubuntu)
     runs-on: ubuntu-latest

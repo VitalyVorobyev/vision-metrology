@@ -4,10 +4,21 @@ const invokeMock = vi.fn();
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: unknown[]) => invokeMock(...args),
+  // The real one is a Tauri-runtime call; the shape it produces is all this
+  // module depends on, and asserting on it is how we notice if the tier path
+  // ever stops being handed to the webview as a URL.
+  convertFileSrc: (path: string) => `asset://localhost/${path}`,
 }));
 
-// Imported after the mock so `tauriBackend.ts`'s own `import { invoke } from
-// "@tauri-apps/api/core"` resolves to the mocked module.
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn().mockResolvedValue(() => {}),
+}));
+
+vi.mock("@tauri-apps/plugin-dialog", () => ({
+  open: vi.fn().mockResolvedValue(null),
+}));
+
+// Imported after the mocks so `tauriBackend.ts`'s own imports resolve to them.
 const { createTauriBackend } = await import("./tauriBackend");
 
 describe("createTauriBackend", () => {
@@ -78,35 +89,50 @@ describe("createTauriBackend", () => {
     expect(resp.matches[0]?.crop_url).toBe("img-1/model-1/0");
   });
 
-  it("imageUrl() returns a placeholder synchronously, then a blob URL once the fetch resolves", async () => {
-    const bytes = new Uint8Array([1, 2, 3, 4]);
-    invokeMock.mockResolvedValueOnce(Array.from(bytes));
+  it("imageUrl() renders the tier to a file and returns an asset URL for it", async () => {
+    invokeMock.mockResolvedValueOnce("/cache/tiers/abc/thumb.png");
     const backend = createTauriBackend();
 
-    const first = backend.imageUrl("img-1", "thumb");
-    expect(first.startsWith("data:image/png;base64,")).toBe(true);
-    expect(invokeMock).toHaveBeenCalledWith("image_data", { imageId: "img-1", tier: "thumb" });
+    const url = await backend.imageUrl("img-1", "thumb");
 
-    // Let the microtask queue drain so the background fetch resolves.
-    await Promise.resolve();
-    await Promise.resolve();
-
-    const second = backend.imageUrl("img-1", "thumb");
-    expect(second.startsWith("blob:")).toBe(true);
-    // A cached key does not re-invoke.
-    expect(invokeMock).toHaveBeenCalledTimes(1);
+    expect(invokeMock).toHaveBeenCalledWith("image_tier_path", {
+      imageId: "img-1",
+      tier: "thumb",
+    });
+    // No pixels crossed the boundary — the command answered with a path, and
+    // `convertFileSrc` (mocked below) turned it into something an <img> loads.
+    expect(url).toBe("asset://localhost//cache/tiers/abc/thumb.png");
   });
 
-  it("rectifyCropUrl() follows the same cache-or-fetch pattern as imageUrl()", async () => {
+  it("rectifyCropUrl() names a crop that resolveCropUrl then fetches", async () => {
     invokeMock.mockResolvedValueOnce([9, 9, 9]);
     const backend = createTauriBackend();
 
-    const first = backend.rectifyCropUrl("img-1", "model-1", 0);
-    expect(first.startsWith("data:image/png;base64,")).toBe(true);
+    const key = backend.rectifyCropUrl("img-1", "model-1", 0);
+    expect(key).toBe("crop:img-1:model-1:0");
+
+    const url = await backend.resolveCropUrl(key);
+    expect(url.startsWith("blob:")).toBe(true);
     expect(invokeMock).toHaveBeenCalledWith("rectify_crop", {
       imageId: "img-1",
       modelId: "model-1",
       index: 0,
+    });
+  });
+
+  it("scanDir() and openImagePaths() move paths, never bytes", async () => {
+    invokeMock.mockResolvedValueOnce([]);
+    const backend = createTauriBackend();
+    await backend.scanDir("/frames", false);
+    expect(invokeMock).toHaveBeenLastCalledWith("images_scan_dir", {
+      dir: "/frames",
+      recursive: false,
+    });
+
+    invokeMock.mockResolvedValueOnce([]);
+    await backend.openImagePaths(["/frames/a.png"]);
+    expect(invokeMock).toHaveBeenLastCalledWith("images_open_paths", {
+      paths: ["/frames/a.png"],
     });
   });
 

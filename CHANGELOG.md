@@ -7,7 +7,335 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+#### `birdseye_mosaic` example: the mosaic plane is measured, not assumed
+
+- The real-data bird's-eye example placed its plane **perpendicular to camera0's optical
+  axis** at the two cameras' axis-convergence distance, because
+  `25_09_17_Table_Calibration/calibration.json` records intrinsics, extrinsics and hand-eye
+  but **no target pose**. The distance was about right; the orientation was never measured.
+  The target is in fact tilted **37.81°** away from that axis, so each camera picked up its
+  own projective error and the published composite showed the two cameras' halves at
+  different scales with the checker grid stepping across the tint boundary — not a mosaic.
+  `docs/assets/birdseye-mosaic.png` (README gallery) is regenerated.
+- The example now **estimates the plane from the two frames**: a coarse translation-invariant
+  tilt sweep (score = median tracked `corr::displacement` ZNCC, which a wrong *distance*
+  cannot fool because the tracker absorbs a bulk shift), then coarse-to-fine rounds of
+  track → ray-to-ray correspondence → RANSAC + least squares for `v = n/d` in
+  `x1 ~ (R + t·vᵀ) x0`. Knowing `R`/`t` from the calibration makes that solve **linear in
+  three unknowns**, with none of a homography decomposition's ambiguity. Recovered plane:
+  `n = (0.1584, 0.5923, 0.7900)` in camera0's frame, piercing camera0's axis at
+  **276.35 mm**; last round 47/47 windows tracked and 47/47 inliers, tracked residual p50
+  **0.12 grid px** at 0.0128 mm/px, fit reprojection p50 **0.11 px**. No library change —
+  `metric::plane_grid_map` / `warp` are used unmodified, per the mosaic wave's "not a
+  library module" decision. Runtime ~16 s release.
+- The example's **seam metric is now ZNCC over the jointly-valid overlap, and it gates the
+  run** (`bail!` below 0.75). The old `max − min` raw-intensity statistic saturates on a
+  hard-edged coded checkerboard whether or not the mosaic is registered, which is precisely
+  why the broken asset shipped with a paragraph explaining away a p95 of 251/255. Measured:
+  **0.9927** on the estimated plane, **0.0656** on the plane the example used to assume.
+- The example now needs the `corr` feature as well as `metric`.
+
 ### Added
+
+#### v0.2 substrate reset (Track A, PR #24)
+
+- **`Pixel`**, a sealed trait over `u8`/`u16`/`f32`. Every `_u8`/`_u16`/`_f32` triplet
+  collapsed into one generic entry point: **40 entry points → 16**. `laser`'s private
+  `ScanPixel` deleted.
+- **`Pyramid`** generic over `Pixel`, `unsafe`-free (5 blocks removed, and 1.1% *faster*
+  than the raw-pointer version it replaced); `downsample.rs` 489 → 189 lines. Optional
+  `PreSmooth::Binomial121`. `level_to_base` / `base_to_level` are the single
+  implementation of invariant 2.
+- **`Point2f` / `Vec2f` are nalgebra aliases**; 7 conversion functions and ~250 lines of
+  hand-written operators gone. `Vec2fExt::normalized_or_zero` guards the NaN trap this
+  introduced.
+- **Module hygiene**: no glob re-exports, `prelude` on both crates, every domain module a
+  default-on feature, CI feature-matrix job. `Error` is `#[non_exhaustive]`.
+- **Six defects fixed**, three of which were silently corrupting measurements:
+  `multiscale` mapped level-*l* edgels without the `(2^l − 1)/2` term, biasing every fitted
+  circle centre 0.07–0.10 px (module deleted); LSD carried a second, divergent downsample
+  and mapped endpoints back without the half-pixel term (−0.50 px at the default config,
+  −0.95 px on odd widths); `downsample2x2_mean_*_into` guarded a release-mode
+  out-of-bounds write with a `debug_assert!`; `Pyramid::ensure` was public and could
+  construct 0×0 levels; `[profile.release]` was untuned (`lto = "thin"`,
+  `codegen-units = 1`, worth −2.6% / −1.9%); four stale claims in the persistent-context
+  docs.
+- Verified: all gates green including the feature matrix and `cargo doc -D warnings`;
+  `shape_find_1280x1024_360deg` 3.42 → 3.36 ms and clutter 6.61 → 6.42 ms; canend set1
+  150/150 across three folders with ZNCC p50 0.912–0.961, identical to four decimals.
+
+#### `fit` — robust primitive fitting (Track B1, PR #24)
+
+- `fit_line` (TLS + IRLS + RANSAC), `fit_circle` (Taubin → Gauss–Newton on the true
+  residual), `fit_ellipse` (Fitzgibbon → geometric), each returning `Fit<M>` with `rms` /
+  `max_dev` / `n_used` / `inliers`, and `RobustLoss::{None, Huber, Tukey}`. `Circle2f`,
+  `Ellipse2f` and `Conic2f` moved down to `vm-primitives`; `Circle2f` is new. Short arcs
+  (30°–180°) stay within 0.05 px. Bench (M4 Pro): `fit_circle_500pts` 2.6 µs, `+tukey`
+  4.2 µs, `fit_line_500pts` 1.7 µs, `fit_ellipse_100pts` 1.6 µs,
+  `fit_ellipse_ransac_1000pts` 430 µs.
+
+#### `measure` — calipers and the metrology model (Track B2, PR #24)
+
+- `Caliper` over rect / arc / **radial** placements, typed `RejectReason`, an obliquity
+  gate and sub-pixel stepping (the last three adapted from the `rtvt-pano` caliper).
+  `MetrologyModel` applies nominal geometry at a fixture pose (`ShapeMatch::pose`) and
+  fits robustly. A rect caliper averages along a *chord*, which biases a curved edge
+  inward — 39.88 px on a nominal-40 disc; `MeasureRadial` averages along the arc: 39.990 px.
+- `examples/inspect_canend` runs find → fixture → metrology model → pass/fail on real
+  frames: 100/100 measured across two lighting conditions, σ ≈ 0.3 px on the rim radius,
+  every caliper surviving the robust fit.
+
+#### v0.3 API reset (Track D, PR #25)
+
+Six commits, each with the full gate set green before the next started. No algorithm
+moved; everything about how the API *states* things did.
+
+1. **Visibility sweep.** The flat domain re-export block left the crate root (invariant
+   17), `prelude` extended to `fit` / `measure` / `segment`, and nine leaked internals
+   pulled back: the laser stage functions (`coarse_center_{u8,u16,f32}`,
+   `best_pair_with_prior` — a triplet that also broke invariant 19),
+   `contour::MAX_KERNEL_PTS`, the `pyr::downsample2x2_mean*` free functions,
+   `matching::create_shape_model`, `core::transform_point_iso`, the `edge` submodule paths
+   (`edge::edge2d::Edgel` → `edge::Edgel`), and `match_point_scores` (now only
+   `matching::diagnostics::match_point_scores`).
+2. **Config split, sentinels, `Contrast`.** `ShapeSearchConfig` 14 flat fields → 8 + a
+   nested `ShapeSearchTuning`; `LaserExtractConfig` likewise. Every `0`/`0.0` = "auto"
+   became `Option<NonZeroUsize>` / `Option<f32>` / a named enum (`Hysteresis`,
+   `CenterSmoothing`) — invariant 10 rewritten. `min_contrast` gained a unit:
+   `Contrast::{Raw, FractionOfRange}`.
+3. **Result honesty.** `Caliper::measure_checked` → `measure` returning
+   `Result<&[MeasureEdge], RejectReason>`, with the lossy twin deleted;
+   `MetrologyModel::apply` returns one `Result` per object, in object order; `hits()`
+   folded into `MetrologyResult`.
+4. **One batched model-format bump** (2 → 3): opaque `save`/`load` + `to_bytes`/
+   `from_bytes`, `FORMAT_VERSION` internal, `ModelPoint`/`ShapeModelLevel` read-only
+   through accessors, and backlog R3 closed — the pyramid `PreSmooth` is stored in the
+   model and the search reads it from there, so invariant 3 cannot be violated.
+5. **`core` split into `raster` (zero nalgebra) and `geom`.** Module split only, both
+   private, no public path changed.
+6. **`shape` → `lsd`** (module + feature), and `DirectionField`'s stateful tiling protocol
+   became a `TiledField<'a>` session that owns `ensure_rect`.
+
+Verified: all gates green, per-feature clippy by hand (which caught one stale
+`#[cfg(feature = "serde")]` that `--all-features` could not); every self-asserting example
+passes; `match_shape` held or improved on all six cases (360° 3.408 → 3.370 ms, scale
+sweep 17.57 → 16.83 ms); canend set1 `inspect_canend` **100/100** measured (dome mean
+365.237 px σ 0.282, dark 365.696 px σ 0.307) and shape matching 150/150 found across
+dome / bright / dark with dome p50 **0.998**, unchanged to three decimals.
+
+#### vm-python parity wave (Track D.1, PR #27)
+
+- Config mirror (nested `ShapeSearchTuning`, `roi`/`angle_range`/`scale_range`, a tagged
+  `Contrast` pyclass rather than a bare float); `measure`/`fit_line`/`contour`/`morph`
+  bindings (`Caliper` raising `MeasureRejected`, `MetrologyModel` returning
+  `MetrologyResult | MetrologyError` per object); dtype dispatch replacing every `_u8`
+  name (`EdgeDetector`, `LsdDetector`, `ShapeModel`/`ShapeMatcher` all accept
+  `uint8`/`uint16`/`float32`); `.pyi` + `py.typed` wired into the wheel via maturin's
+  `python-source` mixed layout — which needed a bridging `__init__.py` (the compiled
+  extension lands as a *submodule* of the same-named package, not merged into it; verified
+  by installing the built wheel, not just compiling). `laser` and
+  `segment::watershed`/region-growing got no binding this wave (recorded in
+  `docs/backlog.md`).
+
+#### `warp` — build once, apply per frame (Track B4, PR #31)
+
+- `Map` with `affine` / `projective` / `polar` / `from_fn` constructors, `Interp::{Nearest,
+  Bilinear}`, `apply` and `apply_with_mask` over caller-owned flat buffers. Every
+  constructor is expressed over `from_fn`, so there is one coordinate-precompute path and
+  one hand-rolled bilinear gather. `apply_with_mask` marks a destination pixel `255` iff
+  every interpolation tap it read fell inside the source — derived from which of `apply`'s
+  two paths ran, not a second pass. `Map` allocates only at construction.
+- Verified: identity affine reproduces the source exactly (both interpolation modes); a
+  +0.5 px affine translation reproduces a linear ramp to 1e-4; affine ∘ affine⁻¹ recovers
+  the source to 1e-3 away from the clamped border; a projective embedding of an affine
+  matrix matches the affine path bit-for-bit; `polar` followed by a `from_fn` inverse
+  recovers a two-axis disc pattern to 0.79 intensity units; the mask marks exactly the
+  out-of-source taps. Bench (M4 Pro, 640×480, bilinear, `Map` built outside the loop):
+  `affine_apply_640x480_bilinear` ≈ 510 µs, `polar_apply_640x480_bilinear` ≈ 494 µs
+  (~1.6–1.7 ns/destination-pixel, no per-apply allocation).
+
+#### rectify — canonical-pose crops (Track B4.1, PR #32)
+
+- `CropSpec { rect, px_per_unit, normalize_scale }` and
+  `ShapeMatch::{model_frame_pose, model_frame_map}` in
+  `crates/vision-metrology/src/matching/crop.rs`; `matching`'s Cargo feature now implies
+  `warp`. `CropSpec::output_size()` depends only on the spec, never on the match.
+  Recommended usage (`Map::apply_with_mask` + `BorderMode::Constant`, not the crate's
+  usual `Clamp`) is documented at the API.
+- C1 row `rectify_repeatability`: one taught L-shape re-rendered at 12 seeded subpixel
+  poses (±0.5 px translation, ±1° rotation, ±1% scale), found and rectified each time.
+  Measured (2026-08-20): **bias 0.88, σ 1.69** in 8-bit intensity units (under 1% of full
+  range); envelope pinned at 1.3 / 2.5.
+- `examples/align_crops` runs teach → find → rectify on real glue-rig frames
+  (`data/42781`): 20/20 frames found, mean crop validity 0.97.
+
+#### `metric` — the calibration bridge (Track B5, PR #33)
+
+- `PinholeIntrinsics`, `BrownConrady5`, `CameraModel`, `Pose3` (= `Isometry3f`,
+  camera-from-reference), `Plane3`, `PlaneGrid` on nalgebra 0.35. Alloc-free
+  `distort_pixel`/`undistort_pixel` (fixed 20-iteration Newton, converged < 1e-6
+  normalized), `pixel_to_ray`, `ray_plane_intersect`, `pixel_to_plane`,
+  `homography_plane_to_image` + `plane_grid_map`, `undistort_map`. `metric::io` imports
+  calibration-rs's `RigExtrinsicsExport` (meters → mm on import) and the
+  `table_calibration` tool's `calibration.json` (already mm).
+- Golden-parity tests against a hand-crafted `RigExtrinsicsExport` fixture (round-trips
+  `distort_pixel`/`undistort_pixel` to < 1e-6 normalized over a grid, `pixel_to_plane` by
+  hand on axis-aligned cases) and a trimmed real `table_calibration.json`.
+- Python: `CameraModel`/`PinholeIntrinsics`/`BrownConrady5`/`Plane3`/`PlaneGrid`
+  pyclasses, `Pose3` as a `(4, 4)` float64 array, vectorized `pixel_to_plane` over
+  `(N, 2)` arrays (NaN row on a miss), `plane_grid_map`/`undistort_map` returning the
+  existing `Map` pyclass, `load_rig_extrinsics`/`load_table_calibration`.
+- Lab: `POST/GET /api/calibration` (format detected by shape), `POST /api/measure`
+  augmented with `calibration_id`/`camera_index`/`plane`, mm fields on fitted circle
+  centre/radius and hit caliper edges, a px/mm toggle in the Measure tab.
+- **Rectify-first 3-D acceptance** (`tests/metric_rectify.rs`): a synthetic SDF L-shape
+  rendered on the reference frame's `z = 0` plane through a tilted calibrated camera
+  (pinhole + BC5, tilt 0/10/20/30/40° about the reference x-axis) via the forward model,
+  then rectified back with `plane_grid_map` + `apply_with_mask`. A `ShapeModel` taught on
+  the 0° crop is found in every tilt's crop, score 1.0000 throughout, position error
+  0.0004 / 0.0037 / 0.0023 / 0.0120 / 0.0029 px — max **0.012 px**, an order of magnitude
+  inside the 0.1 px target.
+
+#### `corr` — cross-correlation matching and displacement (Track B6, PR #34)
+
+- `corrmatch` moves from dev-dependency to a real, optional dependency (`corr` feature,
+  default-on). `corr::CorrTemplate` / `find` / `find_topk` are a thin
+  zero-copy-when-contiguous adapter over corrmatch's own pyramid, angle bank, beam search
+  and quadratic subpixel refinement. `CorrMatch` is deliberately not `ShapeMatch` (raw
+  correlation coefficient, no scale search). `u8`-only, and says so in the module docs.
+- `corr::displacement`: a bounded, rotation-off ZNCC search restricted to a `search`-pixel
+  margin around the window's previous position, optionally followed by translation-only
+  inverse-compositional Lucas-Kanade (`Refine::LucasKanade`, a 2x2 normal-equations solve
+  on the window's own Scharr gradient computed once, 3 iterations by default).
+- C1 rows `displacement_quadratic` / `displacement_lk`: a 10x10 grid of exact fractional
+  shifts (0.0–0.9 px, both axes) from a continuous aperiodic value-noise texture, two
+  noise levels, worst cell. Quadratic-only bias 0.0239 px / sigma 0.0164 px;
+  +Lucas-Kanade bias 0.0204 px / sigma 0.0141 px — about a 15% reduction in both.
+  Envelopes pinned at ~1.5x measured.
+- Real-data cross-check (`tests/glue_displacement.rs`, agreement not a gate) over 39
+  consecutive `data/42781` frame pairs, middle strip: mean `|shift|` 1.024 px, max
+  4.003 px (inside the ±10 px search bound), mean score 0.946, cumulative displacement
+  (-39.84, 2.22) px.
+- Bench (`benches/corr.rs`, M4 Pro): `find` on a VGA scene with a 64x64 template —
+  rotation off 4.60 ms, rotation on 22.1 ms. `displacement` on a 320x97 window —
+  quadratic-only 1.60 ms, +Lucas-Kanade 1.71 ms (+7%).
+- Python: `CorrTemplate`, `find`/`find_topk`/`displacement`,
+  `CorrTemplateConfig`/`CorrConfig`/`DisplacementConfig` + nested tuning mirrors, `Refine`
+  as a tagged pyclass. `u8`-only end to end — a `uint16`/`float32` array is a `TypeError`
+  at the PyO3 boundary. Lab: `POST /api/displacement` and a Motion tab.
+- No API gaps found in corrmatch 0.2.5; nothing was reported back upstream.
+
+#### mosaic — bird's-eye composite of N calibrated cameras (Track B7, PR #35)
+
+- **Not a library module**: `metric::plane_grid_map` per camera plus
+  `warp::Map::apply_with_mask` already have everything a mosaic needs; the only new logic
+  is compositing, which lives in `crates/vision-metrology/tests/mosaic.rs` and (re-derived
+  deliberately) in `examples/birdseye_mosaic.rs` and the lab's `routers/mosaic.py`.
+- Compositing rule: nearest-camera-centre priority, ties by camera index, no blending by
+  default; uncovered pixels are `source_id = 255`. Feathering is opt-in and display-only.
+- Fixture test (`tests/mosaic.rs`, CI gate): three virtual pinhole+BC5 cameras 80 mm
+  apart, standing off 500 mm, 7 antialiased fiducial discs at known mm positions.
+  Measured (2026-08-20, M4 Pro): full coverage inside the check rectangle (0 uncovered
+  pixels); worst-of-7 fiducial centroid position error **0.0067 px** (target 0.05 px);
+  seam disparity p50 0.000, p95 0.000, max 7.000 (envelope pinned at 3.0 on p95).
+- Real-data example (`examples/birdseye_mosaic.rs`, demo not a gate) on
+  `~/vision/data/25_09_17_Table_Calibration/` (2 real cameras): the calibration's
+  reference frame is `camera0`'s own frame, whose `z = 0` sits at camera0's optical
+  centre — degenerate for `plane_grid_map` — so the example recovered the closest-approach
+  distance between the two cameras' optical axes instead: **273.90 mm**, with the axes
+  passing within **0.406 mm** of each other, and placed the mosaic plane perpendicular to
+  camera0's optical axis there. *That orientation was a guess and it was wrong* — see the
+  Fixed entry above; the numbers this bullet originally carried (coverage 59.0%/65.0%,
+  seam disparity p50 47.00 / p95 251.00) described a composite that was not registered.
+  `docs/assets/birdseye-mosaic.png` is the README gallery row.
+- One new binding, `project_plane_points` (vectorized forward reprojection), rather than
+  duplicating the distortion formula in Python.
+- Lab: `POST /api/mosaic` + Bird's-eye tab — `calibration_id` + `[{camera_index,
+  image_id}]` + an optional grid spec (auto-fit from the cameras' image-border footprints
+  via `pixel_to_plane` when omitted); response carries `image_url`/`source_id_url`,
+  per-camera coverage, union/overlap fractions and seam disparity p50/p95;
+  `?feather=true` switches to the display-only feather.
+
+#### `scale` — estimate-then-verify (Track B8, PR #37)
+
+- `estimate_scale_moments`, `estimate_scale_logpolar`, `find_scale_invariant`, and
+  `ShapeModel::resample_at`. Model format 3 → **4**, backward-loading: every model now
+  stores its pre-decimation level-0 edge points (`TeachPoint`); a format-3 document still
+  loads with `teach_point_count() == 0`, and `resample_at`/`estimate_scale_logpolar`
+  refuse cleanly rather than resampling from already-decimated points. The resampled
+  model's own `scale_range` is pinned to `(0.95, 1.05)`. `warp::Map::log_polar` is new
+  this wave.
+- **Decision 9g — offset-collapse dedup: three designs built and measured, all three
+  rejected, nothing shipped.** See `docs/system-design.md` for the full account.
+- C1 rows `estimate_verify_scale_bias` / `estimate_verify_position`: same 12-scale ×
+  3-rotation grid as the scan rows but on a model taught with the *default* `scale_range`,
+  recovered via `find_scale_invariant` — 100% found-rate at every scale, |bias| 0.0014
+  (scale, fraction) / 0.0218 px (position), sigma 0.0003 / 0.0039 px, identical to the
+  scan row cell for cell. `scale_estimate_vs_scan_cost` (timed, M4 Pro): wide scan ~1.6 s
+  vs. estimate-then-verify 663–745 ms on the identical scene — **~2.2–2.4x** faster.
+- canend parity, bit-for-bit against the recorded baseline: dome 365.237 px / σ 0.282 px,
+  dark 365.696 px / σ 0.307 px, both set1 folders, `--tolerance 1.5`.
+- Python: `ShapeModel.resample_at`/`.teach_point_count`, `Map.log_polar`,
+  `estimate_scale_moments`/`estimate_scale_logpolar`,
+  `find_scale_invariant_roi`/`find_scale_invariant_center`,
+  `MomentScaleConfig`/`LogPolarScaleConfig`/`ScaleInvariantConfig`.
+
+#### `measure::diagnostics::layout` — caliper placement, shared (Track B2.1, PR #36)
+
+- `CaliperShape::{Rect, Radial}`, `CaliperPlacement { object_index, caliper_index, shape }`
+  and `layout(&MetrologyModel, &Similarity2f) -> Vec<CaliperPlacement>`.
+  `MetrologyModel::apply` and `layout` both call one private function
+  (`model::caliper_placements`). `layout` needs no image. Python:
+  `MetrologyModel.layout(x, y, angle, scale, origin)`. The lab's `vm_lab/geometry.py` is
+  deleted; both the FastAPI router and the Tauri command call `layout` instead of
+  re-deriving placement. Overlay output verified unchanged (all pre-existing backend smoke
+  tests pass without modification).
+
+#### Accuracy regression suite (Track C1, PR #29)
+
+- `crates/vision-metrology/tests/accuracy.rs`: a data-driven table (`ROWS: &[Row]`, one
+  row per operator, `fn() -> Measured` plus a pinned envelope) covering `Edge1DDetector`,
+  `Edge2DDetector`, `Caliper` (rect), `fit_circle` and `ShapeMatcher` (translation +
+  rotation), each fixture an antialiased Gaussian-CDF edge (or SDF+smoothstep L-shape)
+  with exact subpixel ground truth. Envelopes measured once and pinned at ~1.5x, except
+  `fit_circle`'s worst cell (30° arc + 10% outliers), a genuinely near-degenerate fit.
+- The `Edge2DDetector` sweep found that `Hysteresis::Auto` is unusable at the
+  heavy-blur/high-noise corner of the grid; the fixture characterises each blur level's
+  clean peak once and holds a fixed `Hysteresis::Manual` threshold instead.
+- Scale row (PR #31): `shape_matcher_scale_bias` / `shape_matcher_scale_position` sweep 12
+  true scales geometrically spaced over 0.5–2.0× at 3 rotations each, model taught at
+  scale 1.0 with `scale_range = (0.45, 2.1)`. Measured: found-rate **100% at every one of
+  the 12 scales** (36/36), scale bias ≤ 0.0014 (0.14%), position bias ≤ 0.022 px.
+  Envelopes pinned at ~1.5–2x (scale bias 0.003, scale σ 0.001, position bias 0.04 px,
+  position σ 0.01 px); found-rate pinned as a per-scale regression guard
+  (`BASELINE_FOUND_RATE`).
+
+#### Tauri desktop shell for the lab (Track C4, PR #36)
+
+- `lab/frontend/src-tauri`, a Tauri v2 crate (`vm-lab-desktop`) that calls
+  `vision-metrology`/`vm-primitives` directly — commands and events, no HTTP, no PyO3 —
+  behind the same `LabBackend` TypeScript interface the browser build's `httpBackend`
+  implements. One frontend bundle, transport chosen at runtime by `getBackend()`.
+- Standalone Cargo workspace: `src-tauri/Cargo.toml` carries its own empty `[workspace]`
+  table, verified with `cargo metadata` from the repo root (still exactly
+  `vm-primitives`/`vision-metrology`/`vm-python`).
+- Contract fixtures, the anti-drift gate: `lab/contract/fixtures/` holds golden
+  request/response JSON plus small deterministic synthetic PNGs (a disc for
+  teach/find/measure/rectify; two value-noise textures shifted by an exact known
+  `(4.0, 3.0)` px for displacement) for the six core operations, generated from the
+  FastAPI backend (`lab/backend/scripts/export_contract_fixtures.py`) and replayed by two
+  independent tests — `lab/backend/tests/test_contract_fixtures.py` and
+  `lab/frontend/src-tauri/tests/contract_parity.rs`.
+- Command surface: `images_upload`/`images_list`/`image_data`,
+  `models_create`/`models_list`, `find`, `measure`, `rectify` + `rectify_crop`,
+  `displacement`, `calibration_upload`/`calibration_list`. `find` emits `lab://progress`
+  started/finished events. State is a small Rust port of `store.py`.
+- Verified: `bunx tauri build` produced a full bundle (`.app` + `.dmg`, macOS arm64) on
+  the first clean attempt; `bun run tauri dev` launched Vite on `:5174` plus a native
+  window; frontend typecheck / vitest (48 pass, 8 new for `tauriBackend.ts`) / build all
+  green; root workspace `fmt`/`clippy`/`cargo metadata` re-verified unaffected.
 
 - Manually triggered `Benchmarks` workflow (`workflow_dispatch`): runs criterion
   for a selectable crate (optionally filtered by bench name), renders the

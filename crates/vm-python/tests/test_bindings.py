@@ -228,6 +228,78 @@ def test_shape_model_reports_its_structure():
     assert all(len(p) == 2 for p in pts)
 
 
+def test_shape_model_mask_restricts_extraction_to_the_region_drawn():
+    """A rectangular ROI on an L-shaped part drags in whatever else the
+    rectangle covers. The mask is how a caller says which of it is the part."""
+    reference = make_bracket()
+    h, w = reference.shape
+    # Keep only the ROI's lower-left quadrant -- one arm of the bracket.
+    mask = np.zeros((h, w), dtype=np.uint8)
+    x, y, rw, rh = BRACKET_ROI
+    mask[int(y + rh / 2) : int(y + rh), int(x) : int(x + rw / 2)] = 255
+
+    full = vm.ShapeModel(reference, BRACKET_ROI, vm.ShapeModelConfig(max_points=None))
+    masked = vm.ShapeModel(
+        reference, BRACKET_ROI, vm.ShapeModelConfig(max_points=None), mask
+    )
+
+    assert masked.point_counts[0] < full.point_counts[0]
+    for px, py in masked.reference_points():
+        assert mask[int(round(py)), int(round(px))] != 0
+
+
+def test_shape_model_mask_must_match_the_image_size():
+    reference = make_bracket()
+    bad = np.ones((reference.shape[0] // 2, reference.shape[1]), dtype=np.uint8)
+    with pytest.raises(ValueError):
+        vm.ShapeModel(reference, BRACKET_ROI, None, bad)
+
+
+def test_reference_angle_rotates_the_model_frame_only():
+    """`reference_angle` says which direction in the reference image is the
+    part's natural 0 degrees. It re-expresses the model's frame; it does not
+    change which edge points were extracted."""
+    import math
+
+    theta = 0.6
+    reference = make_bracket()
+    plain = vm.ShapeModel(reference, BRACKET_ROI)
+    turned = vm.ShapeModel(
+        reference, BRACKET_ROI, vm.ShapeModelConfig(reference_angle=theta)
+    )
+
+    assert plain.reference_angle == 0.0
+    assert turned.reference_angle == pytest.approx(theta)
+    assert plain.point_counts == turned.point_counts
+
+    # Identical in the reference-image frame...
+    for a, b in zip(plain.reference_geometry(0), turned.reference_geometry(0)):
+        assert a == pytest.approx(b, abs=1e-3)
+
+    # ...and rotated by -theta about the origin in the model frame.
+    ox, oy = plain.origin
+    cs, sn = math.cos(-theta), math.sin(-theta)
+    for a, b in zip(plain.model_geometry(0), turned.model_geometry(0)):
+        dx, dy = a[0] - ox, a[1] - oy
+        assert b[0] == pytest.approx(ox + cs * dx - sn * dy, abs=1e-3)
+        assert b[1] == pytest.approx(oy + sn * dx + cs * dy, abs=1e-3)
+
+
+def test_reference_frame_map_rectifies_the_model_s_own_image():
+    """The untouched half of a side-by-side: the model's own reference image
+    through the same CropSpec a found match is rectified with."""
+    reference = make_bracket()
+    model = vm.ShapeModel(reference, BRACKET_ROI)
+    spec = vm.CropSpec(BRACKET_ROI, 1.0)
+    crop, valid = model.reference_frame_map(spec).apply_with_mask(
+        reference, border_mode="constant", border_constant=0.0
+    )
+    assert crop.shape == (spec.output_size[1], spec.output_size[0])
+    assert valid.mean() > 0.9
+    # An identity-oriented model samples the ROI straight through.
+    assert crop[10, 10] == pytest.approx(float(reference[int(BRACKET_ROI[1]) + 10, int(BRACKET_ROI[0]) + 10]), abs=1.5)
+
+
 def test_shape_matcher_recovers_a_rotated_instance():
     import math
 

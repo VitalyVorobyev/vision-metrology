@@ -119,6 +119,13 @@ fn setup(state: &AppState) -> Ids {
             roi: [24.0, 24.0, 80.0, 80.0],
             min_contrast: 0.15,
             num_levels: None,
+            // The parity fixtures predate curated teaching, and must keep
+            // describing the plain rectangle-ROI build: `None` here is "keep
+            // everything the ROI holds", the behaviour they were generated
+            // against.
+            keep_contours: None,
+            origin: None,
+            reference_angle: 0.0,
         },
     )
     .expect("teach")
@@ -299,6 +306,13 @@ fn rectify_matches_the_golden() {
             },
             min_score: 0.5,
             max_matches: None,
+            // The fixture is the plain rectify the contract describes: default
+            // search everywhere else.
+            angle_range: None,
+            scale_range: None,
+            refinement: None,
+            min_contrast: None,
+            tuning: None,
         },
     )
     .expect("rectify");

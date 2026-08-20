@@ -9,16 +9,19 @@ working *on* the library.
 Three publishable crates, two layers:
 
 ```
-crates/vm-primitives     core · pyr · edge · morph
-crates/vision-metrology  contour · fit · laser · matching · measure · segment · lsd
-crates/vm-python         PyO3 bindings (depends on both)
+vm-primitives    low-level building blocks
+vision-metrology domain algorithms (depends on vm-primitives)
+vm-python        PyO3 bindings (depends on both)
 ```
 
-`vision-metrology` re-exports the curated set of `vm_primitives` names most callers
-need at its own crate root, plus the `vm_primitives` crate itself and a `prelude`.
-Every other name — including everything inside `vision-metrology`'s own domain
-modules — lives at its module path only; there is no flat re-export block (invariant
-17 in `docs/system-design.md`).
+The per-module breakdown — what lives in each, in both library crates — is the table in
+[`docs/system-design.md`](docs/system-design.md#layering), which is the single place it is
+maintained.
+
+`vision-metrology` re-exports the curated set of `vm_primitives` names most callers need at
+its own crate root, plus the `vm_primitives` crate itself and a `prelude`. Every other name —
+including everything inside `vision-metrology`'s own domain modules — lives at its module path
+only; there is no flat re-export block (invariant 17 in `docs/system-design.md`).
 
 ## Quality gates
 
@@ -29,13 +32,15 @@ cargo fmt --all
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps
+python3 tools/check-invariants.py
 ```
 
-CI runs all four, and additionally:
+CI runs all five, and additionally:
 
 | Job | Command |
 |-----|---------|
 | MSRV | `cargo +1.91.0 check --workspace --all-targets --all-features` |
+| Invariant numbering | `python3 tools/check-invariants.py` |
 | Examples | every self-asserting example under `crates/vision-metrology/examples/` |
 | Python bindings | `pip install crates/vm-python` then `pytest crates/vm-python/tests` |
 | Cross-platform | build and test on Windows and macOS |
@@ -48,16 +53,12 @@ oversight.
 
 ### MSRV
 
-The workspace declares `rust-version = "1.91"` in the root `Cargo.toml`. The
-floor was raised from 1.89 ahead of the planned `corrmatch` and
-`box-image-pyramid` dev-dependencies (both declare `rust-version = "1.91"`);
-nalgebra 0.35 itself needs only 1.89, so 1.91 is a deliberate bump, not an
-accident of the dependency tree. `cargo clippy` enforces it
-through `incompatible_msrv`, so a `std` item stabilised later than 1.91 fails
-the lint rather than surfacing as a user's build error.
-
-`rust-toolchain.toml` pins day-to-day work to stable; the MSRV job overrides it
-with `cargo +1.91.0`, which takes precedence over the file.
+The workspace declares `rust-version = "1.91"` in the root `Cargo.toml`. **Why 1.91 and not
+1.89** is recorded once, in [`docs/system-design.md`](docs/system-design.md) ("MSRV 1.89 →
+1.91"). Operationally: `cargo clippy` enforces the floor through `incompatible_msrv`, so a
+`std` item stabilised later than 1.91 fails the lint rather than surfacing as a user's build
+error. `rust-toolchain.toml` pins day-to-day work to stable; the MSRV job overrides it with
+`cargo +1.91.0`, which takes precedence over the file.
 
 ### Python bindings
 
@@ -159,6 +160,28 @@ as canend/glue-rig), so only the derived PNG is committed:
 ```bash
 WRITE_ASSETS=1 cargo run --release -p vision-metrology --example birdseye_mosaic
 ```
+
+That run estimates the shared target plane from the two frames (the calibration records no
+target pose) and **fails instead of writing the asset** if the two rectified views do not
+agree — overlap ZNCC below 0.75. So it self-checks the way `gen_illustrations` does; a
+regression that loses the plane cannot quietly republish a broken picture.
+
+## Persistent-context documents
+
+`docs/system-design.md`, `docs/roadmap.md` and `docs/backlog.md` are the project's long-term
+memory. Three rules keep them from silting up:
+
+- **Rewrite, don't append.** A superseded decision gets its entry rewritten (saying what
+  replaced it), never a second entry contradicting the first.
+- **Finished work leaves the roadmap** for `CHANGELOG.md`'s `[Unreleased]` section. The
+  roadmap describes what is ahead; the changelog records what landed, with its numbers.
+- **Say a thing once.** If a number, rule or decision is already written down somewhere,
+  link there. `docs/system-design.md`'s module table, invariant list, and performance table
+  are each the single authority for their content.
+
+Invariant numbers are cited by number from source files and are therefore **append-only**;
+`tools/check-invariants.py` (also a CI job) verifies contiguity and that every citation
+resolves.
 
 ## Commits and PRs
 

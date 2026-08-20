@@ -113,6 +113,25 @@ Two further model knobs:
   the `score ≈ 1 − occluded_fraction` reading.
 - **`origin`** sets the reference point. The default — the level-0 centroid —
   minimises the model radius, hence the number of angle steps the search needs.
+- **`reference_angle`** rotates the model frame onto the part's natural 0°, so a
+  found `angle()` reads as that axis's orientation in the scene rather than as
+  rotation away from however the part happened to sit at teach time — and a
+  `model_frame_map` crop comes out canonically oriented. Nothing about which
+  points enter the model changes.
+
+**A rectangle is the wrong shape for most parts.** On a round or L-shaped one the
+ROI's corners sit on background, and the edges found there enter the model as
+points no scene instance can ever match — every one of them diluting the score,
+whose denominator is the model's own point count. `ShapeModelBuilder::build_with_mask`
+takes an inclusion mask in level-0 coordinates and keeps only the points inside
+it, at every pyramid level (each level's point is tested at the level-0 position
+it was aggregated from, so a coarse level keeps the region you drew rather than
+one blurred by successive decimations of the mask).
+
+The effect is not only on the point count. On a synthetic disc with a bright
+square parked in one ROI corner, masking the square out moves the default origin
+from 14 px off the disc's centre to under 1 px — so `ShapeMatch::position` starts
+reporting the feature rather than the feature plus its background.
 
 ## Speed
 
@@ -196,12 +215,12 @@ let matches = find_scale_invariant(
 )?;
 ```
 
-`ScaleHint::Roi` estimates via [`estimate_scale_moments`](crate::scale::estimate_scale_moments)
+`ScaleHint::Roi` estimates via `scale::estimate_scale_moments`
 (segments the ROI, compares the blob's own outer radius to the model's — works on any
 model, format 3 or 4). `ScaleHint::Center` estimates via
-[`estimate_scale_logpolar`](crate::scale::estimate_scale_logpolar) (log-polar ZNCC
+`scale::estimate_scale_logpolar` (log-polar ZNCC
 correlation around an approximate centre; needs format-4 teach data). Either estimate
-feeds [`ShapeModel::resample_at`](crate::matching::ShapeModel::resample_at), which rebuilds
+feeds `ShapeModel::resample_at`, which rebuilds
 the model at that scale and pins its own `scale_range` to a narrow `(0.95, 1.05)` band — the
 search that follows costs the same regardless of how far the true scale turned out to be
 from 1.0. A synthetic measurement (`tests/accuracy.rs`'s `scale_estimate_vs_scan_cost`)

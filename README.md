@@ -23,7 +23,7 @@ No OpenCV, no FFI. All coordinates follow the **pixel-center** convention: integ
 <td width="33%"><img src="docs/assets/pyramid-levels.png" alt="Pyramid levels"><br>A 5-level image pyramid, coarse-to-fine</td>
 </tr>
 <tr>
-<td width="33%"><img src="docs/assets/birdseye-mosaic.png" alt="Bird's-eye mosaic"><br>Bird's-eye mosaic: two calibrated cameras composited over their shared plane, tinted by source camera</td>
+<td width="33%"><img src="docs/assets/birdseye-mosaic.png" alt="Bird's-eye mosaic"><br>Bird's-eye mosaic: two calibrated cameras rectified onto their measured shared target plane and composited, tinted by source camera</td>
 </tr>
 </table>
 
@@ -35,7 +35,9 @@ mosaic is the one exception: it comes from
 2-camera table calibration (`WRITE_ASSETS=1 cargo run --release -p vision-metrology --example
 birdseye_mosaic`) — deterministic for a fixed dataset, but the dataset itself is not
 committed to this repo (same policy as the canend/glue-rig private datasets referenced
-elsewhere in these docs).
+elsewhere in these docs). That calibration records no target pose, so the example measures
+the shared plane from the two frames themselves and then refuses to write the asset unless
+the two rectified views agree (overlap ZNCC 0.9927 against a 0.75 gate).
 
 ## Crates
 

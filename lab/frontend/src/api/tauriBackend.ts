@@ -5,37 +5,42 @@
  * layer (`src/commands/*.rs`), which calls `vision-metrology` directly — there is no
  * FastAPI process on the desktop build, and nothing here imports `openapi-fetch` or
  * touches `fetch`. Response *field names* are hand-kept in step with the Rust side's
- * `types.rs` (both were written to match `lab/contract/openapi.json`'s schemas closely
- * enough to reuse `generated.ts`'s types here — see that module's own doc comment) —
- * there is no generated client for this transport the way `openapi-fetch` generates one
- * for HTTP, so a renamed Rust field is a runtime mismatch, not a type error. The
- * anti-drift gate for that is `lab/frontend/src-tauri/tests/contract_parity.rs` plus
- * this file's own `tauriBackend.test.ts` (mocked `invoke`, asserts the shape sent and
- * returned).
+ * `types.rs` — there is no generated client for this transport the way `openapi-fetch`
+ * generates one for HTTP, so a renamed Rust field is a runtime mismatch, not a type
+ * error. The anti-drift gate for that is
+ * `lab/frontend/src-tauri/tests/contract_parity.rs` plus this file's own
+ * `tauriBackend.test.ts` (mocked `invoke`, asserts the shape sent and returned).
  *
- * ## Binary data: `imageUrl` / `rectifyCropUrl`
+ * ## Images are files, not IPC payloads
  *
- * `LabBackend.imageUrl`/`rectifyCropUrl` are **synchronous** — every call site expects a
- * string it can drop straight into `<img src>`. The HTTP backend satisfies that for
- * free (a URL needs no data yet, the browser fetches it lazily); a command that returns
- * raw bytes (`tauri::ipc::Response`, no base64 — see `image_data`/`rectify_crop` in
- * `lib.rs`) does not. This module bridges the gap with a blob-URL cache: the first call
- * for a given key kicks off `invoke()` in the background and returns a 1x1 placeholder
- * immediately; once the bytes arrive they are cached as an object URL and every
- * *subsequent* call for that key returns the real image synchronously. A component that
- * calls `imageUrl` once and never re-renders will keep showing the placeholder — every
- * tab in this app re-renders on its own data changing (TanStack Query, selection state,
- * …) often enough in practice that this has not needed a dedicated re-render hook; if a
- * call site ever needs a guaranteed-fresh image on first paint, give it one.
+ * Both directions used to move pixels through `invoke`. Uploads went out as
+ * `Array.from(new Uint8Array(...))` — a JSON array of numbers, so a 5 MB PNG
+ * became ~15–20 MB of text to serialise and parse. Tiers came back as bytes
+ * that had to be wrapped in a blob URL, and because `imageUrl` was synchronous
+ * the first call returned a 1×1 placeholder and hoped a later render would pick
+ * up the real one; the canvas stayed blank until an unrelated state change
+ * happened to re-render it.
+ *
+ * Now neither direction carries pixels. Opening sends a **path**; the Rust side
+ * reads the file. Tiers are PNG-encoded once into the app cache directory and
+ * handed back as a path, which `convertFileSrc` turns into an `asset:` URL —
+ * a real URL the webview loads, caches and decodes itself.
  */
 
-import { invoke } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 import type {
+  BatchFindRequest,
+  BatchFindResponse,
+  BatchProgress,
   CalibrationOut,
+  ContourOut,
+  DirEntry,
   DisplacementRequest,
   DisplacementResponse,
-  FindRequest,
+  FindRequestFull,
   FindResponse,
   ImageOut,
   ImageTier,
@@ -43,41 +48,54 @@ import type {
   MeasureRequest,
   MeasureResponse,
   ModelCreateRequest,
+  ModelGeometryOut,
   ModelOut,
   MosaicRequest,
   MosaicResponse,
+  OpProgress,
   RectifyRequest,
   RectifyResponse,
+  Roi,
+  TeachPreviewRequest,
+  TeachPreviewResponse,
+  ThumbEvent,
 } from "./backend";
 
-// A 1x1 transparent PNG — shown for one render cycle while the real bytes arrive.
-const PLACEHOLDER_DATA_URL =
-  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+/** Image extensions the native picker offers — the set the Rust side can decode. */
+const IMAGE_EXTENSIONS = ["png", "bmp", "pgm"];
 
-const blobUrlCache = new Map<string, string>();
-const pending = new Set<string>();
+/**
+ * Blob-URL cache for the few things that only exist in memory.
+ *
+ * Rectified crops and model crops are computed per request and never written to
+ * disk, so they cannot go through the asset protocol. Unlike the old image
+ * bridge this is `async` all the way to the caller, so there is no placeholder
+ * and no missed render.
+ */
+const blobUrls = new Map<string, string>();
 
-async function fetchBlobUrl(key: string, invokeCmd: string, args: Record<string, unknown>): Promise<void> {
-  if (pending.has(key)) return;
-  pending.add(key);
-  try {
-    const bytes = await invoke<ArrayBuffer | number[]>(invokeCmd, args);
-    const array = bytes instanceof ArrayBuffer ? new Uint8Array(bytes) : new Uint8Array(bytes);
-    const url = URL.createObjectURL(new Blob([array], { type: "image/png" }));
-    const previous = blobUrlCache.get(key);
-    if (previous) URL.revokeObjectURL(previous);
-    blobUrlCache.set(key, url);
-  } finally {
-    pending.delete(key);
-  }
+async function blobUrlFor(
+  key: string,
+  cmd: string,
+  args: Record<string, unknown>,
+): Promise<string> {
+  const cached = blobUrls.get(key);
+  if (cached) return cached;
+  const bytes = await invoke<ArrayBuffer | number[]>(cmd, args);
+  const array = bytes instanceof ArrayBuffer ? new Uint8Array(bytes) : new Uint8Array(bytes);
+  const url = URL.createObjectURL(new Blob([array], { type: "image/png" }));
+  blobUrls.set(key, url);
+  return url;
 }
 
-/** Synchronous cache-or-kick-off-fetch, shared by `imageUrl` and `rectifyCropUrl`. */
-function cachedBlobUrl(key: string, invokeCmd: string, args: Record<string, unknown>): string {
-  const cached = blobUrlCache.get(key);
-  if (cached) return cached;
-  void fetchBlobUrl(key, invokeCmd, args);
-  return PLACEHOLDER_DATA_URL;
+/** Drop a cached crop so the next ask recomputes it. */
+function invalidateBlobs(prefix: string): void {
+  for (const [key, url] of blobUrls) {
+    if (key.startsWith(prefix)) {
+      URL.revokeObjectURL(url);
+      blobUrls.delete(key);
+    }
+  }
 }
 
 async function bytesOf(file: File): Promise<number[]> {
@@ -100,12 +118,52 @@ export function createTauriBackend(): LabBackend {
     },
 
     async uploadImage(file: File) {
+      // Kept for drag-and-drop, where all we have is a `File`. Opening from
+      // disk should go through `pickImages`/`openImagePaths` instead, which
+      // moves no bytes at all.
       const bytes = await bytesOf(file);
       return invoke<ImageOut>("images_upload", { filename: file.name, bytes });
     },
 
-    imageUrl(imageId: string, tier: ImageTier) {
-      return cachedBlobUrl(`image:${imageId}:${tier}`, "image_data", { imageId, tier });
+    async imageUrl(imageId: string, tier: ImageTier) {
+      const path = await invoke<string>("image_tier_path", { imageId, tier });
+      return convertFileSrc(path);
+    },
+
+    canOpenFiles: () => true,
+
+    async pickImages() {
+      const picked = await openDialog({
+        multiple: true,
+        directory: false,
+        filters: [{ name: "Images", extensions: IMAGE_EXTENSIONS }],
+      });
+      if (picked === null) return [];
+      return Array.isArray(picked) ? picked : [picked];
+    },
+
+    async pickFolder() {
+      const picked = await openDialog({ multiple: false, directory: true });
+      return typeof picked === "string" ? picked : null;
+    },
+
+    async openImagePaths(paths: string[]) {
+      return invoke<ImageOut[]>("images_open_paths", { paths });
+    },
+
+    async scanDir(dir: string, recursive: boolean) {
+      return invoke<DirEntry[]>("images_scan_dir", { dir, recursive });
+    },
+
+    async prewarmThumbnails(imageIds: string[]) {
+      await invoke("prewarm_thumbnails", { imageIds });
+    },
+
+    onThumbReady(cb: (e: ThumbEvent) => void) {
+      const pending = listen<ThumbEvent>("lab://thumb", (e) => cb(e.payload));
+      return () => {
+        void pending.then((un) => un());
+      };
     },
 
     async listModels() {
@@ -116,8 +174,48 @@ export function createTauriBackend(): LabBackend {
       return invoke<ModelOut>("models_create", { req });
     },
 
-    async find(req: FindRequest) {
+    async teachPreview(req: TeachPreviewRequest) {
+      const res = await invoke<{ contours: ContourOut[]; total_points: number }>(
+        "teach_preview",
+        { req },
+      );
+      return res as TeachPreviewResponse;
+    },
+
+    async modelGeometry(modelId: string, level: number, frame: "reference" | "model") {
+      return invoke<ModelGeometryOut>("model_geometry", { modelId, level, frame });
+    },
+
+    async modelCropUrl(modelId: string, rect: Roi, pxPerUnit: number) {
+      const key = `model-crop:${modelId}:${rect.join(",")}:${pxPerUnit}`;
+      return blobUrlFor(key, "model_crop", {
+        req: { model_id: modelId, rect, px_per_unit: pxPerUnit },
+      });
+    },
+
+    async find(req: FindRequestFull) {
       return invoke<FindResponse>("find", { req });
+    },
+
+    async batchFind(req: BatchFindRequest) {
+      return invoke<BatchFindResponse>("batch_find", { req });
+    },
+
+    onBatchProgress(cb: (p: BatchProgress) => void) {
+      // `listen` resolves to the unlisten function; callers want to unsubscribe
+      // synchronously (a React effect cleanup), so hold the promise and call
+      // through it. Unsubscribing before it resolves still works.
+      const pending = listen<BatchProgress>("lab://batch", (e) => cb(e.payload));
+      return () => {
+        void pending.then((un) => un());
+      };
+    },
+
+    onProgress(cb: (p: OpProgress) => void) {
+      const pending = listen<OpProgress>("lab://progress", (e) => cb(e.payload));
+      return () => {
+        void pending.then((un) => un());
+      };
     },
 
     async measure(req: MeasureRequest) {
@@ -125,6 +223,9 @@ export function createTauriBackend(): LabBackend {
     },
 
     async rectify(req: RectifyRequest) {
+      // A fresh rectify replaces this model's crops on the Rust side, so any
+      // blob URL we handed out for them is now stale.
+      invalidateBlobs(`crop:${req.image_id}:${req.model_id}:`);
       const resp = await invoke<RectifyResponse>("rectify", { req });
       // The Rust side reports `crop_key` (an internal cache key), not the browser
       // backend's `crop_url` — normalize to the shape `RectifyResponse` promises so
@@ -142,11 +243,16 @@ export function createTauriBackend(): LabBackend {
     },
 
     rectifyCropUrl(imageId: string, modelId: string, index: number) {
-      return cachedBlobUrl(`crop:${imageId}:${modelId}:${index}`, "rectify_crop", {
-        imageId,
-        modelId,
-        index,
-      });
+      // A name, not a URL — the crop lives in the Rust side's cache and has to
+      // be fetched. `resolveCropUrl` below is the fetch; see its doc on
+      // `LabBackend` for why the two are separate.
+      return `crop:${imageId}:${modelId}:${index}`;
+    },
+
+    async resolveCropUrl(key: string) {
+      if (!key.startsWith("crop:")) return key;
+      const [, imageId, modelId, index] = key.split(":");
+      return blobUrlFor(key, "rectify_crop", { imageId, modelId, index: Number(index) });
     },
 
     async listCalibrations() {

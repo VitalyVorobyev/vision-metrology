@@ -115,6 +115,7 @@ class ShapeModelConfig:
     min_contrast: Contrast
     max_points: Optional[int]
     origin: Optional[Tuple[float, float]]
+    reference_angle: float
     angle_min: float
     angle_max: float
     scale_min: float
@@ -129,6 +130,7 @@ class ShapeModelConfig:
         min_contrast: Optional[Contrast] = ...,
         max_points: Optional[int] = ...,
         origin: Optional[Tuple[float, float]] = ...,
+        reference_angle: Optional[float] = ...,
         angle_min: Optional[float] = ...,
         angle_max: Optional[float] = ...,
         scale_min: Optional[float] = ...,
@@ -579,7 +581,16 @@ class ShapeModel:
         image: ImageAny,
         roi: Tuple[float, float, float, float],
         config: Optional[ShapeModelConfig] = ...,
-    ) -> None: ...
+        mask: Optional[ImageU8] = ...,
+    ) -> None:
+        """Build a model from a reference image and a rectangular ROI.
+
+        `mask`, when given, is a uint8 array the same size as `image`: an edge
+        point enters the model only where the mask is non-zero. Use it when the
+        part is not rectangular -- the ROI's corners otherwise contribute
+        background edges that no instance can match, and each one dilutes the
+        score, whose denominator is the model's own point count."""
+
     @property
     def num_levels(self) -> int: ...
     @property
@@ -587,6 +598,26 @@ class ShapeModel:
     @property
     def point_counts(self) -> List[int]: ...
     def reference_points(self) -> List[Tuple[float, float]]: ...
+    @property
+    def reference_angle(self) -> float:
+        """The canonical orientation, radians, the model frame is rotated onto
+        relative to the reference image (see ShapeModelConfig.reference_angle)."""
+
+    def model_geometry(self, level: int) -> List[Tuple[float, float, float, float]]:
+        """Model points at `level` as `(x, y, dx, dy)` in **model-frame**
+        coordinates -- the frame a match's pose consumes, so these are what to
+        transform by `ShapeMatch.matrix` to draw a found instance. Every level
+        is reported in level-0 units. Empty when `level >= num_levels`."""
+
+    def reference_geometry(self, level: int) -> List[Tuple[float, float, float, float]]:
+        """`model_geometry` with `reference_angle` undone -- what to draw over
+        the image the model was taught from."""
+
+    def reference_frame_map(self, spec: CropSpec) -> Map:
+        """The `dst -> src` map rectifying this model's own reference image
+        into the same canonical crop `ShapeMatch.model_frame_map` produces for
+        a found instance -- the untouched half of a side-by-side."""
+
     def save(self, path: str) -> None: ...
     @staticmethod
     def load(path: str) -> ShapeModel: ...
@@ -884,6 +915,7 @@ def find_shape_model(
     scene_image: ImageAny,
     model_config: Optional[ShapeModelConfig] = ...,
     search_config: Optional[ShapeSearchConfig] = ...,
+    model_mask: Optional[ImageU8] = ...,
 ) -> List[ShapeMatch]: ...
 def otsu_threshold(img: ImageU8) -> int: ...
 def threshold_binary(img: ImageU8, threshold: int) -> ImageU8: ...

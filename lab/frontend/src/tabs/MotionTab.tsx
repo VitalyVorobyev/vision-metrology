@@ -15,6 +15,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { getBackend } from "../api/backend";
+import { Thumb } from "../components/Thumb";
 import type { DisplacementResponse, ImageOut, Roi } from "../api/backend";
 
 /** Cumulative trajectory as two `LineChart` series (frame index on x, px on y) —
@@ -104,11 +105,10 @@ export function MotionTab({
                       selected ? "border-signal bg-signal/10" : "border-line hover:border-line-strong",
                     )}
                   >
-                    <img
-                      src={getBackend().imageUrl(img.id, "thumb")}
+                    <Thumb
+                      imageId={img.id}
                       alt={img.filename}
                       className="h-full w-full rounded object-contain"
-                      draggable={false}
                     />
                     {selected && (
                       <Badge tone="neutral" className="absolute -right-1.5 -top-1.5">

@@ -12,6 +12,7 @@
 use vm_primitives::{Point2f, Rect2f, Similarity2f, Vec2f};
 
 use super::matcher::ShapeMatch;
+use super::model::ShapeModel;
 use crate::warp::Map;
 
 /// Fixed crop geometry for [`ShapeMatch::model_frame_map`].
@@ -22,10 +23,15 @@ use crate::warp::Map;
 /// found poses — are directly comparable pixel-for-pixel.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CropSpec {
-    /// Crop rectangle in **model-frame coordinates** — the same
-    /// reference-image frame [`ShapeModel::reference_points`](super::ShapeModel::reference_points)
-    /// reports and [`ShapeMatch::pose`] consumes directly (`pose * p` for a
-    /// reference-image point `p`, no origin bookkeeping needed).
+    /// Crop rectangle in **model-frame coordinates** — the frame
+    /// [`ShapeModel::model_geometry`](super::ShapeModel::model_geometry)
+    /// reports and [`ShapeMatch::pose`] consumes directly (`pose * p`, no
+    /// origin bookkeeping needed). That frame is the reference image's own
+    /// unless the model was taught with a non-zero
+    /// [`reference_angle`](super::ShapeModel::reference_angle), in which case
+    /// it is the reference image rotated onto the caller's canonical
+    /// orientation — which is the point: the crop then comes out canonically
+    /// oriented too.
     pub rect: Rect2f,
     /// Destination pixels per one model-frame unit (pixel). `1.0` keeps the
     /// crop at native reference-image density; `2.0` doubles it.
@@ -75,6 +81,26 @@ impl ShapeMatch {
     /// unchanged (found scale). Recovering this transform is what lets a
     /// downstream detection made on the rectified crop be mapped back into
     /// scene coordinates: `scene_pt = model_frame_pose(spec) * crop_model_pt`.
+    ///
+    /// # Why the canonical case reuses the pose's own isometry
+    ///
+    /// [`Self::pose`] is a [`Similarity2f`] equal to
+    /// `Translation(position) ∘ scale·R ∘ Translation(−origin)`. Expanded, its
+    /// stored `isometry.translation` already equals `position − scale·R·origin`
+    /// — the origin dependence is baked in once, at match time. So the
+    /// canonical (`normalize_scale = true`) pose is exactly
+    /// `Similarity2f::from_isometry(pose.isometry, 1.0)`: same rotation, same
+    /// translation, scale forced to `1.0`, and no [`ShapeModel`] (and therefore
+    /// no `origin`) has to be threaded through
+    /// [`model_frame_map`](Self::model_frame_map)'s signature at all.
+    ///
+    /// Rebuilding the pose from the decomposed `(x, y, angle, scale)` plus a
+    /// caller-supplied `origin` — the way the Python `ShapeMatch.matrix()`
+    /// binding has to, predating this API — would need that extra parameter
+    /// *and* get the wrong canonical crop: zeroing `scale` in the decomposed
+    /// form without correcting the translation leaves a residual offset
+    /// proportional to `(scale − 1) · R · origin`. Keeping the raw pose avoids
+    /// both problems.
     #[inline]
     pub fn model_frame_pose(&self, spec: &CropSpec) -> Similarity2f {
         if spec.normalize_scale {
@@ -112,6 +138,43 @@ impl ShapeMatch {
             let model_pt = origin + Vec2f::new(x * inv_scale, y * inv_scale);
             let scene_pt = sim * model_pt;
             (scene_pt.x, scene_pt.y)
+        })
+    }
+}
+
+impl ShapeModel {
+    /// Build the `dst → src` [`Map`] that rectifies this model's **own
+    /// reference image** into the same canonical crop
+    /// [`ShapeMatch::model_frame_map`] produces for a found instance.
+    ///
+    /// This is the untouched half of a side-by-side: rectify the reference
+    /// image with this, rectify a match with `model_frame_map` and the same
+    /// [`CropSpec`], and the two crops are the same size, the same
+    /// orientation, and the same scale — directly comparable pixel for pixel,
+    /// which is what makes a difference or an alternating composite of them
+    /// mean something.
+    ///
+    /// The pose is the identity in the model frame, so this is exactly
+    /// `model_frame_map` with `spec.normalize_scale = true` on a match found
+    /// at the model's own place: the only work is undoing
+    /// [`reference_angle`](Self::reference_angle) so the source samples land
+    /// back on the reference image's own axes.
+    ///
+    /// Apply it with [`Map::apply_with_mask`] and `BorderMode::Constant`, for
+    /// the reason [`ShapeMatch::model_frame_map`] gives.
+    pub fn reference_frame_map(&self, spec: &CropSpec) -> Map {
+        let (w, h) = spec.output_size();
+        let origin = Point2f::new(spec.rect.x, spec.rect.y);
+        let inv_scale = 1.0 / spec.px_per_unit;
+        let model_origin = self.origin();
+        let (sin, cos) = self.reference_angle().sin_cos();
+        Map::from_fn(w, h, move |x, y| {
+            let model_pt = origin + Vec2f::new(x * inv_scale, y * inv_scale);
+            // Model frame -> reference image: rotate back about the origin.
+            let d = model_pt - model_origin;
+            let r = Vec2f::new(cos * d.x - sin * d.y, sin * d.x + cos * d.y);
+            let src = model_origin + r;
+            (src.x, src.y)
         })
     }
 }

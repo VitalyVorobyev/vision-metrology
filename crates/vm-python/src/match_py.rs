@@ -9,7 +9,7 @@ use vision_metrology::matching::{
 use vm_primitives::Rect2f;
 
 use crate::config::{ShapeModelConfig, ShapeSearchConfig};
-use crate::convert::{any_image_from_numpy, with_any_image};
+use crate::convert::{any_image_from_numpy, image_from_numpy_u8, with_any_image};
 use crate::types::ShapeMatch;
 
 fn to_rect(roi: (f32, f32, f32, f32)) -> Rect2f {
@@ -92,18 +92,34 @@ pub struct ShapeModel {
 impl ShapeModel {
     /// Build from a `(H, W)` `uint8`/`uint16`/`float32` array and an
     /// `(x, y, width, height)` ROI.
+    ///
+    /// `mask`, when given, is a `(H, W)` `uint8` array the same size as
+    /// `image`: an edge point enters the model only where the mask is
+    /// non-zero. Use it when the part is not rectangular — the ROI's corners
+    /// otherwise contribute background edges that no instance can match, and
+    /// every one of them dilutes the score, whose denominator is the model's
+    /// own point count.
     #[new]
-    #[pyo3(signature = (image, roi, config=None))]
+    #[pyo3(signature = (image, roi, config=None, mask=None))]
     pub fn new(
         py: Python<'_>,
         image: &Bound<'_, PyAny>,
         roi: (f32, f32, f32, f32),
         config: Option<ShapeModelConfig>,
+        mask: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
         let cfg = config.unwrap_or_default().to_native()?;
         let any = any_image_from_numpy(py, image)?;
+        let mask_img = mask
+            .map(|m| image_from_numpy_u8(py, &m.extract()?))
+            .transpose()?;
         let inner = with_any_image!(any, view => {
-            ShapeModelBuilder::new().build(&view, to_rect(roi), &cfg)
+            ShapeModelBuilder::new().build_with_mask(
+                &view,
+                to_rect(roi),
+                mask_img.as_ref().map(|m| m.as_view()).as_ref(),
+                &cfg,
+            )
         })
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
         Ok(Self { inner })
@@ -139,6 +155,50 @@ impl ShapeModel {
             .into_iter()
             .map(|p| (p.x, p.y))
             .collect()
+    }
+
+    /// The canonical orientation, in radians, the model frame is rotated onto
+    /// relative to the reference image (see `ShapeModelConfig.reference_angle`).
+    #[getter]
+    pub fn reference_angle(&self) -> f32 {
+        self.inner.reference_angle()
+    }
+
+    /// Model points at `level` in **model-frame** coordinates, as a list of
+    /// `(x, y, dx, dy)` — position plus unit gradient direction.
+    ///
+    /// This is the frame a match's pose consumes, so these are the points to
+    /// transform by :meth:`ShapeMatch.matrix` when drawing a found instance
+    /// over a scene. Every level is reported in level-0 units, so the levels
+    /// are directly comparable. Empty when `level >= num_levels`.
+    pub fn model_geometry(&self, level: usize) -> Vec<(f32, f32, f32, f32)> {
+        self.inner
+            .model_geometry(level)
+            .into_iter()
+            .map(|(p, t)| (p.x, p.y, t.x, t.y))
+            .collect()
+    }
+
+    /// Model points at `level` in **reference-image** coordinates, as a list
+    /// of `(x, y, dx, dy)`.
+    ///
+    /// :meth:`model_geometry` with :attr:`reference_angle` undone — what to
+    /// draw over the image the model was taught from. Identical to
+    /// `model_geometry` for the usual `reference_angle == 0.0` model. Empty
+    /// when `level >= num_levels`.
+    pub fn reference_geometry(&self, level: usize) -> Vec<(f32, f32, f32, f32)> {
+        self.inner
+            .reference_geometry(level)
+            .into_iter()
+            .map(|(p, t)| (p.x, p.y, t.x, t.y))
+            .collect()
+    }
+
+    /// The `dst -> src` map that rectifies this model's own reference image
+    /// into the same canonical crop :meth:`ShapeMatch.model_frame_map`
+    /// produces for a found instance — the untouched half of a side-by-side.
+    pub fn reference_frame_map(&self, spec: &CropSpec) -> crate::warp_py::Map {
+        crate::warp_py::Map::from_native(self.inner.reference_frame_map(&spec.to_native()))
     }
 
     /// Persist the model to a file.
@@ -257,7 +317,7 @@ impl ShapeMatcher {
 
 /// One-shot convenience: build a model and search a scene in a single call.
 #[pyfunction]
-#[pyo3(signature = (model_image, roi, scene_image, model_config=None, search_config=None))]
+#[pyo3(signature = (model_image, roi, scene_image, model_config=None, search_config=None, model_mask=None))]
 pub fn find_shape_model<'py>(
     py: Python<'py>,
     model_image: &Bound<'py, PyAny>,
@@ -265,8 +325,9 @@ pub fn find_shape_model<'py>(
     scene_image: &Bound<'py, PyAny>,
     model_config: Option<ShapeModelConfig>,
     search_config: Option<ShapeSearchConfig>,
+    model_mask: Option<&Bound<'py, PyAny>>,
 ) -> PyResult<Bound<'py, PyList>> {
-    let model = ShapeModel::new(py, model_image, roi, model_config)?;
+    let model = ShapeModel::new(py, model_image, roi, model_config, model_mask)?;
     let mut matcher = ShapeMatcher::new(search_config);
     matcher.find(py, scene_image, &model)
 }

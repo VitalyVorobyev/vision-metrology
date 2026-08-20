@@ -7,14 +7,6 @@ agent) can pick it up cold. When an item is scheduled it moves into
 
 ## Shape matching
 
-- **Arbitrary-region model ROI (mask) — priority raised (2026-08).** Models are built
-  from a rectangle; on non-rectangular parts (the canend tab) the model picks up
-  background edges near the corners. Mitigated today by the 2 px border drop +
-  `min_contrast`, but that is a per-dataset tuning workaround, not a fix — the v0.3
-  review flagged this as the highest-value item left in `matching` now that the config
-  split and `Contrast` unit are landed. The real fix is `mask: Option<&ImageView<u8>>`
-  on `ShapeModelConfig`. Needs the same mask handling on every pyramid level of the
-  reference ROI.
 - **`Contrast::FractionOfRange` needs a real-data calibration sweep before docs
   recommend it as the default advice.** `Contrast::Raw(400.0)` ≈
   `Contrast::FractionOfRange(0.098)` on the canend dataset (see `shape-matching.md`),
@@ -46,7 +38,7 @@ agent) can pick it up cold. When an item is scheduled it moves into
   deterministic (stable reduction order) if added.
 - **Timeout / anytime search** was deliberately rejected: non-deterministic results break
   the test contract. Revisit only with a deterministic budget (e.g. max poses evaluated).
-- **Static scale bank for clutter without priors (roadmap W7).** `scale::find_scale_invariant`
+- **Static scale bank for clutter without priors** (scale wave, PR #37). `scale::find_scale_invariant`
   needs an estimate first — a segmentable ROI (`estimate_scale_moments`) or an approximate
   center (`estimate_scale_logpolar`). Neither exists for a cluttered scene with **no** prior
   on where or how big the object is; the honest answer there remains a coarse discrete
@@ -55,41 +47,18 @@ agent) can pick it up cold. When an item is scheduled it moves into
   at K fixed scales (`resample_at` makes building the bank itself trivial; the cost is K× the
   search, same shape as the plan's original "static bank" idea it deliberately avoided for the
   common case). Not attempted this wave — remains open for whichever real dataset needs it.
-- **Offset-collapse score inflation at `scale < 1` — investigated, deliberately left unfixed
-  (roadmap W7, decision 9g).** `matching::score::rotate_into` rounds a rotated, scaled model
-  point offset to an integer pixel; at `scale < 1` two points distinct at their build-time
-  grid resolution (invariant 4) can round onto the same pixel, and the un-deduped scorer reads
-  that scene pixel's gradient twice, inflating the score for a rounding coincidence rather
-  than real coverage — a real, if usually small, dishonesty (`tests/accuracy.rs`'s
-  `shape_matcher_scale_*` rows' worst cells, both near scale 0.5, hint at it). Three fixes
-  were designed, implemented, and measured, and all three were rejected:
-  1. Dedup unconditionally in `rotate_into` whenever `scale < 1`: measurably moved
-     `examples/inspect_canend`'s rim radius (0.002 px) even though canend's search never
-     leaves `scale_range = (1, 1)`, because `refine::interpolate`'s subpixel parabola probe
-     perturbs an already-found pose below 1.0 regardless of the search's own range.
-  2. Dedup scoped to the search sweep only (`matcher::fill_map`/`refine_candidate`), with an
-     explicit `dedup` flag and a reused scratch buffer to avoid allocating: fixed (1), but
-     `rotate_into` is the hot loop `match_shape`'s benches measure, and even a reused
-     `O(m log m)` sort there — run once per (angle, scale) search grid point — cost **+35%**
-     on `shape_find_1280x1024_scale_0p8_1p25` (16.8 → 23.4 ms).
-  3. Dedup scoped to `score::score_pose` only (the function that computes the score actually
-     attached to a reported `ShapeMatch`, called a handful of times per `find()`, not once per
-     search grid point): cheap — the benches held within noise — but **measured worse** than
-     the bug it aimed to fix. Honestly lowering a borderline candidate's score can drop it
-     below `ShapeSearchConfig::min_score` inside `matcher::run`, rejecting the search sweep's
-     actual best candidate (chosen by the sweep's own, still-undeduped internal scores) in
-     favour of whatever next-best candidate still clears the threshold. Measured up to 0.46 px
-     position error at some swept scales on the C1 synthetic fixture — an order of magnitude
-     worse than the ≤0.022 px the original, unfixed inflation was ever measured to cost.
-  Design 3's failure mode names the real fix a fourth attempt would need: the search sweep's
-  own candidate selection and the final reported score have to agree on whether a duplicate
-  counts, not just the reported number — either dedup consistently through the whole pipeline
-  (design 2's cost, unless a genuinely allocation-and-sort-free formulation is found) or change
-  how `min_score` interacts with a pose whose score was computed after the fact. Not attempted
-  this wave; `matching::score::score_pose`'s own doc comment and
-  `tests/accuracy.rs::offset_collapse_at_reduced_scale_is_a_known_unfixed_score_inflation`
-  pin the current (unfixed, inflating) behaviour so a future fix is deliberate, not an
-  accidental regression of a regression.
+- **Offset-collapse score inflation at `scale < 1` — investigated, three fixes rejected by
+  measurement (scale wave, PR #37 — decision 9g).** The full account — what the bug is, what each of the
+  three designs cost, and why design 3 was measured *worse* than the bug it fixed — is in
+  [`system-design.md`](system-design.md)'s "Scale-invariance" entry. What is left open, and the
+  only thing a fourth attempt has to answer: **the search sweep's own candidate selection and
+  the final reported score have to agree on whether a duplicate counts**, not just the reported
+  number. That means either deduping consistently through the whole pipeline (design 2's +35%
+  on `shape_find_1280x1024_scale_0p8_1p25`, unless a genuinely allocation-and-sort-free
+  formulation is found) or changing how `min_score` interacts with a pose whose score is only
+  known after the fact. Current behaviour is unfixed, documented on
+  `matching::score::rotate_into`/`score_pose`, and pinned by
+  `score::tests::offset_collapse_at_reduced_scale_is_a_known_unfixed_score_inflation`.
 
 ## Contour
 
@@ -168,19 +137,31 @@ agent) can pick it up cold. When an item is scheduled it moves into
 
 ## Mosaic
 
-- **Exposure/gain compensation across cameras.** The mosaic compositor (roadmap B7) picks
+- **Exposure/gain compensation across cameras.** The mosaic compositor (PR #35) picks
   one camera per pixel (nearest-camera-centre priority, no blending) precisely so a
   measurement always traces to one camera's own calibration — but it does nothing about
   two cameras disagreeing on *brightness* for the same physical patch (different exposure
-  time, gain, or vignetting falloff). Real-data seam disparity
-  (`examples/birdseye_mosaic.rs`) is large in absolute terms partly for this reason, on top
-  of the hard-edged-target effect the example's own doc comment explains. A per-camera
+  time, gain, or vignetting falloff). A per-camera
   gain/offset correction (estimated from the overlap region, applied before compositing)
   would shrink that gap and make the `feather` display mode less visually jarring at a
-  seam; not attempted this wave since the plan's acceptance bar for the real-data example
-  was "produces nonzero overlap," not seam-intensity matching. Would need its own accuracy
+  seam. Not attempted this wave: the real-data example's own registration gate is ZNCC,
+  which tolerates an offset/gain difference by construction, so nothing currently *needs*
+  the correction. Would need its own accuracy
   fixture (known ground-truth exposure ratio) before being trusted the way `fit`/`measure`
   are.
+- **The lab's `/api/mosaic` still composites on `z = 0` of the calibration's reference
+  frame** (`lab/backend/src/vm_lab/routers/mosaic.py`, `_auto_fit_grid` / `_resolve_grid`).
+  For an `import_table_calibration` rig that plane sits *at camera0's own optical centre* —
+  a homography through it is singular, and there is no physical surface there — so the
+  Bird's-eye tab is only meaningful for calibrations whose reference frame already sits on
+  the target. `examples/birdseye_mosaic.rs` hit exactly this and now measures the plane from
+  the images instead (tilt sweep → tracked correspondences → linear `n/d` solve, all in the
+  example, no library module). The router was deliberately left alone: porting that
+  estimator would mean either a new library/binding surface or a Python reimplementation,
+  and the request schema has no way to *say* which plane a caller means. Minimum honest fix
+  is to let `MosaicRequest` carry an explicit plane (or a reference-frame shift) and to
+  return the overlap ZNCC the example now gates on, so a caller can at least see that a
+  composite is unregistered.
 
 ## Testing
 
@@ -204,20 +185,16 @@ agent) can pick it up cold. When an item is scheduled it moves into
   detector-output convenience `build_contour_graph`. Add if a caller has edgels from
   somewhere other than `Edge2DDetector` (e.g. a laser stripe).
 - **No per-caliper "explain" API for `MetrologyModel` — placement half closed, the
-  re-measurement half remains.** `apply`'s result exposes the fit and the `hits` it used,
-  but not which calipers were rejected or why, nor their raw profiles. The *placement*
-  duplication this item originally flagged (`lab/backend/src/vm_lab/routers/measure.py`
-  hand-mirroring `MetrologyModel::measure_one`'s geometry) is fixed — both the FastAPI
-  router and the Tauri command (`lab/frontend/src-tauri/src/commands/measure.rs`) now
-  call `measure::diagnostics::layout` (roadmap B2.1, W6), the same placement code `apply`
-  calls internally. What's left: both call sites still invoke `Caliper::measure` a
-  *second* time per caliper (once inside `apply`, once again outside it) purely to
-  recover the rejection reason and raw profile that `apply`'s own result does not
-  surface — correct (both passes start from identical placements, so they cannot
-  disagree on *where* a caliper looked) but still two measurement passes over the same
-  image data. A real `MetrologyModel::explain` (or an `apply` variant returning
-  per-caliper `MeasureResult`/`MeasureRejected` alongside the fit) would remove that
-  remaining redundancy.
+  re-measurement half remains.** `apply`'s result exposes the fit and the `hits` it used, but
+  not which calipers were rejected or why, nor their raw profiles. The *placement* duplication
+  this item originally flagged is fixed — both the FastAPI router and the Tauri command call
+  `measure::diagnostics::layout`, the same code `apply` calls internally (see
+  [`system-design.md`](system-design.md)'s `measure` entry). What's left: both call sites still
+  invoke `Caliper::measure` a *second* time per caliper purely to recover the rejection reason
+  and raw profile that `apply`'s own result does not surface — correct (both passes start from
+  identical placements) but still two measurement passes over the same image data. A real
+  `MetrologyModel::explain` (or an `apply` variant returning per-caliper
+  `MeasureResult`/`MeasureRejected` alongside the fit) would remove that redundancy.
 - **`MeasureConfigIn.polarity`'s wire strings may not reach the native binding correctly
   — found while building the Tauri command, not confirmed as a live bug.** The lab's
   Pydantic schema types this field `Literal["bright_to_dark", "dark_to_bright",
@@ -233,7 +210,8 @@ agent) can pick it up cold. When an item is scheduled it moves into
 
 ## Lab desktop shell (Tauri, W6)
 
-- **Mosaic has no Tauri command.** `routers/mosaic.py`'s compositor (~315 lines: grid
+- **Mosaic has no Tauri command** (the single record of this gap; `system-design.md` and
+  `lab/README.md` point here). `routers/mosaic.py`'s compositor (~315 lines: grid
   auto-fit, nearest-camera-centre priority, `source_id` map, opt-in feather) was not
   ported to `lab/frontend/src-tauri`; `tauriBackend.ts`'s `mosaic`/`mosaicImageUrl`/
   `mosaicSourceIdUrl` throw a clear "not available in the desktop build" error. Porting
@@ -243,35 +221,6 @@ agent) can pick it up cold. When an item is scheduled it moves into
   new design) but real work: grid auto-fit from camera footprints, the per-pixel
   nearest-camera-centre priority pass, PNG encoding of both the composite and the
   source_id palette map.
-- **Desktop tiers are PNG at every size; the browser backend's `preview`/`thumb` are
-  WebP.** Deliberate for this wave (matches the plan's own "PNG bytes, no base64"
-  instruction for `image_data`, and avoids adding a WebP encode dependency to
-  `vm-lab-desktop`), but means the desktop build ships slightly larger tier payloads and
-  the two shells are not byte-for-byte identical in what they serve for the same tier
-  name — only decoded-pixel equivalence is guaranteed (and only for `full`, since
-  `preview`/`thumb` resize differently: Lanczos3 via the `image` crate on desktop, PIL's
-  own Lanczos + WebP quality settings in the browser). Not expected to matter for a
-  metrology tool (the `full` tier is what teach/find/measure actually operate on), but
-  worth knowing before assuming the two shells' rendered previews are pixel-identical.
-- **`imageUrl`/`rectifyCropUrl`'s placeholder-flash on first render.** Both are
-  synchronous per `LabBackend`'s contract, but the Tauri path fetches bytes over an
-  async `invoke()`. `tauriBackend.ts` returns a 1x1 placeholder on a cache miss and
-  relies on the app's own subsequent re-renders to pick up the real `blob:` URL once the
-  background fetch resolves — works today because every call site re-renders on its own
-  data changing (TanStack Query, selection state) shortly after the first render, but a
-  future call site that renders an image exactly once and never again would keep
-  showing the placeholder. A dedicated re-render-forcing hook (a small event emitter +
-  `useSyncExternalStore`) would remove the assumption; not built this wave since nothing
-  needs it yet.
-- **No native file-open dialog.** The plan offered `tauri-plugin-dialog` or "path arg +
-  fs read" for `images_upload`; this wave took a third option — the frontend reads the
-  `File`'s bytes in JS (`file.arrayBuffer()`) and sends them over `invoke()` as a plain
-  byte array, identical code path in both shells (browser's `uploadImage` already needs
-  a `File` for its `FormData` body). Simpler and fully transport-agnostic, but means
-  there's no *native* "Open File" menu/dialog in the desktop build — the browser's own
-  `<input type="file">` is what both shells use. Add `tauri-plugin-dialog` (with its own
-  capability entry) if a native picker is ever wanted for its own sake (e.g. drag-and-drop
-  from Finder, multi-select).
 - **No packaged single-binary distribution verified — only a local, unsigned `.app`/
   `.dmg`.** `bunx tauri build` produced both without a fallback to `--no-bundle` (no
   code-signing identity was configured, and the build did not need one to succeed
@@ -287,7 +236,7 @@ agent) can pick it up cold. When an item is scheduled it moves into
 - **corrmatch scale support** — corrmatch has rotation but no scale search; the external
   ZNCC score in pose_audit is documented as valid at scale ≈ 1 only. If a scaled use case
   appears, either add scale banks upstream or pre-scale the reference patch here.
-- **corrmatch `u16`/`f32` support** (corr wave, roadmap B6) — `corr::CorrTemplate` /
+- **corrmatch `u16`/`f32` support** (corr wave, PR #34) — `corr::CorrTemplate` /
   `find` / `displacement` are `u8`-only because corrmatch's published API (0.2.5) is.
   A `u16` industrial-camera path (12/16-bit sensors, same as the rest of this crate's
   `Pixel` dispatch) needs corrmatch itself to grow the dtype, not a quantizing cast

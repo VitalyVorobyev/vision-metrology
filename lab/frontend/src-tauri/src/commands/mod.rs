@@ -2,6 +2,7 @@
 //! `#[tauri::command]` wrappers call into, and what `tests/contract_parity.rs` calls
 //! directly (no GUI, no `tauri::State` needed to exercise this layer).
 
+pub mod batch;
 pub mod calibration;
 pub mod displacement;
 pub mod find;
@@ -9,3 +10,4 @@ pub mod images;
 pub mod measure;
 pub mod models;
 pub mod rectify;
+pub mod teach;

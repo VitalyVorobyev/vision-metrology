@@ -1,8 +1,9 @@
 # vision-metrology
 
-High-level algorithms for industrial machine-vision metrology: contour topology,
-laser stripe extraction, multi-scale edges, shape fitting, segmentation, and
-shape-based object detection. Pure Rust — no OpenCV, no FFI.
+High-level algorithms for industrial machine-vision metrology: shape-based object
+detection, calipers and robust primitive fitting, contour topology, laser stripe
+extraction, segmentation, image warping, and the pixel → millimetre calibration
+bridge. Pure Rust — no OpenCV, no FFI.
 
 This crate re-exports [`vm-primitives`](../vm-primitives) in full, so it is the only
 dependency you need.
@@ -17,12 +18,19 @@ vision-metrology = "0.1"
 | Module | Content |
 |---|---|
 | `contour` | `ContourGraph` — junction-aware topology (T/Y junctions, loops) built from edgels, with per-edge tangent, curvature, arc-length parameterization, and Gaussian polyline smoothing |
+| `corr` | Cross-correlation matching over `corrmatch` (`CorrTemplate`, `find`, `find_topk`) plus inter-frame `displacement` with optional Lucas-Kanade refinement |
 | `fit` | `fit_line` / `fit_circle` / `fit_ellipse` — algebraic-init then geometric refine, optional `RobustLoss` (Huber/Tukey) and `RansacConfig`, every `Fit<M>` reports `rms` / `max_dev` / `n_used` |
 | `laser` | `LaserExtractor` — laser stripe centerlines from opposite-polarity 1-D edge pairs, scanning rows or columns, with ROI and prior tracking |
-| `matching` | `ShapeModel` + `ShapeMatcher` — gradient-orientation similarity, coarse-to-fine search over translation / rotation / uniform scale, occlusion-proportional scoring, subpixel pose refinement |
-| `measure` | `Caliper` (rect / arc / radial placements) + `MetrologyModel` — measure a located part and fit the result, typed `RejectReason` on a caliper that finds nothing |
-| `segment` | Otsu and adaptive thresholding, connected-component labeling with per-component stats, watershed, edgel region growing |
 | `lsd` | `LsdDetector` — line-segment detection with NFA validation |
+| `matching` | `ShapeModel` + `ShapeMatcher` — gradient-orientation similarity, coarse-to-fine search over translation / rotation / uniform scale, occlusion-proportional scoring, subpixel pose refinement, masked teaching, and canonical-pose crops (`matching::crop`) |
+| `measure` | `Caliper` (rect / arc / radial placements) + `MetrologyModel` — measure a located part and fit the result, typed `RejectReason` on a caliper that finds nothing, `diagnostics::layout` for caliper placement |
+| `metric` | The calibration bridge: `CameraModel` / `Pose3` / `Plane3` / `PlaneGrid`, exact `pixel_to_plane`, runtime `plane_grid_map` / `undistort_map`, importers for calibration-rs and `table_calibration` JSON |
+| `scale` | Scale estimation for `matching` (moments / log-polar) and `find_scale_invariant` — estimate once, resample the model, verify in a narrow band |
+| `segment` | Otsu and adaptive thresholding, connected-component labeling with per-component stats, watershed, edgel region growing |
+| `warp` | `Map` — a precomputed `dst → src` coordinate table (affine / projective / polar / log-polar / `from_fn`) with `apply` / `apply_with_mask` and a first-class validity mask |
+
+Every module is a default-on Cargo feature. The full architectural map, including
+`vm-primitives`, is [`docs/system-design.md`](../../docs/system-design.md#layering).
 
 The `vm_primitives` crate most callers need by name — `Image`, `Edge2DDetector`,
 `Pyramid`, morphology, geometry — is re-exported at this crate's root as an
@@ -75,10 +83,14 @@ Runnable end-to-end programs in [`examples/`](examples):
 | `morphology` | Erode / dilate / open / close, chamfer distance |
 | `line_segments` | LSD line-segment detection |
 | `inspect_canend` | Locate → fixture → measure → pass/fail on real frames (needs a dataset) |
-| `measure_circles` | End-to-end circle metrology with ellipse fitting |
+| `measure_circles` | End-to-end circle metrology: calipers, robust circle fit, `rms` / `max_dev` gating |
 | `segmentation` | Thresholding, labeling, component statistics |
 | `shape_matching` | Building a shape model and locating it, rotated, in a scene |
 | `laserline` | Laser stripe extraction from a multi-snap image (takes `--input`) |
+| `align_crops` | Teach → find → rectify into canonical model-frame crops (needs a dataset) |
+| `birdseye_mosaic` | Bird's-eye composite of two calibrated cameras (needs a dataset) |
+| `pose_audit` | Independent ZNCC cross-check of recovered poses, diagnostic overlays |
+| `gen_illustrations` | Regenerates the deterministic PNGs under `docs/assets/` |
 
 ```bash
 cargo run -p vision-metrology --example measure_circles

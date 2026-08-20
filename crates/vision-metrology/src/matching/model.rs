@@ -131,6 +131,12 @@ pub struct ShapeModel {
     /// [`resample_at`](Self::resample_at).
     #[cfg_attr(feature = "serde", serde(default))]
     teach_points: Option<Vec<TeachPoint>>,
+    /// Angle, in radians, the model frame is rotated by relative to the
+    /// reference image — the caller's chosen canonical orientation. `0.0`
+    /// (the default, and what a format-4 document deserializes to) means the
+    /// two frames coincide. See [`reference_angle`](Self::reference_angle).
+    #[cfg_attr(feature = "serde", serde(default))]
+    reference_angle: f32,
 }
 
 impl ShapeModel {
@@ -144,6 +150,7 @@ impl ShapeModel {
         smooth: SmoothKind,
         pre_smooth: PreSmooth,
         teach_points: Option<Vec<TeachPoint>>,
+        reference_angle: f32,
     ) -> Self {
         Self {
             levels,
@@ -154,7 +161,18 @@ impl ShapeModel {
             smooth,
             pre_smooth,
             teach_points,
+            reference_angle,
         }
+    }
+
+    /// Stamp the canonical orientation onto an already-assembled model.
+    ///
+    /// Only [`resample_at`](Self::resample_at) needs this: it rebuilds levels
+    /// from `teach_points`, which are **already** in the rotated model frame,
+    /// so its own assembly must not rotate a second time — it assembles with
+    /// `reference_angle: 0.0` and restores the original value here.
+    pub(super) fn set_reference_angle(&mut self, angle: f32) {
+        self.reference_angle = angle;
     }
 
     /// The level-0 edge points recorded before grid decimation, or `None`
@@ -248,14 +266,77 @@ impl ShapeModel {
         self.levels.get(i).map_or(0, |l| l.points.len())
     }
 
+    /// Canonical orientation, in radians: how far the **model frame** is
+    /// rotated from the reference image's own axes.
+    ///
+    /// `0.0` — the default, and what every model built before this field
+    /// existed reports — means the two frames coincide, and everything below
+    /// reduces to the identity. A non-zero value is the caller saying "this
+    /// direction in the reference image is the part's natural 0°", so that a
+    /// [`ShapeMatch::angle`](super::ShapeMatch::angle) reads as the natural
+    /// axis's orientation *in the scene* rather than as rotation away from
+    /// however the part happened to sit when it was taught.
+    ///
+    /// Which frame a point is in matters once this is non-zero:
+    ///
+    /// | Frame | What is in it | Read it with |
+    /// |---|---|---|
+    /// | model | [`ModelPoint::d`], [`CropSpec::rect`](super::CropSpec), what [`ShapeMatch::pose`](super::ShapeMatch::pose) consumes | [`model_geometry`](Self::model_geometry) |
+    /// | reference image | the pixels the model was taught from | [`reference_geometry`](Self::reference_geometry), [`reference_points`](Self::reference_points) |
+    #[inline]
+    pub fn reference_angle(&self) -> f32 {
+        self.reference_angle
+    }
+
+    /// Model points at level `level`, in **model-frame** coordinates
+    /// (`origin + d`), paired with their unit gradient directions.
+    ///
+    /// This is the frame [`ShapeMatch::pose`](super::ShapeMatch::pose)
+    /// consumes: `pose * p` places `p` into the scene, which is how a found
+    /// instance is drawn over a scene image. Level `l`'s stored offsets are in
+    /// level-`l` pixel units; they are scaled back to level-0 units here, so
+    /// every level comes out in one comparable frame.
+    ///
+    /// Empty when `level >= num_levels()`.
+    pub fn model_geometry(&self, level: usize) -> Vec<(Point2f, Vec2f)> {
+        let scale = (1usize << level) as f32;
+        self.levels.get(level).map_or_else(Vec::new, |l| {
+            l.points
+                .iter()
+                .map(|p| (self.origin + p.d * scale, p.t))
+                .collect()
+        })
+    }
+
+    /// Model points at level `level`, in **reference-image** coordinates,
+    /// paired with their unit gradient directions.
+    ///
+    /// [`model_geometry`](Self::model_geometry) rotated back by
+    /// [`reference_angle`](Self::reference_angle) about the origin — what to
+    /// draw over the image the model was taught from. Identical to
+    /// `model_geometry` for the usual `reference_angle == 0.0` model.
+    ///
+    /// Empty when `level >= num_levels()`.
+    pub fn reference_geometry(&self, level: usize) -> Vec<(Point2f, Vec2f)> {
+        let (sin, cos) = self.reference_angle.sin_cos();
+        let rot = |v: Vec2f| Vec2f::new(cos * v.x - sin * v.y, sin * v.x + cos * v.y);
+        self.model_geometry(level)
+            .into_iter()
+            .map(|(p, t)| (self.origin + rot(p - self.origin), rot(t)))
+            .collect()
+    }
+
     /// Model points at level 0 mapped back into reference-image coordinates.
     ///
     /// Convenience for drawing the model over its own reference image; the
-    /// search never needs this.
+    /// search never needs this. Positions only — use
+    /// [`reference_geometry`](Self::reference_geometry) when the gradient
+    /// directions are wanted too.
     pub fn reference_points(&self) -> Vec<Point2f> {
-        self.levels.first().map_or_else(Vec::new, |l| {
-            l.points.iter().map(|p| self.origin + p.d).collect()
-        })
+        self.reference_geometry(0)
+            .into_iter()
+            .map(|(p, _)| p)
+            .collect()
     }
 }
 
@@ -282,7 +363,8 @@ mod persist {
     /// | 2 | `Point2f` / `Vec2f` became nalgebra aliases, which serialize as flat `[x, y]` arrays. |
     /// | 3 | The v0.3 API reset, batched: the document is an opaque byte string rather than documented JSON, `ModelPoint` / `ShapeModelLevel` fields became read-only, and the model carries the pyramid `PreSmooth` it was built with (invariant 3). |
     /// | 4 | The scale-invariance wave (roadmap W7): the model additionally carries its level-0 `teach_points` (pre-decimation edge points), which [`ShapeModel::resample_at`] needs. A format-3 document still loads — `teach_points` defaults to `None` on a document that predates the field — but [`resample_at`](ShapeModel::resample_at) on the result returns [`Error::InvalidConfig`]. |
-    pub(crate) const FORMAT_VERSION: u32 = 4;
+    /// | 5 | The model carries its [`reference_angle`](ShapeModel::reference_angle) — the canonical orientation its frame is rotated onto. A format-4 document still loads and reads `0.0`, which is exactly what it meant: model frame and reference image coincide. |
+    pub(crate) const FORMAT_VERSION: u32 = 5;
 
     /// The oldest format version [`ShapeModel::load`]/[`from_bytes`](ShapeModel::from_bytes)
     /// still accept. `teach_points` is `#[serde(default)]`, so a version-3

@@ -93,6 +93,21 @@ const SCHARR_FULL_STEP_GAIN: f32 = 16.0;
 
 impl Contrast {
     /// Resolve to Scharr response units, measuring `img` only if needed.
+    ///
+    /// Public because reproducing the model builder's own gradient floor is
+    /// the only way to preview *exactly* the points a build will keep: a tool
+    /// that shows a caller which edges are about to become model points has to
+    /// threshold them the same way, and `FractionOfRange` is measured against
+    /// the ROI crop rather than the whole frame, so the caller cannot derive
+    /// the number without this.
+    ///
+    /// [`ShapeModelBuilder::build`](super::ShapeModelBuilder::build) resolves
+    /// against the ROI crop; pass the same crop here.
+    pub fn resolve_for<P: Pixel>(self, img: &ImageView<'_, P>) -> f32 {
+        self.resolve(img)
+    }
+
+    /// Resolve to Scharr response units, measuring `img` only if needed.
     pub(crate) fn resolve<P: Pixel>(self, img: &ImageView<'_, P>) -> f32 {
         match self {
             Contrast::Raw(v) => v,
@@ -162,6 +177,27 @@ pub struct ShapeModelConfig {
     /// level-0 points, which minimises the model radius and therefore the
     /// number of angle steps the search needs.
     pub origin: Option<Point2f>,
+    /// The part's natural 0° direction in the reference image, in radians.
+    ///
+    /// `0.0` (the default) keeps the model frame and the reference image's
+    /// axes identical, which is what every model built before this field
+    /// existed does. Set it to say "*this* direction in the reference image is
+    /// the part's natural orientation": the model's points are rotated by
+    /// `-reference_angle` about the origin at build time, so a found
+    /// [`ShapeMatch::angle`](super::ShapeMatch::angle) then reads as the
+    /// natural axis's orientation **in the scene**, and a
+    /// [`model_frame_map`](super::ShapeMatch::model_frame_map) crop comes out
+    /// canonically oriented rather than however the part happened to sit when
+    /// it was taught.
+    ///
+    /// Nothing about *which* points enter the model changes — this rotates the
+    /// frame they are expressed in, not the extraction. Read it back off the
+    /// finished model with
+    /// [`ShapeModel::reference_angle`](super::ShapeModel::reference_angle),
+    /// and draw over the teach image with
+    /// [`reference_geometry`](super::ShapeModel::reference_geometry), which
+    /// undoes it.
+    pub reference_angle: f32,
     /// Rotation range the model is intended to be found over, in radians.
     ///
     /// Given as `(min, max)` with `max > min`; values are **not** wrapped, so a
@@ -185,6 +221,7 @@ impl Default for ShapeModelConfig {
             min_contrast: Contrast::Raw(0.0),
             max_points: NonZeroUsize::new(512),
             origin: None,
+            reference_angle: 0.0,
             angle_range: (-core::f32::consts::PI, core::f32::consts::PI),
             scale_range: (1.0, 1.0),
             polarity: Polarity::default(),
