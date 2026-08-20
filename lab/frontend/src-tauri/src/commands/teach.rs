@@ -136,8 +136,8 @@ pub fn mask_for_contours(
         let Some(c) = contours.iter().find(|c| c.id == *id) else {
             return Err(format!("no contour with id {id} in this ROI").into());
         };
-        for xy in c.points.chunks_exact(2) {
-            let (cx, cy) = (xy[0].round() as i32, xy[1].round() as i32);
+        for [x, y] in c.points.as_chunks::<2>().0 {
+            let (cx, cy) = (x.round() as i32, y.round() as i32);
             for y in (cy - MASK_DILATION).max(0)..=(cy + MASK_DILATION).min(height as i32 - 1) {
                 let row = y as usize * width;
                 for x in (cx - MASK_DILATION).max(0)..=(cx + MASK_DILATION).min(width as i32 - 1) {
@@ -193,9 +193,9 @@ mod tests {
             .expect("non-empty");
         // Points are in image coordinates, so they sit on the circle of
         // radius 30 about (60, 60) — not about the crop's own origin.
-        for xy in longest.points.chunks_exact(2) {
-            let r = ((xy[0] - 60.0).powi(2) + (xy[1] - 60.0).powi(2)).sqrt();
-            assert!((r - 30.0).abs() < 3.0, "point {xy:?} is not on the outline");
+        for [x, y] in longest.points.as_chunks::<2>().0 {
+            let r = ((x - 60.0).powi(2) + (y - 60.0).powi(2)).sqrt();
+            assert!((r - 30.0).abs() < 3.0, "point ({x}, {y}) is not on the outline");
         }
     }
 
