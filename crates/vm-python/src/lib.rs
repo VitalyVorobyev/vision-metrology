@@ -16,6 +16,7 @@ mod morph_py;
 mod segment;
 mod shape;
 mod types;
+mod warp_py;
 
 use pyo3::prelude::*;
 
@@ -34,6 +35,7 @@ use shape::{Fitter, LsdDetector};
 use types::{
     Circle, ComponentStats, Edgel, Ellipse, Line, LineSegment, MeasureEdge, MeasurePair, ShapeMatch,
 };
+use warp_py::Map;
 
 /// `vision_metrology` — Python bindings for the vision-metrology workspace.
 #[pymodule]
@@ -57,6 +59,7 @@ fn vision_metrology(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Segmenter>()?;
     m.add_class::<Caliper>()?;
     m.add_class::<MetrologyModel>()?;
+    m.add_class::<Map>()?;
 
     // Result types
     m.add_class::<Edgel>()?;

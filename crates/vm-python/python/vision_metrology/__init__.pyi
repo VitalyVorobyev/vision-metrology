@@ -438,6 +438,47 @@ class ContourGraph:
     def polylines(self) -> List[PointsF32]: ...
     def edge_lengths(self) -> List[float]: ...
 
+# A (3, 3) float32 homogeneous matrix, row-major (numpy's default layout).
+Matrix3x3 = npt.NDArray[np.float32]
+
+class Map:
+    """A precomputed `dst -> src` coordinate map: build once with `affine`,
+    `projective` or `polar`, then call `apply`/`apply_with_mask` per frame.
+    Every builder states the mapping from a destination pixel to the source
+    coordinate it samples — see the Rust `warp` module docs for the
+    dst -> src convention and how to invert a forward transform."""
+
+    @staticmethod
+    def affine(w: int, h: int, matrix: Matrix3x3) -> Map: ...
+    @staticmethod
+    def projective(w: int, h: int, matrix: Matrix3x3) -> Map: ...
+    @staticmethod
+    def polar(
+        center: Tuple[float, float],
+        r: Tuple[float, float],
+        phi: Tuple[float, float],
+        w: int,
+        h: int,
+    ) -> Map: ...
+    @property
+    def width(self) -> int: ...
+    @property
+    def height(self) -> int: ...
+    def apply(
+        self,
+        img: ImageAny,
+        interp: str = ...,
+        border_mode: str = ...,
+        border_constant: float = ...,
+    ) -> ImageAny: ...
+    def apply_with_mask(
+        self,
+        img: ImageAny,
+        interp: str = ...,
+        border_mode: str = ...,
+        border_constant: float = ...,
+    ) -> Tuple[ImageAny, ImageU8]: ...
+
 # ---------------------------------------------------------------------------
 # Free functions
 # ---------------------------------------------------------------------------
