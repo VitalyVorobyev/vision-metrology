@@ -31,6 +31,7 @@ vm-primitives  ──►  vision-metrology  ──►  vm-python
 | | `measure` | calipers (rect / arc / radial), metrology model applied at a fixture pose |
 | | `lsd` | LSD line-segment detection |
 | | `warp` | `Map`: precomputed `dst → src` coordinate table (affine / projective / polar / `from_fn`), `apply`/`apply_with_mask` with a first-class validity mask |
+| | `metric` | The calibration bridge: mirrored `CameraModel`/`Pose3`/`Plane3`/`PlaneGrid` on nalgebra 0.35, `pixel_to_plane` (exact), `plane_grid_map`/`undistort_map` (runtime `warp::Map` path), `io` importers for calibration-rs and `table_calibration` JSON |
 | `vm-python` | — | numpy-in/numpy-out detectors; lib target named `vm_python` (see invariants) |
 
 Each `vision-metrology` module is a default-on feature (see invariant 18). Names live at
@@ -151,6 +152,62 @@ nalgebra **0.34** (tiny-solver/faer chain; nalgebra types cross its public API) 
 runtime `metric` module here mirrors only the parameter types (intrinsics, distortion,
 plane) on nalgebra 0.35 and loads calibration-rs JSON exports, pinned by a golden-file
 test. A direct dependency replaces the mirror when upstream reaches nalgebra 0.35.
+
+### `metric`: the calibration bridge — units, pose direction, and the homography split (2026-08)
+B5 (roadmap). Four decisions that have to be right before any of the arithmetic matters,
+because getting any one backwards is a silent, plausible-looking bug (right shape, wrong
+numbers) rather than a compile error or a crash.
+
+**Units: millimetres, not the wire format's meters.** Every 3-D/plane quantity in
+`metric` (`Pose3` translations, `Plane3::d`, `PlaneGrid`, `pixel_to_plane`'s output) is
+millimetres; pixel-domain quantities (`PinholeIntrinsics`, pixel coordinates) stay in
+pixels. `io::import_rig_extrinsics` converts calibration-rs's meters on import (the wire
+schema documents the unit explicitly); `io::import_table_calibration` needed a judgment
+call instead — the format documents no unit at all, and the real fixture's
+camera-to-camera translation is ~111 in magnitude, which is a plausible two-camera
+benchtop baseline in mm and an absurd 111-**meter** rig if read as meters. Recorded at
+the importer, not asserted as a property of the format.
+
+**`Pose3` is camera-from-reference (`cam_se3_rig`, `T_C_R`), matching calibration-rs's
+own convention rather than inventing a new one.** `pose * p_ref` gives `p_ref` in the
+camera's own frame. Every function here and every Python binding follows this
+direction; getting it backwards would silently mirror every downstream projection
+through the camera center, the same failure shape `warp`'s own `dst → src` direction
+trap describes. `io::import_table_calibration` treats `camera0`'s `sensor2camera`
+(the identity in every observed export) as defining the reference frame, so every other
+camera's `sensor2camera` **is** `Pose3` directly with no re-composition — a fact about
+this specific dataset (camera0 is always identity), not a general property of the file
+format, and documented as such at the importer.
+
+**A homography cannot carry Brown-Conrady distortion — so there are two, deliberately
+different, plane-to-image paths, not one.** [`pixel_to_plane`] is the exact path:
+per-pixel `undistort_pixel` → `pixel_to_ray` → `ray_plane_intersect`, correct for any
+`Plane3`, the one to use for a point-wise measurement. [`homography_plane_to_image`] /
+[`plane_grid_map`] are the whole-image runtime path — a homography (undistorted only)
+composed with forward `distort_pixel` per destination pixel via `warp::Map::from_fn` —
+restricted to `PlaneGrid`, which is always the reference frame's own `Plane3::xy`
+(`z = 0`), *not* an arbitrary plane, because the homography's linearity depends on
+substituting `z = 0` into the pose's affine map. A caller who needs a tilted or offset
+plane's bird's-eye view has no `plane_grid_map` shortcut; that is intentional; and the
+module docs say so at both entry points rather than leaving a caller to discover the
+restriction from a wrong answer.
+
+**`pixel_to_plane`'s in-plane basis is deterministic, not caller-supplied.** For a
+general `Plane3`, the 2-D coordinate system needs an origin and two axes; the origin is
+the plane's closest point to the reference-frame origin (`p0 = -d·n`), and the axes are
+built by projecting the reference frame's own `x` axis onto the plane (or `y`, if `x` is
+within 0.9 of parallel to the normal) and completing a right-handed pair with a cross
+product. Purely a function of `plane.n`, so two calls with the same plane always agree
+— important since `PlaneGrid`'s own `z = 0` case sidesteps this entirely (its axes are
+the reference frame's `x`/`y` directly), so the two paths only need to agree in the
+`Plane3::xy` case, which they do by construction (`plane_basis` reduces to the identity
+basis when `n = (0, 0, 1)`).
+
+**Rectify-first 3-D acceptance, measured rather than assumed** (`tests/metric_rectify.rs`):
+see roadmap B5 for the full per-tilt table. Found at every tilt 0–40°, max position
+error 0.012 px — an order of magnitude inside the 0.1 px target, and small enough that
+homography refinement (next session) has very little left to buy on a genuinely planar
+target; its value is for the *non*-planar case this synthetic fixture cannot exercise.
 
 ### Shape-matching preprocessing dominates the search
 Measured (M4 Pro, 1280×1024, full 360°): `find_u8` ≈ 7.8 ms = ~5.3 ms direction-field

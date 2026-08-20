@@ -12,6 +12,7 @@ mod detector;
 mod functions;
 mod match_py;
 mod measure_py;
+mod metric_py;
 mod morph_py;
 mod segment;
 mod shape;
@@ -19,6 +20,7 @@ mod types;
 mod warp_py;
 
 use pyo3::prelude::*;
+use pyo3::wrap_pyfunction;
 
 use config::{
     Contrast, EdgeConfig, FitConfig, LsdConfig, MeasureConfig, ShapeModelConfig, ShapeSearchConfig,
@@ -29,6 +31,10 @@ use match_py::{CropSpec, ShapeMatcher, ShapeModel};
 use measure_py::{
     Caliper, MeasureRejected, MetrologyError, MetrologyModel, MetrologyObject, MetrologyResult,
     MetrologyShape,
+};
+use metric_py::{
+    BrownConrady5, CameraModel, PinholeIntrinsics, Plane3, PlaneGrid, load_rig_extrinsics,
+    load_table_calibration, pixel_to_plane, plane_grid_map, undistort_map,
 };
 use segment::Segmenter;
 use shape::{Fitter, LsdDetector};
@@ -62,6 +68,13 @@ fn vision_metrology(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<MetrologyModel>()?;
     m.add_class::<Map>()?;
 
+    // metric: the calibration bridge
+    m.add_class::<PinholeIntrinsics>()?;
+    m.add_class::<BrownConrady5>()?;
+    m.add_class::<CameraModel>()?;
+    m.add_class::<Plane3>()?;
+    m.add_class::<PlaneGrid>()?;
+
     // Result types
     m.add_class::<Edgel>()?;
     m.add_class::<LineSegment>()?;
@@ -79,6 +92,13 @@ fn vision_metrology(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Exceptions
     m.add("MeasureRejected", m.py().get_type::<MeasureRejected>())?;
+
+    // metric: free functions
+    m.add_function(wrap_pyfunction!(pixel_to_plane, m)?)?;
+    m.add_function(wrap_pyfunction!(plane_grid_map, m)?)?;
+    m.add_function(wrap_pyfunction!(undistort_map, m)?)?;
+    m.add_function(wrap_pyfunction!(load_rig_extrinsics, m)?)?;
+    m.add_function(wrap_pyfunction!(load_table_calibration, m)?)?;
 
     // Declarative free functions
     functions::register(m)?;

@@ -14,6 +14,7 @@
 //! | [`lsd`]       | LSD line-segment detection |
 //! | [`matching`]  | Shape-based object detection: gradient-orientation model matching |
 //! | [`measure`]   | Calipers and metrology models — measuring a located part |
+//! | [`metric`]    | The calibration bridge: pixel ↔ millimetre via a mirrored camera model |
 //! | [`segment`]   | Otsu / adaptive threshold, CCL, watershed, region growing |
 //! | [`warp`]      | Image warping: build a `dst → src` map once, apply per frame |
 //!
@@ -35,6 +36,7 @@
 //! | `lsd` | [`lsd`] | — |
 //! | `matching` | [`matching`] | `warp` (`ShapeMatch` rectifies into a canonical crop) |
 //! | `measure` | [`measure`] | `fit` (measured points are fitted) |
+//! | `metric` | [`metric`] | `warp` (`plane_grid_map`/`undistort_map` build a `warp::Map`) |
 //! | `segment` | [`segment`] | `contour` (region growing consumes a `ContourGraph`) |
 //! | `warp` | [`warp`] | — |
 //! | `serde` | `ShapeModel` persistence | `matching` |
@@ -57,6 +59,8 @@ pub mod lsd;
 pub mod matching;
 #[cfg(feature = "measure")]
 pub mod measure;
+#[cfg(feature = "metric")]
+pub mod metric;
 #[cfg(feature = "segment")]
 pub mod segment;
 #[cfg(feature = "warp")]
@@ -98,6 +102,12 @@ pub mod prelude {
         Caliper, EdgeSelect, MeasureConfig, MeasureEdge, MetrologyFit, MetrologyModel,
         MetrologyObject, MetrologyResult, MetrologyShape, PolaritySelect, RejectReason,
     };
+    #[cfg(feature = "metric")]
+    pub use crate::metric::{
+        BrownConrady5, CameraModel, PinholeIntrinsics, Plane3, PlaneGrid, Pose3, distort_pixel,
+        homography_plane_to_image, pixel_to_plane, pixel_to_ray, plane_grid_map,
+        ray_plane_intersect, undistort_map, undistort_pixel,
+    };
     #[cfg(feature = "segment")]
     pub use crate::segment::{
         AdaptiveThreshConfig, CcLabel, ComponentStats, adaptive_threshold_u8,
@@ -114,8 +124,8 @@ pub mod prelude {
 pub use vm_primitives::{
     Affine2f, Angle, BorderMode, Circle2f, Conic2f, Edge1DConfig, Edge1DDetector, Edge2DConfig,
     Edge2DDetector, EdgePolarity, Edgel, Ellipse2f, Error, Image, ImageView, ImageViewMut,
-    Isometry2f, Line2f, Pixel, Point2f, Polyline2f, PreSmooth, Projective2f, Pyramid,
-    PyramidConfig, Rect2f, Similarity2f, SmoothKind, SubpixRefine, Vec2f, Vec2fExt,
+    Isometry2f, Isometry3f, Line2f, Pixel, Point2f, Point3f, Polyline2f, PreSmooth, Projective2f,
+    Pyramid, PyramidConfig, Rect2f, Similarity2f, SmoothKind, SubpixRefine, Vec2f, Vec2fExt, Vec3f,
     sample_bilinear_at, sample_bilinear_f32, sample_nearest, similarity_from_parts,
     similarity_parts, transform_point, transform_vec, wrap_angle,
 };

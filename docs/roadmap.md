@@ -285,16 +285,55 @@ noise floor should dominate.
 (`data/42781`, one of the three vertically-stacked camera strips): 20/20 frames found,
 mean crop validity 0.97.
 
-### B5 — `metric`: the calibration bridge
-Mirror `PinholeIntrinsics`, `BrownConrady5`, `LaserPlane` on nalgebra 0.35; alloc-free
-`undistort_pixel`, `pixel_to_ray`, `ray_plane_intersect`, `laser_line_to_profile`,
-`pixel_to_plane_mm`. Offline/runtime split as recorded in system-design.
+### B5 — `metric`: the calibration bridge — `done`
+Mirrors `PinholeIntrinsics`, `BrownConrady5`, `CameraModel`, `Pose3` (= `Isometry3f`,
+camera-from-reference), `Plane3`, `PlaneGrid` on nalgebra 0.35. Alloc-free
+`distort_pixel`/`undistort_pixel` (fixed 20-iteration Newton, converged < 1e-6
+normalized), `pixel_to_ray`, `ray_plane_intersect`, `pixel_to_plane` (the exact
+per-point path), `homography_plane_to_image` + `plane_grid_map` (the runtime
+bird's-eye/rectify path over `warp::Map`, [`Plane3::xy`] only), `undistort_map`.
+`metric::io` imports both calibration-rs's `RigExtrinsicsExport` (meters → mm on
+import) and the `table_calibration` tool's `calibration.json` (already mm, by
+inspection of the real fixture — documented, not asserted by the source format).
+Offline/runtime split as recorded in system-design.
 
-**Accept:** golden-file numeric parity with a real calibration-rs export; the laser →
-3-D-profile demo runs from Python.
+**Landed.** Golden-parity tests against a hand-crafted `RigExtrinsicsExport` fixture
+(round-trips `distort_pixel`/`undistort_pixel` to < 1e-6 normalized over a grid,
+`pixel_to_plane` by hand on axis-aligned cases) and a trimmed real
+`table_calibration.json`. Python bindings: `CameraModel`/`PinholeIntrinsics`/
+`BrownConrady5`/`Plane3`/`PlaneGrid` pyclasses, `Pose3` as a `(4, 4)` float64 array
+(no dedicated class — the numpy-friendly choice), vectorized `pixel_to_plane` over
+`(N, 2)` arrays (NaN row on a miss rather than a per-point exception), `plane_grid_map`/
+`undistort_map` returning the existing `Map` pyclass, `load_rig_extrinsics`/
+`load_table_calibration` (path or raw bytes). Lab: `POST/GET /api/calibration`
+(format detected by shape), `POST /api/measure` augmented with `calibration_id`/
+`camera_index`/`plane`, mm fields on fitted circle center/radius and hit caliper edges,
+a px/mm toggle in the Measure tab.
+
+**Rectify-first 3-D acceptance** (`tests/metric_rectify.rs`, plan decision 10): a
+synthetic SDF L-shape target rendered on the reference frame's `z = 0` plane through a
+tilted calibrated camera (pinhole + BC5, tilt 0/10/20/30/40° about the reference
+x-axis) via the *forward* model (`pixel_to_plane` per raw pixel), then rectified back
+to the plane grid with `plane_grid_map` + `apply_with_mask`. A `ShapeModel` taught on
+the 0° rectified crop is found in every tilt's rectified crop:
+
+| tilt | found | score | position error (px) |
+|---|---|---|---|
+| 0° | yes | 1.0000 | 0.0004 |
+| 10° | yes | 1.0000 | 0.0037 |
+| 20° | yes | 1.0000 | 0.0023 |
+| 30° | yes | 1.0000 | 0.0120 |
+| 40° | yes | 1.0000 | 0.0029 |
+
+Found at every tilt, max position error **0.012 px** — an order of magnitude inside the
+plan's 0.1 px target, on a noise-free synthetic fixture where render and rectify are
+each other's exact geometric inverse. This is the number that says rectify-first closes
+the planar 3-D case; it also bounds how little headroom homography refinement (next
+session) has left to buy on a genuinely planar target.
 
 **Track B accept:** `examples/inspect_canend` runs find → fixture → metrology model →
-pass/fail on real canend data — **done in pixels**; the millimetre step waits on B5.
+pass/fail on real canend data in pixels; the lab's `/api/measure` now closes the
+millimetre step over an uploaded calibration.
 
 ---
 

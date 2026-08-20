@@ -193,6 +193,24 @@ pub fn wrap_angle(a: f32) -> f32 {
 /// `nalgebra::Isometry2::rotation` to construct instances.
 pub type Isometry2f = nalgebra::Isometry2<f32>;
 
+/// A 3-D point in floating-point units (millimetres, by the `metric` module's
+/// convention — see its module docs).
+///
+/// An alias for [`nalgebra::Point3<f32>`].
+pub type Point3f = nalgebra::Point3<f32>;
+
+/// A 3-D displacement/direction vector.
+///
+/// An alias for [`nalgebra::Vector3<f32>`].
+pub type Vec3f = nalgebra::Vector3<f32>;
+
+/// Rigid 3-D transform (rotation + translation, scale = 1).
+///
+/// Backed by [`nalgebra::Isometry3<f32>`]. Used by `vision_metrology::metric`
+/// as `Pose3` — see that module's docs for the camera-from-reference
+/// direction convention.
+pub type Isometry3f = nalgebra::Isometry3<f32>;
+
 /// Similarity 2-D transform (rotation + uniform scale + translation).
 ///
 /// Backed by [`nalgebra::Similarity2<f32>`].

@@ -1,0 +1,31 @@
+{
+  "kind": "rig_extrinsics",
+  "cameras": [
+    {
+      "proj": null,
+      "sensor": null,
+      "_phantom": null,
+      "k": { "fx": 800.0, "fy": 810.0, "cx": 320.0, "cy": 240.0, "skew": 0.0 },
+      "dist": { "k1": -0.12, "k2": 0.02, "k3": 0.0, "p1": 0.001, "p2": -0.0005, "iters": 20 }
+    },
+    {
+      "proj": null,
+      "sensor": null,
+      "_phantom": null,
+      "k": { "fx": 795.0, "fy": 805.0, "cx": 322.0, "cy": 238.0, "skew": 0.0 },
+      "dist": { "k1": -0.10, "k2": 0.015, "k3": 0.0, "p1": 0.0, "p2": 0.0, "iters": 20 }
+    }
+  ],
+  "cam_se3_rig": [
+    { "rotation": [0.0, 0.0, 0.0, 1.0], "translation": [0.0, 0.0, 1.0] },
+    {
+      "rotation": [0.0, 0.13052619222005157, 0.0, 0.99144486137355],
+      "translation": [0.1, 0.0, 1.0]
+    }
+  ],
+  "rig_se3_target": [],
+  "mean_reproj_error": 0.12,
+  "per_cam_reproj_errors": [0.11, 0.13],
+  "sensors": null,
+  "image_manifest": null
+}

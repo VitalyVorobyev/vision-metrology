@@ -1,6 +1,20 @@
 {
   "components": {
     "schemas": {
+      "Body_upload_calibration_api_calibration_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_calibration_api_calibration_post",
+        "type": "object"
+      },
       "Body_upload_image_api_images_post": {
         "properties": {
           "file": {
@@ -13,6 +27,38 @@
           "file"
         ],
         "title": "Body_upload_image_api_images_post",
+        "type": "object"
+      },
+      "CalibrationOut": {
+        "properties": {
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "format": {
+            "enum": [
+              "rig_extrinsics",
+              "table_calibration"
+            ],
+            "title": "Format",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "n_cameras": {
+            "title": "N Cameras",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "filename",
+          "format",
+          "n_cameras"
+        ],
+        "title": "CalibrationOut",
         "type": "object"
       },
       "CaliperProfileOut": {
@@ -132,6 +178,28 @@
           "pos_px": {
             "title": "Pos Px",
             "type": "number"
+          },
+          "x_mm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X Mm"
+          },
+          "y_mm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Y Mm"
           }
         },
         "required": [
@@ -616,6 +684,17 @@
             ],
             "title": "Circle Cx"
           },
+          "circle_cx_mm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Circle Cx Mm"
+          },
           "circle_cy": {
             "anyOf": [
               {
@@ -627,6 +706,17 @@
             ],
             "title": "Circle Cy"
           },
+          "circle_cy_mm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Circle Cy Mm"
+          },
           "circle_r": {
             "anyOf": [
               {
@@ -637,6 +727,17 @@
               }
             ],
             "title": "Circle R"
+          },
+          "circle_r_mm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Circle R Mm"
           },
           "kind": {
             "anyOf": [
@@ -769,6 +870,24 @@
       },
       "MeasureRequest": {
         "properties": {
+          "calibration_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When set, the response is augmented with millimetre values (pixel_to_plane over the calibration's camera_index camera and plane).",
+            "title": "Calibration Id"
+          },
+          "camera_index": {
+            "default": 0,
+            "description": "Index into the calibration's camera list.",
+            "title": "Camera Index",
+            "type": "integer"
+          },
           "fixture": {
             "anyOf": [
               {
@@ -798,6 +917,9 @@
             },
             "title": "Objects",
             "type": "array"
+          },
+          "plane": {
+            "$ref": "#/components/schemas/PlaneIn"
           }
         },
         "required": [
@@ -1201,6 +1323,33 @@
         "title": "OverlayPrimitiveOut",
         "type": "object"
       },
+      "PlaneIn": {
+        "description": "A plane in the calibration's reference frame: `n . X + d = 0`. Defaults to the\nrig/table frame's own `z = 0` plane \u2014 the common case (a flat stage/conveyor).",
+        "properties": {
+          "d": {
+            "default": 0.0,
+            "title": "D",
+            "type": "number"
+          },
+          "nx": {
+            "default": 0.0,
+            "title": "Nx",
+            "type": "number"
+          },
+          "ny": {
+            "default": 0.0,
+            "title": "Ny",
+            "type": "number"
+          },
+          "nz": {
+            "default": 1.0,
+            "title": "Nz",
+            "type": "number"
+          }
+        },
+        "title": "PlaneIn",
+        "type": "object"
+      },
       "RectifyMatchOut": {
         "properties": {
           "angle": {
@@ -1393,6 +1542,70 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/calibration": {
+      "get": {
+        "operationId": "list_calibrations_api_calibration_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CalibrationOut"
+                  },
+                  "title": "Response List Calibrations Api Calibration Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Calibrations",
+        "tags": [
+          "calibration"
+        ]
+      },
+      "post": {
+        "operationId": "upload_calibration_api_calibration_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_calibration_api_calibration_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalibrationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload Calibration",
+        "tags": [
+          "calibration"
+        ]
+      }
+    },
     "/api/find": {
       "post": {
         "operationId": "find_api_find_post",

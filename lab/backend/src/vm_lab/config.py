@@ -35,8 +35,18 @@ class Settings:
     def models_dir(self) -> Path:
         return self.data_dir / "models"
 
+    @property
+    def calibrations_dir(self) -> Path:
+        return self.data_dir / "calibrations"
+
     def ensure(self) -> None:
-        for d in (self.images_dir, self.thumbnails_dir / "thumb", self.thumbnails_dir / "preview", self.models_dir):
+        for d in (
+            self.images_dir,
+            self.thumbnails_dir / "thumb",
+            self.thumbnails_dir / "preview",
+            self.models_dir,
+            self.calibrations_dir,
+        ):
             d.mkdir(parents=True, exist_ok=True)
 
 

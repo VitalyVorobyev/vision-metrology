@@ -43,6 +43,8 @@ export type RectifyResponse = Schemas["RectifyResponse"];
 export type RectifyMatchOut = Schemas["RectifyMatchOut"];
 export type Roi = NonNullable<ModelCreateRequest["roi"]>;
 export type AngleRange = NonNullable<FindRequest["angle_range"]>;
+export type CalibrationOut = Schemas["CalibrationOut"];
+export type PlaneIn = Schemas["PlaneIn"];
 
 /** The operations every tab/component needs, transport-agnostic. */
 export interface LabBackend {
@@ -61,6 +63,8 @@ export interface LabBackend {
    * `crop_url` is server-relative, so this is how a caller turns a match `index`
    * into something an `<img src>` can load. */
   rectifyCropUrl(imageId: string, modelId: string, index: number): string;
+  listCalibrations(): Promise<CalibrationOut[]>;
+  uploadCalibration(file: File): Promise<CalibrationOut>;
 }
 
 /**
@@ -156,6 +160,21 @@ function createHttpBackend(): LabBackend {
 
     rectifyCropUrl(imageId: string, modelId: string, index: number) {
       return `${baseUrl}/api/rectify/${imageId}/${modelId}/${index}`;
+    },
+
+    async listCalibrations() {
+      const res = await client.GET("/api/calibration");
+      return unwrap<CalibrationOut[]>(res, "the calibration list");
+    },
+
+    async uploadCalibration(file: File) {
+      const body = new FormData();
+      body.append("file", file);
+      const res = await client.POST("/api/calibration", {
+        // Same FormData/schema mismatch as `uploadImage` above.
+        body: body as unknown as { file: string },
+      });
+      return unwrap<CalibrationOut>(res, "the uploaded calibration");
     },
   };
 }

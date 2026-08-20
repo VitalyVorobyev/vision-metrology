@@ -41,6 +41,41 @@ class ImageRecord:
         return settings.images_dir / f"{self.id}.json"
 
 
+def detect_calibration_format(doc: dict) -> str:
+    """Detect which of the two supported calibration JSON shapes `doc` is,
+    by field presence — there is no shared envelope between them.
+
+    `RigExtrinsicsExport` (calibration-rs) always carries a `kind` field;
+    `table_calibration`'s `calibration.json` has no such tag, but always
+    carries top-level `intrinsic`/`extrinsic` maps.
+    """
+    if doc.get("kind") == "rig_extrinsics":
+        return "rig_extrinsics"
+    if "intrinsic" in doc and "extrinsic" in doc:
+        return "table_calibration"
+    raise ValueError(
+        'unrecognized calibration format: expected a RigExtrinsicsExport document '
+        '(kind="rig_extrinsics") or a table_calibration calibration.json '
+        '(top-level "intrinsic"/"extrinsic")'
+    )
+
+
+@dataclass(frozen=True)
+class CalibrationRecord:
+    id: str
+    filename: str
+    format: str
+    n_cameras: int
+
+    @property
+    def path(self) -> Path:
+        return settings.calibrations_dir / f"{self.id}.json"
+
+    @property
+    def sidecar(self) -> Path:
+        return settings.calibrations_dir / f"{self.id}.meta.json"
+
+
 @dataclass(frozen=True)
 class ModelRecord:
     id: str
@@ -69,9 +104,13 @@ class Store:
     def __init__(self) -> None:
         self.images: dict[str, ImageRecord] = {}
         self.models: dict[str, ModelRecord] = {}
+        self.calibrations: dict[str, CalibrationRecord] = {}
         self._model_objs: dict[str, vm.ShapeModel] = {}
+        # camera/pose pairs, keyed by calibration id: (CameraModel, pose[4,4]).
+        self._calibration_objs: dict[str, list[tuple[vm.CameraModel, np.ndarray]]] = {}
         self._next_image = 1
         self._next_model = 1
+        self._next_calibration = 1
 
     # -- images ----------------------------------------------------------------
 
@@ -129,6 +168,34 @@ class Store:
             self._model_objs[model_id] = vm.ShapeModel.load(str(rec.path))
         return self._model_objs[model_id]
 
+    # -- calibrations --------------------------------------------------------------
+
+    def add_calibration(self, filename: str, raw_bytes: bytes) -> CalibrationRecord:
+        doc = json.loads(raw_bytes)
+        fmt = detect_calibration_format(doc)
+        loader = vm.load_rig_extrinsics if fmt == "rig_extrinsics" else vm.load_table_calibration
+        cameras = loader(raw_bytes)  # raises ValueError on a malformed document
+
+        calibration_id = f"cal-{self._next_calibration}"
+        self._next_calibration += 1
+        rec = CalibrationRecord(
+            id=calibration_id, filename=filename, format=fmt, n_cameras=len(cameras)
+        )
+        rec.path.parent.mkdir(parents=True, exist_ok=True)
+        rec.path.write_bytes(raw_bytes)
+        rec.sidecar.write_text(json.dumps(asdict(rec)))
+        self.calibrations[calibration_id] = rec
+        self._calibration_objs[calibration_id] = cameras
+        return rec
+
+    def get_calibration(self, calibration_id: str) -> list[tuple[vm.CameraModel, np.ndarray]]:
+        if calibration_id not in self._calibration_objs:
+            rec = self.calibrations[calibration_id]
+            raw_bytes = rec.path.read_bytes()
+            loader = vm.load_rig_extrinsics if rec.format == "rig_extrinsics" else vm.load_table_calibration
+            self._calibration_objs[calibration_id] = loader(raw_bytes)
+        return self._calibration_objs[calibration_id]
+
     # -- startup rehydration -------------------------------------------------------
 
     def rehydrate(self) -> None:
@@ -147,6 +214,12 @@ class Store:
             if rec.path.is_file():
                 self.models[rec.id] = rec
                 self._next_model = max(self._next_model, int(rec.id.split("-")[1]) + 1)
+        for sidecar in sorted(settings.calibrations_dir.glob("cal-*.meta.json")):
+            data = json.loads(sidecar.read_text())
+            rec = CalibrationRecord(**data)
+            if rec.path.is_file():
+                self.calibrations[rec.id] = rec
+                self._next_calibration = max(self._next_calibration, int(rec.id.split("-")[1]) + 1)
 
 
 store = Store()
