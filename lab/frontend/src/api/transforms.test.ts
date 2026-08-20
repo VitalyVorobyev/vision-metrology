@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { CaliperResultOut } from "./backend";
-import { caliperToProfile, rectToRoi } from "./transforms";
+import { caliperToProfile, formatMeasurement, rectToRoi } from "./transforms";
 
 describe("rectToRoi", () => {
   it("normalizes a rectangle dragged in the positive direction", () => {
@@ -58,5 +58,21 @@ describe("caliperToProfile", () => {
     };
     const { edges } = caliperToProfile(rejected);
     expect(edges).toEqual([]);
+  });
+});
+
+describe("formatMeasurement", () => {
+  it("formats the px value in px mode", () => {
+    expect(formatMeasurement("px", 39.988, 40.5, 2)).toBe("39.99 px");
+  });
+
+  it("formats the mm value in mm mode", () => {
+    expect(formatMeasurement("mm", 39.988, 40.512, 2)).toBe("40.51 mm");
+  });
+
+  it("shows an em-dash when the requested unit's value is missing", () => {
+    expect(formatMeasurement("mm", 39.988, null)).toBe("—");
+    expect(formatMeasurement("mm", 39.988, undefined)).toBe("—");
+    expect(formatMeasurement("px", null, 40.5)).toBe("—");
   });
 });

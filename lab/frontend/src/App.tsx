@@ -25,6 +25,10 @@ export function App() {
   const queryClient = useQueryClient();
   const imagesQuery = useQuery({ queryKey: ["images"], queryFn: () => backend.listImages() });
   const modelsQuery = useQuery({ queryKey: ["models"], queryFn: () => backend.listModels() });
+  const calibrationsQuery = useQuery({
+    queryKey: ["calibrations"],
+    queryFn: () => backend.listCalibrations(),
+  });
 
   const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
   const [tab, setTab] = useState<TabId>("teach");
@@ -34,6 +38,7 @@ export function App() {
 
   const images = imagesQuery.data ?? [];
   const models = modelsQuery.data ?? [];
+  const calibrations = calibrationsQuery.data ?? [];
   const selectedImage = images.find((i) => i.id === selectedImageId) ?? null;
 
   // The first successful load selects an image so the workbench is not empty.
@@ -105,7 +110,7 @@ export function App() {
               }}
             />
           ) : tab === "measure" ? (
-            <MeasureTab image={selectedImage} models={models} onResult={setOverlay} />
+            <MeasureTab image={selectedImage} models={models} calibrations={calibrations} onResult={setOverlay} />
           ) : (
             <AlignTab image={selectedImage} models={models} />
           )}

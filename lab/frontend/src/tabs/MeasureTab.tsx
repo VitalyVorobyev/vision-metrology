@@ -6,15 +6,17 @@ import {
   LineProfile,
   NumberInput,
   Panel,
+  SegmentedControl,
   Section,
   Select,
   Table,
 } from "@vitavision/lab-ui";
-import { useMutation } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useRef, useState } from "react";
 
 import { getBackend } from "../api/backend";
 import type {
+  CalibrationOut,
   CaliperResultOut,
   ImageOut,
   MeasureObjectIn,
@@ -22,7 +24,7 @@ import type {
   ModelOut,
   OverlayPrimitiveOut,
 } from "../api/backend";
-import { caliperToProfile } from "../api/transforms";
+import { caliperToProfile, formatMeasurement, type MeasureUnit } from "../api/transforms";
 
 type Kind = "circle" | "line";
 
@@ -34,10 +36,12 @@ function emptyObject(kind: Kind): MeasureObjectIn {
 export function MeasureTab({
   image,
   models,
+  calibrations,
   onResult,
 }: {
   image: ImageOut;
   models: ModelOut[];
+  calibrations: CalibrationOut[];
   onResult: (overlay: OverlayPrimitiveOut[]) => void;
 }) {
   const [modelId, setModelId] = useState(models[0]?.id ?? "");
@@ -45,10 +49,29 @@ export function MeasureTab({
   const [objects, setObjects] = useState<MeasureObjectIn[]>([]);
   const [draftKind, setDraftKind] = useState<Kind>("circle");
   const [selected, setSelected] = useState<{ object: number; caliper: number } | null>(null);
+  const [calibrationId, setCalibrationId] = useState("");
+  const [cameraIndex, setCameraIndex] = useState(0);
+  const [unit, setUnit] = useState<MeasureUnit>("px");
+  const queryClient = useQueryClient();
+  const calibrationFileInput = useRef<HTMLInputElement>(null);
+  const uploadCalibrationMutation = useMutation({
+    mutationFn: (file: File) => getBackend().uploadCalibration(file),
+    onSuccess: (calibration) => {
+      void queryClient.invalidateQueries({ queryKey: ["calibrations"] });
+      setCalibrationId(calibration.id);
+    },
+  });
 
   const mutation = useMutation({
     mutationFn: () =>
-      getBackend().measure({ image_id: image.id, model_id: modelId, min_score: minScore, objects }),
+      getBackend().measure({
+        image_id: image.id,
+        model_id: modelId,
+        min_score: minScore,
+        objects,
+        camera_index: cameraIndex,
+        ...(calibrationId ? { calibration_id: calibrationId } : {}),
+      }),
     onSuccess: (res) => {
       onResult(res.objects.flatMap((o) => o.overlay ?? []));
       setSelected(null);
@@ -81,6 +104,55 @@ export function MeasureTab({
           <Field label="Auto-find min score" annotation="fixture comes from the top find match">
             <NumberInput min={0} max={1} step={0.05} value={minScore} onChange={(e) => setMinScore(Number(e.target.value))} />
           </Field>
+
+          <Field
+            label="Calibration"
+            annotation="optional — augments results with millimetre values via the z=0 plane"
+          >
+            <div className="flex items-center gap-2">
+              <Select
+                value={calibrationId}
+                onValueChange={setCalibrationId}
+                options={[
+                  { value: "", label: "None (pixels only)" },
+                  ...calibrations.map((c) => ({ value: c.id, label: `${c.id} (${c.format}, ${c.n_cameras} cam)` })),
+                ]}
+                className="flex-1"
+              />
+              <Button
+                size="sm"
+                variant="ghost"
+                loading={uploadCalibrationMutation.isPending}
+                onClick={() => calibrationFileInput.current?.click()}
+              >
+                Upload…
+              </Button>
+              <input
+                ref={calibrationFileInput}
+                type="file"
+                accept="application/json,.json"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) uploadCalibrationMutation.mutate(file);
+                  e.target.value = "";
+                }}
+              />
+            </div>
+            {uploadCalibrationMutation.isError && (
+              <ErrorBox>{(uploadCalibrationMutation.error as Error).message}</ErrorBox>
+            )}
+          </Field>
+          {calibrationId && (
+            <Field label="Camera index">
+              <NumberInput
+                min={0}
+                step={1}
+                value={cameraIndex}
+                onChange={(e) => setCameraIndex(Number(e.target.value))}
+              />
+            </Field>
+          )}
 
           <Section step={1} title="Objects" hint="Nominal geometry, in the model's own frame">
             <div className="flex items-center gap-2">
@@ -158,15 +230,34 @@ export function MeasureTab({
 
       {mutation.data && (
         <Panel title="Results">
-          <div className="flex flex-col gap-1 pb-3 text-xs text-fg-muted">
-            fixture ({mutation.data.fixture_source}): x={mutation.data.fixture.x.toFixed(2)} y=
-            {mutation.data.fixture.y.toFixed(2)} angle={((mutation.data.fixture.angle * 180) / Math.PI).toFixed(2)}°
-            scale={mutation.data.fixture.scale.toFixed(3)}
+          <div className="mb-3 flex items-center justify-between">
+            <div className="flex flex-col gap-1 text-xs text-fg-muted">
+              fixture ({mutation.data.fixture_source}): x={mutation.data.fixture.x.toFixed(2)} y=
+              {mutation.data.fixture.y.toFixed(2)} angle={((mutation.data.fixture.angle * 180) / Math.PI).toFixed(2)}°
+              scale={mutation.data.fixture.scale.toFixed(3)}
+            </div>
+            {calibrationId && (
+              <SegmentedControl
+                value={unit}
+                onValueChange={(v) => setUnit((v || "px") as MeasureUnit)}
+                options={[
+                  { value: "px", label: "px" },
+                  { value: "mm", label: "mm" },
+                ]}
+                aria-label="Measurement unit"
+              />
+            )}
           </div>
           <Table
             columns={[
               { key: "i", header: "#", cell: (r: MeasureObjectResultOut) => results.indexOf(r) },
               { key: "kind", header: "kind", cell: (r: MeasureObjectResultOut) => r.label ?? r.kind },
+              {
+                key: "r",
+                header: "radius",
+                numeric: true,
+                cell: (r) => formatMeasurement(unit, r.circle_r, r.circle_r_mm),
+              },
               { key: "rms", header: "rms", numeric: true, cell: (r) => (r.rms !== null && r.rms !== undefined ? r.rms.toFixed(3) : "—") },
               {
                 key: "max_dev",
@@ -226,6 +317,15 @@ export function MeasureTab({
       {activeCaliper && (
         <Panel title={`Caliper profile — ${activeCaliper.status}${activeCaliper.reason ? ` (${activeCaliper.reason})` : ""}`}>
           <LineProfile {...caliperToProfile(activeCaliper)} label="intensity along caliper axis" />
+          {calibrationId &&
+            unit === "mm" &&
+            activeCaliper.profile.edges[0]?.x_mm !== null &&
+            activeCaliper.profile.edges[0]?.x_mm !== undefined && (
+              <p className="mt-2 text-xs text-fg-muted">
+                edge position (mm frame): {activeCaliper.profile.edges[0].x_mm.toFixed(3)},{" "}
+                {activeCaliper.profile.edges[0].y_mm?.toFixed(3)}
+              </p>
+            )}
         </Panel>
       )}
     </div>

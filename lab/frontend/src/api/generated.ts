@@ -4,6 +4,24 @@
  */
 
 export interface paths {
+    "/api/calibration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Calibrations */
+        get: operations["list_calibrations_api_calibration_get"];
+        put?: never;
+        /** Upload Calibration */
+        post: operations["upload_calibration_api_calibration_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/find": {
         parameters: {
             query?: never;
@@ -146,10 +164,29 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** Body_upload_calibration_api_calibration_post */
+        Body_upload_calibration_api_calibration_post: {
+            /** File */
+            file: string;
+        };
         /** Body_upload_image_api_images_post */
         Body_upload_image_api_images_post: {
             /** File */
             file: string;
+        };
+        /** CalibrationOut */
+        CalibrationOut: {
+            /** Filename */
+            filename: string;
+            /**
+             * Format
+             * @enum {string}
+             */
+            format: "rig_extrinsics" | "table_calibration";
+            /** Id */
+            id: string;
+            /** N Cameras */
+            n_cameras: number;
         };
         /** CaliperProfileOut */
         CaliperProfileOut: {
@@ -205,6 +242,10 @@ export interface components {
             polarity: string;
             /** Pos Px */
             pos_px: number;
+            /** X Mm */
+            x_mm?: number | null;
+            /** Y Mm */
+            y_mm?: number | null;
         };
         /** FindRequest */
         FindRequest: {
@@ -369,10 +410,16 @@ export interface components {
             calipers?: components["schemas"]["CaliperResultOut"][];
             /** Circle Cx */
             circle_cx?: number | null;
+            /** Circle Cx Mm */
+            circle_cx_mm?: number | null;
             /** Circle Cy */
             circle_cy?: number | null;
+            /** Circle Cy Mm */
+            circle_cy_mm?: number | null;
             /** Circle R */
             circle_r?: number | null;
+            /** Circle R Mm */
+            circle_r_mm?: number | null;
             /** Kind */
             kind: ("circle" | "line") | "error";
             /** Label */
@@ -398,6 +445,17 @@ export interface components {
         };
         /** MeasureRequest */
         MeasureRequest: {
+            /**
+             * Calibration Id
+             * @description When set, the response is augmented with millimetre values (pixel_to_plane over the calibration's camera_index camera and plane).
+             */
+            calibration_id?: string | null;
+            /**
+             * Camera Index
+             * @description Index into the calibration's camera list.
+             * @default 0
+             */
+            camera_index: number;
             fixture?: components["schemas"]["FixtureIn"] | null;
             /** Image Id */
             image_id: string;
@@ -410,6 +468,7 @@ export interface components {
             model_id: string;
             /** Objects */
             objects: components["schemas"]["MeasureObjectIn"][];
+            plane?: components["schemas"]["PlaneIn"];
         };
         /** MeasureResponse */
         MeasureResponse: {
@@ -517,6 +576,33 @@ export interface components {
             /** Y2 */
             y2?: number | null;
         };
+        /**
+         * PlaneIn
+         * @description A plane in the calibration's reference frame: `n . X + d = 0`. Defaults to the
+         *     rig/table frame's own `z = 0` plane — the common case (a flat stage/conveyor).
+         */
+        PlaneIn: {
+            /**
+             * D
+             * @default 0
+             */
+            d: number;
+            /**
+             * Nx
+             * @default 0
+             */
+            nx: number;
+            /**
+             * Ny
+             * @default 0
+             */
+            ny: number;
+            /**
+             * Nz
+             * @default 1
+             */
+            nz: number;
+        };
         /** RectifyMatchOut */
         RectifyMatchOut: {
             /** Angle */
@@ -598,6 +684,59 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    list_calibrations_api_calibration_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalibrationOut"][];
+                };
+            };
+        };
+    };
+    upload_calibration_api_calibration_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_calibration_api_calibration_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalibrationOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     find_api_find_post: {
         parameters: {
             query?: never;

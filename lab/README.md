@@ -7,9 +7,12 @@ image, **measure** circles/lines against the found pose, and **judge** the fit �
 max deviation, per-caliper hit/reject, the raw intensity profile behind each hit. The
 **Align** tab closes the last seam: rectify every found instance into a canonical,
 model-frame crop (`ShapeMatch.model_frame_map`), the fixed-size tensor an anomaly model
-needs across frames regardless of the pose a part was found at. It is the library's own
-end-to-end chain (`ShapeModel` → `ShapeMatcher` → `MetrologyModel` / `Map`), made
-visible.
+needs across frames regardless of the pose a part was found at. Uploading a
+**calibration** (a calibration-rs `RigExtrinsicsExport` or a `table_calibration`
+`calibration.json`, either format, detected by shape) turns the Measure tab's pixel
+results into millimetres too — `vision_metrology.metric.pixel_to_plane` over the
+calibration's own camera/plane. It is the library's own end-to-end chain (`ShapeModel` →
+`ShapeMatcher` → `MetrologyModel` / `Map` / `metric`), made visible.
 
 ## Architecture
 
@@ -57,7 +60,21 @@ All routes under `/api`.
 | `POST` | `/measure` | Place a `MetrologyModel` (circle/line objects, nominal geometry in **model frame**) at a fixture pose — explicit, or auto-found — and measure. Returns per-object fit + rms/max_dev/n_used, a source-frame `overlay` array (`@vitavision/lab-ui`'s `MeasurePrimitive` shape), and per-caliper hit/reject reason + raw profile. |
 | `POST` | `/rectify` | `ShapeMatcher.find` against a model, then `ShapeMatch.model_frame_map` per match — a `crop` spec (`rect` in **model-frame coordinates**, `px_per_unit`, `normalize_scale`). Returns, per match, pose/score plus a `crop_url` and a validity fraction (in-scene pixel coverage). |
 | `GET` | `/rectify/{image_id}/{model_id}/{index}` | The PNG crop for one match from the most recent `/rectify` call on that `(image_id, model_id)` pair — cached in memory (not disk), `images/{id}/{tier}`-style ETag. 404 until a matching `POST /rectify` has run. |
+| `POST` | `/calibration` | Upload a calibration JSON — a calibration-rs `RigExtrinsicsExport` or a `table_calibration` `calibration.json`, format detected by shape (`kind == "rig_extrinsics"` vs. top-level `intrinsic`/`extrinsic`). Parsed eagerly (bad JSON is a 400), saved to disk. Returns `calibration_id`, detected `format`, `n_cameras`. |
+| `GET` | `/calibration` | List uploaded calibrations. |
 | `GET` | `/health` | Liveness. |
+
+`POST /measure` additionally accepts `calibration_id` + `camera_index` (which camera in
+the calibration's list) + `plane` (`{nx, ny, nz, d}`, defaulting to the reference frame's
+own `z = 0`). When set, the response's fitted circle center/radius and every hit
+caliper's edge position are augmented with millimetre fields (`circle_cx_mm`/
+`circle_cy_mm`/`circle_r_mm`, `x_mm`/`y_mm` on each caliper's edge mark) alongside the
+existing pixel ones — the pixel fields never disappear, mm is additive. Radius is
+measured via two diametral points converted through `pixel_to_plane` independently (exact
+per point; a fronto-parallel-view approximation of the radius itself under a tilted
+camera — see `vm_lab/routers/measure.py`). A pixel whose ray misses the plane (behind the
+camera, or parallel to it) leaves the corresponding mm field `null` rather than failing
+the whole request.
 
 ## Run it
 
@@ -104,7 +121,8 @@ uv pip install ../../crates/vm-python/target/wheels/vision_metrology-*.whl
 ## Tests
 
 ```bash
-cd backend && uv run pytest       # one end-to-end smoke test: upload -> teach -> find -> measure a synthetic disc
+cd backend && uv run pytest       # one end-to-end smoke test: upload -> teach -> find -> measure a synthetic
+                                   # disc -> rectify -> upload a real table_calibration.json -> measure with mm
 cd frontend && bun run typecheck && bun run test && bun run build
 ```
 
@@ -116,10 +134,16 @@ cd frontend && bun run typecheck && bun run test && bun run build
 - **No database.** In-memory registries (`store.py`), rebuilt from JSON sidecars on disk
   at startup (`Store.rehydrate`). Fine for a single local user; not a design to scale
   past that without real work.
-- **Pixels only, no millimetres.** Everything the lab reports — radius, rms, max_dev,
-  caliper positions — is in image pixels. The `vision_metrology::metric` module
-  (pixel-to-world calibration) has not landed yet; once it does, the lab is the natural
-  place to add a "calibrate" step and per-object unit conversion.
+- **Millimetres cover fitted circle/caliper positions only, not every number.** `rms` and
+  `max_dev` stay in pixels always — they are residuals against a caliper-axis profile,
+  not a single point `pixel_to_plane` can convert, and no per-object local scale factor
+  is computed to fake one. The frontend's px/mm toggle (Measure tab, shown once a
+  calibration is selected) only affects the fields that actually have an mm
+  counterpart.
+- **No plane editor in the UI.** The backend accepts an arbitrary `plane` per request;
+  the frontend always sends the default (`z = 0` of the calibration's reference frame).
+  A plane-picking control is a natural follow-up once a second calibration with a
+  genuinely offset plane shows up in practice.
 - **No auth, no multi-user.** A local workbench for one person at a time.
 
 ## Notes for the next session

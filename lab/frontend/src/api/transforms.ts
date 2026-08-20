@@ -37,3 +37,19 @@ export function caliperToProfile(caliper: CaliperResultOut): {
     edges: edges.map((e) => ({ position: e.pos_px, label: e.polarity, tone })),
   };
 }
+
+export type MeasureUnit = "px" | "mm";
+
+/** Format a measurement value for the given unit, `"—"` when the value isn't available —
+ * the `mm` branch specifically for a value that is `null`/`undefined` because no
+ * calibration was selected, or because the ray for that point missed the measurement
+ * plane (see `vm_lab.routers.measure._pixel_to_plane_mm`). */
+export function formatMeasurement(
+  unit: MeasureUnit,
+  pxValue: number | null | undefined,
+  mmValue: number | null | undefined,
+  digits = 3,
+): string {
+  const value = unit === "mm" ? mmValue : pxValue;
+  return value === null || value === undefined ? "—" : `${value.toFixed(digits)} ${unit}`;
+}
