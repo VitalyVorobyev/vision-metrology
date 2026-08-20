@@ -6,12 +6,12 @@ use vm_primitives::{
 };
 
 use super::config::ShapeModelConfig;
-use super::model::{ModelPoint, ShapeModel, ShapeModelLevel};
+use super::model::{ModelPoint, ShapeModel, ShapeModelLevel, TeachPoint};
 
 /// Hard ceiling on automatically chosen pyramid levels.
 const MAX_AUTO_LEVELS: usize = 5;
 /// Hard ceiling on explicitly requested pyramid levels.
-const MAX_LEVELS: usize = 8;
+pub(super) const MAX_LEVELS: usize = 8;
 /// A level with a smaller radius than this cannot be searched meaningfully:
 /// one angle step would sweep the whole model past itself.
 const MIN_LEVEL_RADIUS: f32 = 6.0;
@@ -44,14 +44,21 @@ pub enum ContourOrientation {
 }
 
 /// A point as extracted, before it is made relative to the reference point.
+///
+/// `pub(super)`: [`resample_at`](super::ShapeModel::resample_at) (in
+/// `matching::resample`) reuses this and the per-level assembly pipeline
+/// below (`from_raw`, `assemble`, `merge_into_cells`, `decimate`) to rebuild
+/// a model's levels at an arbitrary scale, the same way a geometry-only
+/// model is assembled here — see that module for why the two share this
+/// code rather than duplicating it.
 #[derive(Debug, Clone, Copy)]
-struct RawPoint {
+pub(super) struct RawPoint {
     /// Position in this level's coordinate frame.
-    p: Point2f,
+    pub(super) p: Point2f,
     /// Unit gradient direction.
-    t: Vec2f,
+    pub(super) t: Vec2f,
     /// Gradient magnitude, used only to pick a survivor during decimation.
-    strength: f32,
+    pub(super) strength: f32,
 }
 
 /// Level-`l` coordinate of a level-0 coordinate.
@@ -61,7 +68,7 @@ struct RawPoint {
 /// gives the shift below. Offsets between two points at the same level scale by
 /// a clean `2^l` because the shift cancels.
 #[inline]
-fn to_level(v: f32, level: usize) -> f32 {
+pub(super) fn to_level(v: f32, level: usize) -> f32 {
     let s = (1usize << level) as f32;
     (v - 0.5 * (s - 1.0)) / s
 }
@@ -201,8 +208,29 @@ impl ShapeModelBuilder {
             )?,
         };
 
-        assemble(raw, origin, cfg)
+        // Captured before `assemble` consumes `raw` by decimating it: the
+        // *un*-decimated level-0 set is exactly what `resample_at` needs to
+        // rebuild every level at a different scale later.
+        let teach_points = teach_points_from(raw.first().map_or(&[][..], Vec::as_slice), origin);
+
+        assemble(raw, origin, cfg, teach_points)
     }
+}
+
+/// Snapshot a raw level-0 point set as [`TeachPoint`]s, offset from `origin`.
+fn teach_points_from(pts: &[RawPoint], origin: Point2f) -> Option<Vec<TeachPoint>> {
+    if pts.is_empty() {
+        return None;
+    }
+    Some(
+        pts.iter()
+            .map(|r| TeachPoint {
+                d: r.p - origin,
+                t: r.t,
+                strength: r.strength,
+            })
+            .collect(),
+    )
 }
 
 impl ShapeModel {
@@ -417,7 +445,7 @@ fn centroid(pts: &[RawPoint]) -> Option<Point2f> {
 /// downsample. Directions inside one coarse cell are averaged and renormalised;
 /// a cell whose mean direction is short holds contradictory edges and is
 /// dropped, mirroring what a box downsample does to the scene.
-fn from_raw(pts: Vec<RawPoint>, cfg: &ShapeModelConfig) -> Result<ShapeModel, Error> {
+pub(super) fn from_raw(pts: Vec<RawPoint>, cfg: &ShapeModelConfig) -> Result<ShapeModel, Error> {
     check_ranges(cfg)?;
     let origin = match cfg.origin {
         Some(o) => o,
@@ -426,6 +454,7 @@ fn from_raw(pts: Vec<RawPoint>, cfg: &ShapeModelConfig) -> Result<ShapeModel, Er
             got: 0,
         })?,
     };
+    let teach_points = teach_points_from(&pts, origin);
 
     let levels = match cfg.num_levels {
         None => MAX_AUTO_LEVELS,
@@ -449,14 +478,19 @@ fn from_raw(pts: Vec<RawPoint>, cfg: &ShapeModelConfig) -> Result<ShapeModel, Er
         });
     }
 
-    assemble(per_level, origin, cfg)
+    assemble(per_level, origin, cfg, teach_points)
 }
 
 /// Turn per-level raw points into a finished model.
-fn assemble(
+///
+/// `teach_points` is stored on the result verbatim — it comes from the
+/// caller's own level-0 set, captured before decimation, not recomputed
+/// here.
+pub(super) fn assemble(
     raw: Vec<Vec<RawPoint>>,
     origin: Point2f,
     cfg: &ShapeModelConfig,
+    teach_points: Option<Vec<TeachPoint>>,
 ) -> Result<ShapeModel, Error> {
     check_ranges(cfg)?;
     let need = cfg.min_points_per_level.max(1);
@@ -510,6 +544,7 @@ fn assemble(
         cfg.polarity,
         smooth,
         cfg.pre_smooth,
+        teach_points,
     ))
 }
 

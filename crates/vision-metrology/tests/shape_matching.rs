@@ -855,6 +855,42 @@ fn a_persisted_model_matches_identically() {
     assert!(ShapeModel::from_bytes(b"not a model at all").is_err());
 }
 
+/// Format 4 (roadmap W7) added `teach_points` — the pre-decimation level-0
+/// edge set `resample_at` needs. A format-3 document (no such field) must
+/// still load, bit-identically for everything `resample_at` does not touch,
+/// with `resample_at` itself reporting a clear error rather than resampling
+/// from already-decimated (scale-1.0-shaped) points.
+#[cfg(feature = "serde")]
+#[test]
+fn a_format_3_document_loads_without_teach_data_and_resample_at_errors() {
+    let model = build_bracket_model(&ShapeModelConfig::default());
+    assert!(
+        model.teach_point_count() > 0,
+        "a fresh build carries teach data"
+    );
+    let bytes = model.to_bytes().expect("serializes");
+
+    let mut doc: serde_json::Value = serde_json::from_slice(&bytes).expect("valid json");
+    doc["format_version"] = serde_json::json!(3);
+    doc["model"]
+        .as_object_mut()
+        .expect("model is a json object")
+        .remove("teach_points");
+    let v3_bytes = serde_json::to_vec(&doc).expect("re-serializes");
+
+    let restored = ShapeModel::from_bytes(&v3_bytes).expect("a format-3 document still loads");
+    assert_eq!(restored.teach_point_count(), 0);
+    assert!(restored.resample_at(1.2).is_err());
+
+    let scene = bracket_at(300.0, 220.0, 0.6, 1.0);
+    let a = find_one(&scene, &model, &ShapeSearchConfig::default()).expect("original finds");
+    let b = find_one(&scene, &restored, &ShapeSearchConfig::default())
+        .expect("restored (format-3) finds");
+    assert_eq!(a.score, b.score);
+    assert_eq!(a.position, b.position);
+    assert_eq!(a.angle(), b.angle());
+}
+
 /// The pyramid pre-filter travels with the model, because invariant 3 says the
 /// scene must be decimated with the same kernel. A model taught with
 /// `Binomial121` and searched by a matcher that knows nothing about it would
