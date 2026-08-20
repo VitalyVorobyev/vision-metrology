@@ -195,7 +195,10 @@ mod tests {
         // radius 30 about (60, 60) — not about the crop's own origin.
         for [x, y] in longest.points.as_chunks::<2>().0 {
             let r = ((x - 60.0).powi(2) + (y - 60.0).powi(2)).sqrt();
-            assert!((r - 30.0).abs() < 3.0, "point ({x}, {y}) is not on the outline");
+            assert!(
+                (r - 30.0).abs() < 3.0,
+                "point ({x}, {y}) is not on the outline"
+            );
         }
     }
 

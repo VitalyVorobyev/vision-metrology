@@ -151,10 +151,7 @@ async fn image_tier_path(
 /// Render missing `thumb` tiers ahead of the grid scrolling onto them,
 /// reporting each as `lab://thumb`.
 #[tauri::command]
-async fn prewarm_thumbnails(
-    app: tauri::AppHandle,
-    image_ids: Vec<String>,
-) -> Result<(), String> {
+async fn prewarm_thumbnails(app: tauri::AppHandle, image_ids: Vec<String>) -> Result<(), String> {
     let handle = app.clone();
     blocking(&app, move |state| {
         commands::images::prewarm_thumbnails(state, &image_ids, |id, done, total| {

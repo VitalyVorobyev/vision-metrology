@@ -134,9 +134,13 @@ pub fn smooth_polyline<'py>(
     let slice = points
         .as_slice()
         .map_err(|e| PyValueError::new_err(format!("array not C-contiguous: {e}")))?;
+    // `.0` drops a remainder the shape check above already ruled out: the
+    // array is (N, 2), so the slice length is even.
     let pts: Vec<Point2f> = slice
-        .chunks_exact(2)
-        .map(|c| Point2f::new(c[0], c[1]))
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|&[x, y]| Point2f::new(x, y))
         .collect();
     let smoothed = native_smooth_polyline(&pts, sigma);
     points_to_pyarray(py, &smoothed)
