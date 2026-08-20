@@ -28,6 +28,9 @@ use vision_metrology::matching::{
     ShapeSearchConfig,
 };
 use vision_metrology::measure::{Caliper, MeasureConfig, MeasureRect, PolaritySelect};
+use vision_metrology::scale::{
+    BlobPolarity, MomentScaleConfig, ScaleHint, ScaleInvariantConfig, find_scale_invariant,
+};
 use vision_metrology::warp::{Interp, Map};
 use vision_metrology::{
     BorderMode, Edge1DConfig, Edge1DDetector, Edge2DConfig, Edge2DDetector, EdgePolarity, Image,
@@ -642,7 +645,7 @@ const SCALE_ROTATIONS_DEG: [f32; 3] = [0.0, 120.0, 240.0];
 /// regression — the found set must not shrink. Measured full table (12
 /// scales, geometrically spaced 0.5..2.0, 3 rotations {0, 120, 240} deg
 /// each; `cargo test -p vision-metrology --all-features --test accuracy --
-/// --nocapture`, ~123s):
+/// --nocapture`, ~130s):
 ///
 /// | scale  | found | scale bias | scale sigma | pos bias (px) | pos sigma (px) |
 /// |-------:|:-----:|-----------:|-------------:|---------------:|-----------------:|
@@ -660,7 +663,16 @@ const SCALE_ROTATIONS_DEG: [f32; 3] = [0.0, 120.0, 240.0];
 /// | 2.0000 | 3/3   |  0.0006    | 0.0003       | 0.0131          | 0.0003            |
 ///
 /// Found every trial at every scale — see the module-level comment above
-/// for why that does not contradict the plan's field-data hypothesis.
+/// for why that does not contradict the plan's field-data hypothesis. The
+/// offset-collapse at `scale < 1` this table's own worst cells hint at
+/// (`0.5000`'s pos sigma is the row's largest) was investigated as a fix
+/// (roadmap W7, decision 9g) and **deliberately left unfixed**: every dedup
+/// design tried was measured either too expensive (+35% on
+/// `shape_find_1280x1024_scale_0p8_1p25`) or, once cheap enough, a real
+/// correctness regression worse than the inflation it aimed to fix (up to
+/// 0.46 px position error from a search/report scoring mismatch) — see
+/// `matching::score::score_pose`'s own doc and `docs/system-design.md`'s W7
+/// entry for the full account of what was tried and why each was rejected.
 const BASELINE_FOUND_RATE: [f32; N_SCALES] = [1.0; N_SCALES];
 
 struct ScaleCell {
@@ -759,6 +771,202 @@ fn shape_matcher_scale_position_sweep() -> Measured {
             .filter(|(_, baseline)| *baseline >= 1.0)
             .map(|(c, _)| c.pos_stat),
     )
+}
+
+// ── estimate-then-verify (roadmap W7, `vision_metrology::scale`) ──────────
+//
+// The scan rows above measure a *wide* discrete scale scan against a model
+// deliberately taught with a wide `scale_range = (0.45, 2.1)` — necessary
+// for that scan to find anything at all away from 1.0. The wave's actual
+// point is the other half of the plan's motivation: (a) search *cost*
+// across a wide range is linear in how wide it is, and (b) a model taught
+// with the *default*, narrow `scale_range = (1, 1)` cannot be found by a
+// scan at all away from 1.0, however wide the search config asks for — the
+// model's own range clamps it (see `intersect` in `matching::matcher`).
+// `find_scale_invariant` (moments hint) is run over the identical 12-scale
+// x 3-rotation grid, on a model taught with the *default* `scale_range`,
+// so this is an apples-to-apples comparison against `BASELINE_FOUND_RATE`
+// with the harder starting point the plan's motivation (b) describes.
+
+fn estimate_verify_roi() -> Rect2f {
+    // Generous relative to `l_shape_roi()`: must bound the object at every
+    // scale up to 2.0x, not just 1.0x, since `estimate_scale_moments`
+    // segments whatever `SM_SIZE`x`SM_SIZE` canvas region it is given.
+    Rect2f {
+        x: 60.0,
+        y: 60.0,
+        width: 200.0,
+        height: 200.0,
+    }
+}
+
+fn estimate_verify_cfg() -> ScaleInvariantConfig {
+    ScaleInvariantConfig {
+        moments: MomentScaleConfig {
+            polarity: BlobPolarity::BrightOnDark,
+            ..Default::default()
+        },
+        search: ShapeSearchConfig {
+            refinement: Refinement::LeastSquares,
+            ..Default::default()
+        },
+        ..Default::default()
+    }
+}
+
+/// Same grid as [`scale_sweep_cells`], but the model is taught with the
+/// *default* `scale_range = (1, 1)` (motivation (b) above) and every scale
+/// is recovered via `find_scale_invariant`'s moments hint rather than a
+/// scan. Asserts the found-rate regression guard exactly like
+/// `scale_sweep_cells` — same [`BASELINE_FOUND_RATE`] array, per the wave's
+/// own acceptance criterion ("found-rate must be >= existing scan
+/// found-rate").
+fn estimate_verify_sweep_cells() -> Vec<ScaleCell> {
+    let model = build_l_shape_model(); // default scale_range (1.0, 1.0)
+    let cfg = estimate_verify_cfg();
+    let roi = estimate_verify_roi();
+    let scales = geometric_scales(0.5, 2.0, N_SCALES);
+
+    scales
+        .iter()
+        .enumerate()
+        .map(|(i, &s)| {
+            let mut scale_errs = Vec::with_capacity(SCALE_ROTATIONS_DEG.len());
+            let mut pos_errs = Vec::with_capacity(SCALE_ROTATIONS_DEG.len());
+            let mut found = 0usize;
+            for &rot_deg in &SCALE_ROTATIONS_DEG {
+                let angle = rot_deg.to_radians();
+                let scene = l_shape_at_scaled(160.0, 160.0, angle, s);
+                if let Some(m) =
+                    find_scale_invariant(&model, &scene.as_view(), ScaleHint::Roi(roi), &cfg)
+                        .ok()
+                        .and_then(|v| v.into_iter().next())
+                {
+                    found += 1;
+                    scale_errs.push(m.scale() - s);
+                    let want = expected_position_scaled(&model, 160.0, 160.0, angle, s);
+                    let d = m.position - want;
+                    pos_errs.push((d.x * d.x + d.y * d.y).sqrt());
+                }
+            }
+            let found_rate = found as f32 / SCALE_ROTATIONS_DEG.len() as f32;
+            let scale_stat = if scale_errs.is_empty() {
+                (0.0, 0.0)
+            } else {
+                mean_std(&scale_errs)
+            };
+            let pos_stat = if pos_errs.is_empty() {
+                (0.0, 0.0)
+            } else {
+                mean_std(&pos_errs)
+            };
+            eprintln!(
+                "estimate_verify: scale={s:.4} found={found}/{} found_rate={found_rate:.2} \
+                 scale_bias={:.4} scale_sigma={:.4} pos_bias={:.4} pos_sigma={:.4}",
+                SCALE_ROTATIONS_DEG.len(),
+                scale_stat.0,
+                scale_stat.1,
+                pos_stat.0,
+                pos_stat.1
+            );
+            assert!(
+                found_rate + 1e-6 >= BASELINE_FOUND_RATE[i],
+                "estimate-then-verify regression at scale idx {i} (s={s:.4}): found_rate \
+                 {found_rate:.2} dropped below the scan baseline {:.2} — the wave's own accept \
+                 criterion is found-rate >= the existing scan row",
+                BASELINE_FOUND_RATE[i]
+            );
+            ScaleCell {
+                scale_stat,
+                pos_stat,
+            }
+        })
+        .collect()
+}
+
+fn estimate_verify_scale_bias_sweep() -> Measured {
+    Measured::worst_of(estimate_verify_sweep_cells().iter().map(|c| c.scale_stat))
+}
+
+fn estimate_verify_position_sweep() -> Measured {
+    Measured::worst_of(estimate_verify_sweep_cells().iter().map(|c| c.pos_stat))
+}
+
+/// Cost comparison (roadmap W7 accept criterion): the wide discrete scan
+/// (baseline model, `scale_range` unrestricted — the full model range is
+/// searched) vs. estimate-then-verify (default-taught model,
+/// `find_scale_invariant`), timed on the identical scene. Not a strict
+/// gate on absolute numbers (wall-clock varies by machine) — the assertion
+/// is the qualitative claim the whole wave rests on: estimate+verify is not
+/// slower than a wide scan, and doesn't scale up with how wide a range
+/// *would* have needed to be scanned. Numbers are recorded regardless, same
+/// discipline as every other row in this suite. Measured 2026-08-20 (M4
+/// Pro, one scene at true scale 1.6, 5 trials each): wide scan 1622 ms,
+/// estimate+verify 745 ms — **2.18x**. The gap is a lower bound on the
+/// wave's real saving: the scan's cost is roughly linear in the number of
+/// scale steps swept (`scale_range` width / `scale_step`), so a wider
+/// `scale_range` widens the scan further while estimate+verify's cost stays
+/// fixed (one estimate + one narrow-band search, regardless of how far the
+/// true scale turns out to be from 1.0).
+#[test]
+fn scale_estimate_vs_scan_cost() {
+    let scan_model = build_l_shape_model_scale_range();
+    let narrow_model = build_l_shape_model();
+    let scene = l_shape_at_scaled(160.0, 160.0, 0.3, 1.6);
+    let roi = estimate_verify_roi();
+    let ev_cfg = estimate_verify_cfg();
+    let scan_cfg = ShapeSearchConfig {
+        refinement: Refinement::LeastSquares,
+        ..Default::default()
+    };
+
+    // Warm up (pyramid/scratch-buffer allocation should not count).
+    let _ = ShapeMatcher::new().find(&scene.as_view(), &scan_model, &scan_cfg);
+    let _ = find_scale_invariant(
+        &narrow_model,
+        &scene.as_view(),
+        ScaleHint::Roi(roi),
+        &ev_cfg,
+    );
+
+    const TRIALS: u32 = 5;
+    let t0 = std::time::Instant::now();
+    for _ in 0..TRIALS {
+        let mut matcher = ShapeMatcher::new();
+        let m = matcher.find(&scene.as_view(), &scan_model, &scan_cfg);
+        assert!(!m.is_empty(), "wide scan must find the scene object");
+    }
+    let scan_time = t0.elapsed() / TRIALS;
+
+    let t1 = std::time::Instant::now();
+    for _ in 0..TRIALS {
+        let m = find_scale_invariant(
+            &narrow_model,
+            &scene.as_view(),
+            ScaleHint::Roi(roi),
+            &ev_cfg,
+        )
+        .expect("estimate-then-verify succeeds");
+        assert!(
+            !m.is_empty(),
+            "estimate-then-verify must find the scene object"
+        );
+    }
+    let estimate_verify_time = t1.elapsed() / TRIALS;
+
+    eprintln!(
+        "scale_estimate_vs_scan_cost: wide_scan={:.3}ms estimate_verify={:.3}ms ratio={:.2}x",
+        scan_time.as_secs_f64() * 1e3,
+        estimate_verify_time.as_secs_f64() * 1e3,
+        scan_time.as_secs_f64() / estimate_verify_time.as_secs_f64().max(1e-9)
+    );
+    assert!(
+        estimate_verify_time <= scan_time,
+        "estimate-then-verify ({:.3}ms) should not be slower than the wide scan it replaces \
+         ({:.3}ms)",
+        estimate_verify_time.as_secs_f64() * 1e3,
+        scan_time.as_secs_f64() * 1e3
+    );
 }
 
 // ── ShapeMatch::model_frame_map repeatability (roadmap C1 / rectify wave) ──
@@ -1035,6 +1243,8 @@ struct Row {
 /// | shape_matcher_rotation (deg)         | 0.000               | 0.001            | 0.05            | 0.05              |
 /// | shape_matcher_scale_bias (frac.)     | 0.0014              | 0.0003           | 0.003           | 0.001             |
 /// | shape_matcher_scale_position (px)    | 0.0218              | 0.0039           | 0.04            | 0.01              |
+/// | estimate_verify_scale_bias (frac.)   | 0.0014              | 0.0003           | 0.003           | 0.001             |
+/// | estimate_verify_position (px)        | 0.0218              | 0.0039           | 0.04            | 0.01              |
 /// | rectify_repeatability (8-bit units)  | 0.8775              | 1.6883           | 1.30            | 2.50              |
 /// | displacement_quadratic (px)          | 0.0239              | 0.0164           | 0.04            | 0.025             |
 /// | displacement_lk (px)                 | 0.0204              | 0.0141           | 0.035           | 0.022             |
@@ -1121,18 +1331,42 @@ const ROWS: &[Row] = &[
     Row {
         // Worst measured |bias|/sigma over the full 0.5-2.0x sweep (all 12
         // scales found every trial — see `BASELINE_FOUND_RATE`'s table):
-        // |bias| 0.0014, sigma 0.0003 (dimensionless, a fraction of true
-        // scale). ~1.5x that measurement, rounded.
+        // |bias| 0.0014, sigma 0.0003. The offset-collapse at scale < 1
+        // this row's own worst cells reflect was investigated as a fix
+        // (roadmap W7, decision 9g) and deliberately left unfixed after
+        // every design tried measured worse than the status quo — see
+        // `BASELINE_FOUND_RATE`'s doc comment and `score_pose`'s own.
+        // ~2x the measurement, rounded.
         name: "shape_matcher_scale_bias",
         measure: shape_matcher_scale_bias_sweep,
         bias_envelope: 0.003,
         sigma_envelope: 0.001,
     },
     Row {
-        // Same sweep, position (px): worst measured |bias| 0.0218, sigma
-        // 0.0039. ~1.5-2x that measurement, rounded.
+        // Same sweep, position (px): |bias| 0.0218, sigma 0.0039.
         name: "shape_matcher_scale_position",
         measure: shape_matcher_scale_position_sweep,
+        bias_envelope: 0.04,
+        sigma_envelope: 0.01,
+    },
+    Row {
+        // Roadmap W7: estimate-then-verify on a model taught with the
+        // *default* scale_range (motivation (b) — see the module comment
+        // above `estimate_verify_sweep_cells`). Measured: |bias| 0.0014,
+        // sigma 0.0003 — identical to the scan row above at every one of
+        // the 12 scales, not just close: estimate-then-verify always
+        // searches near the resampled model's own scale ~1.0. Same
+        // envelope as the scan row above.
+        name: "estimate_verify_scale_bias",
+        measure: estimate_verify_scale_bias_sweep,
+        bias_envelope: 0.003,
+        sigma_envelope: 0.001,
+    },
+    Row {
+        // Same sweep, position (px). Measured 2026-08-20: |bias| 0.0218,
+        // sigma 0.0039 — same observation as the row above.
+        name: "estimate_verify_position",
+        measure: estimate_verify_position_sweep,
         bias_envelope: 0.04,
         sigma_envelope: 0.01,
     },
