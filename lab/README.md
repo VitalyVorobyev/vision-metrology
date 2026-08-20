@@ -11,7 +11,11 @@ needs across frames regardless of the pose a part was found at. Uploading a
 **calibration** (a calibration-rs `RigExtrinsicsExport` or a `table_calibration`
 `calibration.json`, either format, detected by shape) turns the Measure tab's pixel
 results into millimetres too — `vision_metrology.metric.pixel_to_plane` over the
-calibration's own camera/plane. It is the library's own end-to-end chain (`ShapeModel` →
+calibration's own camera/plane. The **Bird's-eye** tab composites two or more calibrated
+cameras' rectified views of that same shared plane into one grid — no-blending,
+nearest-camera-centre priority, so every mosaic pixel still traces to one camera's own
+calibration (`vision_metrology.metric.plane_grid_map` per camera + `Map.apply_with_mask`,
+composited server-side). It is the library's own end-to-end chain (`ShapeModel` →
 `ShapeMatcher` → `MetrologyModel` / `Map` / `metric`), made visible.
 
 ## Architecture
@@ -62,6 +66,10 @@ All routes under `/api`.
 | `GET` | `/rectify/{image_id}/{model_id}/{index}` | The PNG crop for one match from the most recent `/rectify` call on that `(image_id, model_id)` pair — cached in memory (not disk), `images/{id}/{tier}`-style ETag. 404 until a matching `POST /rectify` has run. |
 | `POST` | `/calibration` | Upload a calibration JSON — a calibration-rs `RigExtrinsicsExport` or a `table_calibration` `calibration.json`, format detected by shape (`kind == "rig_extrinsics"` vs. top-level `intrinsic`/`extrinsic`). Parsed eagerly (bad JSON is a 400), saved to disk. Returns `calibration_id`, detected `format`, `n_cameras`. |
 | `GET` | `/calibration` | List uploaded calibrations. |
+| `POST` | `/displacement` | `corr.displacement` pairwise over an ordered `image_ids` sequence, tracking a `window` rect through it. Returns per-pair `dx`/`dy`/`score` plus the running `cumulative_x`/`cumulative_y` trajectory. |
+| `POST` | `/mosaic` | Composite `>= 2` calibrated cameras' rectified views of the calibration's `z = 0` plane into one grid — no-blending, nearest-camera-centre priority (each destination pixel keeps whichever valid camera's reprojection lands closest to its own principal point). `grid` auto-fits from the cameras' own image-border footprints on the plane when omitted. Returns `image_url`/`source_id_url`, per-camera coverage, union/overlap fractions, seam disparity p50/p95. |
+| `GET` | `/mosaic/{id}/image` | The composited mosaic PNG for a `POST /mosaic` result — `?feather=true` switches to the opt-in display-only linear feather, never the default. Cached in memory, `images/{id}/{tier}`-style ETag. |
+| `GET` | `/mosaic/{id}/source_id` | The `source_id` map, palette-colored per camera (tinted by the mosaic's own intensity), uncovered pixels dark gray. |
 | `GET` | `/health` | Liveness. |
 
 `POST /measure` additionally accepts `calibration_id` + `camera_index` (which camera in
@@ -121,8 +129,9 @@ uv pip install ../../crates/vm-python/target/wheels/vision_metrology-*.whl
 ## Tests
 
 ```bash
-cd backend && uv run pytest       # one end-to-end smoke test: upload -> teach -> find -> measure a synthetic
-                                   # disc -> rectify -> upload a real table_calibration.json -> measure with mm
+cd backend && uv run pytest       # smoke: upload -> teach -> find -> measure a synthetic disc -> rectify ->
+                                   # upload a real table_calibration.json -> measure with mm; plus displacement
+                                   # and mosaic (synthetic 2-camera calibration, both built in their own tests)
 cd frontend && bun run typecheck && bun run test && bun run build
 ```
 
