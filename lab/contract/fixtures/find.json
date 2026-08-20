@@ -1,0 +1,22 @@
+{
+  "description": "POST /api/find of the taught model against its own image.",
+  "operation": "find",
+  "request": {
+    "image_id": "$IMAGE_ID",
+    "min_score": 0.5,
+    "model_id": "$MODEL_ID"
+  },
+  "response": {
+    "matches": [
+      {
+        "angle": 1.5708014965057373,
+        "level": 0,
+        "scale": 1.001322865486145,
+        "score": 1.0,
+        "support": 176,
+        "x": 63.99995803833008,
+        "y": 63.999916076660156
+      }
+    ]
+  }
+}

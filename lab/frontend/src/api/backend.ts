@@ -15,6 +15,7 @@ import createClient from "openapi-fetch";
 
 import { resolveApiBaseUrl } from "./baseUrl";
 import { isTauriShell } from "./shell";
+import { createTauriBackend } from "./tauriBackend";
 import type { components, paths } from "./generated";
 
 type Schemas = components["schemas"];
@@ -216,19 +217,14 @@ let cached: LabBackend | undefined;
 /**
  * The backend for this session.
  *
- * TODO(tauri-backend): once a desktop shell exists, detect it here (`isTauriShell()`,
- * already wired through `shell.ts`) and return a `tauriBackend` that speaks to the
- * bundled sidecar over IPC instead of loopback HTTP. Every call site already goes
- * through `LabBackend`, so that swap should not touch `tabs/`, `components/`, or
- * `transforms.ts`.
+ * `isTauriShell()` (`shell.ts`) detects the Tauri webview via `@tauri-apps/api`'s own
+ * `isTauri()` — nothing injected, nothing to configure. Every call site goes through
+ * `LabBackend`, so this is the only place that chooses a transport; `tabs/`,
+ * `components/`, and `transforms.ts` are unaffected either way.
  */
 export function getBackend(): LabBackend {
   if (!cached) {
-    if (isTauriShell()) {
-      // Not yet implemented — the shell only injects `apiBaseUrl` today, which the
-      // http backend already resolves via `baseUrl.ts`. Fall through to it.
-    }
-    cached = createHttpBackend();
+    cached = isTauriShell() ? createTauriBackend() : createHttpBackend();
   }
   return cached;
 }

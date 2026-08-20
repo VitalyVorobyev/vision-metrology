@@ -238,85 +238,34 @@ impl MetrologyModel {
         fixture: &Similarity2f,
         obj: &MetrologyObject,
     ) -> Result<MetrologyResult, Error> {
+        let placements = caliper_placements(obj, fixture)?;
         let mut hits: Vec<MeasureEdge> = Vec::new();
-        if obj.n_calipers < 2 {
-            return Err(Error::InvalidConfig("metrology object needs ≥2 calipers"));
-        }
-        // The fixture may scale, and a caliper's reach must scale with the part
-        // or it will fall short of the edge it is looking for.
-        let scale = fixture.scaling();
         let cal = self
             .caliper
             .get_or_insert_with(|| Caliper::rect(placeholder_rect(), obj.measure));
         cal.set_config(obj.measure);
 
         self.points.clear();
+        for placement in &placements {
+            match *placement {
+                CaliperShape::Rect(r) => cal.set_rect(r),
+                CaliperShape::Radial(r) => cal.set_radial(r),
+            }
+            if let Ok(&[e, ..]) = cal.measure(img) {
+                self.points.push(e.p);
+                hits.push(e);
+            }
+        }
 
         match obj.shape {
-            MetrologyShape::Line { a, b } => {
-                let (a, b) = (fixture * a, fixture * b);
-                let along = (b - a).normalized_or_zero();
-                if along.norm() < 0.5 {
-                    return Err(Error::Degenerate("metrology line has zero length"));
-                }
-                let normal = along.perp();
-                for i in 0..obj.n_calipers {
-                    let f = i as f32 / (obj.n_calipers - 1) as f32;
-                    let base = a + (b - a) * f;
-                    cal.set_rect(MeasureRect {
-                        center: base,
-                        angle: normal.y.atan2(normal.x),
-                        half_len: obj.caliper_len * scale,
-                        half_width: obj.caliper_width * scale,
-                    });
-                    if let Ok(&[e, ..]) = cal.measure(img) {
-                        self.points.push(e.p);
-                        hits.push(e);
-                    }
-                }
+            MetrologyShape::Line { .. } => {
                 let fit = fit_line(&self.points, &obj.fit)?;
                 Ok(MetrologyResult {
                     fit: MetrologyFit::Line(fit),
                     hits,
                 })
             }
-            MetrologyShape::Circle {
-                center,
-                radius,
-                arc,
-            } => {
-                let center = fixture * center;
-                let radius = radius * scale;
-                let (start, extent) = arc.unwrap_or((0.0, core::f32::consts::TAU));
-                // A rotating fixture rotates the arc with the part.
-                let start = start + fixture.isometry.rotation.angle();
-                // A full circle wraps, so the last caliper would repeat the
-                // first; an arc has two distinct ends worth measuring.
-                let closed = (extent.abs() - core::f32::consts::TAU).abs() < 1e-3;
-                let denom = if closed {
-                    obj.n_calipers as f32
-                } else {
-                    (obj.n_calipers - 1) as f32
-                };
-                for i in 0..obj.n_calipers {
-                    let phi = start + extent * i as f32 / denom;
-                    // Radial, not rect: a rect averages along a chord, which on
-                    // a curved edge samples the wrong side of the transition
-                    // and biases the radius inward (−0.12 px at width 5,
-                    // radius 40). `MeasureRadial` averages along the arc, so
-                    // every averaged sample sits at the same radius.
-                    cal.set_radial(MeasureRadial {
-                        center,
-                        radius,
-                        angle: phi,
-                        half_len: obj.caliper_len * scale,
-                        half_width: obj.caliper_width * scale,
-                    });
-                    if let Ok(&[e, ..]) = cal.measure(img) {
-                        self.points.push(e.p);
-                        hits.push(e);
-                    }
-                }
+            MetrologyShape::Circle { .. } => {
                 let fit = fit_circle(&self.points, &obj.fit)?;
                 Ok(MetrologyResult {
                     fit: MetrologyFit::Circle(fit),
@@ -334,6 +283,98 @@ fn placeholder_rect() -> MeasureRect {
         half_len: 1.0,
         half_width: 0.0,
     }
+}
+
+/// Where one caliper of a [`MetrologyObject`] sits, once placed — either a
+/// [`MeasureRect`] (line objects) or a [`MeasureRadial`] (circle objects).
+///
+/// This is exactly what [`MetrologyModel::apply`] hands a [`Caliper`] via
+/// `set_rect`/`set_radial`; [`diagnostics::layout`](super::diagnostics::layout)
+/// exposes the same values without measuring, for overlay drawing.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum CaliperShape {
+    /// A rectangular caliper — see [`MeasureRect`].
+    Rect(MeasureRect),
+    /// A radial caliper on a circle — see [`MeasureRadial`]. Note that
+    /// `MeasureRadial::center` is the *circle's* centre, not the caliper's
+    /// own position on the circle — the field name is inherited from the
+    /// measurement geometry, not an overlay-box convention.
+    Radial(MeasureRadial),
+}
+
+/// Compute every caliper placement for `obj` at `fixture`, without measuring.
+///
+/// The one place this geometry is written — [`MetrologyModel::measure_one`]
+/// and [`diagnostics::layout`](super::diagnostics::layout) both call this
+/// rather than each re-deriving it, so an overlay can never show a caliper
+/// somewhere the actual measurement did not look.
+pub(crate) fn caliper_placements(
+    obj: &MetrologyObject,
+    fixture: &Similarity2f,
+) -> Result<Vec<CaliperShape>, Error> {
+    if obj.n_calipers < 2 {
+        return Err(Error::InvalidConfig("metrology object needs ≥2 calipers"));
+    }
+    // The fixture may scale, and a caliper's reach must scale with the part
+    // or it will fall short of the edge it is looking for.
+    let scale = fixture.scaling();
+    let mut out = Vec::with_capacity(obj.n_calipers);
+
+    match obj.shape {
+        MetrologyShape::Line { a, b } => {
+            let (a, b) = (fixture * a, fixture * b);
+            let along = (b - a).normalized_or_zero();
+            if along.norm() < 0.5 {
+                return Err(Error::Degenerate("metrology line has zero length"));
+            }
+            let normal = along.perp();
+            for i in 0..obj.n_calipers {
+                let f = i as f32 / (obj.n_calipers - 1) as f32;
+                let center = a + (b - a) * f;
+                out.push(CaliperShape::Rect(MeasureRect {
+                    center,
+                    angle: normal.y.atan2(normal.x),
+                    half_len: obj.caliper_len * scale,
+                    half_width: obj.caliper_width * scale,
+                }));
+            }
+        }
+        MetrologyShape::Circle {
+            center,
+            radius,
+            arc,
+        } => {
+            let center = fixture * center;
+            let radius = radius * scale;
+            let (start, extent) = arc.unwrap_or((0.0, core::f32::consts::TAU));
+            // A rotating fixture rotates the arc with the part.
+            let start = start + fixture.isometry.rotation.angle();
+            // A full circle wraps, so the last caliper would repeat the
+            // first; an arc has two distinct ends worth measuring.
+            let closed = (extent.abs() - core::f32::consts::TAU).abs() < 1e-3;
+            let denom = if closed {
+                obj.n_calipers as f32
+            } else {
+                (obj.n_calipers - 1) as f32
+            };
+            for i in 0..obj.n_calipers {
+                let phi = start + extent * i as f32 / denom;
+                // Radial, not rect: a rect averages along a chord, which on
+                // a curved edge samples the wrong side of the transition
+                // and biases the radius inward (−0.12 px at width 5,
+                // radius 40). `MeasureRadial` averages along the arc, so
+                // every averaged sample sits at the same radius.
+                out.push(CaliperShape::Radial(MeasureRadial {
+                    center,
+                    radius,
+                    angle: phi,
+                    half_len: obj.caliper_len * scale,
+                    half_width: obj.caliper_width * scale,
+                }));
+            }
+        }
+    }
+    Ok(out)
 }
 
 #[cfg(test)]

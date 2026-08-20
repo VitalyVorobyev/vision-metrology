@@ -1,0 +1,38 @@
+{
+  "description": "POST /api/displacement over frame_a/frame_b, shifted exactly (4.0, 3.0) px.",
+  "operation": "displacement",
+  "request": {
+    "image_ids": [
+      "$FRAME_A_ID",
+      "$FRAME_B_ID"
+    ],
+    "refine": "lucas_kanade",
+    "search_x": 10,
+    "search_y": 10,
+    "window": [
+      20.0,
+      20.0,
+      70.0,
+      70.0
+    ]
+  },
+  "response": {
+    "cumulative_x": [
+      0.0,
+      3.999591588973999
+    ],
+    "cumulative_y": [
+      0.0,
+      2.999040126800537
+    ],
+    "pairs": [
+      {
+        "dx": 3.999591588973999,
+        "dy": 2.999040126800537,
+        "from_image_id": "$FRAME_A_ID",
+        "score": 1.0000028610229492,
+        "to_image_id": "$FRAME_B_ID"
+      }
+    ]
+  }
+}

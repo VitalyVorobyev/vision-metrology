@@ -1,0 +1,50 @@
+# Standalone workspace root — deliberately NOT a member of the repo-root Cargo
+# workspace (`../../../Cargo.toml`'s `members` list is explicit and does not include
+# this path). The empty `[workspace]` table below is what makes that airtight: without
+# it, `cargo build` run from inside this directory would walk up, find the outer
+# `Cargo.toml`, see it declares a workspace, and try to attach this crate to it —
+# which would pull `vm-lab-desktop`'s Tauri/GUI dependency tree into every `cargo
+# build --workspace` the library crates run, and couple this crate's own MSRV/lint
+# policy to theirs. See lab/README.md's desktop section.
+[workspace]
+
+[package]
+name = "vm-lab-desktop"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Visual Metrology Lab — Tauri desktop shell over vision-metrology, no HTTP"
+
+[lib]
+name = "vm_lab_desktop"
+path = "src/lib.rs"
+
+[[bin]]
+name = "vm-lab-desktop"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# Path dependencies on the sibling library crates — the whole point of this crate is
+# calling vision-metrology directly, no HTTP, no PyO3. Default features (matching,
+# measure, warp, metric, corr, ...) are everything the commands below need.
+vision-metrology = { path = "../../../crates/vision-metrology", features = ["serde"] }
+vm-primitives = { path = "../../../crates/vm-primitives" }
+
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+image = { version = "0.25", default-features = false, features = ["png", "bmp"] }
+sha2 = "0.10"
+
+[dev-dependencies]
+tempfile = "3"
+
+[features]
+# Enabled by `tauri dev`/`tauri build` to opt into a custom protocol on macOS/Windows.
+custom-protocol = ["tauri/custom-protocol"]
+
+[lints.rust]
+unsafe_code = "forbid"

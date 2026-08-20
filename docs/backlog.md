@@ -159,15 +159,81 @@ agent) can pick it up cold. When an item is scheduled it moves into
 - **`contour::build_graph_from_edgels`** (the raw-edgel constructor) isn't bound, only the
   detector-output convenience `build_contour_graph`. Add if a caller has edgels from
   somewhere other than `Edge2DDetector` (e.g. a laser stripe).
-- **No per-caliper "explain" API for `MetrologyModel`.** `apply`'s result exposes the fit
-  and the `hits` it used, but not which calipers were rejected or why, nor their raw
-  profiles — useful for a UI (`lab/`'s Measure tab wants exactly this) or for debugging a
-  bad fit. Today `lab/backend/src/vm_lab/routers/measure.py` reconstructs each caliper by
-  hand, mirroring `MetrologyModel::measure_one`
-  (`crates/vision-metrology/src/measure/model.rs`) — duplicated logic that silently goes
-  stale if that function's placement math ever changes. A `MetrologyModel::explain`
-  (or an `apply` variant returning per-caliper `MeasureResult`/`MeasureRejected`) would
-  remove the duplication and give both Rust and Python callers a supported way to get it.
+- **No per-caliper "explain" API for `MetrologyModel` — placement half closed, the
+  re-measurement half remains.** `apply`'s result exposes the fit and the `hits` it used,
+  but not which calipers were rejected or why, nor their raw profiles. The *placement*
+  duplication this item originally flagged (`lab/backend/src/vm_lab/routers/measure.py`
+  hand-mirroring `MetrologyModel::measure_one`'s geometry) is fixed — both the FastAPI
+  router and the Tauri command (`lab/frontend/src-tauri/src/commands/measure.rs`) now
+  call `measure::diagnostics::layout` (roadmap B2.1, W6), the same placement code `apply`
+  calls internally. What's left: both call sites still invoke `Caliper::measure` a
+  *second* time per caliper (once inside `apply`, once again outside it) purely to
+  recover the rejection reason and raw profile that `apply`'s own result does not
+  surface — correct (both passes start from identical placements, so they cannot
+  disagree on *where* a caliper looked) but still two measurement passes over the same
+  image data. A real `MetrologyModel::explain` (or an `apply` variant returning
+  per-caliper `MeasureResult`/`MeasureRejected` alongside the fit) would remove that
+  remaining redundancy.
+- **`MeasureConfigIn.polarity`'s wire strings may not reach the native binding correctly
+  — found while building the Tauri command, not confirmed as a live bug.** The lab's
+  Pydantic schema types this field `Literal["bright_to_dark", "dark_to_bright",
+  "either"]`, and `routers/measure.py` passes it straight through to
+  `vm.MeasureConfig(polarity=...)`. `vm-python/src/config/measure.rs`'s setter matches
+  literal strings `"rising"`/`"falling"`, falling back to `Any` for anything else —
+  which would make every one of the three documented wire values resolve to `Any`
+  regardless of what was requested, since none of them is spelled `"rising"` or
+  `"falling"`. Not exercised by any existing test (`lab/contract/fixtures/measure.json`'s
+  request objects never set `measure.polarity`), so this was not chased down this wave;
+  worth a real end-to-end check (upload a request with `polarity: "bright_to_dark"`,
+  assert only falling edges are reported) before anyone relies on that field.
+
+## Lab desktop shell (Tauri, W6)
+
+- **Mosaic has no Tauri command.** `routers/mosaic.py`'s compositor (~315 lines: grid
+  auto-fit, nearest-camera-centre priority, `source_id` map, opt-in feather) was not
+  ported to `lab/frontend/src-tauri`; `tauriBackend.ts`'s `mosaic`/`mosaicImageUrl`/
+  `mosaicSourceIdUrl` throw a clear "not available in the desktop build" error. Porting
+  it is mechanical (the compositing rule already exists twice — once in
+  `crates/vision-metrology/tests/mosaic.rs`, once in `examples/birdseye_mosaic.rs` — so a
+  third, Rust-native, non-test copy in a Tauri command is the established pattern, not a
+  new design) but real work: grid auto-fit from camera footprints, the per-pixel
+  nearest-camera-centre priority pass, PNG encoding of both the composite and the
+  source_id palette map.
+- **Desktop tiers are PNG at every size; the browser backend's `preview`/`thumb` are
+  WebP.** Deliberate for this wave (matches the plan's own "PNG bytes, no base64"
+  instruction for `image_data`, and avoids adding a WebP encode dependency to
+  `vm-lab-desktop`), but means the desktop build ships slightly larger tier payloads and
+  the two shells are not byte-for-byte identical in what they serve for the same tier
+  name — only decoded-pixel equivalence is guaranteed (and only for `full`, since
+  `preview`/`thumb` resize differently: Lanczos3 via the `image` crate on desktop, PIL's
+  own Lanczos + WebP quality settings in the browser). Not expected to matter for a
+  metrology tool (the `full` tier is what teach/find/measure actually operate on), but
+  worth knowing before assuming the two shells' rendered previews are pixel-identical.
+- **`imageUrl`/`rectifyCropUrl`'s placeholder-flash on first render.** Both are
+  synchronous per `LabBackend`'s contract, but the Tauri path fetches bytes over an
+  async `invoke()`. `tauriBackend.ts` returns a 1x1 placeholder on a cache miss and
+  relies on the app's own subsequent re-renders to pick up the real `blob:` URL once the
+  background fetch resolves — works today because every call site re-renders on its own
+  data changing (TanStack Query, selection state) shortly after the first render, but a
+  future call site that renders an image exactly once and never again would keep
+  showing the placeholder. A dedicated re-render-forcing hook (a small event emitter +
+  `useSyncExternalStore`) would remove the assumption; not built this wave since nothing
+  needs it yet.
+- **No native file-open dialog.** The plan offered `tauri-plugin-dialog` or "path arg +
+  fs read" for `images_upload`; this wave took a third option — the frontend reads the
+  `File`'s bytes in JS (`file.arrayBuffer()`) and sends them over `invoke()` as a plain
+  byte array, identical code path in both shells (browser's `uploadImage` already needs
+  a `File` for its `FormData` body). Simpler and fully transport-agnostic, but means
+  there's no *native* "Open File" menu/dialog in the desktop build — the browser's own
+  `<input type="file">` is what both shells use. Add `tauri-plugin-dialog` (with its own
+  capability entry) if a native picker is ever wanted for its own sake (e.g. drag-and-drop
+  from Finder, multi-select).
+- **No packaged single-binary distribution verified — only a local, unsigned `.app`/
+  `.dmg`.** `bunx tauri build` produced both without a fallback to `--no-bundle` (no
+  code-signing identity was configured, and the build did not need one to succeed
+  locally), but this was not installed from the `.dmg` or run past Gatekeeper — a real
+  distribution would need a signing identity and (for macOS) notarization, neither
+  attempted this wave.
 
 ## Waiting on upstream
 

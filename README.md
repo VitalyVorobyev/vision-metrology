@@ -163,17 +163,20 @@ See [`examples/python/`](examples/python) for runnable end-to-end scripts.
 
 ## Lab
 
-[`lab/`](lab/README.md) is a local interactive workbench (FastAPI + React) over the
-`vision_metrology` package — upload an image, drag a box to teach a shape model, find it
-elsewhere in the frame, measure circles and lines against the found pose, and see the
-per-caliper hit/reject reasons and intensity profiles behind the fit. It is the
-library's own teach → find → measure → judge chain, made visible; pixels only, no
-persistence beyond disk. See `lab/README.md` for the API and what is deliberately out of
+[`lab/`](lab/README.md) is a local interactive workbench over the `vision_metrology`
+package — upload an image, drag a box to teach a shape model, find it elsewhere in the
+frame, measure circles and lines against the found pose, and see the per-caliper
+hit/reject reasons and intensity profiles behind the fit. It is the library's own teach →
+find → measure → judge chain, made visible; pixels only, no persistence beyond disk. One
+frontend, two shells: a browser build over FastAPI (Python bindings), and a Tauri desktop
+build that calls `vision-metrology` directly in Rust over native commands/events, no
+HTTP. See `lab/README.md` for the API, the desktop build, and what is deliberately out of
 scope.
 
 ```bash
 cd lab/backend && uv sync && uv run uvicorn vm_lab.app:app --reload   # :8000
-cd lab/frontend && bun install && bun run dev                         # :5174
+cd lab/frontend && bun install && bun run dev                         # :5174, browser build
+cd lab/frontend && bun run tauri dev                                  # desktop build, no backend needed
 ```
 
 ## Contributing
