@@ -972,3 +972,140 @@ def test_load_table_calibration_reads_the_real_fixture():
 def test_load_table_calibration_rejects_garbage():
     with pytest.raises(ValueError):
         vm.load_table_calibration(b"{}")
+
+
+# ---------------------------------------------------------------------------
+# corr: cross-correlation matching + displacement
+# ---------------------------------------------------------------------------
+
+
+def _value_noise_sampler(seed: int, cell: float = 9.0, grid_extent: int = 64):
+    """A smooth, aperiodic value-noise field, sampled at continuous `(x, y)`
+    — evaluable at any fractional coordinate, which is what makes a
+    fractional ground-truth shift exact rather than an artifact of discrete
+    resampling. Mirrors `tests/accuracy.rs`'s `corr_value_noise` fixture."""
+    rng = np.random.default_rng(seed)
+    grid = rng.random((grid_extent, grid_extent)).astype(np.float32)
+
+    def sample(x: np.ndarray, y: np.ndarray) -> np.ndarray:
+        gx = x / cell
+        gy = y / cell
+        x0 = np.floor(gx).astype(np.int64)
+        y0 = np.floor(gy).astype(np.int64)
+        fx = gx - x0
+        fy = gy - y0
+        sx = fx * fx * (3.0 - 2.0 * fx)
+        sy = fy * fy * (3.0 - 2.0 * fy)
+        x0c = np.clip(x0, 0, grid_extent - 2)
+        y0c = np.clip(y0, 0, grid_extent - 2)
+        v00 = grid[y0c, x0c]
+        v10 = grid[y0c, x0c + 1]
+        v01 = grid[y0c + 1, x0c]
+        v11 = grid[y0c + 1, x0c + 1]
+        a = v00 * (1.0 - sx) + v10 * sx
+        b = v01 * (1.0 - sx) + v11 * sx
+        return a * (1.0 - sy) + b * sy
+
+    return sample
+
+
+def _render_corr_frame(sample, shape, dx: float = 0.0, dy: float = 0.0) -> np.ndarray:
+    """`(H, W)` uint8 frame of `sample`, shifted by `(dx, dy)` — the content
+    moves by `+(dx, dy)` relative to `dx=dy=0`."""
+    h, w = shape
+    ys, xs = np.mgrid[0:h, 0:w].astype(np.float32)
+    v = 128.0 + 100.0 * (sample(xs - dx, ys - dy) - 0.5)
+    return np.clip(np.round(v), 0.0, 255.0).astype(np.uint8)
+
+
+def test_corr_template_find_recovers_a_translation():
+    shape = (120, 120)
+    sample = _value_noise_sampler(seed=1)
+    reference = _render_corr_frame(sample, shape)
+
+    rect = (40.0, 40.0, 48.0, 48.0)
+    # A shallow pyramid: enough for a 48x48 template searched near identity
+    # shift, and avoids a coarse level (a handful of pixels after several
+    # 2x2 box-downsamples) where this fixture's texture can alias down to
+    # near-zero variance and corrmatch's own degenerate-template check trips
+    # (same reasoning as `tests/corr.rs::tpl_cfg` on the Rust side).
+    template = vm.CorrTemplate(reference, rect, vm.CorrTemplateConfig(max_levels=3))
+    assert template.width == 48
+    assert template.height == 48
+    assert template.is_rotated  # default CorrTemplateConfig has rotation=True
+
+    dx, dy = 5.0, -3.0
+    scene = _render_corr_frame(sample, shape, dx=dx, dy=dy)
+    m = vm.find(template, scene)
+    assert isinstance(m, vm.CorrMatch)
+
+    expected_x = rect[0] + rect[2] / 2.0 + dx
+    expected_y = rect[1] + rect[3] / 2.0 + dy
+    assert abs(m.x - expected_x) < 1.0
+    assert abs(m.y - expected_y) < 1.0
+    assert m.score > 0.8
+
+
+def test_corr_find_topk_returns_scores_descending():
+    shape = (120, 120)
+    sample = _value_noise_sampler(seed=3)
+    reference = _render_corr_frame(sample, shape)
+    template = vm.CorrTemplate(reference, (40.0, 40.0, 40.0, 40.0))
+    scene = _render_corr_frame(sample, shape, dx=2.0, dy=1.0)
+
+    matches = vm.find_topk(template, scene, 3)
+    assert len(matches) >= 1
+    scores = [m.score for m in matches]
+    assert scores == sorted(scores, reverse=True)
+
+
+def test_corr_rotation_search_without_a_rotated_template_is_an_error():
+    shape = (120, 120)
+    sample = _value_noise_sampler(seed=4)
+    reference = _render_corr_frame(sample, shape)
+    template = vm.CorrTemplate(reference, (40.0, 40.0, 40.0, 40.0), vm.CorrTemplateConfig(rotation=False))
+    assert not template.is_rotated
+
+    scene = _render_corr_frame(sample, shape)
+    with pytest.raises(ValueError):
+        vm.find(template, scene, vm.CorrConfig(rotation=True))
+
+
+def test_corr_displacement_recovers_a_subpixel_shift_with_lk():
+    shape = (120, 120)
+    sample = _value_noise_sampler(seed=2)
+    prev = _render_corr_frame(sample, shape)
+    dx, dy = 2.37, -1.84
+    curr = _render_corr_frame(sample, shape, dx=dx, dy=dy)
+
+    cfg = vm.DisplacementConfig(
+        window=(20.0, 20.0, 80.0, 80.0),
+        search=(6, 6),
+        refine=vm.Refine.lucas_kanade(iters=5),
+    )
+    d = vm.displacement(prev, curr, cfg)
+    assert isinstance(d, vm.Displacement)
+    assert abs(d.dx - dx) < 0.05
+    assert abs(d.dy - dy) < 0.05
+    assert d.score > 0.5
+
+
+def test_corr_config_defaults_and_refine_tag():
+    cfg = vm.CorrConfig()
+    assert cfg.rotation is False
+    assert cfg.metric == "zncc"
+    assert cfg.min_score is None
+    assert cfg.tuning.beam_width == 8
+
+    none_refine = vm.Refine.none()
+    lk_refine = vm.Refine.lucas_kanade(iters=4)
+    assert "none" in repr(none_refine)
+    assert "lucas_kanade" in repr(lk_refine)
+    assert "iters=4" in repr(lk_refine)
+
+
+def test_corr_template_config_has_nested_tuning():
+    cfg = vm.CorrTemplateConfig()
+    assert cfg.rotation is True
+    assert cfg.max_levels is None
+    assert cfg.tuning.coarse_angle_step_deg == pytest.approx(10.0)
