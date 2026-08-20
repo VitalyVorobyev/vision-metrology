@@ -124,6 +124,33 @@ impl Map {
         }
     }
 
+    /// Build a log-polar-unwrap map: destination x sweeps `phi` (radians)
+    /// linearly, destination y sweeps `r` (pixels) **logarithmically** —
+    /// see the Rust `Map::log_polar` docs for the exact formula and why
+    /// (`vision_metrology::scale`'s log-polar scale estimator is the
+    /// motivating use). `r[0]` must be strictly positive and less than
+    /// `r[1]`; an invalid range degenerates to a constant map rather than
+    /// raising, matching the Rust function's own `panic`-free contract.
+    #[staticmethod]
+    #[pyo3(signature = (center, r, phi, w, h))]
+    pub fn log_polar(
+        center: (f32, f32),
+        r: (f32, f32),
+        phi: (f32, f32),
+        w: usize,
+        h: usize,
+    ) -> Self {
+        Self {
+            inner: NativeMap::log_polar(
+                Point2f::new(center.0, center.1),
+                r.0..r.1,
+                phi.0..phi.1,
+                w,
+                h,
+            ),
+        }
+    }
+
     /// Destination width in pixels.
     #[getter]
     pub fn width(&self) -> usize {

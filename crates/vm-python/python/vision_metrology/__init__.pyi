@@ -259,6 +259,41 @@ class DisplacementConfig:
         min_score: float = ...,
     ) -> None: ...
 
+class MomentScaleConfig:
+    """`estimate_scale_moments` parameters."""
+
+    polarity: str  # 'dark_on_bright' or 'bright_on_dark'
+    min_area: int
+    def __init__(
+        self, polarity: Optional[str] = ..., min_area: Optional[int] = ...
+    ) -> None: ...
+
+class LogPolarScaleConfig:
+    """`estimate_scale_logpolar` parameters."""
+
+    scale_search: Tuple[float, float]
+    angle_margin: Optional[float]
+    edge: EdgeConfig
+    def __init__(
+        self,
+        scale_search: Optional[Tuple[float, float]] = ...,
+        angle_margin: Optional[float] = ...,
+        edge: Optional[EdgeConfig] = ...,
+    ) -> None: ...
+
+class ScaleInvariantConfig:
+    """`find_scale_invariant_roi`/`find_scale_invariant_center` parameters."""
+
+    moments: MomentScaleConfig
+    logpolar: LogPolarScaleConfig
+    search: ShapeSearchConfig
+    def __init__(
+        self,
+        moments: Optional[MomentScaleConfig] = ...,
+        logpolar: Optional[LogPolarScaleConfig] = ...,
+        search: Optional[ShapeSearchConfig] = ...,
+    ) -> None: ...
+
 class MeasureConfig:
     sigma: float
     threshold: float
@@ -381,6 +416,15 @@ class Displacement:
 
     dx: float
     dy: float
+    score: float
+
+class ScaleEstimate:
+    """One `estimate_scale_*` answer. `score`'s meaning differs between
+    estimators (a fill-fraction diagnostic for moments, a ZNCC correlation
+    score for log-polar) -- see each function's own docs, not this class."""
+
+    scale: float
+    angle: Optional[float]
     score: float
 
 # ---------------------------------------------------------------------------
@@ -546,6 +590,18 @@ class ShapeModel:
     def save(self, path: str) -> None: ...
     @staticmethod
     def load(path: str) -> ShapeModel: ...
+    @property
+    def teach_point_count(self) -> int:
+        """Points `resample_at` has to work with; 0 for a model loaded from
+        a format-3 document (predating that stored data)."""
+
+    def resample_at(self, s: float) -> ShapeModel:
+        """Rebuild this model with every point resampled at scale `s`
+        (roadmap W7, estimate-then-verify). The result's own scale_range is
+        a narrow band around 1.0 -- search that, and multiply a found
+        match's own `scale` by `s` to recover scale relative to *this*
+        model. Raises ValueError if `s` is not finite/positive, or this
+        model has no stored teach data."""
 
 class ShapeMatcher:
     def __init__(self, config: Optional[ShapeSearchConfig] = ...) -> None: ...
@@ -621,6 +677,19 @@ class Map:
         w: int,
         h: int,
     ) -> Map: ...
+    @staticmethod
+    def log_polar(
+        center: Tuple[float, float],
+        r: Tuple[float, float],
+        phi: Tuple[float, float],
+        w: int,
+        h: int,
+    ) -> Map:
+        """Log-polar unwrap: `x` sweeps `phi` linearly, `y` sweeps `r`
+        logarithmically -- a uniform scale change becomes a constant shift
+        along `y` (Fourier-Mellin, no FFT; see `estimate_scale_logpolar`).
+        `r[0]` must be > 0 and < `r[1]`."""
+
     @property
     def width(self) -> int: ...
     @property
@@ -757,6 +826,49 @@ def displacement(
 ) -> Displacement:
     """Two-stage subpixel inter-frame shift: bounded ZNCC search + (by
     default) translation-only Lucas-Kanade refinement."""
+
+# ---------------------------------------------------------------------------
+# scale: estimate-then-verify (roadmap W7)
+# ---------------------------------------------------------------------------
+
+def estimate_scale_moments(
+    model: ShapeModel,
+    scene: ImageU8,
+    roi: Tuple[float, float, float, float],
+    config: Optional[MomentScaleConfig] = ...,
+) -> ScaleEstimate:
+    """Estimate scale from a segmented scene blob's spatial spread vs. the
+    taught model's own. Works on any model (format 3 or 4)."""
+
+def estimate_scale_logpolar(
+    model: ShapeModel,
+    scene: ImageU8,
+    approx_center: Tuple[float, float],
+    config: Optional[LogPolarScaleConfig] = ...,
+) -> ScaleEstimate:
+    """Estimate scale (and, with `config.angle_margin` set, rotation) via
+    log-polar ZNCC correlation. Requires `model.teach_point_count > 0`
+    (format-4 teach data)."""
+
+def find_scale_invariant_roi(
+    model: ShapeModel,
+    scene: ImageU8,
+    roi: Tuple[float, float, float, float],
+    config: Optional[ScaleInvariantConfig] = ...,
+) -> List[ShapeMatch]:
+    """Estimate scale via `estimate_scale_moments` over `roi`, resample
+    `model` at that estimate, and verify in a narrow band -- one call for
+    the whole estimate-then-verify strategy. Empty list, not an error, when
+    nothing scores above `config.search.min_score`."""
+
+def find_scale_invariant_center(
+    model: ShapeModel,
+    scene: ImageU8,
+    center: Tuple[float, float],
+    config: Optional[ScaleInvariantConfig] = ...,
+) -> List[ShapeMatch]:
+    """Same as `find_scale_invariant_roi`, estimating scale via
+    `estimate_scale_logpolar` around `center` instead of segmenting `roi`."""
 
 # ---------------------------------------------------------------------------
 # Free functions

@@ -1204,3 +1204,167 @@ def test_corr_template_config_has_nested_tuning():
     assert cfg.rotation is True
     assert cfg.max_levels is None
     assert cfg.tuning.coarse_angle_step_deg == pytest.approx(10.0)
+
+
+# ---------------------------------------------------------------------------
+# scale: estimate-then-verify (roadmap W7)
+# ---------------------------------------------------------------------------
+
+
+DISC_SIZE = 260
+DISC_ROI = (60.0, 60.0, 200.0, 200.0)
+DISC_CENTER = (130.0, 130.0)
+
+
+def make_scale_disc(r: float) -> np.ndarray:
+    """A `make_disc` scene sized for the `scale` tests below: bright disc of
+    radius `r` centered on `DISC_CENTER`, on `DISC_SIZE`x`DISC_SIZE`."""
+    return make_disc(DISC_SIZE, DISC_SIZE, DISC_CENTER[0], DISC_CENTER[1], r)
+
+
+def test_shape_model_teach_point_count_and_resample_at():
+    model = vm.ShapeModel(make_scale_disc(30.0), DISC_ROI)
+    assert model.teach_point_count > 0
+
+    same = model.resample_at(1.0)
+    assert isinstance(same, vm.ShapeModel)
+    half = model.resample_at(0.5)
+    assert half.num_levels >= 1
+
+    with pytest.raises(ValueError):
+        model.resample_at(0.0)
+    with pytest.raises(ValueError):
+        model.resample_at(-1.0)
+
+
+def test_estimate_scale_moments_recovers_a_larger_disc():
+    model = vm.ShapeModel(make_scale_disc(30.0), DISC_ROI)
+    scene = make_scale_disc(48.0)
+    est = vm.estimate_scale_moments(
+        model, scene, DISC_ROI, vm.MomentScaleConfig(polarity="bright_on_dark")
+    )
+    assert isinstance(est, vm.ScaleEstimate)
+    assert abs(est.scale - 48.0 / 30.0) < 0.2
+    assert est.angle is None
+
+
+def test_estimate_scale_logpolar_recovers_a_larger_disc():
+    model = vm.ShapeModel(make_scale_disc(30.0), DISC_ROI)
+    scene = make_scale_disc(45.0)
+    est = vm.estimate_scale_logpolar(model, scene, DISC_CENTER)
+    assert isinstance(est, vm.ScaleEstimate)
+    assert abs(est.scale - 45.0 / 30.0) < 0.3
+
+
+def test_find_scale_invariant_roi_recovers_scale_within_one_percent():
+    """Synthetic: teach at 1.0, scene at 0.6x and 1.7x -- recovered scale
+    within 1%, same acceptance bar as the Rust C1 estimate-then-verify rows
+    (`tests/accuracy.rs`'s `estimate_verify_scale_bias`/`_position`)."""
+    base_r = 30.0
+    model = vm.ShapeModel(make_scale_disc(base_r), DISC_ROI)
+    cfg = vm.ScaleInvariantConfig(
+        moments=vm.MomentScaleConfig(polarity="bright_on_dark"),
+        search=vm.ShapeSearchConfig(refinement="least_squares"),
+    )
+    for true_scale in (0.6, 1.7):
+        scene = make_scale_disc(base_r * true_scale)
+        matches = vm.find_scale_invariant_roi(model, scene, DISC_ROI, cfg)
+        assert len(matches) == 1, f"expected one match at scale {true_scale}"
+        m = matches[0]
+        assert abs(m.scale - true_scale) / true_scale < 0.01, (
+            f"scale {m.scale} not within 1% of {true_scale}"
+        )
+
+
+def test_find_scale_invariant_center_uses_logpolar():
+    base_r = 30.0
+    model = vm.ShapeModel(make_scale_disc(base_r), DISC_ROI)
+    scene = make_scale_disc(base_r * 1.5)
+    cfg = vm.ScaleInvariantConfig(search=vm.ShapeSearchConfig(refinement="least_squares"))
+    matches = vm.find_scale_invariant_center(model, scene, DISC_CENTER, cfg)
+    assert len(matches) == 1
+    assert abs(matches[0].scale - 1.5) / 1.5 < 0.05
+
+
+def test_estimate_scale_moments_errors_when_the_roi_does_not_overlap_the_scene():
+    model = vm.ShapeModel(make_scale_disc(30.0), DISC_ROI)
+    scene = make_scale_disc(30.0)
+    cfg = vm.MomentScaleConfig(polarity="bright_on_dark")
+    off_scene_roi = (10_000.0, 10_000.0, 50.0, 50.0)
+    with pytest.raises(ValueError):
+        vm.estimate_scale_moments(model, scene, off_scene_roi, cfg)
+
+
+def test_find_scale_invariant_recovers_an_extreme_scale():
+    """A tiny, far-off-center disc: moments estimates ~1/10th the taught
+    radius, `resample_at` rebuilds the model that small, and the verify
+    stage still finds it precisely -- the pipeline degrades gracefully far
+    outside the 0.6-1.7x range the accuracy-suite / 1%-tolerance test above
+    exercises."""
+    model = vm.ShapeModel(make_scale_disc(30.0), DISC_ROI)
+    tiny = make_disc(DISC_SIZE, DISC_SIZE, 20.0, 20.0, 3.0)
+    roi = (0.0, 0.0, 40.0, 40.0)
+    cfg = vm.ScaleInvariantConfig(moments=vm.MomentScaleConfig(polarity="bright_on_dark"))
+    matches = vm.find_scale_invariant_roi(model, tiny, roi, cfg)
+    assert len(matches) == 1
+    m = matches[0]
+    assert abs(m.x - 20.0) < 1.0
+    assert abs(m.y - 20.0) < 1.0
+    assert abs(m.scale - 0.1) < 0.03
+    assert m.score > 0.9
+
+
+def test_find_scale_invariant_returns_empty_not_an_error_when_nothing_verifies():
+    """A ROI that segments *some* blob (so the estimate succeeds) but whose
+    shape does not match the taught model at all still lets the verify
+    stage run -- it just finds nothing, an empty list rather than an error,
+    the same "not found is a result" convention as `ShapeMatcher`."""
+    model = vm.ShapeModel(make_scale_disc(30.0), DISC_ROI)
+    square = np.full((DISC_SIZE, DISC_SIZE), 25, dtype=np.uint8)
+    square[100:161, 100:161] = 230  # a solid square, not a disc
+    cfg = vm.ScaleInvariantConfig(
+        moments=vm.MomentScaleConfig(polarity="bright_on_dark"),
+        search=vm.ShapeSearchConfig(min_score=0.95),
+    )
+    matches = vm.find_scale_invariant_roi(model, square, DISC_ROI, cfg)
+    assert matches == []
+
+
+def test_scale_config_defaults():
+    m = vm.MomentScaleConfig()
+    assert m.polarity == "dark_on_bright"
+    assert m.min_area == 25
+
+    lp = vm.LogPolarScaleConfig()
+    assert lp.scale_search == pytest.approx((0.4, 2.5))
+    assert lp.angle_margin is None
+
+
+def test_moment_scale_config_rejects_an_unknown_polarity():
+    model = vm.ShapeModel(make_scale_disc(30.0), DISC_ROI)
+    bad = vm.MomentScaleConfig(polarity="sideways")
+    with pytest.raises(ValueError):
+        vm.estimate_scale_moments(model, make_scale_disc(30.0), DISC_ROI, bad)
+
+
+def test_map_log_polar_places_a_bump_at_its_expected_log_row():
+    n = 200
+    cx, cy = 100.0, 100.0
+    r_lo, r_hi = 5.0, 100.0
+    r0, phi0 = 20.0, 0.7  # radians, well inside both ranges
+
+    bx = cx + r0 * np.cos(phi0)
+    by = cy + r0 * np.sin(phi0)
+    yy, xx = np.mgrid[0:n, 0:n].astype(np.float32)
+    src = np.exp(-(((xx - bx) ** 2 + (yy - by) ** 2)) / (2.0 * 1.5**2)).astype(np.float32)
+
+    sw, sh = 360, 200
+    m = vm.Map.log_polar((cx, cy), (r_lo, r_hi), (0.0, 2 * np.pi), sw, sh)
+    strip = m.apply(src, interp="bilinear")
+    assert strip.shape == (sh, sw)
+
+    peak_v, peak_u = np.unravel_index(np.argmax(strip), strip.shape)
+    want_u = phi0 / (2 * np.pi) * sw - 0.5
+    want_v = (np.log(r0 / r_lo) / np.log(r_hi / r_lo)) * sh - 0.5
+    assert abs(peak_u - want_u) < 2.0
+    assert abs(peak_v - want_v) < 2.0

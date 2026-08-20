@@ -15,6 +15,7 @@ mod match_py;
 mod measure_py;
 mod metric_py;
 mod morph_py;
+mod scale_py;
 mod segment;
 mod shape;
 mod types;
@@ -25,8 +26,9 @@ use pyo3::wrap_pyfunction;
 
 use config::{
     Contrast, CorrConfig, CorrSearchTuning, CorrTemplateConfig, CorrTemplateTuning,
-    DisplacementConfig, EdgeConfig, FitConfig, LsdConfig, MeasureConfig, Refine, ShapeModelConfig,
-    ShapeSearchConfig, ShapeSearchTuning,
+    DisplacementConfig, EdgeConfig, FitConfig, LogPolarScaleConfig, LsdConfig, MeasureConfig,
+    MomentScaleConfig, Refine, ScaleInvariantConfig, ShapeModelConfig, ShapeSearchConfig,
+    ShapeSearchTuning,
 };
 use corr_py::{CorrMatch, CorrTemplate, Displacement, displacement, find, find_topk};
 use detector::EdgeDetector;
@@ -38,6 +40,10 @@ use measure_py::{
 use metric_py::{
     BrownConrady5, CameraModel, PinholeIntrinsics, Plane3, PlaneGrid, load_rig_extrinsics,
     load_table_calibration, pixel_to_plane, plane_grid_map, project_plane_points, undistort_map,
+};
+use scale_py::{
+    ScaleEstimate, estimate_scale_logpolar, estimate_scale_moments, find_scale_invariant_center,
+    find_scale_invariant_roi,
 };
 use segment::Segmenter;
 use shape::{Fitter, LsdDetector};
@@ -65,6 +71,9 @@ fn vision_metrology(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<CorrConfig>()?;
     m.add_class::<Refine>()?;
     m.add_class::<DisplacementConfig>()?;
+    m.add_class::<MomentScaleConfig>()?;
+    m.add_class::<LogPolarScaleConfig>()?;
+    m.add_class::<ScaleInvariantConfig>()?;
 
     // Stateful classes
     m.add_class::<EdgeDetector>()?;
@@ -102,6 +111,7 @@ fn vision_metrology(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<CaliperPlacement>()?;
     m.add_class::<CorrMatch>()?;
     m.add_class::<Displacement>()?;
+    m.add_class::<ScaleEstimate>()?;
 
     // Exceptions
     m.add("MeasureRejected", m.py().get_type::<MeasureRejected>())?;
@@ -118,6 +128,12 @@ fn vision_metrology(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(find, m)?)?;
     m.add_function(wrap_pyfunction!(find_topk, m)?)?;
     m.add_function(wrap_pyfunction!(displacement, m)?)?;
+
+    // scale: estimate-then-verify (roadmap W7)
+    m.add_function(wrap_pyfunction!(estimate_scale_moments, m)?)?;
+    m.add_function(wrap_pyfunction!(estimate_scale_logpolar, m)?)?;
+    m.add_function(wrap_pyfunction!(find_scale_invariant_roi, m)?)?;
+    m.add_function(wrap_pyfunction!(find_scale_invariant_center, m)?)?;
 
     // Declarative free functions
     functions::register(m)?;
