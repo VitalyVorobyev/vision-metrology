@@ -335,6 +335,70 @@ session) has left to buy on a genuinely planar target.
 pass/fail on real canend data in pixels; the lab's `/api/measure` now closes the
 millimetre step over an uploaded calibration.
 
+### B6 — `corr`: cross-correlation matching + displacement — `done`
+Plan decisions 1–2 (corr wave). `corrmatch` moves from dev-dependency to a real, optional
+dependency (`corr` feature, default-on) — the user decision that it is the project's
+standard cross-correlation engine, superseding the earlier "keep it dev-only, validation
+tool only" stance. `corr::CorrTemplate` / `find` / `find_topk` are a thin zero-copy-when-
+contiguous adapter over corrmatch's own pyramid, angle bank, beam search, and quadratic
+subpixel refinement — nothing about the search algorithm is reimplemented. `CorrMatch`
+is deliberately not `ShapeMatch`: its score is a raw correlation coefficient (ZNCC in
+`[-1, 1]`, or negative SSE for `metric = Ssd`), not `1 - occluded_fraction`, and there is
+no scale search — corrmatch's published API (0.2.5) does not offer one. `u8`-only, and
+says so in the module docs: `uint16`/`float32` would have to be silently quantized, and
+that quantization is corrmatch's own backlog, not something a wrapper should paper over.
+
+```rust
+pub fn find(template: &CorrTemplate, scene: &ImageView<'_, u8>, cfg: &CorrConfig)
+    -> Result<CorrMatch, Error>;
+pub fn displacement(prev: &ImageView<'_, u8>, curr: &ImageView<'_, u8>, cfg: &DisplacementConfig)
+    -> Result<Displacement, Error>;
+```
+
+`corr::displacement` is the two-stage inter-frame shift from decision 2: a bounded,
+rotation-off ZNCC search (corrmatch, restricted to a `search`-pixel margin around the
+window's previous position — never the whole scene) with corrmatch's own quadratic-peak
+subpixel refinement, optionally followed by translation-only inverse-compositional
+Lucas-Kanade implemented in this crate (`Refine::LucasKanade`): a 2x2 normal-equations
+solve on the window's own Scharr gradient (computed once — the inverse-compositional
+trick), 3 iterations by default, each one bilinear resample of `curr` per template pixel.
+This removes the quadratic peak's bias toward integer pixel positions
+("pixel-locking") that `Refine::None` alone carries.
+
+**C1 headline (`tests/accuracy.rs`, `displacement_quadratic` vs `displacement_lk`):** a
+10x10 grid of exact fractional shifts (0.0-0.9 px, both axes) rendered from a continuous,
+aperiodic value-noise texture (so the ground truth is exact, not a discrete-resampling
+artifact), at two noise levels, worst cell reported. Quadratic-only: bias 0.0239 px,
+sigma 0.0164 px. +Lucas-Kanade: bias 0.0204 px, sigma 0.0141 px — about a 15% reduction
+in both, on top of an already-small baseline (corrmatch's own quadratic estimator is a
+real 2-D fit to the correlation surface, not a nearest-integer report). Envelopes pinned
+at ~1.5x measured.
+
+**Real-data cross-check (`tests/glue_displacement.rs`, agreement not a gate):** the
+`data/42781` glue rig has no recorded numeric ground truth for inter-frame motion
+(`tools/glue-42781/motion.py`, phase correlation, only ever wrote PNG plots — see
+`data/42781/output/`), so this asserts trajectory consistency and prints a summary.
+Measured (39 consecutive frame pairs, middle strip, the glue nozzle's dome window):
+mean `|shift|` 1.024 px, max 4.003 px (well inside the ±10 px search bound), mean score
+0.946, cumulative displacement (-39.84, 2.22) px over the run.
+
+**Bench (`benches/corr.rs`, M4 Pro, release):** `find` on a VGA scene with a 64x64
+template — rotation off 4.60 ms, rotation on 22.1 ms (corrmatch's own angle-bank cost,
+this wrapper adds nothing per candidate). `displacement` on a 320x97 window (the glue
+strip shape) — quadratic-only 1.60 ms, +Lucas-Kanade 1.71 ms (+7%, three iterations over
+a 200x65 sub-window).
+
+Python bindings: `CorrTemplate`, `find`/`find_topk`/`displacement` free functions,
+`CorrTemplateConfig`/`CorrConfig`/`DisplacementConfig` + nested tuning mirrors, `Refine`
+as a tagged pyclass (`Refine.none()` / `Refine.lucas_kanade(iters=...)`, the same
+convention `Contrast` established) since its `LucasKanade` variant carries a payload a
+bare string cannot. `u8`-only end to end — a `uint16`/`float32` array is a `TypeError`
+at the PyO3 boundary, not a silent cast. Lab: `POST /api/displacement` over an ordered
+image sequence, and a Motion tab (trajectory plot + per-pair score).
+
+**No API gaps found in corrmatch 0.2.5** for what this wave needed; nothing was reported
+back to that repo.
+
 ---
 
 ## Track C — credibility and infrastructure — `planned`
@@ -391,6 +455,11 @@ fails CI. Full per-scale table is in `tests/accuracy.rs`'s `BASELINE_FOUND_RATE`
 **Rectify row (rectify wave).** Added `rectify_repeatability` — see B4.1 above for the full
 description. Measured bias 0.88 / σ 1.69 (8-bit intensity units, not pixels); envelope
 pinned at 1.3 / 2.5.
+
+**Displacement rows (corr wave).** Added `displacement_quadratic` / `displacement_lk` —
+see B6 above for the full description and numbers. This is the pair that quantifies
+`corr::displacement`'s Lucas-Kanade correction against corrmatch's own quadratic-peak
+subpixel estimate.
 
 ### C2 — blob features
 `ComponentStats` is bbox + centroid + count. Add second-order moments → orientation and

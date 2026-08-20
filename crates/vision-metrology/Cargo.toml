@@ -16,12 +16,20 @@ nalgebra = { workspace = true }
 libm = "0.2"
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
+# The standard cross-correlation engine (user decision, corr wave): a
+# pyramidal ZNCC/SSD matcher with rotation search and subpixel refinement.
+# Optional, tied to the `corr` feature — `corr::CorrTemplate` is a thin
+# zero-copy-when-possible adapter over it, not a reimplementation.
+corrmatch = { version = "0.2", features = ["simd"], optional = true }
 
 [features]
-default = ["contour", "fit", "laser", "lsd", "matching", "measure", "metric", "segment", "warp"]
+default = ["contour", "corr", "fit", "laser", "lsd", "matching", "measure", "metric", "segment", "warp"]
 
 ## Junction-aware contour graph from 2-D edgels.
 contour = []
+## Cross-correlation matching (`CorrTemplate` / `find` / `find_topk`) and
+## inter-frame subpixel `displacement`, over the `corrmatch` engine.
+corr = ["dep:corrmatch"]
 ## Robust line / circle / ellipse fitting with reported residuals.
 fit = []
 ## Calipers and metrology models. Measured points are fitted, so this implies `fit`.
@@ -55,10 +63,6 @@ trace-cands = []
 
 [dev-dependencies]
 anyhow = "1"
-# Independent second opinion for pose auditing: masked ZNCC at a given pose
-# (examples/pose_audit) and a full cross-check search. Dev-only — the library
-# itself never depends on it.
-corrmatch = { version = "0.2", features = ["simd"] }
 clap = { version = "4", features = ["derive"] }
 criterion = { workspace = true }
 # Examples read .png fixtures and .bmp frames from industrial cameras. BMP
@@ -104,6 +108,11 @@ name = "warp"
 harness = false
 required-features = ["warp"]
 
+[[bench]]
+name = "corr"
+harness = false
+required-features = ["corr"]
+
 
 # Examples and integration tests are auto-discovered, so the gated ones need an
 # explicit target entry declaring which module they exercise. Without this,
@@ -143,7 +152,7 @@ required-features = ["fit", "matching", "measure"]
 
 [[example]]
 name = "pose_audit"
-required-features = ["fit", "matching"]
+required-features = ["corr", "fit", "matching"]
 
 [[example]]
 name = "align_crops"
@@ -158,12 +167,20 @@ name = "shape_matching"
 required-features = ["matching"]
 
 [[test]]
+name = "corr"
+required-features = ["corr"]
+
+[[test]]
+name = "glue_displacement"
+required-features = ["corr"]
+
+[[test]]
 name = "corrmatch_bridge"
-required-features = ["matching"]
+required-features = ["corr", "matching"]
 
 [[test]]
 name = "accuracy"
-required-features = ["fit", "measure", "matching"]
+required-features = ["corr", "fit", "measure", "matching"]
 
 [[test]]
 name = "metric_rectify"

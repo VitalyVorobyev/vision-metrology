@@ -9,6 +9,7 @@
 //! | Module        | Content |
 //! |---------------|---------|
 //! | [`contour`]   | Junction-aware contour graph extraction from 2D edgels |
+//! | [`corr`]      | Cross-correlation matching (corrmatch) and inter-frame subpixel displacement |
 //! | [`fit`]       | Robust line / circle / ellipse fitting with reported residuals |
 //! | [`laser`]     | Laser stripe extraction using opposite-polarity edge pairs |
 //! | [`lsd`]       | LSD line-segment detection |
@@ -31,6 +32,7 @@
 //! | Feature | Module | Implies |
 //! |---|---|---|
 //! | `contour` | [`contour`] | — |
+//! | `corr` | [`corr`] | — |
 //! | `fit` | [`fit`] | — |
 //! | `laser` | [`laser`] | — |
 //! | `lsd` | [`lsd`] | — |
@@ -49,6 +51,8 @@
 
 #[cfg(feature = "contour")]
 pub mod contour;
+#[cfg(feature = "corr")]
+pub mod corr;
 #[cfg(feature = "fit")]
 pub mod fit;
 #[cfg(feature = "laser")]
@@ -83,6 +87,11 @@ pub mod prelude {
     #[cfg(feature = "contour")]
     pub use crate::contour::{
         Connectivity, ContourBuildConfig, ContourGraph, build_graph_from_edgels,
+    };
+    #[cfg(feature = "corr")]
+    pub use crate::corr::{
+        CorrConfig, CorrMatch, CorrTemplate, CorrTemplateConfig, Displacement, DisplacementConfig,
+        displacement, find, find_topk,
     };
     #[cfg(feature = "fit")]
     pub use crate::fit::{
