@@ -190,8 +190,15 @@ jobs:
     name: Lab (frontend + desktop shell)
     runs-on: ubuntu-latest
     steps:
+      # `lfs: true` because `.gitattributes` tracks `*.png` in Git LFS, and
+      # `tauri::generate_context!` reads the bundle icons at compile time — a
+      # plain checkout hands it the pointer file and the proc macro panics with
+      # "Invalid PNG signature". This is the only job that compiles the shell,
+      # so it is the only one that needs the objects.
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          lfs: true
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
