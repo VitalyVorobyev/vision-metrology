@@ -30,8 +30,9 @@ measure = ["fit"]
 laser = []
 ## LSD line-segment detection.
 lsd = []
-## Shape-based object detection (ShapeModel / ShapeMatcher).
-matching = []
+## Shape-based object detection (ShapeModel / ShapeMatcher). `ShapeMatch`
+## rectifies into a canonical crop via `warp::Map`, so this implies `warp`.
+matching = ["warp"]
 ## Thresholding, CCL, watershed, edgel region growing.
 ## `segment::grow_regions` consumes a `ContourGraph`, so this implies `contour`.
 segment = ["contour"]

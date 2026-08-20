@@ -65,6 +65,7 @@
 
 mod build;
 mod config;
+mod crop;
 pub mod diagnostics;
 mod matcher;
 mod model;
@@ -77,5 +78,6 @@ pub use build::{ContourOrientation, ShapeModelBuilder};
 pub use config::{
     Contrast, Polarity, Refinement, ShapeModelConfig, ShapeSearchConfig, ShapeSearchTuning,
 };
+pub use crop::CropSpec;
 pub use matcher::{ShapeMatch, ShapeMatcher};
 pub use model::{ModelPoint, ShapeModel, ShapeModelLevel};
