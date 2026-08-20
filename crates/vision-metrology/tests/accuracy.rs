@@ -21,6 +21,7 @@
 //! `examples/gen_illustrations.rs`) adds uniform noise in `[-lsb, lsb]` to
 //! each pixel before quantizing to `u8`.
 
+use vision_metrology::corr::{DisplacementConfig, Refine, displacement};
 use vision_metrology::fit::{FitConfig, RansacConfig, RobustLoss, fit_circle};
 use vision_metrology::matching::{
     CropSpec, Refinement, ShapeMatcher, ShapeModel, ShapeModelBuilder, ShapeModelConfig,
@@ -885,6 +886,128 @@ fn rectify_repeatability_sweep() -> Measured {
     }
 }
 
+// ── corr::displacement (corr wave, C1: quadratic-only vs +Lucas-Kanade) ───
+//
+// `corr::displacement` is two-stage: corrmatch's own ZNCC search with its
+// quadratic-peak subpixel refinement (`Refine::None`), optionally followed
+// by a translation-only inverse-compositional Lucas-Kanade stage
+// implemented in this crate (`Refine::LucasKanade`). A quadratic fit to a
+// discrete correlation surface is known to bias toward integer pixel
+// positions ("pixel-locking"); this sweep quantifies that bias directly by
+// comparing the two rows below, and is the headline number for the corr
+// wave. The fixture is a value-noise texture evaluated *continuously*, not
+// rendered once and shifted (which would itself alias), so
+// `curr(x, y) = texture(x - dx, y - dy)` makes every fractional-pixel
+// ground truth exact.
+
+/// Deterministic integer-hash noise in `[0, 1)` — same construction as
+/// `tests/corr.rs::hash01`; duplicated here since integration test binaries
+/// do not share code.
+fn corr_hash01(ix: i32, iy: i32) -> f32 {
+    let mut h = (ix as i64)
+        .wrapping_mul(374_761_393)
+        .wrapping_add((iy as i64).wrapping_mul(668_265_263));
+    h = (h ^ (h >> 13)).wrapping_mul(1_274_126_177);
+    h ^= h >> 16;
+    ((h & 0xFFFF) as f32) / 65535.0
+}
+
+/// Smooth, aperiodic value noise (bilinear-interpolated, Hermite-eased
+/// integer-grid hash) at grid spacing `cell` — evaluable at any real
+/// `(x, y)`, which is what makes a fractional shift exact rather than an
+/// artifact of discrete resampling.
+fn corr_value_noise(x: f32, y: f32, cell: f32) -> f32 {
+    let gx = x / cell;
+    let gy = y / cell;
+    let x0 = gx.floor() as i32;
+    let y0 = gy.floor() as i32;
+    let fx = gx - x0 as f32;
+    let fy = gy - y0 as f32;
+    let sx = fx * fx * (3.0 - 2.0 * fx);
+    let sy = fy * fy * (3.0 - 2.0 * fy);
+    let a = corr_hash01(x0, y0) * (1.0 - sx) + corr_hash01(x0 + 1, y0) * sx;
+    let b = corr_hash01(x0, y0 + 1) * (1.0 - sx) + corr_hash01(x0 + 1, y0 + 1) * sx;
+    a * (1.0 - sy) + b * sy
+}
+
+fn corr_texture(x: f32, y: f32) -> f32 {
+    128.0 + 90.0 * (corr_value_noise(x, y, 9.0) - 0.5) + 40.0 * (corr_value_noise(x, y, 2.5) - 0.5)
+}
+
+const CORR_IMG: usize = 96;
+
+fn corr_window() -> Rect2f {
+    Rect2f {
+        x: 16.0,
+        y: 16.0,
+        width: 64.0,
+        height: 64.0,
+    }
+}
+
+/// Renders a `CORR_IMG x CORR_IMG` frame of `corr_texture` shifted by
+/// `(dx, dy)` — the content moves by `+shift`, so `displacement` should
+/// report exactly `shift` relative to the unshifted frame — with `lsb`
+/// uniform noise added per pixel before quantizing.
+fn corr_frame(dx: f32, dy: f32, lsb: f32, trial: u64) -> Image<u8> {
+    let mut rng = Lcg(0x2545_F491_4F6C_DD1D ^ trial.wrapping_mul(0x9E37_79B9));
+    let mut data = vec![0u8; CORR_IMG * CORR_IMG];
+    for y in 0..CORR_IMG {
+        for x in 0..CORR_IMG {
+            let v = corr_texture(x as f32 - dx, y as f32 - dy) + rng.signed(lsb);
+            data[y * CORR_IMG + x] = v.round().clamp(0.0, 255.0) as u8;
+        }
+    }
+    Image::from_vec(CORR_IMG, CORR_IMG, data).expect("valid image")
+}
+
+/// Sweeps a 10x10 grid of `(dx, dy)` in `0.0..=0.9` px (both axes, roadmap
+/// C1 spec) at two noise levels, `refine` fixed, and returns the worst
+/// cell's bias/sigma — `x` and `y` errors pooled into the same cell, same
+/// treatment `edge2d_sweep` gives its edgel errors.
+fn displacement_sweep(refine: Refine) -> Measured {
+    let offsets = [0.0f32, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9];
+    let noises = [0.0f32, 3.0];
+    const TRIALS_NOISY: u64 = 3;
+
+    let cfg = DisplacementConfig {
+        window: corr_window(),
+        search: (4, 4),
+        refine,
+        min_score: 0.0,
+    };
+
+    let mut cells = Vec::new();
+    for &dx in &offsets {
+        for &dy in &offsets {
+            for &lsb in &noises {
+                let trials = if lsb > 0.0 { TRIALS_NOISY } else { 1 };
+                let mut errs = Vec::with_capacity(2 * trials as usize);
+                for trial in 0..trials {
+                    let prev = corr_frame(0.0, 0.0, lsb, 2 * trial);
+                    let curr = corr_frame(dx, dy, lsb, 2 * trial + 1);
+                    let d =
+                        displacement(&prev.as_view(), &curr.as_view(), &cfg).unwrap_or_else(|e| {
+                            panic!("displacement failed at dx={dx} dy={dy} lsb={lsb}: {e}")
+                        });
+                    errs.push(d.shift.x - dx);
+                    errs.push(d.shift.y - dy);
+                }
+                cells.push(mean_std(&errs));
+            }
+        }
+    }
+    Measured::worst_of(cells.into_iter())
+}
+
+fn displacement_quadratic_sweep() -> Measured {
+    displacement_sweep(Refine::None)
+}
+
+fn displacement_lk_sweep() -> Measured {
+    displacement_sweep(Refine::LucasKanade { iters: 3 })
+}
+
 // ── the table ────────────────────────────────────────────────────────────
 
 struct Row {
@@ -913,6 +1036,8 @@ struct Row {
 /// | shape_matcher_scale_bias (frac.)     | 0.0014              | 0.0003           | 0.003           | 0.001             |
 /// | shape_matcher_scale_position (px)    | 0.0218              | 0.0039           | 0.04            | 0.01              |
 /// | rectify_repeatability (8-bit units)  | 0.8775              | 1.6883           | 1.30            | 2.50              |
+/// | displacement_quadratic (px)          | 0.0239              | 0.0164           | 0.04            | 0.025             |
+/// | displacement_lk (px)                 | 0.0204              | 0.0141           | 0.035           | 0.022             |
 ///
 /// Rows 5-6 are the C1 scale sweep (roadmap Track C1 / warp-wave decision
 /// 9): 12 true scales geometrically spaced 0.5..2.0x, 3 rotations each,
@@ -929,6 +1054,18 @@ struct Row {
 /// sigma 1.69/255) for sub-pixel pose jitter, which is small enough that a
 /// downstream anomaly model's own noise floor should dominate over
 /// rectification noise.
+///
+/// The last two rows are the corr wave's headline: `corr::displacement` on
+/// the same `(dx, dy)` grid, `Refine::None` vs `Refine::LucasKanade`. Both
+/// rows report the *worst* of 200 cells (10x10 sub-pixel offsets x 2 noise
+/// levels), so the gap between them understates the pixel-locking effect at
+/// any single, noise-free offset — but even worst-case, the measured
+/// bias/sigma drop by about 15% with Lucas-Kanade on, for the cost of a few
+/// extra bilinear samples (see `benches/corr.rs`). Both numbers are already
+/// small (well under a tenth of a pixel) because corrmatch's own quadratic
+/// estimator is a real 2-D fit to the correlation surface, not a
+/// nearest-integer report — Lucas-Kanade's contribution here is a real, if
+/// modest, correction on top of an already-reasonable baseline.
 ///
 /// `edge2d_position` and `fit_circle_radius_and_centre` are the two rows
 /// whose worst cell is a genuinely hard corner of the sweep, not a loose
@@ -1008,6 +1145,25 @@ const ROWS: &[Row] = &[
         measure: rectify_repeatability_sweep,
         bias_envelope: 1.3,
         sigma_envelope: 2.5,
+    },
+    Row {
+        // corr wave headline number (see the doc comment above
+        // `displacement_sweep`): measured worst cell bias 0.0239, sigma
+        // 0.0164. ~1.5x that measurement, rounded.
+        name: "displacement_quadratic",
+        measure: displacement_quadratic_sweep,
+        bias_envelope: 0.04,
+        sigma_envelope: 0.025,
+    },
+    Row {
+        // Same sweep, `Refine::LucasKanade` on: measured worst cell bias
+        // 0.0204, sigma 0.0141 — a ~15% reduction in both over the
+        // quadratic-only row above, the measured pixel-locking correction.
+        // ~1.5x that measurement, rounded.
+        name: "displacement_lk",
+        measure: displacement_lk_sweep,
+        bias_envelope: 0.035,
+        sigma_envelope: 0.022,
     },
 ];
 

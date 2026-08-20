@@ -24,12 +24,17 @@
 //!   the Rust split one-to-one: the top-level fields say *what* is being
 //!   searched for, `tuning`'s six fields say *how hard* the search works.
 
+mod corr;
 mod edge;
 mod fit;
 mod lsd;
 mod matching;
 mod measure;
 
+pub use corr::{
+    CorrConfig, CorrSearchTuning, CorrTemplateConfig, CorrTemplateTuning, DisplacementConfig,
+    Refine,
+};
 pub use edge::EdgeConfig;
 pub use fit::FitConfig;
 pub use lsd::LsdConfig;

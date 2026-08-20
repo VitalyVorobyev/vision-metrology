@@ -161,3 +161,10 @@ agent) can pick it up cold. When an item is scheduled it moves into
 - **corrmatch scale support** — corrmatch has rotation but no scale search; the external
   ZNCC score in pose_audit is documented as valid at scale ≈ 1 only. If a scaled use case
   appears, either add scale banks upstream or pre-scale the reference patch here.
+- **corrmatch `u16`/`f32` support** (corr wave, roadmap B6) — `corr::CorrTemplate` /
+  `find` / `displacement` are `u8`-only because corrmatch's published API (0.2.5) is.
+  A `u16` industrial-camera path (12/16-bit sensors, same as the rest of this crate's
+  `Pixel` dispatch) needs corrmatch itself to grow the dtype, not a quantizing cast
+  here — filed as an upstream ask, not attempted in this wave. No other API gap was
+  found against 0.2.5 for what B6 needed (template compile/rotation, bounded search,
+  top-k, subpixel refine all covered the wrapper's requirements as published).

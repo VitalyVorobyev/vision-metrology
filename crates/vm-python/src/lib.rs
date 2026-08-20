@@ -8,6 +8,7 @@
 mod config;
 mod contour_py;
 mod convert;
+mod corr_py;
 mod detector;
 mod functions;
 mod match_py;
@@ -23,9 +24,11 @@ use pyo3::prelude::*;
 use pyo3::wrap_pyfunction;
 
 use config::{
-    Contrast, EdgeConfig, FitConfig, LsdConfig, MeasureConfig, ShapeModelConfig, ShapeSearchConfig,
-    ShapeSearchTuning,
+    Contrast, CorrConfig, CorrSearchTuning, CorrTemplateConfig, CorrTemplateTuning,
+    DisplacementConfig, EdgeConfig, FitConfig, LsdConfig, MeasureConfig, Refine, ShapeModelConfig,
+    ShapeSearchConfig, ShapeSearchTuning,
 };
+use corr_py::{CorrMatch, CorrTemplate, Displacement, displacement, find, find_topk};
 use detector::EdgeDetector;
 use match_py::{CropSpec, ShapeMatcher, ShapeModel};
 use measure_py::{
@@ -56,6 +59,12 @@ fn vision_metrology(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ShapeSearchConfig>()?;
     m.add_class::<MeasureConfig>()?;
     m.add_class::<CropSpec>()?;
+    m.add_class::<CorrTemplateTuning>()?;
+    m.add_class::<CorrTemplateConfig>()?;
+    m.add_class::<CorrSearchTuning>()?;
+    m.add_class::<CorrConfig>()?;
+    m.add_class::<Refine>()?;
+    m.add_class::<DisplacementConfig>()?;
 
     // Stateful classes
     m.add_class::<EdgeDetector>()?;
@@ -67,6 +76,7 @@ fn vision_metrology(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Caliper>()?;
     m.add_class::<MetrologyModel>()?;
     m.add_class::<Map>()?;
+    m.add_class::<CorrTemplate>()?;
 
     // metric: the calibration bridge
     m.add_class::<PinholeIntrinsics>()?;
@@ -89,6 +99,8 @@ fn vision_metrology(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<MetrologyObject>()?;
     m.add_class::<MetrologyResult>()?;
     m.add_class::<MetrologyError>()?;
+    m.add_class::<CorrMatch>()?;
+    m.add_class::<Displacement>()?;
 
     // Exceptions
     m.add("MeasureRejected", m.py().get_type::<MeasureRejected>())?;
@@ -99,6 +111,11 @@ fn vision_metrology(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(undistort_map, m)?)?;
     m.add_function(wrap_pyfunction!(load_rig_extrinsics, m)?)?;
     m.add_function(wrap_pyfunction!(load_table_calibration, m)?)?;
+
+    // corr: cross-correlation matching + displacement
+    m.add_function(wrap_pyfunction!(find, m)?)?;
+    m.add_function(wrap_pyfunction!(find_topk, m)?)?;
+    m.add_function(wrap_pyfunction!(displacement, m)?)?;
 
     // Declarative free functions
     functions::register(m)?;

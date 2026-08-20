@@ -179,6 +179,86 @@ class CropSpec:
     @property
     def output_size(self) -> Tuple[int, int]: ...
 
+class CorrTemplateTuning:
+    coarse_angle_step_deg: float
+    min_angle_step_deg: float
+    fill_value: int
+    precompute_coarsest: bool
+    def __init__(
+        self,
+        coarse_angle_step_deg: Optional[float] = ...,
+        min_angle_step_deg: Optional[float] = ...,
+        fill_value: Optional[int] = ...,
+        precompute_coarsest: Optional[bool] = ...,
+    ) -> None: ...
+
+class CorrTemplateConfig:
+    rotation: bool
+    max_levels: Optional[int]
+    tuning: CorrTemplateTuning
+    def __init__(
+        self,
+        rotation: Optional[bool] = ...,
+        max_levels: Optional[int] = ...,
+        tuning: Optional[CorrTemplateTuning] = ...,
+    ) -> None: ...
+
+class CorrSearchTuning:
+    parallel: bool
+    max_image_levels: Optional[int]
+    beam_width: int
+    per_angle_topk: int
+    nms_radius: int
+    roi_radius: int
+    angle_half_range_steps: int
+    min_var_i: float
+    def __init__(
+        self,
+        parallel: Optional[bool] = ...,
+        max_image_levels: Optional[int] = ...,
+        beam_width: Optional[int] = ...,
+        per_angle_topk: Optional[int] = ...,
+        nms_radius: Optional[int] = ...,
+        roi_radius: Optional[int] = ...,
+        angle_half_range_steps: Optional[int] = ...,
+        min_var_i: Optional[float] = ...,
+    ) -> None: ...
+
+class CorrConfig:
+    rotation: bool
+    metric: str
+    min_score: Optional[float]
+    tuning: CorrSearchTuning
+    def __init__(
+        self,
+        rotation: Optional[bool] = ...,
+        metric: Optional[str] = ...,
+        min_score: Optional[float] = ...,
+        tuning: Optional[CorrSearchTuning] = ...,
+    ) -> None: ...
+
+class Refine:
+    """Tagged `DisplacementConfig.refine` — construct with `Refine.none()` or
+    `Refine.lucas_kanade(iters=...)`, never a bare string."""
+
+    @staticmethod
+    def none() -> Refine: ...
+    @staticmethod
+    def lucas_kanade(iters: int = ...) -> Refine: ...
+
+class DisplacementConfig:
+    window: Tuple[float, float, float, float]
+    search: Tuple[int, int]
+    refine: Refine
+    min_score: float
+    def __init__(
+        self,
+        window: Tuple[float, float, float, float],
+        search: Tuple[int, int] = ...,
+        refine: Optional[Refine] = ...,
+        min_score: float = ...,
+    ) -> None: ...
+
 class MeasureConfig:
     sigma: float
     threshold: float
@@ -283,6 +363,25 @@ class MeasurePair:
     cx: float
     cy: float
     width: float
+
+class CorrMatch:
+    """One `corr.find`/`find_topk` match. Not `ShapeMatch`: `score` is a raw
+    correlation coefficient, not `1 - occluded_fraction`, and there is no
+    scale."""
+
+    x: float
+    y: float
+    angle: float
+    score: float
+
+class Displacement:
+    """`corr.displacement` result: `(dx, dy)` in pixels plus the stage-1
+    (ZNCC) score — Lucas-Kanade refines the shift only, it has no score of
+    its own."""
+
+    dx: float
+    dy: float
+    score: float
 
 # ---------------------------------------------------------------------------
 # measure / metrology
@@ -449,6 +548,24 @@ class Segmenter:
         min_area: Optional[int] = ...,
     ) -> List[ComponentStats]: ...
 
+class CorrTemplate:
+    """Compiled `corr` matching assets for one reference patch (corrmatch's
+    pyramid, plus an angle bank when `rotation=True`). `image` must be
+    `uint8` — see the `corr` module docs for why."""
+
+    def __init__(
+        self,
+        image: ImageU8,
+        rect: Tuple[float, float, float, float],
+        config: Optional[CorrTemplateConfig] = ...,
+    ) -> None: ...
+    @property
+    def width(self) -> int: ...
+    @property
+    def height(self) -> int: ...
+    @property
+    def is_rotated(self) -> bool: ...
+
 class ContourGraph:
     @property
     def num_nodes(self) -> int: ...
@@ -583,6 +700,29 @@ def load_rig_extrinsics(source: Union[str, bytes]) -> List[Tuple[CameraModel, Po
 def load_table_calibration(source: Union[str, bytes]) -> List[Tuple[CameraModel, Pose3]]:
     """Load a `table_calibration` `calibration.json` document (file path or
     raw bytes). One `(CameraModel, pose)` pair per camera, sorted by index."""
+
+# ---------------------------------------------------------------------------
+# corr: cross-correlation matching + displacement
+# ---------------------------------------------------------------------------
+
+def find(
+    template: CorrTemplate, scene: ImageU8, config: Optional[CorrConfig] = ...
+) -> CorrMatch:
+    """Finds `template`'s best match in a `uint8` scene."""
+
+def find_topk(
+    template: CorrTemplate,
+    scene: ImageU8,
+    k: int,
+    config: Optional[CorrConfig] = ...,
+) -> List[CorrMatch]:
+    """Finds up to `k` matches, best score first."""
+
+def displacement(
+    prev: ImageU8, curr: ImageU8, config: DisplacementConfig
+) -> Displacement:
+    """Two-stage subpixel inter-frame shift: bounded ZNCC search + (by
+    default) translation-only Lucas-Kanade refinement."""
 
 # ---------------------------------------------------------------------------
 # Free functions

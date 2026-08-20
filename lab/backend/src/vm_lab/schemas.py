@@ -291,3 +291,38 @@ class RectifyResponse(BaseModel):
     width: int
     height: int
     matches: list[RectifyMatchOut]
+
+
+# -- displacement (corr) --------------------------------------------------------------
+
+RefineMode = Literal["none", "lucas_kanade"]
+
+
+class DisplacementRequest(BaseModel):
+    """Ordered sequence of at least 2 images; `window` (level-0 pixel coordinates,
+    in the *first* image) is tracked pairwise through the sequence. Mirrors
+    `vision_metrology::corr::DisplacementConfig`."""
+
+    image_ids: list[str] = Field(min_length=2)
+    window: Roi
+    search_x: int = Field(default=12, ge=1)
+    search_y: int = Field(default=12, ge=1)
+    refine: RefineMode = "lucas_kanade"
+    lk_iters: int = Field(default=3, ge=1, le=20)
+    min_score: float = Field(default=0.5, ge=-1, le=1)
+
+
+class DisplacementPairOut(BaseModel):
+    from_image_id: str
+    to_image_id: str
+    dx: float
+    dy: float
+    score: float
+
+
+class DisplacementResponse(BaseModel):
+    pairs: list[DisplacementPairOut]
+    # One entry per `image_ids` element (`cumulative_x[0] == cumulative_y[0] == 0.0`),
+    # the running sum of `pairs[...].dx`/`dy` — the trajectory the Motion tab plots.
+    cumulative_x: list[float]
+    cumulative_y: list[float]

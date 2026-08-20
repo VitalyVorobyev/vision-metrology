@@ -718,6 +718,65 @@ sub-pixel pose jitter** — see roadmap B4.1 for the full sweep description. Thi
 number that decides anomaly-pipeline viability, and it was measured (not assumed) before
 being pinned as a regression envelope, same discipline as every other C1 row.
 
+### `corr`: corrmatch as the standard cross-correlation engine (2026-08)
+Roadmap B6, plan decisions 1–2. **Supersedes the "Cross-repo dependencies are crates.io
+releases only" entry's implicit framing of `corrmatch` as validation-only tooling** — this
+is a user decision, not an architectural default: `corrmatch` moves from dev-dependency
+to a real, optional dependency (`corr` feature, default-on). The earlier design (an
+architect proposal) argued for a native port to keep the matcher validator independent of
+what it validates; that argument is explicitly rejected here — `tests/corrmatch_bridge.rs`
+still cross-checks the gradient-orientation shape matcher against corrmatch independently
+of corrmatch's dependency status (the bridge test is about two *different algorithms*
+agreeing, not about build-graph independence), and a native port would duplicate mature
+SIMD/pyramid/beam-search code with a strictly worse copy for no metrology benefit.
+
+**Wrapper boundary: thin, and the boundary is deliberate.** `corr::CorrTemplate` / `find`
+/ `find_topk` translate coordinates and errors at the edge and otherwise call straight
+into corrmatch's `Template` / `CompiledTemplate` / `Matcher`. Two things are genuinely
+new: the zero-copy-when-contiguous `ImageView` adapter (`corr::adapter`, row-by-row copy
+only when the caller's view is strided — a ROI `subview`, most commonly), and
+`CorrConfig`/`CorrTemplateConfig` as this crate's own Option-sentinel config types
+(invariant 10) rather than re-exporting corrmatch's `#[non_exhaustive]` `MatchConfig`/
+`CompileConfig` directly — re-exporting a foreign non-exhaustive struct would leak
+corrmatch's own struct-literal restrictions into this crate's API and couple a semver
+bump there to one here. `CorrMatch` is a new type, not a re-export of corrmatch's
+`Match`, precisely because it is *not* interchangeable with `ShapeMatch`: the doc comment
+on it says so (score semantics, no scale) so a caller who reaches for `corr` expecting
+`matching`'s occlusion-robust score is corrected at the type, not left to discover it at
+runtime.
+
+**`u8`-only, honestly.** Both `CorrTemplate::from_image` and `displacement` take
+`ImageView<'_, u8>` — no `Pixel` generic pretense, unlike almost everything else in this
+crate. corrmatch's published API (0.2.5) is `u8`-only; silently converting `u16`/`f32`
+down to `u8` here would be exactly the kind of "tuned on one pixel type, wrong on
+another" bug `Contrast::FractionOfRange` exists to prevent elsewhere. `u16` support is
+corrmatch's own backlog (recorded in `docs/backlog.md`), not something this wrapper
+should paper over with a quantizing cast.
+
+**`displacement`'s two stages, and why Lucas-Kanade is implemented here rather than
+requested from corrmatch.** Stage 1 (corrmatch, rotation off) is bounded to a
+`search`-pixel margin around the window's previous position — a fresh sub-image ROI, not
+a whole-scene search — both because inter-frame motion is small by construction and
+because a whole-scene search risks locking onto a distant, unrelated peak that happens to
+score higher. Stage 2 is translation-only inverse-compositional Lucas-Kanade: the
+Hessian and steepest-descent images come from the *template's own* gradient (a local
+Scharr copy — `vm_primitives::edge::gradient::dense_scharr` is `pub(super)`, so this
+~15-line window-sized variant was cheaper than widening that boundary), computed once,
+so every iteration after the first costs one bilinear resample of `curr` per template
+pixel plus a 2x2 solve. This corrects what corrmatch's own subpixel refinement cannot: a
+quadratic fit to a *discrete* correlation surface is a well-known biased estimator
+(pixel-locking, biased toward integer positions), and no amount of quadratic-fit tuning
+removes that bias — only a second, differently-biased estimator (or an iterative gradient
+method like LK) does. This is application-level accuracy work, not a corrmatch gap, so it
+belongs in this crate rather than as a feature request upstream.
+
+**C1 headline: quadratic-only vs +Lucas-Kanade, ~15% bias/sigma reduction** — see roadmap
+B6 for the full sweep description and numbers. Both are already small (worst cell under a
+tenth of a pixel) because corrmatch's quadratic estimator is a real 2-D fit, not a
+nearest-integer report; Lucas-Kanade's contribution is real but modest on top of an
+already-reasonable baseline, and the measurement says so rather than assuming a dramatic
+correction.
+
 ## Performance numbers (M4 Pro, single thread, release)
 
 Record per release. The target use case budgets ~30 ms for a full multi-stage

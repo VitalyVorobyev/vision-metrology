@@ -22,6 +22,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/displacement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Compute Displacement */
+        post: operations["compute_displacement_api_displacement_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/find": {
         parameters: {
             query?: never;
@@ -235,6 +252,71 @@ export interface components {
                 number,
                 number
             ];
+        };
+        /** DisplacementPairOut */
+        DisplacementPairOut: {
+            /** Dx */
+            dx: number;
+            /** Dy */
+            dy: number;
+            /** From Image Id */
+            from_image_id: string;
+            /** Score */
+            score: number;
+            /** To Image Id */
+            to_image_id: string;
+        };
+        /**
+         * DisplacementRequest
+         * @description Ordered sequence of at least 2 images; `window` (level-0 pixel coordinates,
+         *     in the *first* image) is tracked pairwise through the sequence. Mirrors
+         *     `vision_metrology::corr::DisplacementConfig`.
+         */
+        DisplacementRequest: {
+            /** Image Ids */
+            image_ids: string[];
+            /**
+             * Lk Iters
+             * @default 3
+             */
+            lk_iters: number;
+            /**
+             * Min Score
+             * @default 0.5
+             */
+            min_score: number;
+            /**
+             * Refine
+             * @default lucas_kanade
+             * @enum {string}
+             */
+            refine: "none" | "lucas_kanade";
+            /**
+             * Search X
+             * @default 12
+             */
+            search_x: number;
+            /**
+             * Search Y
+             * @default 12
+             */
+            search_y: number;
+            /** Window */
+            window: [
+                number,
+                number,
+                number,
+                number
+            ];
+        };
+        /** DisplacementResponse */
+        DisplacementResponse: {
+            /** Cumulative X */
+            cumulative_x: number[];
+            /** Cumulative Y */
+            cumulative_y: number[];
+            /** Pairs */
+            pairs: components["schemas"]["DisplacementPairOut"][];
         };
         /** EdgeMarkOut */
         EdgeMarkOut: {
@@ -724,6 +806,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CalibrationOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    compute_displacement_api_displacement_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DisplacementRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DisplacementResponse"];
                 };
             };
             /** @description Validation Error */
