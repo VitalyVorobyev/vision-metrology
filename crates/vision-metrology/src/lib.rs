@@ -16,6 +16,7 @@
 //! | [`matching`]  | Shape-based object detection: gradient-orientation model matching |
 //! | [`measure`]   | Calipers and metrology models — measuring a located part |
 //! | [`metric`]    | The calibration bridge: pixel ↔ millimetre via a mirrored camera model |
+//! | [`scale`]     | Scale estimation for `matching`: estimate once, resample, verify narrow |
 //! | [`segment`]   | Otsu / adaptive threshold, CCL, watershed, region growing |
 //! | [`warp`]      | Image warping: build a `dst → src` map once, apply per frame |
 //!
@@ -39,6 +40,7 @@
 //! | `matching` | [`matching`] | `warp` (`ShapeMatch` rectifies into a canonical crop) |
 //! | `measure` | [`measure`] | `fit` (measured points are fitted) |
 //! | `metric` | [`metric`] | `warp` (`plane_grid_map`/`undistort_map` build a `warp::Map`) |
+//! | `scale` | [`scale`] | `corr`, `matching`, `segment`, `warp` |
 //! | `segment` | [`segment`] | `contour` (region growing consumes a `ContourGraph`) |
 //! | `warp` | [`warp`] | — |
 //! | `serde` | `ShapeModel` persistence | `matching` |
@@ -65,6 +67,8 @@ pub mod matching;
 pub mod measure;
 #[cfg(feature = "metric")]
 pub mod metric;
+#[cfg(feature = "scale")]
+pub mod scale;
 #[cfg(feature = "segment")]
 pub mod segment;
 #[cfg(feature = "warp")]
@@ -116,6 +120,10 @@ pub mod prelude {
         BrownConrady5, CameraModel, PinholeIntrinsics, Plane3, PlaneGrid, Pose3, distort_pixel,
         homography_plane_to_image, pixel_to_plane, pixel_to_ray, plane_grid_map,
         ray_plane_intersect, undistort_map, undistort_pixel,
+    };
+    #[cfg(feature = "scale")]
+    pub use crate::scale::{
+        ScaleEstimate, estimate_scale_logpolar, estimate_scale_moments, find_scale_invariant,
     };
     #[cfg(feature = "segment")]
     pub use crate::segment::{
