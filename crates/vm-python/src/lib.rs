@@ -37,7 +37,7 @@ use measure_py::{
 };
 use metric_py::{
     BrownConrady5, CameraModel, PinholeIntrinsics, Plane3, PlaneGrid, load_rig_extrinsics,
-    load_table_calibration, pixel_to_plane, plane_grid_map, undistort_map,
+    load_table_calibration, pixel_to_plane, plane_grid_map, project_plane_points, undistort_map,
 };
 use segment::Segmenter;
 use shape::{Fitter, LsdDetector};
@@ -109,6 +109,7 @@ fn vision_metrology(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(pixel_to_plane, m)?)?;
     m.add_function(wrap_pyfunction!(plane_grid_map, m)?)?;
     m.add_function(wrap_pyfunction!(undistort_map, m)?)?;
+    m.add_function(wrap_pyfunction!(project_plane_points, m)?)?;
     m.add_function(wrap_pyfunction!(load_rig_extrinsics, m)?)?;
     m.add_function(wrap_pyfunction!(load_table_calibration, m)?)?;
 

@@ -693,6 +693,17 @@ def undistort_map(camera: CameraModel, w: int, h: int) -> Map:
     """Build a `dst -> src` undistortion map for a `w x h` image shot by
     `camera`."""
 
+def project_plane_points(
+    camera: CameraModel, pose: Pose3, points_mm: PointsF32
+) -> npt.NDArray[np.float64]:
+    """Project `(N, 2)` reference-frame `z = 0` plane points (`x_mm, y_mm`)
+    into `camera`'s raw (distorted) pixel space -- the exact forward
+    geometry `plane_grid_map` composes internally, exposed pointwise for
+    mosaic compositing (choosing which of several cameras owns a grid pixel
+    needs every candidate camera's own reprojection, not just the one
+    `plane_grid_map` samples for whichever camera was already picked). A
+    point behind the camera (`z <= 0`) gets a NaN row."""
+
 def load_rig_extrinsics(source: Union[str, bytes]) -> List[Tuple[CameraModel, Pose3]]:
     """Load a calibration-rs `RigExtrinsicsExport` JSON document (file path
     or raw bytes). One `(CameraModel, pose)` pair per camera."""

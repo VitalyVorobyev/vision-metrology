@@ -1235,6 +1235,237 @@
         "title": "ModelOut",
         "type": "object"
       },
+      "MosaicCameraCoverageOut": {
+        "properties": {
+          "camera_index": {
+            "title": "Camera Index",
+            "type": "integer"
+          },
+          "coverage_fraction": {
+            "description": "fraction of the grid this camera's mask covers",
+            "title": "Coverage Fraction",
+            "type": "number"
+          },
+          "image_id": {
+            "title": "Image Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "camera_index",
+          "image_id",
+          "coverage_fraction"
+        ],
+        "title": "MosaicCameraCoverageOut",
+        "type": "object"
+      },
+      "MosaicCameraIn": {
+        "properties": {
+          "camera_index": {
+            "description": "Index into the calibration's camera list.",
+            "minimum": 0.0,
+            "title": "Camera Index",
+            "type": "integer"
+          },
+          "image_id": {
+            "title": "Image Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "camera_index",
+          "image_id"
+        ],
+        "title": "MosaicCameraIn",
+        "type": "object"
+      },
+      "MosaicGridIn": {
+        "description": "Explicit grid spec over the calibration's `z = 0` plane; any field left unset is\nauto-fit from the requested cameras' own image-border footprints on that plane\n(`pixel_to_plane` on a border sample, unioned, plus a small margin).",
+        "properties": {
+          "height": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 2000.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "mm_per_px": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mm Per Px"
+          },
+          "origin_mm": {
+            "anyOf": [
+              {
+                "maxItems": 2,
+                "minItems": 2,
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Mm"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 2000.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          }
+        },
+        "title": "MosaicGridIn",
+        "type": "object"
+      },
+      "MosaicRequest": {
+        "properties": {
+          "calibration_id": {
+            "title": "Calibration Id",
+            "type": "string"
+          },
+          "cameras": {
+            "description": "At least 2 cameras -- a mosaic of 1 is just a crop.",
+            "items": {
+              "$ref": "#/components/schemas/MosaicCameraIn"
+            },
+            "minItems": 2,
+            "title": "Cameras",
+            "type": "array"
+          },
+          "grid": {
+            "$ref": "#/components/schemas/MosaicGridIn"
+          }
+        },
+        "required": [
+          "calibration_id",
+          "cameras"
+        ],
+        "title": "MosaicRequest",
+        "type": "object"
+      },
+      "MosaicResponse": {
+        "properties": {
+          "cameras": {
+            "items": {
+              "$ref": "#/components/schemas/MosaicCameraCoverageOut"
+            },
+            "title": "Cameras",
+            "type": "array"
+          },
+          "height": {
+            "title": "Height",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "image_url": {
+            "title": "Image Url",
+            "type": "string"
+          },
+          "mm_per_px": {
+            "title": "Mm Per Px",
+            "type": "number"
+          },
+          "origin_mm": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Origin Mm",
+            "type": "array"
+          },
+          "overlap_fraction": {
+            "description": "fraction of the *union* covered by >= 2 cameras",
+            "title": "Overlap Fraction",
+            "type": "number"
+          },
+          "seam_disparity_p50": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "null when no pixel is jointly covered by >= 2 cameras",
+            "title": "Seam Disparity P50"
+          },
+          "seam_disparity_p95": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seam Disparity P95"
+          },
+          "source_id_url": {
+            "title": "Source Id Url",
+            "type": "string"
+          },
+          "union_coverage_fraction": {
+            "title": "Union Coverage Fraction",
+            "type": "number"
+          },
+          "width": {
+            "title": "Width",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "width",
+          "height",
+          "origin_mm",
+          "mm_per_px",
+          "image_url",
+          "source_id_url",
+          "cameras",
+          "union_coverage_fraction",
+          "overlap_fraction"
+        ],
+        "title": "MosaicResponse",
+        "type": "object"
+      },
       "OverlayPrimitiveOut": {
         "description": "Mirrors `@vitavision/lab-ui`'s `MeasurePrimitive` union exactly (field names and\nunits \u2014 angles in radians) so the frontend can pass this straight through.",
         "properties": {
@@ -2063,6 +2294,137 @@
         "summary": "Create Model",
         "tags": [
           "models"
+        ]
+      }
+    },
+    "/api/mosaic": {
+      "post": {
+        "operationId": "mosaic_api_mosaic_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MosaicRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MosaicResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mosaic",
+        "tags": [
+          "mosaic"
+        ]
+      }
+    },
+    "/api/mosaic/{mosaic_id}/image": {
+      "get": {
+        "operationId": "get_image_api_mosaic__mosaic_id__image_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "mosaic_id",
+            "required": true,
+            "schema": {
+              "title": "Mosaic Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "feather",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Feather",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Image",
+        "tags": [
+          "mosaic"
+        ]
+      }
+    },
+    "/api/mosaic/{mosaic_id}/source_id": {
+      "get": {
+        "operationId": "get_source_id_api_mosaic__mosaic_id__source_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "mosaic_id",
+            "required": true,
+            "schema": {
+              "title": "Mosaic Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Source Id",
+        "tags": [
+          "mosaic"
         ]
       }
     },

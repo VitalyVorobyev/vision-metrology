@@ -17,9 +17,9 @@ use pyo3::types::PyBytes;
 use vision_metrology::metric::{
     BrownConrady5 as NativeBrownConrady5, CameraModel as NativeCameraModel,
     PinholeIntrinsics as NativePinholeIntrinsics, Plane3 as NativePlane3,
-    PlaneGrid as NativePlaneGrid, Pose3, io,
+    PlaneGrid as NativePlaneGrid, Pose3, distort_pixel, io,
 };
-use vision_metrology::{Point2f, Vec3f};
+use vision_metrology::{Point2f, Point3f, Vec3f};
 
 use crate::warp_py::Map;
 
@@ -399,6 +399,67 @@ pub fn undistort_map(camera: CameraModel, w: usize, h: usize) -> Map {
     let camera: NativeCameraModel = camera.into();
     let native = vision_metrology::metric::undistort_map(&camera, w, h);
     Map::from_native(native)
+}
+
+/// Project points on the reference frame's `z = 0` plane into a camera's
+/// raw (distorted) pixel space: `pose * (x_mm, y_mm, 0)`, perspective
+/// divide, then [`distort_pixel`](vision_metrology::metric::distort_pixel) —
+/// the exact forward geometry [`plane_grid_map`] composes internally,
+/// exposed pointwise/vectorized here for the lab's mosaic compositing.
+///
+/// Choosing which camera "owns" a destination grid pixel under a
+/// nearest-camera-centre priority rule needs, for *every* candidate camera,
+/// where that plane point would land in that camera's own raw pixel space —
+/// not just the one source pixel `plane_grid_map` samples for whichever
+/// camera the caller already picked. This is the tiny binding that makes
+/// that computable in Python without duplicating the distortion formula
+/// there (see `lab/backend/src/vm_lab/routers/mosaic.py`).
+///
+/// `points_mm` is an `(N, 2)` `float32` array of `(x_mm, y_mm)` reference-
+/// frame plane coordinates. Returns an `(N, 2)` `float64` array of raw
+/// pixel coordinates; a point behind the camera (`z <= 0`) gets a `NaN` row.
+#[pyfunction]
+pub fn project_plane_points<'py>(
+    py: Python<'py>,
+    camera: CameraModel,
+    pose: PyReadonlyArray2<'py, f64>,
+    points_mm: PyReadonlyArray2<'py, f32>,
+) -> PyResult<Py<PyArray2<f64>>> {
+    use numpy::PyUntypedArrayMethods;
+    let camera: NativeCameraModel = camera.into();
+    let pose = pose_from_numpy(&pose)?;
+
+    if points_mm.shape().len() != 2 || points_mm.shape()[1] != 2 {
+        return Err(PyValueError::new_err(format!(
+            "points_mm must be shape (N, 2), got {:?}",
+            points_mm.shape()
+        )));
+    }
+    let slice = points_mm
+        .as_slice()
+        .map_err(|e| PyValueError::new_err(format!("points_mm array not C-contiguous: {e}")))?;
+    let n = points_mm.shape()[0];
+
+    // Pure-Rust per-point loop, no Python calls inside — same convention as
+    // `pixel_to_plane` above.
+    let mut out = vec![0.0f64; n * 2];
+    for i in 0..n {
+        let p_ref = Point3f::new(slice[2 * i], slice[2 * i + 1], 0.0);
+        let p_cam = pose * p_ref;
+        if p_cam.z <= 0.0 {
+            out[2 * i] = f64::NAN;
+            out[2 * i + 1] = f64::NAN;
+            continue;
+        }
+        let normalized = Point2f::new(p_cam.x / p_cam.z, p_cam.y / p_cam.z);
+        let px = distort_pixel(&camera, normalized);
+        out[2 * i] = px.x as f64;
+        out[2 * i + 1] = px.y as f64;
+    }
+
+    let arr = numpy::ndarray::Array2::from_shape_vec((n, 2), out)
+        .map_err(|e| PyValueError::new_err(format!("{e}")))?;
+    Ok(arr.into_pyarray(py).unbind())
 }
 
 fn bytes_arg(py: Python<'_>, source: &Bound<'_, PyAny>) -> PyResult<Vec<u8>> {
