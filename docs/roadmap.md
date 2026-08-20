@@ -129,7 +129,7 @@ it; verified by installing the actual built wheel, not just compiling). `laser` 
 
 ---
 
-## Track B — the measurement spine — `planned`
+## Track B — the measurement spine — `in progress — B1/B2/B4/B5 done, B3 filter remaining`
 
 Each module ships with its own bench, doc example, Python parity, and an accuracy entry
 in Track C1.
@@ -567,7 +567,7 @@ prior at all — the estimators both need *something* to start from; see `docs/b
 
 ---
 
-## Track C — credibility and infrastructure — `planned`
+## Track C — credibility and infrastructure — `in progress`
 
 ### C1 — accuracy regression suite  ← the differentiator — `in progress — envelopes pinned, doc table pending`
 Performance is measured and recorded; **accuracy is not**, and for a metrology library the
