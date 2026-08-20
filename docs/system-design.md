@@ -821,6 +821,131 @@ intensity units. This is exactly why C1's own envelope-pinning convention pins t
 *measured* number for a given fixture rather than to an assumed "small is always right"
 threshold.
 
+### `measure::diagnostics::layout`: caliper placement moves into Rust (2026-08)
+Roadmap B2.1, plan decision 7 (W6). The lab's Python backend re-implemented
+`MetrologyModel`'s per-caliper placement geometry by hand
+(`vm_lab/geometry.py`'s `rotate`/`perp`/`to_scene` plus `routers/measure.py`'s
+`_place_calipers`) purely to draw overlay boxes — a second copy of exactly the math
+`MetrologyModel::measure_one` already computes, and one with no compiler or test
+connecting it back to the original if that placement ever changed (`docs/backlog.md`'s
+"no per-caliper explain API" flagged this as the highest-value remaining duplication in
+`measure`).
+
+**The fix is a refactor, not a new algorithm.** `measure_one`'s per-shape placement loop
+(build a `MeasureRect` per point along a line, or a `MeasureRadial` per angle around a
+circle) is pulled into `model::caliper_placements`, a `pub(crate)` function returning
+`Vec<CaliperShape>` where `CaliperShape` is `Rect(MeasureRect) | Radial(MeasureRadial)`.
+`measure_one` calls it and feeds each shape into `Caliper::set_rect`/`set_radial` as
+before; the new `measure::diagnostics::layout(&MetrologyModel, &Similarity2f) ->
+Vec<CaliperPlacement>` calls the *same* function and returns each shape tagged with
+`(object_index, caliper_index)`. There is exactly one place this geometry is written now,
+and `apply`/`layout` cannot disagree on where a caliper is because they call the same
+code, not two implementations kept in sync by convention.
+
+**`layout` needs no image, deliberately.** It is exactly what `apply` computes *before*
+measuring — useful for drawing a caliper before an image is even loaded in the UI, or for
+one that will go on to reject every sample. An object whose placement cannot be computed
+(fewer than two calipers, a degenerate zero-length line) contributes no entries rather
+than erroring, mirroring `apply`'s per-object result semantics without an error channel
+to attach the reason to.
+
+**The `Radial` overlay convention is preserved exactly, on purpose.** `MeasureRadial`'s
+`center` field is the *circle's* own centre (the measurement geometry's convention, not
+an overlay-box position) — for every caliper around the circle, not each caliper's own
+point on the boundary. The lab's existing overlay code already drew the caliper box at
+that same `(center, angle, half_len, half_width)` tuple, so `layout` reproducing it
+verbatim is what keeps `routers/measure.py`'s rewrite a pure refactor: overlay output is
+provably unchanged (every pre-existing backend smoke/mosaic test passes with no
+assertion changes) rather than merely believed unchanged. Whether that convention is the
+*best* one for a caliper-on-a-circle overlay is a separate, unopened question — this wave
+only removed the duplication, it did not redesign the visualization.
+
+**Python binding**: `MetrologyModel.layout(x, y, angle, scale, origin)` mirrors `apply`'s
+own fixture-construction signature (same `pose_from` helper) and returns
+`CaliperPlacement` pyclasses shaped to build `Caliper.rect`/`Caliper.radial` directly —
+`kind: "rect" | "radial"`, `center`, `angle`, `half_len`, `half_width`, and `radius`
+(only set for `"radial"`). `lab/backend/src/vm_lab/routers/measure.py` calls it once per
+`measure` request (grouped by `object_index`) instead of re-deriving placement per
+object; `geometry.py` is deleted, no remaining callers.
+
+### Tauri desktop shell: commands/events, not a second HTTP backend (2026-08)
+Roadmap C4, plan decisions 7–8 (W6). The lab gets a second shell,
+`lab/frontend/src-tauri` (crate `vm-lab-desktop`), alongside the existing FastAPI/browser
+one — **one frontend, two transports**, not two frontends. The user's own decision:
+browser stays on FastAPI (already correct for that deployment shape); desktop talks to
+`vision-metrology` through **native Tauri commands and events**, never HTTP — there is no
+sidecar process, no port to discover, no CORS policy to keep in sync with a dev-server
+port.
+
+**Both shells call the same Rust code, by two different paths.** The browser path is
+UI → HTTP → FastAPI → PyO3 (`vm-python`) → `vision-metrology`/`vm-primitives`; the
+desktop path is UI → `invoke()` → Tauri command (`vm-lab-desktop`) →
+`vision-metrology`/`vm-primitives` directly, via ordinary path dependencies. Neither
+path re-implements an algorithm — `vm-lab-desktop`'s commands are the same shape as the
+FastAPI routers (build a config, call the library, translate the result to a
+serializable DTO), just without a PyO3 or HTTP hop. This is what makes "the two shells
+agree" a claim that can be checked mechanically rather than asserted by inspection.
+
+**Contract fixtures are the check.** `lab/contract/fixtures/`: golden request/response
+JSON, captured from the FastAPI backend over small deterministic synthetic images (an
+anti-aliased disc; two value-noise-textured frames shifted by an exact known `(4.0,
+3.0)` px, for `displacement`'s ground truth), for the six core operations (teach, find,
+measure with and without calibration/mm, rectify, displacement). Two independent replay
+tests consume the *same* JSON: `lab/backend/tests/test_contract_fixtures.py` (reruns the
+identical operation sequence against a fresh FastAPI backend, float tolerance) and
+`lab/frontend/src-tauri/tests/contract_parity.rs` (reruns it through the Tauri command
+layer directly — plain functions over `&AppState`, no GUI required to exercise them).
+Both existing at once is the point: a change to `vm_lab`'s response shape *or* to the
+Rust command layer is caught by whichever replay it broke, not discovered later as a
+UI-only bug in one shell. Normalization (id-shaped strings only, replaced by fixed
+placeholders like `$IMAGE_ID` — the two backends' id counters are unrelated and neither
+is reproducible run-to-run) is documented once, in `lab/contract/README.md`, rather than
+duplicated in each test's comments.
+
+**The Rust replay test earned its keep on day one.** `commands::rectify::rectify`
+originally locked `state.images`, then called `run_find` — which locks `state.images`
+again on the same thread. `std::sync::Mutex` is not reentrant, so this is a guaranteed
+self-deadlock, and it only ever fires on the code path both `rectify` and (transitively,
+through `measure`'s auto-find fallback) `measure` share. The contract-parity test hung
+instead of failing fast (`cargo test` sat at ~0% CPU, a symptom worth recognizing: a
+stuck-not-crashing test process under a mutex is a deadlock, not a slow computation —
+diagnosed with `sample <pid>`, which showed the blocked thread's stack sitting in
+`pthread_mutex_lock`). Fixed by calling `run_find` before acquiring the function's own
+`images` lock, not after.
+
+**Standalone Cargo workspace, verified, not assumed.** `src-tauri/Cargo.toml` declares
+its own empty `[workspace]` table specifically so it cannot be swept into the repo-root
+workspace by Cargo's upward directory search (a crate with no `[workspace]` table living
+under a directory tree whose ancestor declares one will otherwise try to join it). Checked
+by running `cargo metadata --no-deps` from the repo root and confirming the package list
+is still exactly `vm-primitives`/`vision-metrology`/`vm-python` — the desktop crate's
+Tauri/GUI dependency tree never touches a `cargo build --workspace` the library crates
+run.
+
+**Two deliberate simplifications, both documented at their command.** (1) `image_data`'s
+tiers are PNG at every size (full/preview/thumb), not the browser backend's WebP for
+preview/thumb — the plan's own instruction ("PNG bytes, no base64") plus one fewer image
+codec dependency; no on-disk tier cache either, since a resize costs a few milliseconds
+at lab image sizes and a cache-invalidation story is one more thing to keep correct for a
+single-user tool. (2) `imageUrl`/`rectifyCropUrl` must be synchronous (every
+`LabBackend` call site drops the result straight into `<img src>`), but the underlying
+data now arrives over an async `invoke()` returning raw bytes
+(`tauri::ipc::Response`, deliberately not base64-encoded). `tauriBackend.ts` bridges this
+with a blob-URL cache keyed by id/tier: the first call kicks off the fetch and returns a
+1x1 placeholder immediately, a later call (which this app's own re-renders — TanStack
+Query cache updates, selection changes — supply in practice) returns the cached `blob:`
+URL. A component that renders an image exactly once and never again would keep showing
+the placeholder; nothing in this app does that today, and the trade-off is recorded here
+rather than solved with a bigger re-render-forcing mechanism this wave did not need.
+
+**Mosaic has no Tauri command this wave, and says so at the call site rather than
+silently degrading.** `routers/mosaic.py`'s compositor (~315 lines: grid auto-fit,
+nearest-camera-centre priority, `source_id` map, opt-in feather display) was not ported.
+`tauriBackend.ts`'s `mosaic`/`mosaicImageUrl`/`mosaicSourceIdUrl` throw a clear "not
+available in the desktop build" error — satisfying `LabBackend`'s type contract without
+pretending the feature works, so the Bird's-eye tab fails loudly (browser-only) rather
+than rendering nothing.
+
 ## Performance numbers (M4 Pro, single thread, release)
 
 Record per release. The target use case budgets ~30 ms for a full multi-stage

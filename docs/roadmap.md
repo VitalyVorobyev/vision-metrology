@@ -195,6 +195,31 @@ edge inward — 39.88 px on a nominal-40 disc. `MeasureRadial` averages along th
 `examples/inspect_canend` runs the whole chain on real frames: 100/100 measured across two
 lighting conditions, σ ≈ 0.3 px on the rim radius, every caliper surviving the robust fit.
 
+### B2.1 — `measure::diagnostics::layout`: caliper placement, shared — `done`
+W6 (Tauri wave) plan decision 7, closing the `backlog.md` "no per-caliper explain API"
+item's placement half. The lab's Python backend re-implemented `MetrologyModel`'s
+per-caliper placement geometry by hand (`vm_lab/geometry.py` + `routers/measure.py`'s
+`_place_calipers`) to draw overlay boxes — duplicated math that would silently drift if
+`measure_one`'s placement ever changed.
+
+```rust
+pub enum CaliperShape { Rect(MeasureRect), Radial(MeasureRadial) }
+pub struct CaliperPlacement { pub object_index: usize, pub caliper_index: usize,
+                              pub shape: CaliperShape }
+pub fn layout(model: &MetrologyModel, fixture: &Similarity2f) -> Vec<CaliperPlacement>;
+```
+
+**Landed.** `MetrologyModel::apply` and `layout` both call one private function
+(`model::caliper_placements`) — the only place this geometry is written now. `layout`
+needs no image: it is exactly what `apply` computes before measuring, so it works for
+drawing a caliper before an image is even loaded, or for a caliper that will go on to
+reject. Python: `MetrologyModel.layout(x, y, angle, scale, origin)` mirrors `apply`'s own
+fixture signature, returns `CaliperPlacement` objects shaped to build
+`Caliper.rect`/`Caliper.radial` directly. The lab's `geometry.py` is deleted; both the
+FastAPI router and the Tauri command (`src-tauri/src/commands/measure.rs`) call `layout`
+instead of re-deriving it. Overlay output verified unchanged (all pre-existing backend
+smoke tests pass without modification — see system-design.md's `measure` entry).
+
 ### B3 — `filter`: the absent workhorse
 Separable and recursive (Deriche / van Vliet) Gaussian, sliding-window box mean, an O(1)-per-radius
 histogram **median**, grayscale erode/dilate/open/close/tophat (van Herk–Gil-Werman).
@@ -534,6 +559,53 @@ generate the vm-python config conversions instead of hand-mirroring them (now sp
 across `src/config/*.rs`, ~750 lines but each file under the 600-line soft cap); a Python
 binding for `laser` and for `segment::watershed`/region-growing (see `docs/backlog.md`);
 `cargo publish --dry-run` in CI; miri over **all** unsafe, not just `laser::`.
+
+### C4 — Tauri desktop shell for the lab — `done`
+W6 (plan decision 7–8). The lab (`lab/`) gets a second shell: `lab/frontend/src-tauri`,
+a Tauri v2 crate (`vm-lab-desktop`) that calls `vision-metrology`/`vm-primitives`
+directly — commands and events, no HTTP, no PyO3 — behind the *same* `LabBackend`
+TypeScript interface the browser build's `httpBackend` already implements. One frontend
+bundle, transport chosen at runtime by `getBackend()`.
+
+**Standalone Cargo workspace.** `src-tauri/Cargo.toml` carries its own empty
+`[workspace]` table, so it never joins the repo-root workspace (verified: `cargo
+metadata` from the repo root lists only `vm-primitives`/`vision-metrology`/`vm-python`).
+Its own gates (`cargo fmt`/`clippy -D warnings`/`test`) run independently.
+
+**Contract fixtures — the anti-drift gate (plan decision 7).** `lab/contract/fixtures/`:
+golden request/response JSON + small deterministic synthetic PNGs (a disc for teach/
+find/measure/rectify; two value-noise textures shifted by an exact known `(4.0, 3.0)` px
+for displacement) for the six core operations, generated from the FastAPI backend
+(`lab/backend/scripts/export_contract_fixtures.py`) and replayed by two independent
+tests — `lab/backend/tests/test_contract_fixtures.py` (browser path) and
+`lab/frontend/src-tauri/tests/contract_parity.rs` (desktop path, plain functions over
+`&AppState`, no GUI). Both passed on first correct implementation, modulo one real bug
+the Rust replay test caught before it shipped: `rectify`'s command locked
+`state.images`, then called `run_find` (which locks it again on the same thread) — a
+self-deadlock on `std::sync::Mutex`, fixed by reordering.
+
+**Command surface**: `images_upload`/`images_list`/`image_data` (PNG at
+full/preview/thumb — a deliberate simplification from the browser backend's WebP tiers,
+matching the plan's own "PNG bytes, no base64" instruction), `models_create`/
+`models_list` (teach), `find`, `measure` (circle/line, calibration/mm path, built on
+B2.1's `layout` API — no placement math duplicated a third time), `rectify` +
+`rectify_crop`, `displacement`, `calibration_upload`/`calibration_list`. State: a small
+Rust port of `store.py` (in-memory registries + files under the Tauri app-data
+directory, rehydrated on startup). `find` emits `lab://progress` started/finished
+events — the plan's "wire one real progress case".
+
+**Deliberate skip: mosaic.** The ~315-line compositor (`routers/mosaic.py`: grid
+auto-fit, nearest-camera-centre priority, source_id map, feather mode) was not ported to
+a Tauri command this wave; `tauriBackend.ts`'s three mosaic methods raise a clear
+"desktop build" error instead of silently no-op-ing. The Bird's-eye tab stays
+browser-only until a future wave ports it.
+
+**Verified**: `bunx tauri build` produced a full signed-free bundle (`.app` + `.dmg`,
+macOS arm64) on the first clean attempt — no fallback to `--no-bundle` needed. `bun run
+tauri dev` manually launched: Vite dev server on `:5174` plus a native window process,
+both alive and connected. Frontend typecheck/vitest (48 pass, 8 new for
+`tauriBackend.ts`)/build all green; root workspace `fmt`/`clippy`/`cargo metadata`
+re-verified unaffected.
 
 ---
 

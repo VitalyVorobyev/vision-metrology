@@ -1,7 +1,10 @@
 # Visual Metrology Lab
 
-A local interactive workbench over the `vision_metrology` Python package. Where
-`examples/python/` shows the library's chain in a script, the lab makes it a workbench:
+A local interactive workbench over `vision_metrology` — **one frontend, two shells**: a
+browser build over the FastAPI/Python bindings (below), and a Tauri desktop build that
+calls the Rust crates directly over native commands/events, no HTTP at all (see
+[Desktop (Tauri)](#desktop-tauri)). Where `examples/python/` shows the library's chain in
+a script, the lab makes it a workbench:
 upload an image, drag a box to **teach** a shape model, **find** it elsewhere in the
 image, **measure** circles/lines against the found pose, and **judge** the fit — rms,
 max deviation, per-caliper hit/reject, the raw intensity profile behind each hit. The
@@ -27,27 +30,42 @@ lab/contract/   openapi.json — the committed wire contract, dumped from the Fa
                 by `backend/scripts/export_openapi.py`. Source of truth for the
                 frontend's typed client; regenerate it whenever a route or schema
                 changes and commit the diff (the diff *is* the contract changing).
+                fixtures/ — golden request/response JSON + synthetic PNGs for the core
+                operations, the anti-drift gate between the browser and desktop shells
+                (see "Desktop (Tauri)" and fixtures/README below it in this file).
 lab/frontend/   Vite + React 19 + TypeScript strict + Tailwind v4, built on the shared
                 @vitavision/lab-ui design system (ZoomPanCanvas, MeasureOverlay,
                 LineProfile, SchemaForm, ...). `src/api/generated.ts` (openapi-typescript
                 output, also committed) supplies every request/response type; `backend.ts`
-                is the one `LabBackend` interface every tab/component calls through
-                (`httpBackend` today, over `openapi-fetch`) — no raw `fetch` outside it.
-                `baseUrl.ts` resolves where the backend lives (env override, else
-                `127.0.0.1:8000`), with an injected-global hook already wired for a future
-                Tauri shell so a second `LabBackend` implementation can slot in behind
-                `getBackend()` without touching the UI.
+                is the one `LabBackend` interface every tab/component calls through —
+                `httpBackend` (browser, over `openapi-fetch`) or `tauriBackend` (desktop,
+                over `@tauri-apps/api` invoke/events) — no raw `fetch` or Tauri import
+                outside those two files. `shell.ts`'s `isTauri()` check picks which one
+                `getBackend()` returns; `baseUrl.ts` (browser-only) resolves where the
+                HTTP backend lives.
+lab/frontend/   Tauri v2 desktop shell, crate `vm-lab-desktop` — a standalone Cargo
+  src-tauri/    workspace (`[workspace]` in its own Cargo.toml), never a member of the
+                repo-root one. Calls `vision-metrology`/`vm-primitives` directly via path
+                dependencies; commands mirror the FastAPI routers, `src/state.rs` is a
+                thin Rust port of `store.py`. See "Desktop (Tauri)" below.
 ```
 
-The backend does all the geometry: every response carries **source-image pixel
-coordinates** — caliper boxes, measured points, fitted circles/lines, per-caliper
-profiles — so the frontend only draws what it is told and never reconstructs a pose or
-a fixture transform itself. (See `geometry.py` for the one place that transform lives,
-and its docstring for a real gotcha it works around — see "Notes" below.)
+Both shells do all the geometry server/command-side: every response carries
+**source-image pixel coordinates** — caliper boxes, measured points, fitted
+circles/lines, per-caliper profiles — so the frontend only draws what it is told and
+never reconstructs a pose or a fixture transform itself. Caliper *placement* used to be
+a second, hand-written copy of that geometry (`vm_lab/geometry.py`, deleted); it now
+lives once, in Rust, as `measure::diagnostics::layout` — both the Python router
+(`routers/measure.py`) and the Tauri command (`src-tauri/src/commands/measure.rs`) call
+the *same* function `MetrologyModel::apply` calls internally, so an overlay can never
+draw a caliper the actual measurement did not look at. See system-design.md's `measure`
+entry for the API.
 
-`lab/` is **not** part of the Cargo workspace; it contains no Rust. It depends on
-`vision_metrology`, the PyO3 bindings published from `crates/vm-python`, as an editable
-local dependency.
+`lab/backend/` and `lab/frontend/` (excluding `src-tauri/`) are **not** part of the
+Cargo workspace; they contain no Rust and depend on `vision_metrology`, the PyO3 bindings
+published from `crates/vm-python`, as an editable local dependency.
+`lab/frontend/src-tauri/` **is** Rust, but is its own standalone Cargo workspace,
+detached from the repo root's (see "Desktop (Tauri)").
 
 ## API
 
@@ -84,7 +102,7 @@ camera — see `vm_lab/routers/measure.py`). A pixel whose ray misses the plane 
 camera, or parallel to it) leaves the corresponding mm field `null` rather than failing
 the whole request.
 
-## Run it
+## Run it (browser)
 
 Two terminals, from `lab/`:
 
@@ -98,9 +116,9 @@ saved models) — gitignored, safe to delete to reset the workbench.
 
 The frontend talks to the backend over CORS'd HTTP (`Settings.cors_origins` in
 `config.py` allows `:5174`), not a dev-server proxy — `src/api/baseUrl.ts` resolves the
-backend's base URL itself (`VITE_API_BASE_URL` env override, else the `:8000` default),
-which is what lets the same bundle later run inside a Tauri shell that injects a
-different, ephemeral sidecar port.
+backend's base URL itself (`VITE_API_BASE_URL` env override, else the `:8000` default).
+This path is browser-only; see below for the desktop build, which never starts this
+backend at all.
 
 ### Regenerating the API contract
 
@@ -126,13 +144,106 @@ maturin build -m ../../crates/vm-python/Cargo.toml --release
 uv pip install ../../crates/vm-python/target/wheels/vision_metrology-*.whl
 ```
 
+### Contract fixtures — the anti-drift gate
+
+`lab/contract/fixtures/` (golden request/response JSON + small synthetic PNGs for teach/
+find/measure/measure-with-mm/rectify/displacement) is what keeps the two shells honest:
+`lab/backend/scripts/export_contract_fixtures.py` generates them from the FastAPI
+backend, `lab/backend/tests/test_contract_fixtures.py` replays them against it, and
+`lab/frontend/src-tauri/tests/contract_parity.rs` replays the *same* fixtures through the
+Tauri command layer — one JSON file, two replay tests, in two languages. Regenerate with
+`uv run --directory lab/backend python scripts/export_contract_fixtures.py` whenever the
+operation sequence or its synthetic inputs change, and commit the diff. Full rules
+(normalization, tolerance) are in `lab/contract/README.md`.
+
+## Desktop (Tauri)
+
+One frontend bundle, two transports, chosen at runtime by `getBackend()`
+(`src/api/backend.ts`) via `isTauriShell()` (`src/api/shell.ts`, `@tauri-apps/api/core`'s
+`isTauri()`):
+
+```
+Browser build                              Desktop build (Tauri)
+┌──────────────┐   HTTP (openapi-fetch)     ┌──────────────┐   invoke()/emit()
+│  React UI    │ ─────────────────────────▶ │  React UI    │ ─────────────────▶
+│ (httpBackend)│ ◀───────────────────────── │(tauriBackend)│ ◀─────────────────
+└──────────────┘   JSON, PNG/WebP by URL    └──────────────┘   JSON, PNG as raw
+       │                                            │           IPC bytes (no
+       ▼                                            ▼           base64)
+┌──────────────┐                            ┌──────────────────────────────┐
+│   FastAPI    │                            │  vm-lab-desktop (Tauri, Rust)│
+│  (vm_lab)    │                            │  commands/* -> vision-       │
+└──────┬───────┘                            │  metrology directly, no HTTP │
+       │ PyO3                               └──────────────┬───────────────┘
+       ▼                                                    │ path deps
+┌──────────────┐                                            ▼
+│vision_metrology (Python bindings, crates/vm-python)  vision-metrology + vm-primitives
+└──────────────┘                                       (same Rust crates, called directly)
+```
+
+Both shells call the *same* Rust code (`crates/vision-metrology`,
+`crates/vm-primitives`) — the browser build through `vm-python`'s PyO3 bindings, the
+desktop build directly. `lab/contract/fixtures/` (above) is what turns "should agree" into
+"verified to agree".
+
+```bash
+cd lab/frontend
+bun install
+bun run tauri dev       # Vite dev server + a native window, hot-reloads the frontend
+bun run tauri build     # release .app/.dmg (macOS) under src-tauri/target/release/bundle/
+```
+
+No backend process, no `VITE_API_BASE_URL`, no CORS config — the desktop build never
+opens a socket to reach `vision_metrology`.
+
+**Where state lives.** `lab/frontend/src-tauri/src/state.rs` is a thin Rust port of
+`vm_lab/store.py`'s essentials: in-memory registries (`images`/`models`/`calibrations`,
+behind `std::sync::Mutex`) rebuilt on startup from files under the Tauri app-data
+directory (`AppState::rehydrated`, called from `lib.rs`'s `setup` hook) —
+`~/Library/Application Support/dev.vitavision.metrology-lab/{images,models,
+calibrations}/` on macOS. Same spirit as the backend's `data/` directory, different path
+and no shared code (a ~450-line, deliberately small module — not a byte-for-byte port of
+`store.py`, which also has thumbnail-tier caching this crate does not).
+
+**Progress events.** Long operations can emit `lab://progress` events
+(`{op, stage: "started"|"finished", elapsed_ms}`) over `tauri::Emitter`; `find` is wired
+today (the plan's "wire one real progress case") since its cost is the one that scales
+with scene size in a way a user notices. `teach`/`images_*` are effectively instant on
+lab-sized images and are not wired.
+
+**Deliberately not ported this wave: mosaic.** `routers/mosaic.py` (~315 lines: grid
+auto-fit, nearest-camera-centre compositing, source_id map, feather display mode) has no
+Tauri command. `tauriBackend.ts`'s `mosaic`/`mosaicImageUrl`/`mosaicSourceIdUrl` throw a
+clear "not available in the desktop build" error rather than silently returning nothing —
+the Bird's-eye tab is browser-only until this is ported (tracked in `docs/backlog.md`).
+
+**`imageUrl`/`rectifyCropUrl` are synchronous** (every `LabBackend` call site drops the
+result straight into `<img src>`), but the underlying data arrives over an async
+`invoke()` returning raw bytes (`tauri::ipc::Response`, no base64). `tauriBackend.ts`
+bridges this with a blob-URL cache: the first call for a given id/tier kicks off the
+fetch in the background and returns a 1x1 placeholder immediately; the *next* call for
+that key (the app's own re-renders — TanStack Query updates, selection changes — happen
+often enough in practice) returns the real `blob:` URL. A component that renders an image
+exactly once and never again would keep showing the placeholder; no call site in this app
+does that today.
+
+**Tiers are PNG, not WebP.** The browser backend's `thumb`/`preview` tiers are WebP
+(`media.py`); the desktop command (`image_data`) resizes and PNG-encodes all three tiers
+instead — the plan's own instruction ("PNG bytes, no base64") plus one fewer codec
+dependency. No on-disk tier cache either: a resize is a few milliseconds at lab image
+sizes, and a cache-invalidation story is a second thing to keep correct for a
+single-user workbench.
+
 ## Tests
 
 ```bash
 cd backend && uv run pytest       # smoke: upload -> teach -> find -> measure a synthetic disc -> rectify ->
                                    # upload a real table_calibration.json -> measure with mm; plus displacement
-                                   # and mosaic (synthetic 2-camera calibration, both built in their own tests)
+                                   # and mosaic (synthetic 2-camera calibration, both built in their own tests);
+                                   # plus the contract-fixture replay (test_contract_fixtures.py)
 cd frontend && bun run typecheck && bun run test && bun run build
+cd frontend/src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
+                                   # cargo test includes tests/contract_parity.rs, the desktop-side replay
 ```
 
 ## Out of MVP scope
@@ -157,21 +268,23 @@ cd frontend && bun run typecheck && bun run test && bun run build
 
 ## Notes for the next session
 
-- **The origin-correction gotcha is fixed.** `MetrologyModel.apply` used to build its
-  fixture as `scale·R(angle)·point + (x, y)`, skipping the `origin` subtraction that
-  `ShapeMatch::pose` applies (`position + scale·R(angle)·(point − origin)`), so the
-  backend had to pre-correct the translation itself (`correct_translation` in
-  `backend/src/vm_lab/geometry.py`). `apply` now takes an `origin` keyword and builds the
-  same fixture `ShapeMatch::pose` does (`crates/vm-python/src/measure_py.rs`); the backend
-  passes the model's `origin` straight through and `correct_translation` is gone.
-- **Per-caliper hit/reject and profiles are recomputed by the lab**, not read off
-  `MetrologyModel.apply`'s result — that binding only returns the fit and its used
-  `hits`, not what every caliper individually found. `measure.py`'s `_place_calipers`
-  mirrors `MetrologyModel::measure_one` (`crates/vision-metrology/src/measure/model.rs`)
-  by hand to reconstruct it. If that Rust function's caliper placement ever changes,
-  this needs updating in step — there is no shared source of truth today. A cleaner fix
-  is a Rust-side "explain" API that returns per-caliper outcomes directly; also a
-  backlog candidate.
+- **The origin-correction gotcha is fixed** (historical: `MetrologyModel.apply` used to
+  build its fixture as `scale·R(angle)·point + (x, y)`, skipping the `origin` subtraction
+  `ShapeMatch::pose` applies, so the backend pre-corrected the translation itself in a
+  now-deleted `geometry.py` helper). `apply` takes an `origin` keyword and builds the same
+  fixture `ShapeMatch::pose` does (`crates/vm-python/src/measure_py.rs`); the backend
+  passes the model's `origin` straight through.
+- **Per-caliper hit/reject and profiles are recomputed by both shells** (`measure.py`'s
+  `_measure_calipers`, `src-tauri`'s `commands::measure::measure_calipers`), not read off
+  `MetrologyModel.apply`'s result — that call only returns the fit and its used `hits`,
+  not what every caliper individually found. This used to mean *placement* was
+  duplicated too (`measure.py`'s old `_place_calipers`, deleted in W6): both shells now
+  get placement from `measure::diagnostics::layout`, the same function
+  `MetrologyModel::apply` calls internally, so a caliper can never be drawn somewhere the
+  actual measurement did not look. What's still duplicated is only the *re-measurement*
+  itself (calling `Caliper::measure` a second time per caliper to recover the rejection
+  reason and raw profile `apply` doesn't surface) — both call sites start from identical
+  geometry, so they can disagree on *why* a caliper failed but never on *where* it was.
 - **UX left open**: no explicit-fixture entry in the Measure tab (auto-find only in the
   MVP UI, though the backend request schema supports an explicit `fixture`); no way to
   edit/delete a taught model; the ROI-drag layer assumes `full`/`preview` tiers share the
