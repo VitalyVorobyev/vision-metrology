@@ -33,7 +33,7 @@
 //! | `fit` | [`fit`] | — |
 //! | `laser` | [`laser`] | — |
 //! | `lsd` | [`lsd`] | — |
-//! | `matching` | [`matching`] | — |
+//! | `matching` | [`matching`] | `warp` (`ShapeMatch` rectifies into a canonical crop) |
 //! | `measure` | [`measure`] | `fit` (measured points are fitted) |
 //! | `segment` | [`segment`] | `contour` (region growing consumes a `ContourGraph`) |
 //! | `warp` | [`warp`] | — |
@@ -90,8 +90,8 @@ pub mod prelude {
     pub use crate::lsd::{LineSegment2f, LsdConfig, LsdDetector};
     #[cfg(feature = "matching")]
     pub use crate::matching::{
-        Polarity, ShapeMatch, ShapeMatcher, ShapeModel, ShapeModelBuilder, ShapeModelConfig,
-        ShapeSearchConfig,
+        CropSpec, Polarity, ShapeMatch, ShapeMatcher, ShapeModel, ShapeModelBuilder,
+        ShapeModelConfig, ShapeSearchConfig,
     };
     #[cfg(feature = "measure")]
     pub use crate::measure::{

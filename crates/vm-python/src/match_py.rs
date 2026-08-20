@@ -3,7 +3,8 @@
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 use vision_metrology::matching::{
-    ShapeMatcher as NativeShapeMatcher, ShapeModel as NativeShapeModel, ShapeModelBuilder,
+    CropSpec as NativeCropSpec, ShapeMatcher as NativeShapeMatcher, ShapeModel as NativeShapeModel,
+    ShapeModelBuilder,
 };
 use vm_primitives::Rect2f;
 
@@ -17,6 +18,64 @@ fn to_rect(roi: (f32, f32, f32, f32)) -> Rect2f {
         y: roi.1,
         width: roi.2,
         height: roi.3,
+    }
+}
+
+/// Fixed crop geometry for :meth:`ShapeMatch.model_frame_map` — rectify a
+/// located match into a canonical, model-frame patch.
+///
+/// `rect` is `(x, y, width, height)` in **model-frame coordinates** (the
+/// same reference-image frame :attr:`ShapeModel.reference_points` reports).
+/// `px_per_unit` sets the destination resolution; `normalize_scale=True`
+/// (default) renders the crop at model scale regardless of the found scale,
+/// `False` renders at the found scale. The output pixel size —
+/// :attr:`output_size` — depends only on `rect` and `px_per_unit`, never on
+/// any particular match: that is what makes crops from different frames
+/// directly comparable.
+#[pyclass(get_all, skip_from_py_object)]
+#[derive(Debug, Clone, Copy)]
+pub struct CropSpec {
+    /// Crop rectangle in model-frame coordinates, `(x, y, width, height)`.
+    pub rect: (f32, f32, f32, f32),
+    /// Destination pixels per one model-frame unit (pixel).
+    pub px_per_unit: f32,
+    /// Render at model scale (`True`, canonical) or found scale (`False`).
+    pub normalize_scale: bool,
+}
+
+#[pymethods]
+impl CropSpec {
+    #[new]
+    #[pyo3(signature = (rect, px_per_unit, normalize_scale=true))]
+    pub fn new(rect: (f32, f32, f32, f32), px_per_unit: f32, normalize_scale: bool) -> Self {
+        Self {
+            rect,
+            px_per_unit,
+            normalize_scale,
+        }
+    }
+
+    /// Output `(width, height)` in pixels — fixed by this spec alone.
+    #[getter]
+    pub fn output_size(&self) -> (usize, usize) {
+        self.to_native().output_size()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "CropSpec(rect={:?}, px_per_unit={:.3}, normalize_scale={})",
+            self.rect, self.px_per_unit, self.normalize_scale
+        )
+    }
+}
+
+impl CropSpec {
+    pub(crate) fn to_native(self) -> NativeCropSpec {
+        NativeCropSpec {
+            rect: to_rect(self.rect),
+            px_per_unit: self.px_per_unit,
+            normalize_scale: self.normalize_scale,
+        }
     }
 }
 

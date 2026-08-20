@@ -37,6 +37,10 @@ export type CaliperResultOut = Schemas["CaliperResultOut"];
 export type CaliperProfileOut = Schemas["CaliperProfileOut"];
 export type EdgeMarkOut = Schemas["EdgeMarkOut"];
 export type OverlayPrimitiveOut = Schemas["OverlayPrimitiveOut"];
+export type CropSpecIn = Schemas["CropSpecIn"];
+export type RectifyRequest = Schemas["RectifyRequest"];
+export type RectifyResponse = Schemas["RectifyResponse"];
+export type RectifyMatchOut = Schemas["RectifyMatchOut"];
 export type Roi = NonNullable<ModelCreateRequest["roi"]>;
 export type AngleRange = NonNullable<FindRequest["angle_range"]>;
 
@@ -52,6 +56,11 @@ export interface LabBackend {
   teachModel(req: ModelCreateRequest): Promise<ModelOut>;
   find(req: FindRequest): Promise<FindResponse>;
   measure(req: MeasureRequest): Promise<MeasureResponse>;
+  rectify(req: RectifyRequest): Promise<RectifyResponse>;
+  /** Built, not fetched — same reasoning as `imageUrl`. The response's own
+   * `crop_url` is server-relative, so this is how a caller turns a match `index`
+   * into something an `<img src>` can load. */
+  rectifyCropUrl(imageId: string, modelId: string, index: number): string;
 }
 
 /**
@@ -138,6 +147,15 @@ function createHttpBackend(): LabBackend {
     async measure(req: MeasureRequest) {
       const res = await client.POST("/api/measure", { body: req });
       return unwrap<MeasureResponse>(res, "measure results");
+    },
+
+    async rectify(req: RectifyRequest) {
+      const res = await client.POST("/api/rectify", { body: req });
+      return unwrap<RectifyResponse>(res, "rectify results");
+    },
+
+    rectifyCropUrl(imageId: string, modelId: string, index: number) {
+      return `${baseUrl}/api/rectify/${imageId}/${modelId}/${index}`;
     },
   };
 }

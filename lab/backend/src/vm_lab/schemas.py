@@ -206,3 +206,48 @@ class MeasureResponse(BaseModel):
     fixture: FixtureIn
     fixture_source: Literal["explicit", "auto_find"]
     objects: list[MeasureObjectResultOut]
+
+
+# -- rectify (align) ---------------------------------------------------------------------
+
+
+class CropSpecIn(BaseModel):
+    """Mirrors `vm.CropSpec`. `rect` is in **model-frame coordinates** — the
+    taught model's own reference-image frame, i.e. the same coordinates as
+    `ModelOut.roi` — so a sensible default is the taught model's own `roi`."""
+
+    rect: Roi
+    px_per_unit: float = Field(default=1.0, gt=0)
+    normalize_scale: bool = Field(
+        default=True,
+        description="Render at model scale (True, canonical) or found scale (False).",
+    )
+
+
+class RectifyRequest(BaseModel):
+    image_id: str
+    model_id: str
+    crop: CropSpecIn
+    min_score: float = Field(default=0.7, ge=0, le=1)
+    max_matches: int | None = None
+
+
+class RectifyMatchOut(BaseModel):
+    index: int
+    x: float
+    y: float
+    angle: float
+    scale: float
+    score: float
+    support: int
+    level: int
+    validity: float = Field(description="fraction of crop pixels sampled from inside the scene")
+    crop_url: str
+    width: int
+    height: int
+
+
+class RectifyResponse(BaseModel):
+    width: int
+    height: int
+    matches: list[RectifyMatchOut]

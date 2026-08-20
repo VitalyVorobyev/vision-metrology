@@ -108,6 +108,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/rectify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rectify */
+        post: operations["rectify_api_rectify_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rectify/{image_id}/{model_id}/{index}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Crop */
+        get: operations["get_crop_api_rectify__image_id___model_id___index__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -138,6 +172,32 @@ export interface components {
              * @enum {string}
              */
             status: "hit" | "rejected";
+        };
+        /**
+         * CropSpecIn
+         * @description Mirrors `vm.CropSpec`. `rect` is in **model-frame coordinates** — the
+         *     taught model's own reference-image frame, i.e. the same coordinates as
+         *     `ModelOut.roi` — so a sensible default is the taught model's own `roi`.
+         */
+        CropSpecIn: {
+            /**
+             * Normalize Scale
+             * @description Render at model scale (True, canonical) or found scale (False).
+             * @default true
+             */
+            normalize_scale: boolean;
+            /**
+             * Px Per Unit
+             * @default 1
+             */
+            px_per_unit: number;
+            /** Rect */
+            rect: [
+                number,
+                number,
+                number,
+                number
+            ];
         };
         /** EdgeMarkOut */
         EdgeMarkOut: {
@@ -457,6 +517,60 @@ export interface components {
             /** Y2 */
             y2?: number | null;
         };
+        /** RectifyMatchOut */
+        RectifyMatchOut: {
+            /** Angle */
+            angle: number;
+            /** Crop Url */
+            crop_url: string;
+            /** Height */
+            height: number;
+            /** Index */
+            index: number;
+            /** Level */
+            level: number;
+            /** Scale */
+            scale: number;
+            /** Score */
+            score: number;
+            /** Support */
+            support: number;
+            /**
+             * Validity
+             * @description fraction of crop pixels sampled from inside the scene
+             */
+            validity: number;
+            /** Width */
+            width: number;
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+        };
+        /** RectifyRequest */
+        RectifyRequest: {
+            crop: components["schemas"]["CropSpecIn"];
+            /** Image Id */
+            image_id: string;
+            /** Max Matches */
+            max_matches?: number | null;
+            /**
+             * Min Score
+             * @default 0.7
+             */
+            min_score: number;
+            /** Model Id */
+            model_id: string;
+        };
+        /** RectifyResponse */
+        RectifyResponse: {
+            /** Height */
+            height: number;
+            /** Matches */
+            matches: components["schemas"]["RectifyMatchOut"][];
+            /** Width */
+            width: number;
+        };
         /**
          * Tier
          * @enum {string}
@@ -697,6 +811,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ModelOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rectify_api_rectify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RectifyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RectifyResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_crop_api_rectify__image_id___model_id___index__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                image_id: string;
+                model_id: string;
+                index: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

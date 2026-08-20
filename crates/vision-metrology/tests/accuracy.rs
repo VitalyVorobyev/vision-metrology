@@ -23,12 +23,14 @@
 
 use vision_metrology::fit::{FitConfig, RansacConfig, RobustLoss, fit_circle};
 use vision_metrology::matching::{
-    Refinement, ShapeMatcher, ShapeModel, ShapeModelBuilder, ShapeModelConfig, ShapeSearchConfig,
+    CropSpec, Refinement, ShapeMatcher, ShapeModel, ShapeModelBuilder, ShapeModelConfig,
+    ShapeSearchConfig,
 };
 use vision_metrology::measure::{Caliper, MeasureConfig, MeasureRect, PolaritySelect};
+use vision_metrology::warp::{Interp, Map};
 use vision_metrology::{
-    Edge1DConfig, Edge1DDetector, Edge2DConfig, Edge2DDetector, EdgePolarity, Image, Point2f,
-    Rect2f, SmoothKind, SubpixRefine, Vec2f, wrap_angle,
+    BorderMode, Edge1DConfig, Edge1DDetector, Edge2DConfig, Edge2DDetector, EdgePolarity, Image,
+    Point2f, Rect2f, SmoothKind, SubpixRefine, Vec2f, wrap_angle,
 };
 use vm_primitives::{Hysteresis, Subpix2D};
 
@@ -758,6 +760,131 @@ fn shape_matcher_scale_position_sweep() -> Measured {
     )
 }
 
+// ── ShapeMatch::model_frame_map repeatability (roadmap C1 / rectify wave) ──
+//
+// The number that decides anomaly-pipeline viability: rectify the same
+// object, found independently at K slightly different subpixel poses, and
+// measure how consistent the resulting canonical crop is. If a taught model
+// and identical scene, re-photographed with only sub-pixel jitter in
+// position/rotation/scale, cannot rectify to (near-)identical crops, no
+// anomaly model trained on those crops can tell object variation from
+// rectification noise.
+//
+// `bias`/`sigma` here are **intensity units** (8-bit grayscale), not pixels:
+// per destination pixel, across the K crops, `sigma` is the standard
+// deviation and `bias` (against a direct model-frame render of the taught
+// reference image, sampled with an identity pose — no search involved) is
+// the mean absolute difference. Both are averaged only over pixels every one
+// of the K crops *and* the reference agree are valid (`apply_with_mask`'s
+// mask, intersected) — the whole point of the mask is to keep border-fill
+// pixels out of exactly this kind of measurement.
+
+const RECTIFY_K: usize = 12;
+
+/// A `1x`-resolution crop of the L-shape's own ROI — model-frame coordinates
+/// already line up with `l_shape_roi()` since the reference image *is* the
+/// model frame.
+fn rectify_crop_spec() -> CropSpec {
+    CropSpec::new(l_shape_roi(), 1.0)
+}
+
+/// Ground truth: the model-frame rect sampled directly out of the taught
+/// reference image via an identity `dst -> src` map — no matcher, no search,
+/// just the pixels the model was built from.
+fn rectify_reference_crop(spec: &CropSpec) -> (Vec<f32>, Vec<u8>) {
+    let reference = l_shape_at(160.0, 160.0, 0.0);
+    let (w, h) = spec.output_size();
+    let (rx, ry) = (spec.rect.x, spec.rect.y);
+    let map = Map::from_fn(w, h, move |x, y| (rx + x, ry + y));
+    let mut dst = vec![0u8; w * h];
+    let mut mask = vec![0u8; w * h];
+    map.apply_with_mask(
+        &reference.as_view(),
+        &mut dst,
+        &mut mask,
+        Interp::Bilinear,
+        BorderMode::Constant(0u8),
+    )
+    .expect("reference crop resamples");
+    (dst.iter().map(|&v| v as f32).collect(), mask)
+}
+
+fn rectify_repeatability_sweep() -> Measured {
+    let model = build_l_shape_model();
+    let spec = rectify_crop_spec();
+    let (w, h) = spec.output_size();
+    let n = w * h;
+
+    let (reference, ref_mask) = rectify_reference_crop(&spec);
+
+    let cfg = ShapeSearchConfig {
+        refinement: Refinement::LeastSquares,
+        ..Default::default()
+    };
+
+    // Deterministic seed distinct from every other sweep's.
+    let mut rng = Lcg(0x51F0_C1A5_9B2E_77AA);
+    let mut crops: Vec<Vec<f32>> = Vec::with_capacity(RECTIFY_K);
+    let mut valid_all = ref_mask;
+
+    for _ in 0..RECTIFY_K {
+        // Subpixel jitter: +-0.5 px translation, +-1 deg rotation, +-1% scale.
+        let cx = 160.0 + rng.signed(0.5);
+        let cy = 160.0 + rng.signed(0.5);
+        let angle = rng.signed(1.0f32.to_radians());
+        let scale = 1.0 + rng.signed(0.01);
+        let scene = l_shape_at_scaled(cx, cy, angle, scale);
+
+        let m = ShapeMatcher::new()
+            .find(&scene.as_view(), &model, &cfg)
+            .into_iter()
+            .next()
+            .expect("model must be found under subpixel jitter");
+
+        let map = m.model_frame_map(&spec);
+        let mut dst = vec![0u8; n];
+        let mut mask = vec![0u8; n];
+        map.apply_with_mask(
+            &scene.as_view(),
+            &mut dst,
+            &mut mask,
+            Interp::Bilinear,
+            BorderMode::Constant(0u8),
+        )
+        .expect("crop resamples");
+
+        for i in 0..n {
+            if mask[i] == 0 {
+                valid_all[i] = 0;
+            }
+        }
+        crops.push(dst.iter().map(|&v| v as f32).collect());
+    }
+
+    let mut sigma_sum = 0.0f32;
+    let mut diff_sum = 0.0f32;
+    let mut count = 0usize;
+    for i in 0..n {
+        if valid_all[i] == 0 {
+            continue;
+        }
+        let vals: [f32; RECTIFY_K] = std::array::from_fn(|k| crops[k][i]);
+        let mean = vals.iter().sum::<f32>() / RECTIFY_K as f32;
+        let var = vals.iter().map(|v| (v - mean) * (v - mean)).sum::<f32>() / RECTIFY_K as f32;
+        sigma_sum += var.sqrt();
+        diff_sum += (mean - reference[i]).abs();
+        count += 1;
+    }
+    assert!(
+        count > 0,
+        "no pixel is valid across every rectified crop and the reference"
+    );
+    Measured {
+        bias: diff_sum / count as f32,
+        sigma: sigma_sum / count as f32,
+    }
+}
+
 // ── the table ────────────────────────────────────────────────────────────
 
 struct Row {
@@ -785,14 +912,23 @@ struct Row {
 /// | shape_matcher_rotation (deg)         | 0.000               | 0.001            | 0.05            | 0.05              |
 /// | shape_matcher_scale_bias (frac.)     | 0.0014              | 0.0003           | 0.003           | 0.001             |
 /// | shape_matcher_scale_position (px)    | 0.0218              | 0.0039           | 0.04            | 0.01              |
+/// | rectify_repeatability (8-bit units)  | 0.8775              | 1.6883           | 1.30            | 2.50              |
 ///
-/// The last two rows are the C1 scale sweep (roadmap Track C1 / warp-wave
-/// decision 9): 12 true scales geometrically spaced 0.5..2.0x, 3 rotations
-/// each, model taught at scale 1.0 with `scale_range = (0.45, 2.1)`. Every
-/// scale found every rotation (100% found-rate — see `BASELINE_FOUND_RATE`'s
-/// full per-scale table, which is also the found-rate regression guard), so
+/// Rows 5-6 are the C1 scale sweep (roadmap Track C1 / warp-wave decision
+/// 9): 12 true scales geometrically spaced 0.5..2.0x, 3 rotations each,
+/// model taught at scale 1.0 with `scale_range = (0.45, 2.1)`. Every scale
+/// found every rotation (100% found-rate — see `BASELINE_FOUND_RATE`'s full
+/// per-scale table, which is also the found-rate regression guard), so
 /// unlike every other row here the envelope covers the *entire* swept range,
 /// not just a well-behaved sub-range.
+///
+/// The last row is the rectify-wave C1 addition: `ShapeMatch::model_frame_map`
+/// repeatability, in 8-bit grayscale intensity units (not pixels — see the
+/// module comment above `RECTIFY_K`). This is the number that decides
+/// anomaly-pipeline viability — under 1% of full 8-bit range (bias 0.88/255,
+/// sigma 1.69/255) for sub-pixel pose jitter, which is small enough that a
+/// downstream anomaly model's own noise floor should dominate over
+/// rectification noise.
 ///
 /// `edge2d_position` and `fit_circle_radius_and_centre` are the two rows
 /// whose worst cell is a genuinely hard corner of the sweep, not a loose
@@ -862,6 +998,16 @@ const ROWS: &[Row] = &[
         measure: shape_matcher_scale_position_sweep,
         bias_envelope: 0.04,
         sigma_envelope: 0.01,
+    },
+    Row {
+        // Rectify wave, roadmap C1: intensity units (8-bit grayscale), see
+        // the module comment above `RECTIFY_K` for what bias/sigma mean here
+        // and why. Measured 2026-08-20: bias 0.8775, sigma 1.6883. ~1.5x,
+        // rounded.
+        name: "rectify_repeatability",
+        measure: rectify_repeatability_sweep,
+        bias_envelope: 1.3,
+        sigma_envelope: 2.5,
     },
 ];
 

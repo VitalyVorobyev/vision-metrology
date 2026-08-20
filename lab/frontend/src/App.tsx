@@ -6,16 +6,18 @@ import { getBackend } from "./api/backend";
 import type { MatchOut, OverlayPrimitiveOut, Roi } from "./api/backend";
 import { CanvasStage } from "./components/CanvasStage";
 import { ImageRail } from "./components/ImageRail";
+import { AlignTab } from "./tabs/AlignTab";
 import { FindTab } from "./tabs/FindTab";
 import { MeasureTab } from "./tabs/MeasureTab";
 import { TeachTab } from "./tabs/TeachTab";
 
-type TabId = "teach" | "find" | "measure";
+type TabId = "teach" | "find" | "measure" | "align";
 
 const TABS: TabItem<TabId>[] = [
   { id: "teach", label: "Teach" },
   { id: "find", label: "Find" },
   { id: "measure", label: "Measure" },
+  { id: "align", label: "Align" },
 ];
 
 export function App() {
@@ -102,8 +104,10 @@ export function App() {
                 setOverlay(o);
               }}
             />
-          ) : (
+          ) : tab === "measure" ? (
             <MeasureTab image={selectedImage} models={models} onResult={setOverlay} />
+          ) : (
+            <AlignTab image={selectedImage} models={models} />
           )}
           {tab === "find" && matches.length === 0 && overlay.length === 0 && (
             <p className="mt-2 text-xs text-fg-subtle">Run a search to see matches on the image.</p>

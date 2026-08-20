@@ -25,7 +25,7 @@ use config::{
     ShapeSearchTuning,
 };
 use detector::EdgeDetector;
-use match_py::{ShapeMatcher, ShapeModel};
+use match_py::{CropSpec, ShapeMatcher, ShapeModel};
 use measure_py::{
     Caliper, MeasureRejected, MetrologyError, MetrologyModel, MetrologyObject, MetrologyResult,
     MetrologyShape,
@@ -49,6 +49,7 @@ fn vision_metrology(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ShapeSearchTuning>()?;
     m.add_class::<ShapeSearchConfig>()?;
     m.add_class::<MeasureConfig>()?;
+    m.add_class::<CropSpec>()?;
 
     // Stateful classes
     m.add_class::<EdgeDetector>()?;

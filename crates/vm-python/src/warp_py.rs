@@ -68,6 +68,15 @@ pub struct Map {
     inner: NativeMap,
 }
 
+impl Map {
+    /// Wrap an already-built native map (e.g. from
+    /// `ShapeMatch::model_frame_map`) without going through a Python
+    /// constructor.
+    pub(crate) fn from_native(inner: NativeMap) -> Self {
+        Self { inner }
+    }
+}
+
 #[pymethods]
 impl Map {
     /// Build from a `dst -> src` affine transform: a `(3, 3)` `float32`

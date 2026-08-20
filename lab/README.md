@@ -4,9 +4,12 @@ A local interactive workbench over the `vision_metrology` Python package. Where
 `examples/python/` shows the library's chain in a script, the lab makes it a workbench:
 upload an image, drag a box to **teach** a shape model, **find** it elsewhere in the
 image, **measure** circles/lines against the found pose, and **judge** the fit — rms,
-max deviation, per-caliper hit/reject, the raw intensity profile behind each hit. It is
-the library's own end-to-end chain (`ShapeModel` → `ShapeMatcher` → `MetrologyModel`),
-made visible.
+max deviation, per-caliper hit/reject, the raw intensity profile behind each hit. The
+**Align** tab closes the last seam: rectify every found instance into a canonical,
+model-frame crop (`ShapeMatch.model_frame_map`), the fixed-size tensor an anomaly model
+needs across frames regardless of the pose a part was found at. It is the library's own
+end-to-end chain (`ShapeModel` → `ShapeMatcher` → `MetrologyModel` / `Map`), made
+visible.
 
 ## Architecture
 
@@ -52,6 +55,8 @@ All routes under `/api`.
 | `GET` | `/models` | List taught models. |
 | `POST` | `/find` | `ShapeMatcher.find` against a model, with `roi`/`angle_range`/`min_score`. Returns matches (x, y, angle, scale, score, ...). |
 | `POST` | `/measure` | Place a `MetrologyModel` (circle/line objects, nominal geometry in **model frame**) at a fixture pose — explicit, or auto-found — and measure. Returns per-object fit + rms/max_dev/n_used, a source-frame `overlay` array (`@vitavision/lab-ui`'s `MeasurePrimitive` shape), and per-caliper hit/reject reason + raw profile. |
+| `POST` | `/rectify` | `ShapeMatcher.find` against a model, then `ShapeMatch.model_frame_map` per match — a `crop` spec (`rect` in **model-frame coordinates**, `px_per_unit`, `normalize_scale`). Returns, per match, pose/score plus a `crop_url` and a validity fraction (in-scene pixel coverage). |
+| `GET` | `/rectify/{image_id}/{model_id}/{index}` | The PNG crop for one match from the most recent `/rectify` call on that `(image_id, model_id)` pair — cached in memory (not disk), `images/{id}/{tier}`-style ETag. 404 until a matching `POST /rectify` has run. |
 | `GET` | `/health` | Liveness. |
 
 ## Run it
@@ -141,3 +146,9 @@ cd frontend && bun run typecheck && bun run test && bun run build
   aspect ratio, but worth a comment if that ever changes); line-object fitted-segment
   extent in the overlay is derived from measured hit points, not from the true inlier set
   the Rust fit actually used (cosmetic only — no metrology numbers depend on it).
+- **Align's crop cache is in-memory and single-slot per `(image_id, model_id)`**: each
+  `POST /rectify` overwrites the previous crops cached for that pair, so a `GET` against a
+  stale `index` from an older call — or against a `crop` spec that changed between calls —
+  is undefined until the reader re-runs `/rectify`. Fine for one interactive workbench user
+  looking at one crop grid at a time; would need real keys (a spec hash, or persistence) to
+  serve concurrent readers or a "compare two crop specs side by side" UI.

@@ -232,23 +232,36 @@ impl Ellipse {
 }
 
 /// One located instance of a :class:`ShapeModel`.
-#[pyclass(get_all, skip_from_py_object)]
+#[pyclass(skip_from_py_object)]
 #[derive(Debug, Clone)]
 pub struct ShapeMatch {
     /// X coordinate, in scene pixels, where the model origin landed.
+    #[pyo3(get)]
     pub x: f32,
     /// Y coordinate, in scene pixels, where the model origin landed.
+    #[pyo3(get)]
     pub y: f32,
     /// Rotation in radians, wrapped to (-pi, pi].
+    #[pyo3(get)]
     pub angle: f32,
     /// Uniform scale factor.
+    #[pyo3(get)]
     pub scale: f32,
     /// Similarity score in [0, 1]; roughly `1 - occluded_fraction`.
+    #[pyo3(get)]
     pub score: f32,
     /// Model points that found any gradient at all.
+    #[pyo3(get)]
     pub support: usize,
     /// Pyramid level the reported score was evaluated at.
+    #[pyo3(get)]
     pub level: usize,
+    /// The full similarity pose (model origin baked in), kept for
+    /// `model_frame_map` / `model_frame_pose`. Deliberately **not**
+    /// Python-visible as a field — `matrix()` and the rectify methods below
+    /// are how it is read back, so it cannot go stale relative to `x`/`y`/
+    /// `angle`/`scale` (all four are derived from this same pose).
+    pub(crate) pose: vm_primitives::Similarity2f,
 }
 
 impl From<vision_metrology::matching::ShapeMatch> for ShapeMatch {
@@ -261,6 +274,20 @@ impl From<vision_metrology::matching::ShapeMatch> for ShapeMatch {
             score: m.score,
             support: m.support,
             level: m.level,
+            pose: m.pose,
+        }
+    }
+}
+
+impl ShapeMatch {
+    /// Reconstruct the native match this Python object was built from.
+    fn to_native(&self) -> vision_metrology::matching::ShapeMatch {
+        vision_metrology::matching::ShapeMatch {
+            pose: self.pose,
+            position: vm_primitives::Point2f::new(self.x, self.y),
+            score: self.score,
+            support: self.support,
+            level: self.level,
         }
     }
 }
@@ -279,6 +306,33 @@ impl ShapeMatch {
         [
             [a, b, self.x - (a * origin.0 + b * origin.1)],
             [c, d, self.y - (c * origin.0 + d * origin.1)],
+        ]
+    }
+
+    /// Build the `dst -> src` `warp.Map` that rectifies this match into a
+    /// canonical, model-frame crop — see `CropSpec` and the Rust
+    /// `ShapeMatch::model_frame_map` docs for the exact geometry.
+    ///
+    /// Apply the returned map with `Map.apply_with_mask` and
+    /// `border_mode="constant"` (not `"clamp"`) — see the Rust docs for why.
+    pub fn model_frame_map(&self, spec: &crate::match_py::CropSpec) -> crate::warp_py::Map {
+        let map = self.to_native().model_frame_map(&spec.to_native());
+        crate::warp_py::Map::from_native(map)
+    }
+
+    /// The `dst -> scene` similarity `model_frame_map` uses for `spec`, as
+    /// the same `[[a, b, tx], [c, d, ty]]` nested-list form as `matrix()`.
+    ///
+    /// Unlike `matrix()`, no `origin` argument is needed: `spec.normalize_scale`
+    /// decides whether the found scale factor participates (`True` forces
+    /// scale to `1.0`, canonical; `False` returns this match's pose
+    /// unchanged).
+    pub fn model_frame_pose(&self, spec: &crate::match_py::CropSpec) -> [[f32; 3]; 2] {
+        let sim = self.to_native().model_frame_pose(&spec.to_native());
+        let h = sim.to_homogeneous();
+        [
+            [h[(0, 0)], h[(0, 1)], h[(0, 2)]],
+            [h[(1, 0)], h[(1, 1)], h[(1, 2)]],
         ]
     }
 
