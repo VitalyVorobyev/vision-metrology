@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_API_BASE_URL, resolveApiBaseUrl } from "./baseUrl";
 
 describe("resolveApiBaseUrl", () => {
-  it("prefers a URL injected by a future desktop shell", () => {
+  it("prefers a URL injected by an embedding shell", () => {
     expect(
       resolveApiBaseUrl({ injected: "http://127.0.0.1:54321", env: "http://localhost:8000" }),
     ).toBe("http://127.0.0.1:54321");

@@ -1,21 +1,18 @@
 /**
- * Capabilities a future desktop shell injects.
+ * Detecting the desktop shell.
  *
- * Nothing under `src/` imports a Tauri API directly — that is what keeps the browser
- * path first-class. A shell instead injects what it can offer onto
- * `window.__VM_LAB__` before the page loads, and `baseUrl.ts` / `backend.ts`
- * feature-detect it. Today only `apiBaseUrl` exists (the sidecar's ephemeral port);
- * more capabilities (a native file picker, IPC transport) land here as they're needed.
+ * The Tauri desktop build talks to `vision-metrology` through native **commands and
+ * events** (`tauriBackend.ts`), not HTTP — there is no sidecar, no injected base URL, no
+ * ephemeral port to discover. Detection is therefore exactly "is this page running
+ * inside a Tauri webview", answered by `@tauri-apps/api/core`'s own `isTauri()`: it
+ * checks for `window.__TAURI_INTERNALS__`, which the Tauri runtime sets up before any
+ * page script runs, regardless of `tauri.conf.json`'s `withGlobalTauri` setting. Nothing
+ * else under `src/` imports a Tauri API directly — that is what keeps the browser path
+ * (`httpBackend`) first-class and the two shells swappable behind `LabBackend`.
  */
 
-declare global {
-  interface Window {
-    __VM_LAB__?: {
-      apiBaseUrl?: string;
-    };
-  }
-}
+import { isTauri } from "@tauri-apps/api/core";
 
 export function isTauriShell(): boolean {
-  return typeof globalThis.window?.__VM_LAB__ !== "undefined";
+  return isTauri();
 }

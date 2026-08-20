@@ -24,3 +24,7 @@ node_modules/
 crates/vm-python/python/vision_metrology/*.so
 crates/vm-python/python/vision_metrology/*.pyd
 crates/vm-python/python/vision_metrology/*.dylib
+
+# Tauri writes its own generated ACL/capability schemas here on every build
+# (`cargo tauri build`/`dev`) — same convention as visual-anomaly-lab's src-tauri.
+lab/frontend/src-tauri/gen/schemas/
