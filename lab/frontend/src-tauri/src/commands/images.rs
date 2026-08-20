@@ -104,7 +104,10 @@ fn scan_into(dir: &Path, recursive: bool, out: &mut Vec<DirEntryOut>) -> AppResu
         let (width, height) = image::ImageReader::open(&path)
             .ok()
             .and_then(|r| r.into_dimensions().ok())
-            .map_or((0, 0), |(w, h)| (w, h));
+            // A file whose header will not parse is still listed, at 0x0: the
+            // scan describes what is in the folder, and hiding a file the user
+            // can see is worse than reporting that we could not read it.
+            .unwrap_or((0, 0));
         out.push(DirEntryOut {
             path: path.display().to_string(),
             name: path

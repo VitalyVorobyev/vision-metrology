@@ -201,9 +201,9 @@ fn teaching_is_curated_and_the_model_can_be_drawn() {
     );
 
     // Every drawn point should land inside the ROI it was taught from.
-    for p in geom.points.chunks_exact(4) {
-        assert!(p[0] >= roi[0] - 2.0 && p[0] <= roi[0] + roi[2] + 2.0);
-        assert!(p[1] >= roi[1] - 2.0 && p[1] <= roi[1] + roi[3] + 2.0);
+    for [x, y, _, _] in geom.points.as_chunks::<4>().0 {
+        assert!(*x >= roi[0] - 2.0 && *x <= roi[0] + roi[2] + 2.0);
+        assert!(*y >= roi[1] - 2.0 && *y <= roi[1] + roi[3] + 2.0);
     }
 
     // And the model's own reference crop renders.

@@ -224,9 +224,9 @@ mod tests {
             .expect("non-empty");
 
         let mask = mask_for_contours(120, 120, &contours, &[longest.id]).expect("mask");
-        for xy in longest.points.chunks_exact(2) {
+        for [x, y] in longest.points.as_chunks::<2>().0 {
             assert_ne!(
-                mask.data()[xy[1].round() as usize * 120 + xy[0].round() as usize],
+                mask.data()[y.round() as usize * 120 + x.round() as usize],
                 0
             );
         }
