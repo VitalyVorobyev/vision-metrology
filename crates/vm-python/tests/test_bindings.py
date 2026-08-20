@@ -8,6 +8,8 @@ Run with:
     python -m pytest crates/vm-python/tests/test_bindings.py -v
 """
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 import vision_metrology as vm
@@ -827,3 +829,146 @@ def test_warp_map_unsupported_dtype_names_the_supported_ones():
     bad = np.zeros((2, 2), dtype=np.int32)
     with pytest.raises(ValueError):
         m.apply(bad)
+
+
+# ---------------------------------------------------------------------------
+# metric: the calibration bridge
+# ---------------------------------------------------------------------------
+
+FIXTURES_DIR = Path(__file__).resolve().parents[2] / "vision-metrology" / "tests" / "fixtures"
+
+
+def _identity_camera() -> "vm.CameraModel":
+    return vm.CameraModel(vm.PinholeIntrinsics(1000.0, 1000.0, 320.0, 240.0, 0.0))
+
+
+def test_metric_types_are_in_the_stub_and_round_trip_fields():
+    assert hasattr(vm, "PinholeIntrinsics")
+    assert hasattr(vm, "BrownConrady5")
+    assert hasattr(vm, "CameraModel")
+    assert hasattr(vm, "Plane3")
+    assert hasattr(vm, "PlaneGrid")
+
+    intr = vm.PinholeIntrinsics(800.0, 810.0, 320.0, 240.0, skew=1.5)
+    assert (intr.fx, intr.fy, intr.cx, intr.cy, intr.skew) == (800.0, 810.0, 320.0, 240.0, 1.5)
+
+    dist = vm.BrownConrady5(k1=-0.1, k2=0.02, p1=0.001)
+    assert dist.k1 == pytest.approx(-0.1)
+    assert dist.k2 == pytest.approx(0.02)
+    assert dist.k3 == 0.0
+    assert dist.p1 == pytest.approx(0.001)
+
+    cam = vm.CameraModel(intr, dist)
+    assert cam.intrinsics.fx == 800.0
+    assert cam.distortion.k1 == pytest.approx(-0.1)
+
+    # distortion defaults to all-zero when omitted.
+    cam_no_dist = vm.CameraModel(intr)
+    assert cam_no_dist.distortion.k1 == 0.0
+
+    plane = vm.Plane3((0.0, 0.0, 1.0), 0.0)
+    assert plane.n == (0.0, 0.0, 1.0)
+    xy = vm.Plane3.xy()
+    assert xy.n == (0.0, 0.0, 1.0) and xy.d == 0.0
+
+    grid = vm.PlaneGrid((-10.0, -20.0), 0.5, 100, 80)
+    assert grid.origin_mm == (-10.0, -20.0)
+    assert (grid.mm_per_px, grid.w, grid.h) == (0.5, 100, 80)
+
+
+def test_pixel_to_plane_matches_pinhole_similar_triangles():
+    camera = _identity_camera()
+    pose = np.eye(4, dtype=np.float64)
+    pose[2, 3] = 1000.0  # camera 1000mm above the z=0 plane
+    plane = vm.Plane3.xy()
+
+    pixels = np.array(
+        [[320.0, 240.0], [420.0, 240.0], [320.0, 440.0]], dtype=np.float32
+    )
+    mm = vm.pixel_to_plane(camera, pose, plane, pixels)
+    assert mm.shape == (3, 2)
+    assert mm.dtype == np.float64
+
+    # Principal point projects to the plane origin.
+    np.testing.assert_allclose(mm[0], [0.0, 0.0], atol=1e-3)
+    # +100px in x at fx=1000, standoff 1000mm -> +100mm on the plane.
+    np.testing.assert_allclose(mm[1], [100.0, 0.0], atol=1e-2)
+    np.testing.assert_allclose(mm[2], [0.0, 200.0], atol=1e-2)
+
+
+def test_pixel_to_plane_rejects_a_bad_pose_shape():
+    camera = _identity_camera()
+    bad_pose = np.eye(3, dtype=np.float64)
+    plane = vm.Plane3.xy()
+    pixels = np.array([[0.0, 0.0]], dtype=np.float32)
+    with pytest.raises(ValueError):
+        vm.pixel_to_plane(camera, bad_pose, plane, pixels)
+
+
+def test_plane_grid_map_and_undistort_map_return_map_instances():
+    camera = _identity_camera()
+    pose = np.eye(4, dtype=np.float64)
+    pose[2, 3] = 1000.0
+    grid = vm.PlaneGrid((-80.0, -80.0), 1.0, 40, 30)
+
+    m = vm.plane_grid_map(camera, pose, grid)
+    assert isinstance(m, vm.Map)
+    assert (m.width, m.height) == (40, 30)
+
+    um = vm.undistort_map(camera, 64, 48)
+    assert isinstance(um, vm.Map)
+    assert (um.width, um.height) == (64, 48)
+
+    # Zero distortion: undistort_map is a copy.
+    img = np.arange(64 * 48, dtype=np.uint8).reshape(48, 64)
+    out = um.apply(img, interp="nearest")
+    np.testing.assert_array_equal(out, img)
+
+
+def test_load_rig_extrinsics_converts_meters_to_mm():
+    path = str(FIXTURES_DIR / "rig_extrinsics.json")
+    cams = vm.load_rig_extrinsics(path)
+    assert len(cams) == 2
+
+    cam0, pose0 = cams[0]
+    assert cam0.intrinsics.fx == 800.0
+    assert cam0.distortion.k1 == pytest.approx(-0.12)
+    assert pose0.shape == (4, 4)
+    # translation [0, 0, 1.0] m -> [0, 0, 1000] mm.
+    assert pose0[2, 3] == pytest.approx(1000.0, abs=1e-3)
+    np.testing.assert_allclose(pose0[:3, :3], np.eye(3), atol=1e-6)
+
+    _cam1, pose1 = cams[1]
+    assert pose1[0, 3] == pytest.approx(100.0, abs=1e-2)
+
+    with open(path, "rb") as f:
+        raw = f.read()
+    cams_from_bytes = vm.load_rig_extrinsics(raw)
+    assert len(cams_from_bytes) == 2
+
+
+def test_load_rig_extrinsics_rejects_garbage():
+    with pytest.raises(ValueError):
+        vm.load_rig_extrinsics(b"not json")
+
+
+def test_load_table_calibration_reads_the_real_fixture():
+    path = str(FIXTURES_DIR / "table_calibration.json")
+    cams = vm.load_table_calibration(path)
+    assert len(cams) == 2
+
+    cam0, pose0 = cams[0]
+    assert cam0.intrinsics.fx == pytest.approx(21440.34, abs=1e-1)
+    assert cam0.intrinsics.cx == pytest.approx(1023.5)
+    # camera0's sensor2camera is the identity.
+    np.testing.assert_allclose(pose0, np.eye(4), atol=1e-6)
+
+    cam1, pose1 = cams[1]
+    assert cam1.intrinsics.fx == pytest.approx(21343.379, abs=1e-1)
+    # baseline magnitude ~111mm, treated as already-mm.
+    assert pose1[0, 3] == pytest.approx(111.382927, abs=1e-2)
+
+
+def test_load_table_calibration_rejects_garbage():
+    with pytest.raises(ValueError):
+        vm.load_table_calibration(b"{}")

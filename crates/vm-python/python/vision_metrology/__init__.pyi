@@ -501,6 +501,90 @@ class Map:
     ) -> Tuple[ImageAny, ImageU8]: ...
 
 # ---------------------------------------------------------------------------
+# metric: the calibration bridge
+# ---------------------------------------------------------------------------
+
+# A (4, 4) float64 homogeneous camera-from-reference transform, row-major:
+# top-left 3x3 rotation, last column translation in millimetres. `Pose3` has
+# no dedicated Python class -- this is the numpy-friendly representation
+# every function below takes and returns instead.
+Pose3 = npt.NDArray[np.float64]
+
+class PinholeIntrinsics:
+    """Pinhole intrinsics, in pixels."""
+
+    fx: float
+    fy: float
+    cx: float
+    cy: float
+    skew: float
+    def __init__(self, fx: float, fy: float, cx: float, cy: float, skew: float = ...) -> None: ...
+
+class BrownConrady5:
+    """Brown-Conrady 5-parameter radial-tangential distortion."""
+
+    k1: float
+    k2: float
+    k3: float
+    p1: float
+    p2: float
+    def __init__(
+        self, k1: float = ..., k2: float = ..., k3: float = ..., p1: float = ..., p2: float = ...
+    ) -> None: ...
+
+class CameraModel:
+    """A calibrated camera: intrinsics + distortion."""
+
+    intrinsics: PinholeIntrinsics
+    distortion: BrownConrady5
+    def __init__(
+        self, intrinsics: PinholeIntrinsics, distortion: Optional[BrownConrady5] = ...
+    ) -> None: ...
+
+class Plane3:
+    """An oriented plane in the reference frame: `n . X + d = 0`."""
+
+    n: Tuple[float, float, float]
+    d: float
+    def __init__(self, n: Tuple[float, float, float], d: float) -> None: ...
+    @staticmethod
+    def xy() -> Plane3: ...
+
+class PlaneGrid:
+    """A metric raster on the reference frame's `z = 0` plane."""
+
+    origin_mm: Tuple[float, float]
+    mm_per_px: float
+    w: int
+    h: int
+    def __init__(
+        self, origin_mm: Tuple[float, float], mm_per_px: float, w: int, h: int
+    ) -> None: ...
+
+def pixel_to_plane(
+    camera: CameraModel, pose: Pose3, plane: Plane3, pixels: PointsF32
+) -> npt.NDArray[np.float64]:
+    """Project `(N, 2)` pixel coordinates onto `plane`, vectorized. Returns
+    `(N, 2)` plane-frame `(x_mm, y_mm)`; a pixel whose ray misses the plane
+    gets a NaN row rather than raising."""
+
+def plane_grid_map(camera: CameraModel, pose: Pose3, grid: PlaneGrid) -> Map:
+    """The runtime bird's-eye `dst -> src` map: destination is `grid` pixel
+    coordinates, source is the raw (distorted) camera image."""
+
+def undistort_map(camera: CameraModel, w: int, h: int) -> Map:
+    """Build a `dst -> src` undistortion map for a `w x h` image shot by
+    `camera`."""
+
+def load_rig_extrinsics(source: Union[str, bytes]) -> List[Tuple[CameraModel, Pose3]]:
+    """Load a calibration-rs `RigExtrinsicsExport` JSON document (file path
+    or raw bytes). One `(CameraModel, pose)` pair per camera."""
+
+def load_table_calibration(source: Union[str, bytes]) -> List[Tuple[CameraModel, Pose3]]:
+    """Load a `table_calibration` `calibration.json` document (file path or
+    raw bytes). One `(CameraModel, pose)` pair per camera, sorted by index."""
+
+# ---------------------------------------------------------------------------
 # Free functions
 # ---------------------------------------------------------------------------
 
