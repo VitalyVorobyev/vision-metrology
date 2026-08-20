@@ -15,6 +15,7 @@
 //! | [`matching`]  | Shape-based object detection: gradient-orientation model matching |
 //! | [`measure`]   | Calipers and metrology models — measuring a located part |
 //! | [`segment`]   | Otsu / adaptive threshold, CCL, watershed, region growing |
+//! | [`warp`]      | Image warping: build a `dst → src` map once, apply per frame |
 //!
 //! ## Features
 //!
@@ -35,6 +36,7 @@
 //! | `matching` | [`matching`] | — |
 //! | `measure` | [`measure`] | `fit` (measured points are fitted) |
 //! | `segment` | [`segment`] | `contour` (region growing consumes a `ContourGraph`) |
+//! | `warp` | [`warp`] | — |
 //! | `serde` | `ShapeModel` persistence | `matching` |
 //!
 //! ## Importing
@@ -57,6 +59,8 @@ pub mod matching;
 pub mod measure;
 #[cfg(feature = "segment")]
 pub mod segment;
+#[cfg(feature = "warp")]
+pub mod warp;
 
 /// The lower crate, re-exported whole so one dependency is enough.
 ///
@@ -99,6 +103,8 @@ pub mod prelude {
         AdaptiveThreshConfig, CcLabel, ComponentStats, adaptive_threshold_u8,
         label_connected_components_u8, otsu_threshold_u8,
     };
+    #[cfg(feature = "warp")]
+    pub use crate::warp::{Interp, Map};
 }
 
 // The primitives most callers of this crate need by name. Deliberately an
@@ -106,10 +112,10 @@ pub mod prelude {
 // `vm-primitives` a potential name collision here, and hide what this crate's
 // surface actually is.
 pub use vm_primitives::{
-    Angle, BorderMode, Circle2f, Conic2f, Edge1DConfig, Edge1DDetector, Edge2DConfig,
+    Affine2f, Angle, BorderMode, Circle2f, Conic2f, Edge1DConfig, Edge1DDetector, Edge2DConfig,
     Edge2DDetector, EdgePolarity, Edgel, Ellipse2f, Error, Image, ImageView, ImageViewMut,
-    Isometry2f, Line2f, Pixel, Point2f, Polyline2f, PreSmooth, Pyramid, PyramidConfig, Rect2f,
-    Similarity2f, SmoothKind, SubpixRefine, Vec2f, Vec2fExt, sample_bilinear_at,
-    sample_bilinear_f32, sample_nearest, similarity_from_parts, similarity_parts, transform_point,
-    transform_vec, wrap_angle,
+    Isometry2f, Line2f, Pixel, Point2f, Polyline2f, PreSmooth, Projective2f, Pyramid,
+    PyramidConfig, Rect2f, Similarity2f, SmoothKind, SubpixRefine, Vec2f, Vec2fExt,
+    sample_bilinear_at, sample_bilinear_f32, sample_nearest, similarity_from_parts,
+    similarity_parts, transform_point, transform_vec, wrap_angle,
 };

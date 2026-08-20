@@ -18,7 +18,7 @@ serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
 
 [features]
-default = ["contour", "fit", "laser", "lsd", "matching", "measure", "segment"]
+default = ["contour", "fit", "laser", "lsd", "matching", "measure", "segment", "warp"]
 
 ## Junction-aware contour graph from 2-D edgels.
 contour = []
@@ -35,6 +35,9 @@ matching = []
 ## Thresholding, CCL, watershed, edgel region growing.
 ## `segment::grow_regions` consumes a `ContourGraph`, so this implies `contour`.
 segment = ["contour"]
+## Image warping: `Map::{affine, projective, polar, from_fn}` + `apply`, dst→src
+## gather with a first-class validity mask.
+warp = []
 ## Versioned ShapeModel persistence: `save` / `load` and `to_bytes` /
 ## `from_bytes` over an opaque, version-gated document. Enables the same feature
 ## in vm-primitives for the geometry types the model embeds.
@@ -87,6 +90,11 @@ required-features = ["laser"]
 name = "measure"
 harness = false
 required-features = ["measure"]
+
+[[bench]]
+name = "warp"
+harness = false
+required-features = ["warp"]
 
 
 # Examples and integration tests are auto-discovered, so the gated ones need an
