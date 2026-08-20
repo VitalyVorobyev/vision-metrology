@@ -7,16 +7,24 @@ lab/README.md's "source-frame" rule).
 
 Two passes over the same calipers, deliberately:
 1. `vm.MetrologyModel.apply` does the real measurement — robust fit, residuals.
-2. This module's own `_place_calipers` (mirroring `MetrologyModel::measure_one`,
-   `crates/vision-metrology/src/measure/model.rs`) re-derives each caliper and measures
-   it again, only to report **why** a caliper was rejected and to expose its raw profile
-   for `LineProfile` — detail `apply`'s binding does not surface. Both passes share the
-   same `MeasureConfig`, so they agree on every caliper that succeeds.
+2. This module's own `_measure_calipers` re-measures each caliper individually, only to
+   report **why** a caliper was rejected and to expose its raw profile for `LineProfile`
+   — detail `apply`'s binding does not surface. Both passes share the same
+   `MeasureConfig`, so they agree on every caliper that succeeds.
+
+The caliper *placements* (`vm.MetrologyModel.layout`) used to be re-derived here by hand,
+in a module `geometry.py` that had to mirror `MetrologyModel::measure_one`
+(`crates/vision-metrology/src/measure/model.rs`) exactly — duplicated geometry that would
+silently go stale if that function's placement math ever changed. `layout` is the same
+placement code `apply` calls internally (`vision_metrology::measure::diagnostics::layout`,
+`docs/backlog.md`'s "No per-caliper explain API", now closed), so this module no longer
+needs its own copy.
 """
 
 from __future__ import annotations
 
 import math
+from collections import defaultdict
 from typing import Any
 
 import numpy as np
@@ -24,7 +32,6 @@ from fastapi import APIRouter, HTTPException
 
 import vision_metrology as vm
 
-from vm_lab.geometry import perp, to_scene
 from vm_lab.routers.find import run_find
 from vm_lab.schemas import (
     CaliperProfileOut,
@@ -99,62 +106,32 @@ def _vm_shape(obj: MeasureObjectIn) -> Any:
     return vm.MetrologyShape.line((obj.ax, obj.ay), (obj.bx, obj.by))
 
 
-def _place_calipers(
-    obj: MeasureObjectIn, origin: tuple[float, float], x: float, y: float, angle: float, scale: float
-) -> list[tuple[str, dict[str, Any]]]:
-    """Re-derives each caliper's placement, mirroring `MetrologyModel::measure_one`."""
-    n = obj.n_calipers
-    specs: list[tuple[str, dict[str, Any]]] = []
-    half_len = obj.caliper_len * scale
-    half_width = obj.caliper_width * scale
-    if obj.kind == "line":
-        assert obj.ax is not None and obj.ay is not None and obj.bx is not None and obj.by is not None
-        ax, ay = to_scene(obj.ax, obj.ay, origin, x, y, angle, scale)
-        bx, by = to_scene(obj.bx, obj.by, origin, x, y, angle, scale)
-        length = math.hypot(bx - ax, by - ay)
-        if length < 1e-6:
-            raise HTTPException(400, "metrology line has zero length")
-        alx, aly = (bx - ax) / length, (by - ay) / length
-        nx, ny = perp(alx, aly)
-        cal_angle = math.atan2(ny, nx)
-        for i in range(n):
-            f = i / (n - 1)
-            cx, cy = ax + (bx - ax) * f, ay + (by - ay) * f
-            specs.append(("rect", dict(center=(cx, cy), angle=cal_angle, half_len=half_len, half_width=half_width)))
-    else:
-        assert obj.cx is not None and obj.cy is not None and obj.r is not None
-        cx, cy = to_scene(obj.cx, obj.cy, origin, x, y, angle, scale)
-        radius = obj.r * scale
-        if obj.arc is not None:
-            start, extent = math.radians(obj.arc[0]), math.radians(obj.arc[1])
-        else:
-            start, extent = 0.0, 2 * math.pi
-        start = start + angle
-        closed = abs(abs(extent) - 2 * math.pi) < 1e-3
-        denom = n if closed else (n - 1)
-        for i in range(n):
-            phi = start + extent * i / denom
-            specs.append(
-                ("radial", dict(center=(cx, cy), radius=radius, angle=phi, half_len=half_len, half_width=half_width))
-            )
-    return specs
+def _caliper_for(placement: vm.CaliperPlacement, config: vm.MeasureConfig) -> vm.Caliper:
+    if placement.kind == "radial":
+        assert placement.radius is not None
+        return vm.Caliper.radial(
+            placement.center, placement.radius, placement.angle,
+            placement.half_len, placement.half_width, config,
+        )
+    return vm.Caliper.rect(placement.center, placement.angle, placement.half_len, placement.half_width, config)
 
 
 def _measure_calipers(
-    specs: list[tuple[str, dict[str, Any]]],
+    placements: list[vm.CaliperPlacement],
     config: vm.MeasureConfig,
     img: Any,
     metric: tuple[vm.CameraModel, np.ndarray, vm.Plane3] | None = None,
 ) -> tuple[list[CaliperResultOut], list[OverlayPrimitiveOut]]:
+    """Measures each of `placements` (one object's worth, in caliper order — see
+    `layout`'s grouping in `measure()` below) and builds the matching overlay."""
     results: list[CaliperResultOut] = []
     overlay: list[OverlayPrimitiveOut] = []
     step_px = config.step
-    for i, (kind, kwargs) in enumerate(specs):
-        cal = vm.Caliper.rect(kwargs["center"], kwargs["angle"], kwargs["half_len"], kwargs["half_width"], config) \
-            if kind == "rect" else \
-            vm.Caliper.radial(kwargs["center"], kwargs["radius"], kwargs["angle"], kwargs["half_len"], kwargs["half_width"], config)
-        cx, cy = kwargs["center"]
-        box_angle = kwargs["angle"]
+    for placement in placements:
+        cal = _caliper_for(placement, config)
+        cx, cy = placement.center
+        box_angle = placement.angle
+        i = placement.caliper_index
         try:
             edges = cal.measure(img)
         except vm.MeasureRejected as exc:
@@ -164,7 +141,7 @@ def _measure_calipers(
             overlay.append(
                 OverlayPrimitiveOut(
                     kind="caliper", tone="defect", cx=cx, cy=cy,
-                    width=2 * kwargs["half_len"], height=2 * kwargs["half_width"], angle=box_angle,
+                    width=2 * placement.half_len, height=2 * placement.half_width, angle=box_angle,
                 )
             )
             continue
@@ -185,7 +162,7 @@ def _measure_calipers(
         overlay.append(
             OverlayPrimitiveOut(
                 kind="caliper", tone="signal", cx=cx, cy=cy,
-                width=2 * kwargs["half_len"], height=2 * kwargs["half_width"], angle=box_angle,
+                width=2 * placement.half_len, height=2 * placement.half_width, angle=box_angle,
             )
         )
         overlay.append(OverlayPrimitiveOut(kind="point", tone="signal", x=edge.x, y=edge.y, cross=True))
@@ -236,12 +213,19 @@ async def measure(req: MeasureRequest) -> MeasureResponse:
     raw_results = metrology_model.apply(
         img, x=fixture.x, y=fixture.y, angle=fixture.angle, scale=fixture.scale, origin=origin
     )
+    # Same placement code `apply` used internally, exposed for the overlay
+    # (`vm.MetrologyModel.layout` -> `vision_metrology::measure::diagnostics::layout`).
+    placements = metrology_model.layout(
+        x=fixture.x, y=fixture.y, angle=fixture.angle, scale=fixture.scale, origin=origin
+    )
+    placements_by_object: dict[int, list[vm.CaliperPlacement]] = defaultdict(list)
+    for p in placements:
+        placements_by_object[p.object_index].append(p)
 
     out_objects: list[MeasureObjectResultOut] = []
-    for obj, raw in zip(req.objects, raw_results, strict=True):
-        specs = _place_calipers(obj, origin, fixture.x, fixture.y, fixture.angle, fixture.scale)
+    for i, (obj, raw) in enumerate(zip(req.objects, raw_results, strict=True)):
         config = _measure_config(obj)
-        calipers, cal_overlay = _measure_calipers(specs, config, img, metric)
+        calipers, cal_overlay = _measure_calipers(placements_by_object.get(i, []), config, img, metric)
 
         if isinstance(raw, vm.MetrologyError):
             out_objects.append(

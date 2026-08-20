@@ -33,6 +33,7 @@
 //! reads `rms` and `n_used`.
 
 mod caliper;
+pub mod diagnostics;
 mod model;
 
 pub use caliper::{

@@ -24,6 +24,10 @@
 use pyo3::prelude::*;
 use pyo3::{create_exception, exceptions::PyException};
 
+use vision_metrology::measure::diagnostics::{
+    CaliperPlacement as NativeCaliperPlacement, CaliperShape as NativeCaliperShape,
+    layout as native_layout,
+};
 use vision_metrology::measure::{
     Caliper as NativeCaliper, MetrologyModel as NativeMetrologyModel,
     MetrologyObject as NativeMetrologyObject, MetrologyShape as NativeMetrologyShape,
@@ -406,6 +410,67 @@ impl MetrologyError {
     }
 }
 
+/// Where one caliper of a [`MetrologyModel`] sits at a fixture pose, without
+/// measuring — mirrors `vision_metrology::measure::diagnostics::CaliperPlacement`.
+///
+/// `kind` is `"rect"` (line objects) or `"radial"` (circle objects); `radius`
+/// is only set for `"radial"` placements, where `center` is the *circle's*
+/// own centre (not the caliper's own position on the circle — see the Rust
+/// `CaliperShape::Radial` docs). Built to be handed straight to
+/// [`Caliper.rect`](Caliper::rect) / [`Caliper.radial`](Caliper::radial):
+/// `Caliper.rect(p.center, p.angle, p.half_len, p.half_width, config)` or
+/// `Caliper.radial(p.center, p.radius, p.angle, p.half_len, p.half_width,
+/// config)`.
+#[pyclass(get_all, skip_from_py_object)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CaliperPlacement {
+    pub object_index: usize,
+    pub caliper_index: usize,
+    pub kind: &'static str,
+    pub center: (f32, f32),
+    pub angle: f32,
+    pub half_len: f32,
+    pub half_width: f32,
+    pub radius: Option<f32>,
+}
+
+#[pymethods]
+impl CaliperPlacement {
+    fn __repr__(&self) -> String {
+        format!(
+            "CaliperPlacement(object_index={}, caliper_index={}, kind='{}', center={:?}, angle={:.4})",
+            self.object_index, self.caliper_index, self.kind, self.center, self.angle
+        )
+    }
+}
+
+impl From<NativeCaliperPlacement> for CaliperPlacement {
+    fn from(p: NativeCaliperPlacement) -> Self {
+        match p.shape {
+            NativeCaliperShape::Rect(r) => Self {
+                object_index: p.object_index,
+                caliper_index: p.caliper_index,
+                kind: "rect",
+                center: (r.center.x, r.center.y),
+                angle: r.angle,
+                half_len: r.half_len,
+                half_width: r.half_width,
+                radius: None,
+            },
+            NativeCaliperShape::Radial(r) => Self {
+                object_index: p.object_index,
+                caliper_index: p.caliper_index,
+                kind: "radial",
+                center: (r.center.x, r.center.y),
+                angle: r.angle,
+                half_len: r.half_len,
+                half_width: r.half_width,
+                radius: Some(r.radius),
+            },
+        }
+    }
+}
+
 /// A set of nominal primitives measured together at a fixture pose.
 ///
 /// Mirrors `vision_metrology::measure::MetrologyModel`: `add` a
@@ -488,6 +553,35 @@ impl MetrologyModel {
                 )?
                 .into()),
             })
+            .collect()
+    }
+
+    /// Where every caliper of every added object sits at the fixture pose,
+    /// without measuring — same fixture semantics as [`apply`](Self::apply).
+    ///
+    /// This is what an overlay should call to draw caliper boxes: it needs no
+    /// image, uses the same placement code `apply` does internally (so a
+    /// caller can never draw a caliper somewhere the actual measurement did
+    /// not look), and works even for objects that will go on to reject every
+    /// caliper.
+    #[pyo3(signature = (x, y, angle=0.0, scale=1.0, origin=(0.0, 0.0)))]
+    pub fn layout(
+        &self,
+        x: f32,
+        y: f32,
+        angle: f32,
+        scale: f32,
+        origin: (f32, f32),
+    ) -> Vec<CaliperPlacement> {
+        let fixture = pose_from(
+            Point2f::new(x, y),
+            angle,
+            scale,
+            Point2f::new(origin.0, origin.1),
+        );
+        native_layout(&self.inner, &fixture)
+            .into_iter()
+            .map(CaliperPlacement::from)
             .collect()
     }
 }

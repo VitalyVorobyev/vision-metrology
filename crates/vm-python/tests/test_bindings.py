@@ -631,6 +631,73 @@ def test_metrology_model_reports_a_failed_object_without_dropping_others():
     assert all(isinstance(o.message, str) and o.message for o in outcomes)
 
 
+def test_metrology_model_layout_places_radial_calipers_without_an_image():
+    """`layout` needs no image and mirrors `apply`'s own placement math."""
+    c = (80.0, 80.0)
+    model = vm.MetrologyModel()
+    model.add(vm.MetrologyObject(vm.MetrologyShape.circle((0.0, 0.0), 40.0), n_calipers=8))
+
+    placements = model.layout(c[0], c[1])
+    assert len(placements) == 8
+    for i, p in enumerate(placements):
+        assert isinstance(p, vm.CaliperPlacement)
+        assert p.object_index == 0
+        assert p.caliper_index == i
+        assert p.kind == "radial"
+        assert p.radius is not None
+        assert abs(p.radius - 40.0) < 1e-4
+        # `MeasureRadial.center` is the circle's own centre, for every caliper.
+        assert abs(p.center[0] - c[0]) < 1e-4
+        assert abs(p.center[1] - c[1]) < 1e-4
+        expected_angle = 2 * np.pi * i / 8
+        assert abs(p.angle - expected_angle) < 1e-4
+
+
+def test_metrology_model_layout_places_rect_calipers_along_a_line():
+    model = vm.MetrologyModel()
+    model.add(vm.MetrologyObject(vm.MetrologyShape.line((0.0, 0.0), (10.0, 0.0)), n_calipers=3))
+
+    placements = model.layout(0.0, 0.0)
+    assert len(placements) == 3
+    assert all(p.kind == "rect" for p in placements)
+    assert all(p.radius is None for p in placements)
+    xs = [p.center[0] for p in placements]
+    assert xs == sorted(xs)
+    assert abs(xs[0] - 0.0) < 1e-4
+    assert abs(xs[-1] - 10.0) < 1e-4
+
+
+def test_metrology_model_layout_agrees_with_apply_hit_positions():
+    """The whole point: `layout`'s placement is the same geometry `apply`
+    actually measured from, not a re-derivation that could drift."""
+    c = (80.0, 80.0)
+    radius = 40.0
+    disc = make_disc(160, 160, c[0], c[1], radius)
+
+    model = vm.MetrologyModel()
+    model.add(vm.MetrologyObject(vm.MetrologyShape.circle((0.0, 0.0), radius), n_calipers=16))
+
+    placements = model.layout(c[0], c[1])
+    results = model.apply(disc, c[0], c[1])
+    hits = results[0].hits
+    assert len(hits) == 16
+
+    for p, hit in zip(placements, hits):
+        # The hit should lie close to the caliper's own radial ray through
+        # `p.center` at `p.angle`, near the nominal `p.radius`.
+        px = p.center[0] + p.radius * np.cos(p.angle)
+        py = p.center[1] + p.radius * np.sin(p.angle)
+        assert abs(hit.x - px) < 1.0
+        assert abs(hit.y - py) < 1.0
+
+
+def test_metrology_model_layout_skips_unmeasurable_objects():
+    model = vm.MetrologyModel()
+    model.add(vm.MetrologyObject(vm.MetrologyShape.circle((0.0, 0.0), 20.0), n_calipers=2))
+    placements = model.layout(0.0, 0.0)
+    assert len(placements) == 2
+
+
 def test_contour_graph_build_and_smooth():
     disc = make_disc(160, 160, 80.0, 80.0, 40.0)
     g = vm.build_contour_graph(disc)

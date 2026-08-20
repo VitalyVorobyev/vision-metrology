@@ -432,6 +432,21 @@ class MetrologyResult:
 class MetrologyError:
     message: str
 
+class CaliperPlacement:
+    """Where one caliper of a `MetrologyModel` sits at a fixture pose, without
+    measuring — see `MetrologyModel.layout`. `kind` is `"rect"` or `"radial"`;
+    `radius` is set only for `"radial"` placements, where `center` is the
+    *circle's* own centre (not the caliper's position on the circle)."""
+
+    object_index: int
+    caliper_index: int
+    kind: str
+    center: Tuple[float, float]
+    angle: float
+    half_len: float
+    half_width: float
+    radius: Optional[float]
+
 class MetrologyModel:
     def __init__(self) -> None: ...
     def add(self, object: MetrologyObject) -> int: ...
@@ -446,6 +461,14 @@ class MetrologyModel:
         scale: float = ...,
         origin: Tuple[float, float] = ...,
     ) -> List[Union[MetrologyResult, MetrologyError]]: ...
+    def layout(
+        self,
+        x: float,
+        y: float,
+        angle: float = ...,
+        scale: float = ...,
+        origin: Tuple[float, float] = ...,
+    ) -> List[CaliperPlacement]: ...
 
 class Caliper:
     @staticmethod
