@@ -110,3 +110,37 @@ def test_teach_find_measure_circle(tmp_path, monkeypatch) -> None:
     assert len(hit["profile"]["values"]) > 0
     assert hit["profile"]["step_px"] > 0
     assert len(hit["profile"]["edges"]) == 1
+
+    # -- rectify: find + rectify each match into a canonical model-frame crop --------
+    resp = client.post(
+        "/api/rectify",
+        json={
+            "image_id": image["id"],
+            "model_id": model["id"],
+            "min_score": 0.5,
+            "crop": {"rect": list(roi), "px_per_unit": 1.0},
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    rectify_body = resp.json()
+    assert rectify_body["width"] == int(roi[2])
+    assert rectify_body["height"] == int(roi[3])
+    assert len(rectify_body["matches"]) >= 1
+    rbest = max(rectify_body["matches"], key=lambda m: m["score"])
+    assert abs(rbest["x"] - DISC_CENTER[0]) < 2.0
+    assert rbest["validity"] > 0.9
+    assert rbest["width"] == rectify_body["width"]
+    assert rbest["height"] == rectify_body["height"]
+
+    crop_resp = client.get(rbest["crop_url"])
+    assert crop_resp.status_code == 200, crop_resp.text
+    assert crop_resp.headers["content-type"] == "image/png"
+    crop_etag = crop_resp.headers["etag"]
+    crop_img = PILImage.open(io.BytesIO(crop_resp.content))
+    assert crop_img.size == (rectify_body["width"], rectify_body["height"])
+
+    cached_resp = client.get(rbest["crop_url"], headers={"If-None-Match": crop_etag})
+    assert cached_resp.status_code == 304
+
+    missing_resp = client.get(f"/api/rectify/{image['id']}/{model['id']}/999")
+    assert missing_resp.status_code == 404

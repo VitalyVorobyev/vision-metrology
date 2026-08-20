@@ -81,6 +81,48 @@
         "title": "CaliperResultOut",
         "type": "object"
       },
+      "CropSpecIn": {
+        "description": "Mirrors `vm.CropSpec`. `rect` is in **model-frame coordinates** \u2014 the\ntaught model's own reference-image frame, i.e. the same coordinates as\n`ModelOut.roi` \u2014 so a sensible default is the taught model's own `roi`.",
+        "properties": {
+          "normalize_scale": {
+            "default": true,
+            "description": "Render at model scale (True, canonical) or found scale (False).",
+            "title": "Normalize Scale",
+            "type": "boolean"
+          },
+          "px_per_unit": {
+            "default": 1.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Px Per Unit",
+            "type": "number"
+          },
+          "rect": {
+            "maxItems": 4,
+            "minItems": 4,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Rect",
+            "type": "array"
+          }
+        },
+        "required": [
+          "rect"
+        ],
+        "title": "CropSpecIn",
+        "type": "object"
+      },
       "EdgeMarkOut": {
         "properties": {
           "polarity": {
@@ -1159,6 +1201,141 @@
         "title": "OverlayPrimitiveOut",
         "type": "object"
       },
+      "RectifyMatchOut": {
+        "properties": {
+          "angle": {
+            "title": "Angle",
+            "type": "number"
+          },
+          "crop_url": {
+            "title": "Crop Url",
+            "type": "string"
+          },
+          "height": {
+            "title": "Height",
+            "type": "integer"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "level": {
+            "title": "Level",
+            "type": "integer"
+          },
+          "scale": {
+            "title": "Scale",
+            "type": "number"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          },
+          "support": {
+            "title": "Support",
+            "type": "integer"
+          },
+          "validity": {
+            "description": "fraction of crop pixels sampled from inside the scene",
+            "title": "Validity",
+            "type": "number"
+          },
+          "width": {
+            "title": "Width",
+            "type": "integer"
+          },
+          "x": {
+            "title": "X",
+            "type": "number"
+          },
+          "y": {
+            "title": "Y",
+            "type": "number"
+          }
+        },
+        "required": [
+          "index",
+          "x",
+          "y",
+          "angle",
+          "scale",
+          "score",
+          "support",
+          "level",
+          "validity",
+          "crop_url",
+          "width",
+          "height"
+        ],
+        "title": "RectifyMatchOut",
+        "type": "object"
+      },
+      "RectifyRequest": {
+        "properties": {
+          "crop": {
+            "$ref": "#/components/schemas/CropSpecIn"
+          },
+          "image_id": {
+            "title": "Image Id",
+            "type": "string"
+          },
+          "max_matches": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Matches"
+          },
+          "min_score": {
+            "default": 0.7,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Min Score",
+            "type": "number"
+          },
+          "model_id": {
+            "title": "Model Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "image_id",
+          "model_id",
+          "crop"
+        ],
+        "title": "RectifyRequest",
+        "type": "object"
+      },
+      "RectifyResponse": {
+        "properties": {
+          "height": {
+            "title": "Height",
+            "type": "integer"
+          },
+          "matches": {
+            "items": {
+              "$ref": "#/components/schemas/RectifyMatchOut"
+            },
+            "title": "Matches",
+            "type": "array"
+          },
+          "width": {
+            "title": "Width",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "width",
+          "height",
+          "matches"
+        ],
+        "title": "RectifyResponse",
+        "type": "object"
+      },
       "Tier": {
         "enum": [
           "thumb",
@@ -1493,6 +1670,105 @@
         "summary": "Create Model",
         "tags": [
           "models"
+        ]
+      }
+    },
+    "/api/rectify": {
+      "post": {
+        "operationId": "rectify_api_rectify_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RectifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RectifyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rectify",
+        "tags": [
+          "rectify"
+        ]
+      }
+    },
+    "/api/rectify/{image_id}/{model_id}/{index}": {
+      "get": {
+        "operationId": "get_crop_api_rectify__image_id___model_id___index__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "image_id",
+            "required": true,
+            "schema": {
+              "title": "Image Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "title": "Model Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "index",
+            "required": true,
+            "schema": {
+              "title": "Index",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Crop",
+        "tags": [
+          "rectify"
         ]
       }
     }
