@@ -16,6 +16,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { getBackend } from "../api/backend";
+import { CropImage } from "../components/CropImage";
 import type { ImageOut, ModelOut, Roi } from "../api/backend";
 
 const RECT_LABELS: readonly ["x", "y", "w", "h"] = ["x", "y", "w", "h"];
@@ -174,12 +175,12 @@ export function AlignTab({ image, models }: { image: ImageOut; models: ModelOut[
                   className="flex flex-col items-start gap-1 rounded border border-line p-1.5 text-left hover:border-line-strong"
                   onClick={() => openZoom(m.index)}
                 >
-                  {/* eslint-disable-next-line jsx-a11y/img-redundant-alt -- key is content identity, not decoration */}
-                  <img
-                    src={getBackend().rectifyCropUrl(image.id, modelId, m.index)}
+                  <CropImage
+                    imageId={image.id}
+                    modelId={modelId}
+                    index={m.index}
                     alt={`rectified crop, match ${m.index}`}
                     className="w-full rounded bg-raised"
-                    draggable={false}
                   />
                   <div className="flex w-full items-center justify-between gap-1 text-xs">
                     <Badge tone={validityTone(m.validity)}>{(m.validity * 100).toFixed(0)}% valid</Badge>
@@ -205,12 +206,12 @@ export function AlignTab({ image, models }: { image: ImageOut; models: ModelOut[
             className="h-80 w-full"
             fitLabel={null}
           >
-            {/* eslint-disable-next-line jsx-a11y/img-redundant-alt -- key is content identity, not decoration */}
-            <img
-              src={getBackend().rectifyCropUrl(image.id, modelId, zoomIndex)}
+            <CropImage
+              imageId={image.id}
+              modelId={modelId}
+              index={zoomIndex}
               alt={`rectified crop, match ${zoomIndex}, zoomed`}
               className="h-full w-full object-contain"
-              draggable={false}
             />
           </ZoomPanCanvas>
         )}

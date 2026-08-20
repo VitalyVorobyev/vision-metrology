@@ -121,13 +121,23 @@ impl ShapeModel {
             min_contrast: Contrast::Raw(0.0),
             max_points: core::num::NonZeroUsize::new(self.point_count(0).max(8)),
             origin: Some(Point2f::new(0.0, 0.0)),
+            // Zero, not `self.reference_angle()`: `teach_points` are already
+            // stored in the rotated model frame (`build::assemble` rotates
+            // them once, when the model is first assembled), so rotating again
+            // here would double the canonical orientation. The value is
+            // restored onto the result below, where it belongs — a resampled
+            // model describes the same canonical frame as the model it came
+            // from, only at a different scale.
+            reference_angle: 0.0,
             angle_range: self.angle_range(),
             scale_range: VERIFY_SCALE_RANGE,
             polarity: self.polarity(),
             min_points_per_level: 8,
         };
 
-        from_raw(raw, &cfg)
+        let mut out = from_raw(raw, &cfg)?;
+        out.set_reference_angle(self.reference_angle());
+        Ok(out)
     }
 }
 

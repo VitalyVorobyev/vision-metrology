@@ -8,22 +8,16 @@ start of a session and keep them updated when scope or decisions change.
 
 ## Quick repo map
 
-Three published crates, two layers:
+Three published crates, two layers: `vm-primitives` (low-level building blocks) →
+`vision-metrology` (domain algorithms) → `vm-python` (PyO3 bindings).
 
-* `crates/vm-primitives`: low-level building blocks
-  * `::core` — image views, `Pixel` trait, sampling, border modes, geometry (nalgebra aliases)
-  * `::pyr`  — `Pyramid`, 2×2 mean, generic over `Pixel`, optional pre-smooth
-  * `::edge` — 1D/2D subpixel edges (DoG), edgels, edge-pairs
-  * `::morph` — binary morphology (parameterized SE), chamfer distance, Zhang-Suen thinning
-* `crates/vision-metrology`: high-level domain modules (depends on `vm-primitives`)
-  * `::contour`   — contour graph, junctions, per-edge tangent/curvature, polyline smoothing
-  * `::laser`     — stripe extraction using opposite-polarity edge pairs
-  * `::matching`  — `ShapeModel` + `ShapeMatcher`, gradient-orientation shape-based object detection
-  * `::segment`   — Otsu/adaptive thresholding, CCL, watershed, edgel region growing
-  * `::shape`     — LSD, Bookstein/Fitzgibbon conic fitting, RANSAC ellipse fitting
-* `crates/vm-python`: PyO3 extension module exposing detectors with numpy array I/O
+**Do not keep a module list here.** The canonical one — every module, in both library
+crates, with what it contains — is the table in
+[`docs/system-design.md`](docs/system-design.md#layering). Copies of it in this file,
+`AGENTS.md`, `CONTRIBUTING.md` and the crate READMEs all drifted; now they all point there.
 
-Names live at their module path. Both crates ship a `prelude`; crate-root re-exports are explicit lists, never globs. Every `vision-metrology` module is a default-on feature.
+Names live at their module path. Both crates ship a `prelude`; crate-root re-exports are
+explicit lists, never globs. Every `vision-metrology` module is a default-on feature.
 
 ## Key decisions
 

@@ -18,11 +18,14 @@ fn refine_from(req: &DisplacementRequest) -> Refine {
 }
 
 pub fn displacement(state: &AppState, req: DisplacementRequest) -> AppResult<DisplacementResponse> {
-    let images = state.images.lock().expect("images mutex poisoned");
-    for id in &req.image_ids {
-        if !images.contains_key(id) {
-            return Err(not_found("image", id));
+    {
+        let images = state.images.lock().expect("images mutex poisoned");
+        for id in &req.image_ids {
+            if !images.contains_key(id) {
+                return Err(not_found("image", id));
+            }
         }
+        // Released before `decoded` below, which takes this lock itself.
     }
 
     let cfg = DisplacementConfig {
@@ -42,8 +45,8 @@ pub fn displacement(state: &AppState, req: DisplacementRequest) -> AppResult<Dis
     let mut cumulative_y = vec![0.0f32];
     for w in req.image_ids.windows(2) {
         let (prev_id, curr_id) = (&w[0], &w[1]);
-        let prev = &images[prev_id].image;
-        let curr = &images[curr_id].image;
+        let prev = state.decoded(prev_id)?;
+        let curr = state.decoded(curr_id)?;
         let d = native_displacement(&prev.as_view(), &curr.as_view(), &cfg).map_err(|e| {
             crate::error::AppError(format!(
                 "displacement failed between {prev_id} and {curr_id}: {e}"

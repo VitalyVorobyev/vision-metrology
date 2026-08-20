@@ -29,10 +29,10 @@ fn crop_key(image_id: &str, model_id: &str, index: usize) -> String {
 }
 
 pub fn rectify(state: &AppState, req: RectifyRequest) -> AppResult<RectifyResponse> {
-    // `run_find` locks `state.images`/`state.models` itself — called *before* this
-    // function takes its own `images` lock below, or the two would deadlock (the same
-    // thread trying to lock `state.images` twice, a `std::sync::Mutex` is not
-    // reentrant).
+    // `run_find` locks `state.images`/`state.models` itself, and so does
+    // `AppState::decoded` below — neither may be called while this function
+    // holds either lock (`std::sync::Mutex` is not reentrant, so the same
+    // thread locking twice deadlocks rather than erroring).
     if !state
         .models
         .lock()
@@ -41,19 +41,23 @@ pub fn rectify(state: &AppState, req: RectifyRequest) -> AppResult<RectifyRespon
     {
         return Err(not_found("model", &req.model_id));
     }
+    // The caller's whole search, not just its thresholds — see
+    // `RectifyRequest`'s own docs for why anything less renumbers the matches.
     let find_req = FindRequest {
         image_id: req.image_id.clone(),
         model_id: req.model_id.clone(),
         min_score: req.min_score,
         max_matches: req.max_matches,
-        ..FindRequest::default()
+        angle_range: req.angle_range,
+        scale_range: req.scale_range,
+        refinement: req.refinement.clone(),
+        min_contrast: req.min_contrast,
+        tuning: req.tuning.clone(),
+        roi: None,
     };
     let matches = run_find(state, &find_req)?;
 
-    let images = state.images.lock().expect("images mutex poisoned");
-    let img_entry = images
-        .get(&req.image_id)
-        .ok_or_else(|| not_found("image", &req.image_id))?;
+    let image = state.decoded(&req.image_id)?;
 
     let spec = CropSpec {
         rect: Rect2f {
@@ -71,7 +75,7 @@ pub fn rectify(state: &AppState, req: RectifyRequest) -> AppResult<RectifyRespon
     let cache = cache_guard.get_or_insert_with(HashMap::new);
     cache.retain(|(iid, mid, _), _| !(iid == &req.image_id && mid == &req.model_id));
 
-    let view = img_entry.image.as_view();
+    let view = image.as_view();
     let mut out = Vec::with_capacity(matches.len());
     for (i, m) in matches.iter().enumerate() {
         let crop_map = m.model_frame_map(&spec);

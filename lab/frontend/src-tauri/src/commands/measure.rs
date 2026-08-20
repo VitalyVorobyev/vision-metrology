@@ -295,15 +295,16 @@ pub fn measure(state: &AppState, req: MeasureRequest) -> AppResult<MeasureRespon
     let (fixture, source) = resolve_fixture(state, &req)?;
     let metric = resolve_metric(state, &req)?;
 
-    let images = state.images.lock().expect("images mutex poisoned");
-    let img_entry = images
-        .get(&req.image_id)
-        .ok_or_else(|| not_found("image", &req.image_id))?;
-    let models = state.models.lock().expect("models mutex poisoned");
-    let model_entry = models
-        .get(&req.model_id)
-        .ok_or_else(|| not_found("model", &req.model_id))?;
-    let origin = model_entry.model.origin();
+    let origin = {
+        let models = state.models.lock().expect("models mutex poisoned");
+        models
+            .get(&req.model_id)
+            .ok_or_else(|| not_found("model", &req.model_id))?
+            .model
+            .origin()
+    };
+    // After the models lock is released: `decoded` takes the images lock.
+    let image = state.decoded(&req.image_id)?;
 
     let pose = pose_from(
         Point2f::new(fixture.x, fixture.y),
@@ -325,7 +326,7 @@ pub fn measure(state: &AppState, req: MeasureRequest) -> AppResult<MeasureRespon
         });
     }
 
-    let view = img_entry.image.as_view();
+    let view = image.as_view();
     let raw_results = metrology_model.apply(&view, &pose);
     let placements = layout(&metrology_model, &pose);
     let mut by_object: HashMap<usize, Vec<CaliperShape>> = HashMap::new();

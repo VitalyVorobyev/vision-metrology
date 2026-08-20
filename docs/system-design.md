@@ -5,8 +5,11 @@ This file, together with [`roadmap.md`](roadmap.md) (where we are going) and
 [`backlog.md`](backlog.md) (known debt), is the persistent context for anyone — human or
 agent — starting a work session on this repository. Read all three before changing code.
 
-Keep this file truthful: when a decision here is superseded, rewrite the entry (and say
-what replaced it), don't append contradictions.
+Keep this file truthful: when a decision here is superseded, **rewrite** the entry (and say
+what replaced it), don't append a contradiction. What *landed*, with its measured numbers,
+belongs in [`CHANGELOG.md`](../CHANGELOG.md); what is *decided*, and why, belongs here.
+Say a thing once: if it is already written down somewhere, link there instead of restating
+it.
 
 ## Layering
 
@@ -17,6 +20,10 @@ vm-primitives  ──►  vision-metrology  ──►  vm-python
 (low-level)         (domain algorithms)    (PyO3 bindings)
 ```
 
+**This table is the canonical module map.** `AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`
+and the crate READMEs point here rather than keeping their own copies, which is how four
+of them came to list a `::shape` module that had been renamed two waves earlier.
+
 | Crate | Modules | Contents |
 |---|---|---|
 | `vm-primitives` | `core` | Two private halves, one public path: `raster` (`Image<T>`/`ImageView<T>`, `Pixel` sealed over u8/u16/f32, sampling, `BorderMode`, `Error` — **no nalgebra**) and `geom` (nalgebra aliases `Point2f`/`Vec2f`/`Similarity2f`, `Vec2fExt`, transforms, `Circle2f`/`Ellipse2f`/`Conic2f`) |
@@ -25,10 +32,10 @@ vm-primitives  ──►  vision-metrology  ──►  vm-python
 | | `morph` | binary morphology (parameterized SE), chamfer distance, Zhang-Suen thinning |
 | `vision-metrology` | `contour` | contour graph with T/Y junctions, per-edge geometry, polyline smoothing |
 | | `laser` | stripe extraction via opposite-polarity edge pairs (rows/cols, ROI + prior) |
-| | `matching` | `ShapeModel`/`ShapeMatcher`: gradient-orientation shape-based detection |
+| | `matching` | `ShapeModel`/`ShapeMatcher`: gradient-orientation shape-based detection, masked teaching, canonical-pose crops (`matching::crop`) |
 | | `segment` | Otsu/adaptive thresholding, CCL, watershed, edgel region growing |
 | | `fit` | robust line / circle / ellipse fitting, residuals reported |
-| | `measure` | calipers (rect / arc / radial), metrology model applied at a fixture pose |
+| | `measure` | calipers (rect / arc / radial), metrology model applied at a fixture pose, `diagnostics::layout` |
 | | `lsd` | LSD line-segment detection |
 | | `warp` | `Map`: precomputed `dst → src` coordinate table (affine / projective / polar / log-polar / `from_fn`), `apply`/`apply_with_mask` with a first-class validity mask |
 | | `metric` | The calibration bridge: mirrored `CameraModel`/`Pose3`/`Plane3`/`PlaneGrid` on nalgebra 0.35, `pixel_to_plane` (exact), `plane_grid_map`/`undistort_map` (runtime `warp::Map` path), `io` importers for calibration-rs and `table_calibration` JSON |
@@ -44,6 +51,13 @@ explicit list, never a glob (invariant 17).
 
 These are load-bearing. Breaking one is a design change, not a refactor, and needs a
 matching update here.
+
+**The numbering is an API.** Source files and docs cite these by number (`invariant 4`), and
+nothing in the compiler checks that. So: numbers are **append-only**. Never renumber, never
+reuse. A new invariant is appended with the next number; a retired one keeps its number and
+gets a `**(retired)**` tombstone saying what replaced it. `tools/check-invariants.py` (run in
+CI) verifies the list is contiguous and that every `invariant N` citation in the repository
+resolves to one that exists.
 
 1. **Pixel centers.** Integer coordinate `i` means position `i as f32`. Everything —
    edgels, ROIs, poses, pyramid coordinate mapping — assumes it.
@@ -111,1016 +125,611 @@ matching update here.
 
 ## Decisions and why
 
-### Chamfer matcher → gradient-orientation shape matching (PR #18, 2026-08)
-The distance-only chamfer matcher was replaced wholesale (deleted, not deprecated: crate
-was 0.1.0 and unpublished). Its metric ignored gradient orientation, it had no pyramid, no
-greedy abort, and its angle range could not cross ±π. The replacement implements Steger's
-DAGM 2001 similarity measure (the algorithm behind HALCON `create_shape_model` /
-`find_shape_model`): score `S = (1/n) Σ (R·tᵢ)·ĝ(pᵢ)` with three polarity modes, greedy
-early termination factored to one FMA + compare per 8-point chunk, coarse-to-fine pyramid
-search with 3-D (x, y, α) local maxima, and correspondence-free least-squares pose
-refinement (f64 normal equations, 4→3→2 DOF Cholesky fallback for symmetric parts).
-`morph::chamfer_distance_u8` survives as an independent primitive.
+Each entry answers "why is it like this", not "what landed when" — that is
+[`CHANGELOG.md`](../CHANGELOG.md)'s job. Numbers appear here only where the number *is* the
+argument.
+
+### Chamfer matcher → gradient-orientation shape matching (PR #18)
+The distance-only chamfer matcher was replaced wholesale (deleted, not deprecated: the crate
+was unpublished). Its metric ignored gradient orientation, it had no pyramid, no greedy
+abort, and its angle range could not cross ±π. The replacement implements Steger's DAGM 2001
+similarity measure (the algorithm behind HALCON `create_shape_model` / `find_shape_model`):
+`S = (1/n) Σ (R·tᵢ)·ĝ(pᵢ)` with three polarity modes, greedy early termination factored to
+one FMA + compare per 8-point chunk, coarse-to-fine pyramid search with 3-D (x, y, α) local
+maxima, and correspondence-free least-squares pose refinement (4→3→2 DOF Cholesky fallback
+for symmetric parts). `morph::chamfer_distance_u8` survives as an independent primitive.
 
 ### `DirectionField` lives in vm-primitives, not in matching
-The matcher needs a dense gated unit-gradient field per pyramid level, stored across
-levels. `GradientBuffers` borrows `&mut Edge2DDetector` and cannot be held per level; the
-full edge pipeline (NMS + hysteresis + edgel build) is ~2× the necessary work. The field is
-a pure image primitive with no matching semantics, hence vm-primitives.
+The matcher needs a dense gated unit-gradient field per pyramid level, stored across levels.
+`GradientBuffers` borrows `&mut Edge2DDetector` and cannot be held per level; the full edge
+pipeline (NMS + hysteresis + edgel build) is ~2× the necessary work. The field is a pure
+image primitive with no matching semantics, hence vm-primitives.
 
 ### Model `min_contrast` is the knob that decides real-world performance
-On low-relief parts (canend dataset), edge-detector auto-thresholds admit model points on
-faint non-repeating surface shading. Because of invariant 4 those points *dilute* the
-score rather than merely not helping. Raising `ShapeModelConfig::min_contrast` took
-set1/dome from 0.785 → 0.998 median score and CP34 from 35/39 found to 39/39. Documented
-with a tuning table in `shape-matching.md`.
+On low-relief parts (canend), edge-detector auto-thresholds admit model points on faint
+non-repeating surface shading. Because of invariant 4 those points *dilute* the score rather
+than merely not helping. Raising `ShapeModelConfig::min_contrast` took set1/dome from
+0.785 → 0.998 median score and CP34 from 35/39 found to 39/39. Tuning table in
+`shape-matching.md`.
 
 ### Cross-repo dependencies are crates.io releases only
-The maintainer owns `corrmatch`, `box-image-pyramid`, and `calibration-rs`. When a feature
-is missing there, it is implemented upstream, released, and bumped here — never a git or
-path dependency in committed code. Keeps this workspace publishable and CI reproducible.
+The maintainer owns `corrmatch`, `box-image-pyramid`, and `calibration-rs`. When a feature is
+missing there it is implemented upstream, released, and bumped here — never a git or path
+dependency in committed code. Keeps this workspace publishable and CI reproducible. The
+`corr` entry below records the one deliberate change of *status* (corrmatch became a real
+dependency rather than dev-only), not of mechanism.
 
-### MSRV 1.89 → 1.91 (2026-08)
-nalgebra 0.35 needs only 1.89, but `corrmatch` and `box-image-pyramid` (planned
-dev-dependencies for pose auditing and the u8 scene-path pyramid) declare 1.91. The crates
-here were unpublished at the time, so no compatibility promise was broken. The MSRV CI job
-builds `--all-targets`, which is why even dev-dependencies constrain the floor.
+### MSRV 1.89 → 1.91
+nalgebra 0.35 needs only 1.89, but `corrmatch` and `box-image-pyramid` declare 1.91. The
+crates here were unpublished at the time, so no compatibility promise broke. The MSRV CI job
+builds `--all-targets`, which is why even dev-dependencies constrain the floor; clippy
+enforces it through `incompatible_msrv`. **This is the one place that rationale is written
+down** — `AGENTS.md` and `CONTRIBUTING.md` link here.
 
 ### vision-calibration: offline/runtime split
-`calibration-rs` has the laser-plane pipeline we need (`LaserPlane`,
-`LaserlinePlaneSolver`, `pixel_to_gripper_point`), but it is structurally pinned to
+`calibration-rs` has the laser-plane pipeline we need, but it is structurally pinned to
 nalgebra **0.34** (tiny-solver/faer chain; nalgebra types cross its public API) and MSRV
-1.93. Decision: vision-calibration remains the **offline** calibration system; a small
-runtime `metric` module here mirrors only the parameter types (intrinsics, distortion,
-plane) on nalgebra 0.35 and loads calibration-rs JSON exports, pinned by a golden-file
-test. A direct dependency replaces the mirror when upstream reaches nalgebra 0.35.
+1.93. Decision: vision-calibration remains the **offline** calibration system; the runtime
+`metric` module here mirrors only the parameter types on nalgebra 0.35 and loads
+calibration-rs JSON exports, pinned by a golden-file test. A direct dependency replaces the
+mirror when upstream reaches nalgebra 0.35.
 
-### `metric`: the calibration bridge — units, pose direction, and the homography split (2026-08)
-B5 (roadmap). Four decisions that have to be right before any of the arithmetic matters,
-because getting any one backwards is a silent, plausible-looking bug (right shape, wrong
-numbers) rather than a compile error or a crash.
+### `metric`: units, pose direction, and the homography split
+Four decisions that must be right before any of the arithmetic matters, because getting one
+backwards is a silent, plausible-looking bug (right shape, wrong numbers) rather than a
+crash.
 
-**Units: millimetres, not the wire format's meters.** Every 3-D/plane quantity in
-`metric` (`Pose3` translations, `Plane3::d`, `PlaneGrid`, `pixel_to_plane`'s output) is
-millimetres; pixel-domain quantities (`PinholeIntrinsics`, pixel coordinates) stay in
-pixels. `io::import_rig_extrinsics` converts calibration-rs's meters on import (the wire
-schema documents the unit explicitly); `io::import_table_calibration` needed a judgment
-call instead — the format documents no unit at all, and the real fixture's
-camera-to-camera translation is ~111 in magnitude, which is a plausible two-camera
-benchtop baseline in mm and an absurd 111-**meter** rig if read as meters. Recorded at
-the importer, not asserted as a property of the format.
+**Units: millimetres, not the wire format's meters.** Every 3-D/plane quantity (`Pose3`
+translations, `Plane3::d`, `PlaneGrid`, `pixel_to_plane`'s output) is mm; pixel-domain
+quantities stay in pixels. `io::import_rig_extrinsics` converts calibration-rs's meters on
+import (its schema documents the unit). `io::import_table_calibration` needed a judgment call
+instead — that format documents no unit at all, and the real fixture's camera-to-camera
+translation is ~111 in magnitude: a plausible benchtop baseline in mm, an absurd 111-**meter**
+rig in meters. Recorded at the importer, not asserted as a property of the format.
 
-**`Pose3` is camera-from-reference (`cam_se3_rig`, `T_C_R`), matching calibration-rs's
-own convention rather than inventing a new one.** `pose * p_ref` gives `p_ref` in the
-camera's own frame. Every function here and every Python binding follows this
-direction; getting it backwards would silently mirror every downstream projection
-through the camera center, the same failure shape `warp`'s own `dst → src` direction
-trap describes. `io::import_table_calibration` treats `camera0`'s `sensor2camera`
-(the identity in every observed export) as defining the reference frame, so every other
-camera's `sensor2camera` **is** `Pose3` directly with no re-composition — a fact about
-this specific dataset (camera0 is always identity), not a general property of the file
-format, and documented as such at the importer.
+**`Pose3` is camera-from-reference (`T_C_R`)**, matching calibration-rs rather than inventing
+a convention: `pose * p_ref` gives `p_ref` in the camera's own frame. Backwards, it would
+silently mirror every downstream projection through the camera centre — the same failure
+shape as `warp`'s `dst → src` trap. `import_table_calibration` treats `camera0`'s
+`sensor2camera` (identity in every observed export) as defining the reference frame, so every
+other camera's `sensor2camera` **is** `Pose3` directly — a fact about this dataset,
+documented at the importer, not a property of the file format.
 
-**A homography cannot carry Brown-Conrady distortion — so there are two, deliberately
-different, plane-to-image paths, not one.** [`pixel_to_plane`] is the exact path:
-per-pixel `undistort_pixel` → `pixel_to_ray` → `ray_plane_intersect`, correct for any
-`Plane3`, the one to use for a point-wise measurement. [`homography_plane_to_image`] /
-[`plane_grid_map`] are the whole-image runtime path — a homography (undistorted only)
-composed with forward `distort_pixel` per destination pixel via `warp::Map::from_fn` —
-restricted to `PlaneGrid`, which is always the reference frame's own `Plane3::xy`
-(`z = 0`), *not* an arbitrary plane, because the homography's linearity depends on
-substituting `z = 0` into the pose's affine map. A caller who needs a tilted or offset
-plane's bird's-eye view has no `plane_grid_map` shortcut; that is intentional; and the
-module docs say so at both entry points rather than leaving a caller to discover the
-restriction from a wrong answer.
+**A homography cannot carry Brown-Conrady distortion — so there are two deliberately
+different plane-to-image paths.** `pixel_to_plane` is the exact one (per-pixel
+`undistort_pixel` → `pixel_to_ray` → `ray_plane_intersect`), correct for any `Plane3`, the
+one to use for a point-wise measurement. `homography_plane_to_image` / `plane_grid_map` are
+the whole-image runtime path — an undistorted-only homography composed with forward
+`distort_pixel` per destination pixel via `warp::Map::from_fn` — restricted to `PlaneGrid`,
+always the reference frame's own `Plane3::xy` (`z = 0`), because the homography's linearity
+depends on substituting `z = 0` into the pose's affine map. A caller needing a tilted or
+offset plane's bird's-eye view has no shortcut; that is intentional, and both entry points
+say so rather than leaving it to be discovered from a wrong answer.
 
-**`pixel_to_plane`'s in-plane basis is deterministic, not caller-supplied.** For a
-general `Plane3`, the 2-D coordinate system needs an origin and two axes; the origin is
-the plane's closest point to the reference-frame origin (`p0 = -d·n`), and the axes are
-built by projecting the reference frame's own `x` axis onto the plane (or `y`, if `x` is
-within 0.9 of parallel to the normal) and completing a right-handed pair with a cross
-product. Purely a function of `plane.n`, so two calls with the same plane always agree
-— important since `PlaneGrid`'s own `z = 0` case sidesteps this entirely (its axes are
-the reference frame's `x`/`y` directly), so the two paths only need to agree in the
-`Plane3::xy` case, which they do by construction (`plane_basis` reduces to the identity
-basis when `n = (0, 0, 1)`).
+**`pixel_to_plane`'s in-plane basis is deterministic, not caller-supplied.** Origin is the
+plane's closest point to the reference origin (`p0 = -d·n`); axes come from projecting the
+reference `x` axis onto the plane (or `y`, if `x` is within 0.9 of parallel to the normal),
+completed right-handed. Purely a function of `plane.n`, so two calls with the same plane
+always agree — and it reduces to the identity basis at `n = (0, 0, 1)`, the only case where
+it must agree with `PlaneGrid`'s own axes.
 
-**Rectify-first 3-D acceptance, measured rather than assumed** (`tests/metric_rectify.rs`):
-see roadmap B5 for the full per-tilt table. Found at every tilt 0–40°, max position
-error 0.012 px — an order of magnitude inside the 0.1 px target, and small enough that
-homography refinement (next session) has very little left to buy on a genuinely planar
-target; its value is for the *non*-planar case this synthetic fixture cannot exercise.
+**Rectify-first closes the planar 3-D case, measured rather than assumed.**
+`tests/metric_rectify.rs` finds a model at every tilt 0–40° with max position error 0.012 px,
+an order of magnitude inside the 0.1 px target, on a fixture where render and rectify are
+exact geometric inverses. Homography refinement therefore has little left to buy on a
+genuinely planar target; its value is for the *non*-planar case.
 
 ### Shape-matching preprocessing dominates the search
-Measured (M4 Pro, 1280×1024, full 360°): `find_u8` ≈ 7.8 ms = ~5.3 ms direction-field
-pyramid + ~2.5 ms search. Below the top pyramid level the search reads only small windows
-around candidates, so full-frame fine-level fields are mostly wasted work. The performance
-plan (roadmap Track 2) is lazy tiled fields first, integer u8 Scharr second, quantized
-directions + SIMD only if still needed — in that order, each gated on measurement.
+Measured (1280×1024, full 360°): `find` ≈ 7.8 ms = ~5.3 ms direction-field pyramid + ~2.5 ms
+search. Below the top level the search reads only small windows around candidates, so
+full-frame fine-level fields are mostly wasted work. The plan was lazy tiled fields first,
+integer u8 Scharr second, quantized directions + SIMD only if still needed — each gated on
+measurement. The first landed; the rest is in `backlog.md`.
 
-### The chain runs end to end on real data (2026-08)
-`examples/inspect_canend` closes the loop the library exists for, on the can-end frames
-rather than a synthetic fixture: find the tab → take its pose as a fixture → measure the can
-rim **in the tab's frame** → report the fit and its residuals → pass/fail on `max_dev`.
+### The chain runs end to end on real data — the canend baseline
+`examples/inspect_canend` closes the loop the library exists for, on real frames: find the
+tab → take its pose as a fixture → measure the can rim **in the tab's frame** → report the
+fit and its residuals → pass/fail on `max_dev`. Teaching the rim relative to the tab is what
+makes the numbers mean something: every frame re-derives the rim from wherever the tab turned
+up, so the spread measures the fixture *and* the measurement, not where the part sat.
 
-Teaching the rim relative to the tab is what makes the numbers mean something: every frame
-re-derives the rim from wherever the tab turned up, so the spread across frames measures the
-fixture *and* the measurement, not where the part happened to sit.
-
-set1, 96 calipers, Tukey(2 px), tolerance 2 px on `max_dev`:
+**These are the reference numbers every later wave is checked against, bit-for-bit.** set1
+`normal`, 96 calipers, Tukey(2 px), tolerance 2 px on `max_dev`:
 
 | folder | frames | measured | mean radius | σ | per-frame rms |
 |---|---|---|---|---|---|
-| normal/dome | 50 | 50/50 | 365.24 px | 0.28 px | 0.20–0.54 px |
-| normal/dark | 50 | 50/50 | 365.70 px | 0.31 px | 0.28–0.60 px |
+| normal/dome | 50 | 50/50 | **365.237 px** | **0.282 px** | 0.20–0.54 px |
+| normal/dark | 50 | 50/50 | **365.696 px** | **0.307 px** | 0.28–0.60 px |
 
-All 96 calipers survived the robust fit in every frame. σ ≈ 0.3 px is an upper bound on
-repeatability — it is measured over *different physical cans*, so real part-to-part rim
-variation is inside it. For comparison, the Track 3 rim-relative σ was 0.8–3.3 px; that
-statistic measured the tab's position relative to the rim, which compounds two locations,
-where this measures the rim directly.
+All 96 calipers survived the robust fit in every frame. σ ≈ 0.3 px is an *upper bound* on
+repeatability — measured over different physical cans, so part-to-part rim variation is
+inside it. A wave claiming "canend parity" means these exact figures. Related caution: the
+`shape_matching` example's median score depends on which frame is taught (set1/bright reads
+p50 0.875 / 0.839 / 0.847 from frames 1, 2, 25), so cross-commit comparison needs the
+reference frame pinned.
 
-Units are pixels. Millimetres arrive with `metric` (B5).
-
-### `measure`: calipers, and why a curved edge needs its own placement (2026-08)
-The module that turns detection into inspection. [`Caliper`] places a geometry, averages
-intensity across it into a 1-D profile, and runs the existing `Edge1DDetector` along that
-profile; [`MetrologyModel`] distributes calipers over nominal primitives held in the part's
-own frame, applies them at a fixture pose (`ShapeMatch::pose`), and fits the measured points
-with the `fit` module. `find → pose → apply → Fit + residuals` is now a closed loop.
+### `measure`: calipers, and why a curved edge needs its own placement
+`Caliper` places a geometry, averages intensity across it into a 1-D profile, and runs
+`Edge1DDetector` along that profile; `MetrologyModel` distributes calipers over nominal
+primitives held in the part's own frame, applies them at a fixture pose, and fits with `fit`.
 
 **`MeasureRadial` exists because a rectangle cannot measure a circle without bias.** A rect
-averages along a straight *chord*: on a circle of radius 40, a sample 5 px to the side sits
-at radius 40.31 — the wrong side of the edge — so the averaged profile is contaminated and
-the measured radius reads low. Measured on an anti-aliased disc, a 32-caliper circle fit
-came out **39.88 px instead of 40.00**. `MeasureRadial` scans radially and averages *along
-the arc*, so every averaged sample sits at the same radius: **39.990 px**, a twelvefold
-reduction, and the bias no longer grows with caliper width. `MetrologyShape::Circle` uses it.
+averages along a straight *chord*: on a circle of radius 40 a sample 5 px to the side sits at
+radius 40.31 — the wrong side of the edge — so the profile is contaminated and the radius
+reads low: **39.88 px instead of 40.00** on a 32-caliper fit over an anti-aliased disc.
+`MeasureRadial` averages *along the arc*, so every sample sits at the same radius:
+**39.990 px**, and the bias no longer grows with caliper width. This also forced the fixtures
+to change: a hard-thresholded disc puts its edge 0–0.5 px inside the nominal radius depending
+on sub-pixel offset, so it cannot assert subpixel accuracy at all. Anti-aliased fixtures put
+the true edge at the nominal radius and let tolerances drop from 0.3 px to 0.03 px.
 
-This also forced the test fixtures to change. A hard-thresholded disc puts its edge wherever
-the pixel grid falls — 0 to 0.5 px inside the nominal radius, depending on the centre's
-sub-pixel offset — so it cannot be used to assert subpixel accuracy at all. The fixtures are
-anti-aliased now (coverage ramps across one pixel), which puts the true edge exactly at the
-nominal radius and let the tolerances drop from 0.3 px to 0.03 px.
+**Ideas taken from the `rtvt-pano` caliper**: typed rejection reasons (a caliper that finds
+nothing is a *result*, and which gate rejected it separates "the part is missing" from "the
+window is too short"); an **obliquity gate**, because a caliper crossing an edge at a glancing
+angle reports a position along its own axis rather than the edge normal and the two differ by
+`1/cos θ`; and sub-pixel profile stepping. Not taken: two-pass centreline refinement and the
+mask-based background-padding gate — both properties of a *tracked contour*, not of a caliper
+(see `backlog.md`).
 
-**Ideas taken from the `rtvt-pano` caliper** (`crates/rtvt-glue/src/caliper.rs`), which
-solves the same problem for glue-bead cross-sections:
-- **Typed rejection reasons.** A caliper that finds nothing is a *result*, and which gate
-  rejected it is the difference between "the part is missing" and "the search window is too
-  short". `Caliper::measure` returns `Err(RejectReason)` — and there is no variant that
-  discards it (see below).
-- **An obliquity gate.** A caliper crossing an edge at a glancing angle reports a position
-  along its own axis rather than the edge normal, and the two differ by `1/cos θ`; at a
-  corner there is no meaningful crossing at all. `max_obliquity_deg` compares the local image
-  gradient against the scan direction and rejects the rest.
-- **Sub-pixel profile stepping** (`step`), for oversampling a sharp edge.
+**Caliper placement is written exactly once.** `measure_one`'s placement loop is
+`model::caliper_placements` (`pub(crate)`), called by both `MetrologyModel::apply` and
+`measure::diagnostics::layout`, so they cannot disagree about where a caliper is. `layout`
+needs **no image**, deliberately: it is exactly what `apply` computes *before* measuring,
+which is what a UI needs to draw a caliper before an image is loaded, or one that will go on
+to reject every sample. `MeasureRadial::center` is the *circle's* centre, not each caliper's
+point on the boundary — the measurement geometry's convention, which the lab overlay already
+drew against, so reproducing it verbatim kept the lab rewrite a provable refactor rather than
+a redesign. **This is the single account of caliper placement**; `backlog.md` tracks only the
+still-missing per-caliper *explain* half, and `lab/README.md` links here.
 
-Not taken: the two-pass centreline refinement and the mask-based background-padding gate.
-Both are properties of a *tracked contour* rather than of a caliper, and belong in whatever
-bead/stripe tool is built on top of this one.
+### `fit`: what robustness actually requires
+Every fitter is algebraic-init → geometric refine and returns `Fit<M>` with `rms`, `max_dev`,
+`n_used` (invariant 21). `fit_circle` uses Taubin — near-unbiased on short arcs where Kåsa
+collapses toward the chord — then Gauss–Newton on the true residual `‖p − c‖ − r`: on a 30°
+arc that is the difference between visible bias and < 0.05 px.
 
-### `fit`: geometric refinement, and what robustness actually requires (2026-08)
-`shape` held algebraic conic fitting and a RANSAC ellipse wrapper; there was **no line fit
-and no circle fit at all** — the two most common metrology measurements. The new `fit`
-module supplies all three, and `shape` narrows to LSD (renamed `lsd` in the v0.3 reset). `Circle2f`, `Ellipse2f` and `Conic2f`
-move down to `vm-primitives::core` (types belong below the algorithms that produce them);
-`Circle2f` is new.
+**Two things had to be discovered by testing rather than designed.** *Tukey cannot start from
+a contaminated fit*: the rejection radius is applied to the algebraic initialisation, computed
+from all points including outliers, so a small radius throws away the **inliers** and keeps
+whatever the corrupted fit passed through — one outlier 70 px off a 40-point circle left a
+Tukey fit standing on 2 points. Fixed with graduated non-convexity (`RobustLoss::annealed`
+starts wide, shrinks geometrically). *Reweighting cannot fix a flipped axis*: 30 points on
+`y = 10` plus one at `(15, 60)` gives the outlier enough y-variance that total least squares
+returns a near-**vertical** line — the starting guess is not inaccurate, it is orthogonal, and
+no IRLS scheme recovers. That is what RANSAC is for, and `fit_line` was silently ignoring
+`FitConfig::ransac`; it is honoured now.
 
-Every fitter is algebraic-init → geometric refine, and returns `Fit<M>` with `rms`,
-`max_dev` and `n_used` (invariant 21). `fit_circle` uses Taubin, which is near-unbiased on
-short arcs where the Kåsa fit collapses toward the chord, then Gauss–Newton on the true
-residual `‖p − c‖ − r`: on a 30° arc that is the difference between visible bias and
-< 0.05 px.
+### Module hygiene: preludes, explicit re-exports, feature gates
+`vision-metrology` re-exported `vm_primitives::*` with a glob, giving every name two paths and
+hiding what this crate's surface actually was. Replaced by `pub use vm_primitives;` (the crate
+itself), an explicit curated re-export list, and a `prelude` on both crates whose contents
+follow the feature gates (invariants 17, 18). Feature implications: `segment` → `contour`,
+`serde` → `matching`, `matching` → `warp` (`matching::crop` builds a `Map`). The gates are
+only worth having if checked, and `--all-features` can never catch a `#[cfg]` that forgot a
+gated import, so CI runs `cargo hack --each-feature` over `vision-metrology` and
+`--feature-powerset` over `vm-primitives`. `Error` is `#[non_exhaustive]`.
 
-**Two things had to be discovered by testing rather than designed.**
+### The tiling protocol became a session (and `shape` became `lsd`)
+`shape` stopped being a true name when conic fitting moved into `fit`: one algorithm was
+left. `DirectionField`'s lazy tiling was a three-step stateful protocol on one type where the
+ordering was documentation, the image was passed twice and checked with a runtime `assert!`,
+and reading a field never put into tiled mode was silently all-zero rather than a compile
+error. `begin_tiled_f32` now returns a `TiledField<'a>` session borrowing **both** the field
+and the image; `ensure_rect` lives only on the session and takes no image, so it cannot be
+given the wrong one; the session derefs to the field, so scoring code is unchanged;
+`#[must_use]` catches a caller who enters tiled mode and drops the session. Every
+`match_shape` case held or improved, so the safety came free.
 
-*Tukey cannot start from a contaminated fit.* The rejection radius is applied to the
-algebraic initialisation, which was computed from all the points including the outliers — so
-a small radius throws away the **inliers** and keeps whatever the corrupted fit passed
-through. Measured: one outlier 70 px off a 40-point circle left a Tukey fit standing on
-2 points. Fixed with graduated non-convexity — `RobustLoss::annealed` starts the radius wide
-enough to admit every point and shrinks it geometrically to the configured value.
-
-*Reweighting cannot fix a flipped axis.* 30 points on `y = 10` plus one at `(15, 60)` gives
-the outlier enough y-variance that total least squares returns a near-**vertical** line. The
-starting guess is not inaccurate, it is orthogonal, and no IRLS scheme recovers. That is what
-RANSAC is for — and `fit_line` was silently ignoring `FitConfig::ransac`, exactly the class
-of dead config field this reset removed from LSD. It is honoured now, with 2-point
-hypotheses.
-
-Bench (M4 Pro): `fit_circle_500pts` 2.6 µs, `+tukey` 4.2 µs, `fit_line_500pts` 1.7 µs,
-`fit_ellipse_100pts` 1.6 µs, `fit_ellipse_ransac_1000pts` 430 µs.
-
-`examples/measure_circles` now fits circles rather than ellipses and reports `rms`/`max_dev`
-per measurement; it also gates on `rms` — a filter only possible because the fit reports one.
-
-### Module hygiene: preludes, explicit re-exports, feature gates (2026-08)
-`vision-metrology` re-exported `vm_primitives::*` with a glob. That gave every name two
-paths, made every addition upstream a potential collision downstream, and hid what this
-crate's surface actually was. Replaced by three things: `pub use vm_primitives;` (the crate
-itself, so one dependency is still enough), an explicit curated re-export list, and a
-`prelude` on both crates whose contents follow the feature gates.
-
-Every domain module is now an opt-in feature, default-on: `contour`, `laser`, `matching`,
-`segment` (implies `contour` — region growing consumes a `ContourGraph`), `lsd`, and
-`serde` (implies `matching`). Examples, benches and integration tests carry
-`required-features`, so `--no-default-features` skips them instead of failing.
-
-The gates are only worth having if they are checked. `--all-features` can never catch a
-`#[cfg]` that forgot a gated import, so CI gained a `cargo hack --each-feature` job over
-`vision-metrology` and a `--feature-powerset` over `vm-primitives`.
-
-`Error` is `#[non_exhaustive]`, so adding a variant stops being a breaking change.
-
-### `shape` → `lsd`, and the tiling protocol becomes a session (2026-08)
-Two renames of different weight.
-
-`shape` stopped being a true name when conic fitting and the RANSAC ellipse wrapper moved
-into `fit`: what was left was one algorithm. The module and its feature are now `lsd`, and
-`shape/lsd.rs` (the `lsd::lsd` path) is `lsd/detect.rs`.
-
-`DirectionField`'s lazy tiling was a three-step stateful protocol on one type —
-`begin_tiled_f32(img)`, then `ensure_rect_f32(img, …)` repeatedly, then read — where the
-ordering was documentation, the image was passed twice and checked with a runtime
-`assert!`, and reading a field that was never put into tiled mode was a silently-all-zero
-result rather than a compile error. `begin_tiled_f32` now returns a
-[`TiledField<'a>`] session borrowing **both** the field and the image; `ensure_rect` lives
-only on the session and takes no image, so it cannot be given the wrong one; the session
-derefs to the field, so scoring code is unchanged; and `#[must_use]` catches the caller
-who enters tiled mode and drops the session.
-
-The matcher builds one session per lazily-tiled level up front (`split_at_mut` separates
-the fully-built top level from the tiled ones), which cost one small `Vec` per `find` and
-removed the per-`ensure_rect` dimension assert. Measured on `match_shape`, M4 Pro:
-
-| Bench | before | after |
-|---|---|---|
-| `shape_find_1280x1024_360deg` | 3.408 ms | 3.370 ms |
-| `..._360deg_clutter` | 6.542 ms | 6.471 ms |
-| `..._tracked_roi` | 1.452 ms | 1.447 ms |
-| `..._360deg_greedy0` | 5.286 ms | 5.247 ms |
-| `..._scale_0p8_1p25` | 17.57 ms | 16.83 ms |
-
-Every case held or improved, so the safety came free.
-
-### `core` splits into `raster` and `geom`, and the raster half names no nalgebra (2026-08)
-`core` was seven flat files in which the dependency on nalgebra was invisible. It is now
-two private submodules with one rule between them: **`core::raster` mentions no
-linear-algebra type at all.** Buffers, pixel types, borders and sampling on one side;
-aliases, transforms and shapes on the other.
+### `core` splits into `raster` and `geom`, and the raster half names no nalgebra
+`core` was seven flat files in which the dependency on nalgebra was invisible. It is now two
+private submodules with one rule between them: **`core::raster` mentions no linear-algebra
+type at all.**
 
 The rule is not aesthetic. The ecosystem around this workspace already carries five
-near-duplicate `ImageView` types, and `rtvt-image` is a knowing fork of this very crate
-that exists *only* because it is pinned to nalgebra 0.34 while this one is on 0.35. An
-image buffer has nothing to do with linear algebra; the reason it could not be shared was
-that the two were in the same module. A raster layer that names no nalgebra type is the
-piece that can cross a major-version boundary, and this split is what makes extracting it
-later a move rather than a rewrite.
+near-duplicate `ImageView` types, and `rtvt-image` is a knowing fork of this very crate that
+exists *only* because it is pinned to nalgebra 0.34 while this one is on 0.35. An image
+buffer has nothing to do with linear algebra; the reason it could not be shared was that the
+two were in the same module. A raster layer that names no nalgebra type is the piece that can
+cross a major-version boundary, and this split makes extracting it later a move rather than a
+rewrite. The audit came out clean — `sample_bilinear_f32` already took bare `f32`
+coordinates, and `core::sample_bilinear_at` (taking a `Point2f`) is the geometry-side
+convenience that keeps it that way. Both submodules stay **private**, so every name keeps its
+single canonical `core::…` path: this is a rule about dependencies, not import paths.
 
-The audit came out clean: `sample_bilinear_f32` and friends already took bare `f32`
-coordinates, so nothing had to change to satisfy the rule. `core::sample_bilinear_at`
-(taking a `Point2f`) is the geometry-side convenience that keeps the raster signature
-that way rather than "improving" it later.
+### The stored model format: opaque, read-only, versioned 1 → 5
+A stored `ShapeModel` is the one artefact of this crate that outlives a build, so every change
+to it invalidates files on disk. The version-by-version table is the doc comment on
+`matching::model::persist::FORMAT_VERSION`; the decisions behind it are:
 
-Both submodules stay **private** — every name keeps its single canonical `core::…` path
-(invariant 17). This is a rule about dependencies, not about import paths, and no public
-path changed.
+**The format is opaque.** `to_json`/`from_json` and the public `SHAPE_MODEL_FORMAT_VERSION`
+became `save`/`load` and `to_bytes`/`from_bytes` at format 3. The encoding is JSON today and
+that is not a promise: a documented wire format makes every internal field a compatibility
+obligation, and the version constant existed only to let callers hand-assemble an envelope
+this crate should be the only writer of. Nothing a caller could do with the number is not
+better answered by `load` returning an error, so it is `pub(crate)` and the tests assert the
+property that matters — a foreign document is refused, not mis-read.
 
-### One model-format bump, batched — opacity, read-only levels, R3 (2026-08)
-A stored `ShapeModel` is the one artefact of this crate that outlives a build, so every
-change to it invalidates files on disk. The v0.3 reset therefore did all of them at once:
-`FORMAT_VERSION` 2 → **3**, and no more bumps in this series.
+**`ModelPoint` and `ShapeModelLevel` are readable, not writable.** Overlay code draws model
+points, so reading stays easy; *writing* does not, because point order is load-bearing (greedy
+termination evaluates a prefix, which must sample the whole contour) and
+`radius`/`angle_step`/`scale_step` are derived quantities the search trusts. The model also
+carries its own `PreSmooth` (format 3), which `ShapeMatcher::find` reads off the *model*
+rather than its own config — invariant 3 made unbreakable.
 
-**The format is opaque.** `to_json` / `from_json` and the public
-`SHAPE_MODEL_FORMAT_VERSION` are replaced by `save` / `load` and `to_bytes` /
-`from_bytes`. The encoding is JSON today and that is not a promise: a documented wire
-format makes every internal field of the model a compatibility obligation, and the version
-constant existed only to let callers hand-assemble an envelope this crate should be the
-only writer of. Nothing a caller could do with the number is not better answered by `load`
-returning an error, so the constant is `pub(crate)` and the Rust and Python tests now
-assert the property that matters — a foreign document is refused, not mis-read.
+**Bumps are batched, and since format 3 they are backward-loading.** Format 3 was a single
+batched break taken while the crates were unpublished, and is the floor `load` still accepts
+(`MIN_SUPPORTED_FORMAT_VERSION`), because below it the document *shape* differs rather than a
+field being absent. Every bump since adds an optional `#[serde(default)]` field, so an older
+document loads and reads the value that field always implicitly meant: format 4 added the
+pre-decimation `teach_points` (a format-3 document reads `teach_point_count() == 0`, and
+`resample_at`/`estimate_scale_logpolar` then refuse cleanly rather than resampling from
+already-decimated points), and format 5 added `reference_angle` (a format-4 document reads
+`0.0`, exactly what it meant). An earlier version of this entry claimed format 3 would be the
+last bump in the series; that was wrong, and the rule that actually holds is the one stated
+here — batch the breaking bumps, make the additive ones loadable.
 
-**`ModelPoint` and `ShapeModelLevel` are readable, not writable.** Their fields are
-`pub(crate)` with public accessors. The lab and the overlay code draw model points, so
-reading them has to stay easy; *writing* them does not, because the point order is
-load-bearing (greedy termination evaluates a prefix, which must sample the whole contour)
-and `radius` / `angle_step` / `scale_step` are derived quantities the search trusts.
-
-**R3 is wired (backlog item closed).** `ShapeModelConfig::pre_smooth` chooses the pyramid
-pre-filter, the built model stores it, and `ShapeMatcher::find` reads it off the *model*
-rather than from its own config. That is invariant 3 made unbreakable: a model taught with
-`Binomial121` cannot be searched against a box-mean scene, whatever the caller's search
-config says. The default stays `PreSmooth::None`, so nothing about existing behaviour
-moves; `Binomial121` is now available for the fine-toothed contours that alias away at
-levels 3–4.
-
-### A measurement that found nothing is a result, not an empty slice (2026-08)
+### A measurement that found nothing is a result, not an empty slice
 `Caliper` had `measure` returning `&[MeasureEdge]` and `measure_checked` returning
-`Result<&[MeasureEdge], RejectReason>` — the same computation, one of them throwing away
-the diagnosis. `MetrologyModel` had the same pair, with the lossy `apply` additionally
-*renumbering*: objects whose fit failed were skipped, so `results[i]` was not object `i`
-and the caller could not tell which one was missing.
+`Result<&[MeasureEdge], RejectReason>` — the same computation, one of them throwing away the
+diagnosis. `MetrologyModel` had the same pair, with the lossy `apply` additionally
+*renumbering*: objects whose fit failed were skipped, so `results[i]` was not object `i` and
+the caller could not tell which one was missing.
 
 Both lossy twins are deleted. `Caliper::measure` returns the `Result`; `Ok(&[])` is
-unrepresentable because an extraction that found nothing always has a `RejectReason`
-(`NoEdge`, `TooOblique`, `WrongPolarity`, `OffImage`, `ProfileTooShort`). `MetrologyModel::apply`
-returns `Vec<Result<MetrologyResult, Error>>`, one entry per object in `objects()` order.
+unrepresentable, because an extraction that found nothing always has a `RejectReason`.
+`MetrologyModel::apply` returns `Vec<Result<MetrologyResult, Error>>`, one entry per object in
+`objects()` order, and `hits()` — a parallel array the caller had to keep aligned by hand and
+which a second `apply` silently invalidated — folded into the result.
 
-`MetrologyModel::hits()` — a parallel array of caliper edges from the last call, which the
-caller had to keep aligned by hand and which a second `apply` silently invalidated — folded
-into the result: `MetrologyResult { fit: MetrologyFit, hits: Vec<MeasureEdge> }`. The
-`Line`/`Circle` enum is now `MetrologyFit`, and `rms()`/`max_dev()`/`n_used()` are on both.
+This is the general rule for diagnostics: cheap borrowing accessors stay, diagnostic
+*computation* lives in a `diagnostics` module off the hot path, and anything a result was
+already computing travels with that result instead of in a side channel.
 
-This is the general rule the reset applies to diagnostics: cheap borrowing accessors
-(`Caliper::profile()`, `ShapeMatcher::truncated()`) stay, diagnostic *computation* lives in
-a `diagnostics` module off the hot path, and anything a result was already computing
-travels with that result instead of in a side channel.
+### Configs say what they mean: the split, the sentinels, and `Contrast`
+Invariant 10 states the rules; this is what applying them found. `ShapeSearchConfig` had 14
+flat fields, six of which are search *effort* — they trade run time against the chance of
+missing a match `min_score` says should be reported, and presenting them next to `min_score`
+invites tuning by field name. They live in `tuning: ShapeSearchTuning`; `LaserExtractConfig`
+split the same way.
 
-### Configs say what they mean: the split, the sentinels, and `Contrast` (2026-08)
-Three problems in one pass, all of them in the *type* rather than the algorithm.
-
-**The split.** `ShapeSearchConfig` had 14 flat fields, six of which (`max_candidates`,
-`coarse_score_factor`, `greediness`, the two step overrides, `last_level`) are search
-*effort* — they trade run time against the chance of missing a match `min_score` says
-should be reported. Presenting them next to `min_score` invites tuning by field name.
-They now live in `tuning: ShapeSearchTuning`, which has its own `Default`, so the common
-case is unchanged and the advanced case is one word longer. `LaserExtractConfig` split the
-same way: `axis` / `min_width` / `max_width` / `min_score` say what a stripe *is*;
-`tuning` holds the coarse method, ROI half-width, jump and gap limits, prior weight, edge
-config and smoothing. No builders — the plain-struct-plus-`..Default::default()` form is
-what makes serde and the Python mirror cheap.
-
-**The sentinels.** `0`/`0.0` meaning "auto" is gone (invariant 10 rewritten):
-`num_levels`, `max_points`, `max_matches` are `Option<NonZeroUsize>`; `angle_step`,
-`scale_step` are `Option<f32>`; `Edge2DConfig`'s two threshold fields became one
-`Hysteresis::{Auto, Manual{low, high}}`, which also fixes the case where a caller set one
-of the pair and silently got neither meaning. `NonZeroUsize::new(512)` *is* an
-`Option<NonZeroUsize>`, so struct literals stayed readable.
-
-`Edge2DConfig::pre_smooth: bool` alongside `smooth_kind: SmoothKind` was two encodings of
-one decision, with `pre_smooth: false, smooth_kind: Binomial3` representable and
-meaningless. `SmoothKind::None` already said it; the bool is gone.
-
-`LaserExtractConfig::enable_smoothing: bool` turned out to be real — a median-of-5 over
-each contiguous run of valid samples — with the window hard-coded where no caller could
-see it. It is now `CenterSmoothing::{None, Median { half_window }}`, and the filter is
-parameterised by it.
+Two encodings of one decision, and one field meaning two things, were the real finds:
+`Edge2DConfig`'s two threshold fields (a caller could set one of the pair and silently get
+neither meaning) became one `Hysteresis::{Auto, Manual{low, high}}`;
+`Edge2DConfig::pre_smooth: bool` alongside `smooth_kind` made `pre_smooth: false, smooth_kind:
+Binomial3` representable and meaningless; `LaserExtractConfig::enable_smoothing: bool` hid a
+real median-of-5 filter whose window no caller could see, now `CenterSmoothing`.
 
 **`Contrast`.** `min_contrast` was documented as "Scharr response units on the input pixel
-scale", which is to say: a number whose meaning changes by 257× between `u8` and `u16`
-data of identical physical contrast. `Contrast::Raw(f32)` keeps exactly that behaviour and
-is the default; `Contrast::FractionOfRange(f)` resolves to `f · 16 · (max − min)` of the
-image being processed — 16 being Scharr's response to an ideal unit step — and therefore
-transfers between pixel types unchanged. The model resolves it against the reference
-*ROI*, not the frame; the search resolves it against the scene; `ShapeModel::from_edgels`
-has no image and returns `InvalidConfig` rather than inventing a range from the very
-strengths it is about to filter. `Raw` costs nothing, so the min/max pass only happens
-when a fraction was actually asked for.
+scale" — a number whose meaning changes by 257× between `u8` and `u16` data of identical
+physical contrast. `Contrast::Raw(f32)` keeps that behaviour and is the default;
+`Contrast::FractionOfRange(f)` resolves to `f · 16 · (max − min)` of the image being processed
+(16 being Scharr's response to an ideal unit step) and therefore transfers between pixel types
+unchanged. The model resolves it against the reference *ROI*, the search against the scene;
+`ShapeModel::from_edgels` has no image and returns `InvalidConfig` rather than inventing a
+range from the very strengths it is about to filter.
 
-### The v0.3 visibility sweep: one path per name, and nothing else public (2026-08)
-Invariant 17 said "one canonical path per name"; the crate root said otherwise. A flat
-`pub use contour::{…}` / `laser::{…}` / `matching::{…}` block re-exported the whole domain
-surface, so every type had two paths (`vision_metrology::ShapeMatcher` and
-`vision_metrology::matching::ShapeMatcher`) and the crate root read as the API rather than
-the modules. The block is gone. What remains at the root is the curated `vm_primitives`
-list (the names a caller of *this* crate types constantly), the `vm_primitives` crate
-itself, and `prelude` — now covering `fit`, `measure` and `segment` too, which it had
-silently skipped.
-
-Removed from the public surface in the same pass, because pre-release is when this is free:
-
-- `laser::coarse_center_{u8,u16,f32}` and `laser::best_pair_with_prior` — pipeline stages,
-  not API, and the typed triplet violated invariant 19 outright. Deleted rather than
-  hidden: the generic `coarse_center_in_range` they wrapped is the real implementation and
-  had no other caller.
-- `contour::MAX_KERNEL_PTS` — an implementation detail of the smoothing scratch buffer.
-- `pyr::downsample2x2_mean{,_into,_to_f32_into}` — `Pyramid` is the entry point. The two
-  same-type variants had no caller anywhere and were deleted; the `f32` kernel is
-  `pub(crate)`, with a `#[doc(hidden)]` benchmark hook so `benches/downsample.rs` can still
-  measure per-pixel-type kernel throughput without the level-0 widening pass.
-- `matching::create_shape_model` — a one-line duplicate of `ShapeModelBuilder::build`.
-- `core::transform_point_iso` — `iso * p` with nalgebra in the public API already.
-- `edge`'s submodules (`edge::edge2d::Edgel` → `edge::Edgel`). Splitting a module across
-  files is a file-size decision (invariant 14); it should not show up in import paths.
-- `matching::match_point_scores` moved to `matching::diagnostics::match_point_scores`.
-  Diagnostics are a module, not a feature, and they do not belong at the root of the
-  algorithm they instrument.
-
-### `Point2f` / `Vec2f` are nalgebra aliases (2026-08)
-```rust
-pub type Point2f = nalgebra::Point2<f32>;
-pub type Vec2f   = nalgebra::Vector2<f32>;
-```
-The crate previously carried its own two-field structs plus seven public functions to convert
-to and from nalgebra — while invariant 13 says not to re-implement linear algebra, and
-`Similarity2f` already put nalgebra in the public API. Aliasing removes the parallel type
-system: 7 conversion functions and ~250 lines of hand-written operators are gone, and points
-now cross into `calibration-rs` / `corrmatch` / `chess-corners-rs` untouched.
-
-Costs, accepted knowingly:
-- 147 struct literals became `Point2f::new(x, y)`. Mechanical.
-- `dot` takes a reference: `a.dot(&b)`.
-- `perp`, `cross` and `normalized_or_zero` moved to the `Vec2fExt` trait, which must be
-  imported.
-- The model wire format changed — nalgebra serializes a vector as a flat `[x, y]` rather than
-  `{"x":…,"y":…}` — so `SHAPE_MODEL_FORMAT_VERSION` is **2** and version-1 documents are
-  rejected.
-- `shape_model_create_1280x1024` 490 → 529 µs (+8%). Model building is a one-time cost;
-  `find`, the per-frame path, is unchanged (3.36 ms) and clutter moved +0.5%.
+### `Point2f` / `Vec2f` are nalgebra aliases — and the NaN trap that came with them
+The crate previously carried its own two-field structs plus seven public conversion functions
+— while invariant 13 says not to re-implement linear algebra and `Similarity2f` already put
+nalgebra in the public API. Aliasing removed the parallel type system (7 conversion functions
+and ~250 lines of hand-written operators gone) and lets points cross into `calibration-rs` /
+`corrmatch` / `chess-corners-rs` untouched. Costs accepted knowingly: 147 struct literals,
+`dot` taking a reference, `perp`/`cross`/`normalized_or_zero` moving to the `Vec2fExt` trait,
+and a model wire-format change (nalgebra serializes a vector as a flat `[x, y]`).
 
 **The trap this introduced, and the guard against it.** nalgebra's `normalize` divides
 unconditionally, so a zero vector yields `NaN` where the old hand-written version returned
 zero. Four call sites normalize a possibly-degenerate gradient or tangent and then reject it
 with `t.norm() < 0.5` — and `NaN < 0.5` is **false**, so those guards would have silently
 stopped rejecting and let `NaN` directions into the model and the score.
-`Vec2fExt::normalized_or_zero` restores the old semantics and is what every such site now
-calls; the distinction is documented on the trait method and pinned by a test.
+`Vec2fExt::normalized_or_zero` restores the old semantics, is what every such site calls, and
+is documented on the trait method and pinned by a test.
 
-Canend set1/dome after the change: 50/50, shape p50 0.998, ZNCC p50 0.961 — identical to
-four decimal places.
+### One generic entry point per algorithm, and the measurement that overrode the tidier design
+Invariant 19's rule cost **40 entry points → 16**; `vm_primitives::Pixel` is the sealed trait
+that made it possible, carrying `to_f32`, `from_f32_sat`, an `Acc` accumulator, and
+`as_f32_slice` (the zero-copy hook that keeps an `f32` laser scan from being widened into
+scratch it does not need).
 
-### One generic entry point per algorithm (2026-08)
-Every detector used to expose `_u8` / `_u16` / `_f32` variants of the same method. Counting
-the affected functions across both library crates: **40 entry points became 16**, and the
-three that remain `_f32` (`build_image_f32`, `begin_tiled_f32`, and — until the v0.3 reset
-turned it into `TiledField::ensure_rect` — `ensure_rect_f32`) genuinely
-only ever see pyramid levels, which are always `f32`.
+Gathering laser columns directly as `f32` looks like it saves a widening pass. It does not: it
+quadruples the gather's write traffic, while the widening it avoids happens only over the much
+smaller ROI segment. `laser_extract_cols_gather_512x1280` went 151 → 183 µs (+21%) before an
+A/B against a baseline measured in the same session caught it. Gathering the pixel type as-is
+is back, and the reasoning is recorded in `laser/gather.rs` so it is not "simplified" again.
 
-`vm_primitives::Pixel` is a sealed trait over `u8`/`u16`/`f32` carrying `to_f32`,
-`from_f32_sat`, an `Acc` accumulator, and `as_f32_slice` (the zero-copy hook that keeps an
-`f32` laser scan from being widened into scratch it does not need). Sealed, so adding a pixel
-type stays non-breaking downstream.
+### Why invariant 2 has exactly one implementation: LSD's private downsample, and `multiscale`
+Both were found by the v0.2 audit and both were the *same* defect — a second, divergent copy
+of the pyramid coordinate map. `lsd/detect.rs` carried its own 2×2 downsample under a comment
+claiming it matched a `pyr` level (it did not: `div_ceil` + border clamp against `pyr`'s
+drop-odd) and mapped positions back with a bare `p · (W / w)`, missing the `(2^l − 1)/2` term:
+on a step edge whose true position is 59.5, the default config reported −0.500 px at width 128
+and −0.954 px at width 129. `MultiScaleEdgeDetector` had the same missing term, and mixed with
+correct level-0 edgels that is a *systematic* bias — `measure_circles` measured every centre
+0.07–0.10 px low, growing with radius, under assertions (5 px on centre) far too loose to
+notice.
 
-`laser`'s private `ScanPixel` trait is gone — `Pixel` covers everything it did except the
-per-type gather scratch, which is now a `Vec<P>` local to the column scan: one allocation per
-call, next to the output vector, rather than three buffers on the extractor.
+LSD was fixed (it now downsamples through `pyr`, and its two fictional config fields — a
+`scale` that always halved whatever it was set to, and a `sigma_scale` that was never read —
+became honest `downscale_levels` / `pre_smooth`). `multiscale` was **deleted instead**,
+because two further things were wrong: dedup keyed on `idx * 2^l`, so a level-3 edgel claimed
+one level-0 pixel instead of the 8×8 block it stood for, and the reported
+`scale = base_sigma · 2^l` was meaningless, since a box-mean pyramid with a fixed-σ DoG is not
+a Gaussian scale space. Fixing only the bias would have left a module that is neither a scale
+space nor a sound merge, with no consumer in the workspace. `pyr::level_to_base` /
+`base_to_level` is now the single implementation; genuine scale selection, if ever needed,
+gets designed as a real scale space rather than reviving this.
 
-**A measurement that overrode the tidier design.** Gathering columns directly as `f32` looks
-like it saves a widening pass. It does not: it quadruples the gather's write traffic, while
-the widening it avoids happens only over the much smaller ROI segment.
-`laser_extract_cols_gather_512x1280` went 151 → 183 µs (+21%) before this was caught by an
-A/B against a baseline measured in the same session. Gathering the pixel type as-is is back,
-and the reasoning is recorded in `laser/gather.rs` so it is not "simplified" again.
+### Release profile is tuned, and benches inherit it
+`[profile.release] lto = "thin", codegen-units = 1`, with `[profile.bench] inherits =
+"release"` so measurements match what users ship. Measured before adopting: clean 360°
+3.51 → 3.42 ms (−2.6%), clutter 6.74 → 6.61 ms (−1.9%). Small, but free and permanent; all
+later numbers are against this profile, and it costs only release build time — the right trade
+on a library whose detection budget is ~5 ms.
 
-Everything else held or improved: `shape_find_1280x1024_360deg` 3.42 → 3.36 ms,
-`..._clutter` 6.61 → 6.42 ms, `laser_extract_rows` +0.3%, `laser_extract_cols` +0.3%,
-`shape_model_create` +0.6%.
-
-### LSD downsamples through `pyr`, and its config stopped lying (2026-08)
-`lsd/detect.rs` (then `shape/lsd.rs`) carried its own 2×2 downsample under a comment claiming it was "the same as a
-`vm_primitives::pyr` level". It was not: `div_ceil` + border clamp against `pyr`'s drop-odd,
-so on odd input the two disagreed on both output size and edge values. It then mapped
-positions back with a bare `p · (W / w)`, missing the `(2^l − 1)/2` term of invariant 2.
-
-Measured on a vertical step edge whose true subpixel position is 59.5, mean reported endpoint
-x, at the **default** config:
-
-| width | before | after |
-|---|---|---|
-| 128 (even) | −0.500 px | 0.000 px |
-| 129 (odd) | −0.954 px | 0.000 px |
-
-Two config fields were also fiction. `scale: f32` was documented as a downscale factor and
-defaulted to `0.8`, but the code only tested `scale < 1.0` and then always halved — so the
-default meant 0.5, not 0.8. `sigma_scale: f32` was documented as a Gaussian pre-smooth,
-defaulted to `0.6`, and was **never read**. Both are replaced by
-`downscale_levels: u32` (0 = full resolution) and `pre_smooth: PreSmooth`, which say what
-they do and are honoured. `pre_smooth` defaults to `Binomial121`, delivering the
-anti-aliasing `sigma_scale` had only promised.
-
-`detect_u8` / `detect_f32` collapse into one generic `detect<P: Pixel>`. The detector now owns
-a `Pyramid`, so there is one downsample kernel in the workspace instead of two.
-`lsd_detect_u8_1280x1024` 1.49 ms (was 1.49 ms — the pyramid replaces an equivalent copy).
-Pinned by `endpoints_are_unbiased_at_every_downscale_level`, which sweeps levels 0–2 × both
-pre-smooth modes × even/odd widths.
-
-### `multiscale` deleted, not fixed (2026-08)
-`MultiScaleEdgeDetector` ran the 2-D detector on every pyramid level and merged the results
-back to level 0. Three things were wrong with it and only the first was a bug:
-
-1. It mapped a level-`l` edgel to level 0 as `p · 2^l`, omitting the `(2^l − 1)/2` term that
-   invariant 2 requires. Level-2 positions were off by 1.5 px, level-3 by 3.5 px. Mixed with
-   correct level-0 edgels this produced a *systematic* bias, not noise: `examples/measure_circles`
-   measured every circle centre 0.07–0.10 px low in both axes, growing with radius as the
-   coarse levels contributed more. With the module removed the same example measures 0.00 px.
-   Its assertions (5 px on centre, 1.5 px on radius) were far too loose to notice.
-2. Deduplication keyed on `idx * 2^l`, so a level-3 edgel claimed a single level-0 pixel
-   rather than the 8×8 block it stood for, and `merge_duplicates` barely merged. The test
-   only asserted `merged <= all`.
-3. The reported `scale = base_sigma · 2^l` was fiction. A box-mean pyramid with a fixed-σ DoG
-   at each level is not a Gaussian scale space, so the number had no operational meaning.
-
-Fixing (1) alone would have left a module that is neither a scale space nor a sound merge,
-with no consumer inside the workspace. The one sound idea — the level↔level-0 mapping — is
-now `pyr::level_to_base` / `base_to_level`, the single implementation of invariant 2. If
-genuine scale selection is ever needed, design it as a real scale space rather than reviving
-this. `examples/measure_circles` and its Python twin now use `Edge2DDetector` directly, with
-assertions tightened to 0.02 px on centre and 0.10 px on radius.
-
-### Release profile is tuned, and benches inherit it (2026-08)
-`[profile.release] lto = "thin", codegen-units = 1` in the root manifest, with
-`[profile.bench] inherits = "release"` so measurements match what users ship. Measured on
-`match_shape` before adopting: clean 360° 3.51 → 3.42 ms (−2.6%), clutter 6.74 → 6.61 ms
-(−1.9%). Small, but free and permanent; all later numbers are against this profile. It costs
-release build time, which is the trade we want on a library whose detection budget is ~5 ms.
-
-### `warp`: `dst → src` gather, the mask as a free by-product, and the Clamp exception (2026-08)
-B4 (roadmap). Every image-warping call in this workspace answers "for this **destination**
-pixel, where in the **source** do I look?" (`dst[y][x] = src.sample(map(x, y))`) rather than
-scattering source pixels forward — the gather direction is what lets `apply` visit every
-destination pixel exactly once with no holes, independent of how the map compresses or
-expands space. `Map::affine`/`Map::projective` therefore take the transform that carries a
-*destination* coordinate to the matching *source* coordinate, the inverse of a fixture pose
-or any other forward (source-into-destination) transform — documented prominently in the
-module doc, with the one-line fix (`nalgebra`'s `.inverse()`) right next to the warning,
-because getting this backwards is a silent, plausible-looking bug: the output has the right
-shape and mostly-right pixels, just mirrored/scaled the wrong way.
+### `warp`: `dst → src` gather, the mask as a free by-product, and the Clamp exception
+Every image-warping call in this workspace answers "for this **destination** pixel, where in
+the **source** do I look?" (`dst[y][x] = src.sample(map(x, y))`) rather than scattering source
+pixels forward — the gather direction is what lets `apply` visit every destination pixel
+exactly once with no holes, independent of how the map compresses or expands space.
+`Map::affine`/`Map::projective` therefore take the transform carrying a *destination*
+coordinate to the matching *source* coordinate, the inverse of a fixture pose or any other
+forward transform — documented prominently with the one-line fix (`.inverse()`) next to the
+warning, because getting this backwards is a silent, plausible-looking bug: right shape,
+mostly-right pixels, mirrored or scaled the wrong way.
 
 **The validity mask is not a second pass, it falls out of the existing branch.** `apply`'s
 inner loop already splits on whether every tap a sample needs (one for `Nearest`, four for
-`Bilinear`) lands inside the source — that split is what lets the fast path skip
-`BorderMode` entirely. `apply_with_mask` writes `255`/`0` from exactly that same branch,
-so correctness of the mask is inseparable from correctness of the fast path, not a
-duplicate bounds check that could drift out of sync with it. This matters because a
-destination pixel that took the border-fallback path is not measurement data — a caliper or
-future variation-model pixel average that mixes `Constant`-fabricated intensity in with real
-image content corrupts the result with no signal that it happened. `apply` (no mask) is
-still offered for callers who only want a filled canvas (e.g. a preview image) and do not
-need to distinguish real from fabricated pixels.
+`Bilinear`) lands inside the source — that split is what lets the fast path skip `BorderMode`
+entirely. `apply_with_mask` writes `255`/`0` from exactly that branch, so correctness of the
+mask is inseparable from correctness of the fast path rather than a duplicate bounds check
+that could drift out of sync. This matters because a destination pixel that took the
+border-fallback path is not measurement data — a caliper or variation-model average that mixes
+`Constant`-fabricated intensity with real image content corrupts the result with no signal
+that it happened. `apply` (no mask) stays for callers who only want a filled canvas.
 
-**Every builder routes through `from_fn`.** `affine` and `projective` embed their nalgebra
-transform in a closure, `polar` its `(angle, radius)` bin-center formula — so there is one
-coordinate-precompute path, not four independent ones, and `from_fn` itself is exercised by
-every test the other three constructors have. The cost is paid once, at construction;
-`apply`'s hot loop never touches a matrix or a trig function.
-
-**`polar`'s bin centers, not the range boundaries, are what gets sampled.** Destination `x`
-sweeps `phi` and `y` sweeps `r`, both as `(index + 0.5) / count` fractions of the given
-range — the same convention a histogram uses for its bins. A full-turn `phi` range therefore
-never samples both `0` and `2π` (which would duplicate the seam column); a partial range
-never samples its own end exactly either, which is a deliberate, documented trade rather
-than an oversight — a caller who needs an exact boundary sample can request a fractionally
-wider range.
+**Every builder routes through `from_fn`** — `affine`/`projective` embed their nalgebra
+transform in a closure, `polar`/`log_polar` their bin-center formula — so there is one
+coordinate-precompute path, not five, and `from_fn` is exercised by every test the others
+have. The cost is paid once, at construction; `apply`'s hot loop never touches a matrix or a
+trig function. `polar` samples **bin centers, not range boundaries**: destination `x` sweeps
+`phi` and `y` sweeps `r`, both as `(index + 0.5) / count` fractions, the convention a histogram
+uses. A full-turn `phi` range therefore never samples both `0` and `2π` (which would duplicate
+the seam column); a partial range never samples its own end exactly either — a deliberate,
+documented trade, since a caller needing an exact boundary sample can widen the range
+fractionally.
 
 **Prefiltering is a doc note, not a dependency.** `apply`'s per-pixel gather is a plain
-resample, not a resampling filter — minifying by more than roughly 2× through it aliases the
-same way naive nearest/bilinear scaling always does. `pyr::Pyramid` already covers
-decimation; B3 (`filter`) is not a prerequisite for B4 and is not needed for the common case
-this module exists for (rectifying a fixture pose at roughly unit scale).
+resample, not a resampling filter — minifying by more than roughly 2× aliases the way naive
+scaling always does. `pyr::Pyramid` already covers decimation, so B3 (`filter`) is not a
+prerequisite for `warp`.
 
-**Accepted deviation from invariant 11 is deferred, not taken here.** Invariant 11 defaults
-border handling to `Clamp`; B4 keeps that default (`apply`'s `border` parameter has no
-implicit default — every call states its `BorderMode` explicitly, same as `sample_bilinear_f32`
-and `sample_nearest`). The plan's rectify-crop design (`ShapeMatch::model_frame_map`, wave
-W2) is expected to choose `Constant` + the mask deliberately, since replicating edge pixels
-into a canonical crop fabricates texture a variation model would then treat as real — that
-choice belongs to the caller building the map for that purpose, not to `warp` itself, so it
-is recorded here as a heads-up for W2 rather than a decision this wave made.
+**The `Clamp` exception, stated once here.** Invariant 11 defaults border handling to `Clamp`,
+and `apply` keeps no implicit default at all — every call states its `BorderMode`. The rectify
+path (`ShapeMatch::model_frame_map`) deliberately recommends `Constant` + the mask instead:
+`Clamp` would replicate the scene's edge pixel into out-of-scene crop area, fabricating
+texture an anomaly model would learn as normal signal rather than "no data here". That choice
+belongs to the caller building the map, not to `warp`.
 
-### `CropSpec` / `ShapeMatch::model_frame_map`: rectify closes the seam (2026-08)
-B4.1 (roadmap), the W2 rectify wave. `matching` says where the part is, `warp` moves pixels
-— `CropSpec { rect: Rect2f, px_per_unit: f32, normalize_scale: bool }` plus
-`ShapeMatch::{model_frame_map, model_frame_pose}` is the seam, in `matching::crop` rather
-than a new `align` module: the geometry is a couple of lines over `Map::from_fn`, and a
-found pose calling straight into `Map` construction (no intermediate type) is simpler than
-inventing an abstraction two functions wide.
+### `CropSpec` / `ShapeMatch::model_frame_map`: rectify closes the seam
+`matching` says where the part is, `warp` moves pixels — `CropSpec` plus
+`ShapeMatch::{model_frame_map, model_frame_pose}` is the seam, in `matching::crop` rather than
+a new `align` module: the geometry is a couple of lines over `Map::from_fn`, and a found pose
+calling straight into `Map` construction is simpler than an abstraction two functions wide.
 
-**Output size is a property of the spec, never of the match.** `CropSpec::output_size()`
-computes `(rect.width, rect.height) * px_per_unit`, rounded, with no dependence on any
-particular `ShapeMatch` — the requirement driving this (roadmap decision 3) is anomaly
-learning needing identical tensor shapes across every frame a part is found in, regardless
-of the pose it was found at that frame. Fixing size at "spec alone" rather than "spec plus
-match" is what makes that guarantee structural instead of a convention callers have to
+**Output size is a property of the spec, never of the match.** `CropSpec::output_size()` is
+`(rect.width, rect.height) * px_per_unit`, rounded, with no dependence on any particular
+`ShapeMatch` — the requirement driving this is anomaly learning needing identical tensor
+shapes across every frame a part is found in, whatever pose it was found at. Fixing size at
+"spec alone" is what makes that guarantee structural instead of a convention callers must
 maintain.
 
 **`normalize_scale` reuses the pose's own isometry, not a re-derivation from decomposed
-parts.** `ShapeMatch::pose` is a `Similarity2f` = `Translation(position) ∘ scale·R ∘
-Translation(−origin)`; expanded, its stored `isometry.translation` already equals `position
-− scale·R·origin` — the origin dependence is baked in once, at match time. So
-`model_frame_pose` for `normalize_scale = true` is exactly
-`Similarity2f::from_isometry(pose.isometry, 1.0)`: same rotation, same translation, scale
-forced to `1.0` — no `ShapeModel` (and therefore no `origin`) needs to be threaded through
-`model_frame_map`'s signature at all. Rebuilding the pose from `(x, y, angle, scale)` plus a
-caller-supplied `origin` (the way the existing Python `ShapeMatch.matrix()` binding has to,
-predating this wave) would need that extra parameter and get the *wrong* canonical crop
-besides — zeroing `scale` in the decomposed form without correcting the translation leaves
-a residual offset proportional to `(scale − 1) · R · origin`. Keeping the raw pose is what
-avoids both problems, and is why the Python binding added a hidden (non-`get`) `pose` field
-to its `ShapeMatch` pyclass alongside the existing decomposed ones (`vm-python/src/types.rs`)
-rather than reconstructing a pose in Python.
+parts.** Rebuilding the pose from `(x, y, angle, scale)` plus a caller-supplied `origin` would
+need an extra parameter *and* produce the wrong canonical crop, because zeroing `scale` in the
+decomposed form without correcting the translation leaves a residual offset proportional to
+`(scale − 1) · R · origin`. Keeping the raw pose avoids both; the algebra is documented at
+`ShapeMatch::model_frame_pose`. It is also why the Python binding carries a hidden `pose`
+field on its `ShapeMatch` pyclass rather than reconstructing a pose in Python.
 
-**`BorderMode::Constant`, deliberately not the workspace's `Clamp` default** — the heads-up
-recorded in the `warp` entry above, exercised here: `model_frame_map`'s docs recommend
-`Map::apply_with_mask` with `Constant`, since `Clamp` would replicate the scene's edge pixel
-into out-of-scene crop area, fabricating texture an anomaly model would learn as normal
-signal rather than "no data here".
+### `corr`: corrmatch as the standard cross-correlation engine
+**Supersedes the earlier framing of `corrmatch` as validation-only tooling** — a user
+decision, not an architectural default: corrmatch moved from dev-dependency to a real,
+optional dependency (`corr` feature, default-on). An earlier proposal argued for a native port
+to keep the matcher's validator independent of what it validates; that is explicitly rejected
+— `tests/corrmatch_bridge.rs` still cross-checks the shape matcher against corrmatch (the
+bridge is about two *different algorithms* agreeing, not about build-graph independence), and
+a native port would duplicate mature SIMD/pyramid/beam-search code with a strictly worse copy
+for no metrology benefit.
 
-**C1 headline: rectify repeatability, 0.88 bias / 1.69 σ (8-bit intensity units) under
-sub-pixel pose jitter** — see roadmap B4.1 for the full sweep description. This is the
-number that decides anomaly-pipeline viability, and it was measured (not assumed) before
-being pinned as a regression envelope, same discipline as every other C1 row.
+**Wrapper boundary: thin, and the boundary is deliberate.** `CorrTemplate`/`find`/`find_topk`
+translate coordinates and errors at the edge and otherwise call straight into corrmatch. Two
+things are genuinely new: the zero-copy-when-contiguous `ImageView` adapter (row-by-row copy
+only when the caller's view is strided), and `CorrConfig`/`CorrTemplateConfig` as this crate's
+own Option-sentinel config types (invariant 10) rather than re-exporting corrmatch's
+`#[non_exhaustive]` structs — which would leak their struct-literal restrictions into this API
+and couple a semver bump there to one here. `CorrMatch` is a new type, not a re-export,
+precisely because it is *not* interchangeable with `ShapeMatch`: its score is a raw
+correlation coefficient, not `1 − occluded_fraction`, and there is no scale search. The doc
+comment says so, so a caller is corrected at the type rather than at runtime.
 
-### `corr`: corrmatch as the standard cross-correlation engine (2026-08)
-Roadmap B6, plan decisions 1–2. **Supersedes the "Cross-repo dependencies are crates.io
-releases only" entry's implicit framing of `corrmatch` as validation-only tooling** — this
-is a user decision, not an architectural default: `corrmatch` moves from dev-dependency
-to a real, optional dependency (`corr` feature, default-on). The earlier design (an
-architect proposal) argued for a native port to keep the matcher validator independent of
-what it validates; that argument is explicitly rejected here — `tests/corrmatch_bridge.rs`
-still cross-checks the gradient-orientation shape matcher against corrmatch independently
-of corrmatch's dependency status (the bridge test is about two *different algorithms*
-agreeing, not about build-graph independence), and a native port would duplicate mature
-SIMD/pyramid/beam-search code with a strictly worse copy for no metrology benefit.
+**`u8`-only, honestly.** corrmatch's published API (0.2.5) is `u8`-only; silently converting
+`u16`/`f32` down here would be exactly the "tuned on one pixel type, wrong on another" bug
+`Contrast::FractionOfRange` exists to prevent. `u16` support is corrmatch's own backlog, not
+something a wrapper should paper over with a quantizing cast.
 
-**Wrapper boundary: thin, and the boundary is deliberate.** `corr::CorrTemplate` / `find`
-/ `find_topk` translate coordinates and errors at the edge and otherwise call straight
-into corrmatch's `Template` / `CompiledTemplate` / `Matcher`. Two things are genuinely
-new: the zero-copy-when-contiguous `ImageView` adapter (`corr::adapter`, row-by-row copy
-only when the caller's view is strided — a ROI `subview`, most commonly), and
-`CorrConfig`/`CorrTemplateConfig` as this crate's own Option-sentinel config types
-(invariant 10) rather than re-exporting corrmatch's `#[non_exhaustive]` `MatchConfig`/
-`CompileConfig` directly — re-exporting a foreign non-exhaustive struct would leak
-corrmatch's own struct-literal restrictions into this crate's API and couple a semver
-bump there to one here. `CorrMatch` is a new type, not a re-export of corrmatch's
-`Match`, precisely because it is *not* interchangeable with `ShapeMatch`: the doc comment
-on it says so (score semantics, no scale) so a caller who reaches for `corr` expecting
-`matching`'s occlusion-robust score is corrected at the type, not left to discover it at
-runtime.
+**`displacement`'s two stages, and why Lucas-Kanade is implemented here rather than requested
+upstream.** Stage 1 (corrmatch, rotation off) is bounded to a `search`-pixel margin around the
+window's previous position — a fresh sub-image ROI, not a whole-scene search — because
+inter-frame motion is small by construction and a whole-scene search risks locking onto a
+distant unrelated peak that happens to score higher. Stage 2 is translation-only
+inverse-compositional Lucas-Kanade: Hessian and steepest-descent images come from the
+*template's own* gradient, computed once, so every iteration after the first costs one bilinear
+resample plus a 2x2 solve. This corrects what corrmatch's subpixel refinement cannot: a
+quadratic fit to a *discrete* correlation surface is a known biased estimator (pixel-locking
+toward integer positions), and only a second, differently-biased estimator removes that bias.
+Application-level accuracy work, not a corrmatch gap.
 
-**`u8`-only, honestly.** Both `CorrTemplate::from_image` and `displacement` take
-`ImageView<'_, u8>` — no `Pixel` generic pretense, unlike almost everything else in this
-crate. corrmatch's published API (0.2.5) is `u8`-only; silently converting `u16`/`f32`
-down to `u8` here would be exactly the kind of "tuned on one pixel type, wrong on
-another" bug `Contrast::FractionOfRange` exists to prevent elsewhere. `u16` support is
-corrmatch's own backlog (recorded in `docs/backlog.md`), not something this wrapper
-should paper over with a quantizing cast.
-
-**`displacement`'s two stages, and why Lucas-Kanade is implemented here rather than
-requested from corrmatch.** Stage 1 (corrmatch, rotation off) is bounded to a
-`search`-pixel margin around the window's previous position — a fresh sub-image ROI, not
-a whole-scene search — both because inter-frame motion is small by construction and
-because a whole-scene search risks locking onto a distant, unrelated peak that happens to
-score higher. Stage 2 is translation-only inverse-compositional Lucas-Kanade: the
-Hessian and steepest-descent images come from the *template's own* gradient (a local
-Scharr copy — `vm_primitives::edge::gradient::dense_scharr` is `pub(super)`, so this
-~15-line window-sized variant was cheaper than widening that boundary), computed once,
-so every iteration after the first costs one bilinear resample of `curr` per template
-pixel plus a 2x2 solve. This corrects what corrmatch's own subpixel refinement cannot: a
-quadratic fit to a *discrete* correlation surface is a well-known biased estimator
-(pixel-locking, biased toward integer positions), and no amount of quadratic-fit tuning
-removes that bias — only a second, differently-biased estimator (or an iterative gradient
-method like LK) does. This is application-level accuracy work, not a corrmatch gap, so it
-belongs in this crate rather than as a feature request upstream.
-
-**C1 headline: quadratic-only vs +Lucas-Kanade, ~15% bias/sigma reduction** — see roadmap
-B6 for the full sweep description and numbers. Both are already small (worst cell under a
-tenth of a pixel) because corrmatch's quadratic estimator is a real 2-D fit, not a
-nearest-integer report; Lucas-Kanade's contribution is real but modest on top of an
-already-reasonable baseline, and the measurement says so rather than assuming a dramatic
-correction.
-
-### Mosaic: nearest-camera-centre priority, no blending (2026-08)
-Roadmap B7, plan decision 6. **Not a library module** — deliberately: `metric::plane_grid_map`
-(per camera) plus `warp::Map::apply_with_mask` are already everything a bird's-eye composite
-needs, so the only genuinely new logic is the *compositing rule*, which is small enough
-(~40 lines) that a module would be more API-surface than the logic it wraps, and which has
-exactly two consumers in this wave (`tests/mosaic.rs`, `examples/birdseye_mosaic.rs`, plus
-the lab's Python `routers/mosaic.py`) — "promote to a module at the second *library*
-consumer" (see the "Later milestones" reasoning elsewhere in this repo for the same
-principle applied to `core`) does not yet apply.
+### Mosaic: nearest-camera-centre priority, no blending
+**Not a library module** — deliberately: `metric::plane_grid_map` per camera plus
+`warp::Map::apply_with_mask` are already everything a bird's-eye composite needs, so the only
+genuinely new logic is the *compositing rule*, small enough (~40 lines) that a module would be
+more API surface than the logic it wraps, and with no *library* consumer at all.
 
 **Priority rule: nearest-camera-centre, ties by index, no blending by default.** For each
-destination grid pixel, among the cameras whose `apply_with_mask` validity is set there,
-keep the one whose reprojection of that plane point (project through `pose`, perspective-
-divide, [`distort_pixel`](crate::metric::distort_pixel) — the same forward geometry
-`plane_grid_map` composes internally) lands closest to its own principal point `(cx, cy)`.
-This is deterministic, needs no new `warp::Map` accessor (the reprojection is recomputed
-from public `metric` functions, not read out of `Map`'s private per-pixel table), and gives
-a physically sensible answer: a camera's own image is most reliable near its optical axis
-(least foreshortening, least distortion, most resolution per plane-mm), so "closest to
-principal point" is a real proxy for "best view of this patch," not an arbitrary tiebreak.
+destination grid pixel, among the cameras whose validity mask is set there, keep the one whose
+reprojection of that plane point (through `pose`, perspective-divide, `distort_pixel` — the
+same forward geometry `plane_grid_map` composes internally) lands closest to its own principal
+point. Deterministic, needs no new `warp::Map` accessor (the reprojection is recomputed from
+public `metric` functions, not read out of `Map`'s private per-pixel table), and physically
+sensible: a camera's image is most reliable near its optical axis.
 
-**Why no blending is the important half of the decision.** A metrology library's mosaic
-exists to be measured on, and an averaged pixel at a seam cannot be traced back to one
-camera's calibration — which distortion model, which extrinsic, which pixel produced it
-becomes ambiguous exactly where two independently-calibrated views disagree most. The
-`source_id` map (camera index, or `255` for uncovered) is therefore first-class output,
-not a debugging aid: every mosaic pixel that is not `255` traces to exactly one camera's
-`plane_grid_map`, which is what makes a downstream caliper or fit placed on the mosaic a
-real, attributable measurement. **Feathering exists only as an opt-in, display-only mode**
-(linear, inverse-distance-weighted blend across the overlap) — for a human looking at a
-preview, not for anything that feeds a measurement.
+**Why no blending is the important half of the decision.** A metrology library's mosaic exists
+to be measured on, and an averaged pixel at a seam cannot be traced back to one camera's
+calibration — which distortion model, which extrinsic, which pixel produced it becomes
+ambiguous exactly where two independently-calibrated views disagree most. The `source_id` map
+(camera index, `255` for uncovered) is therefore first-class output, not a debugging aid:
+every mosaic pixel that is not `255` traces to exactly one camera, which is what makes a
+caliper or fit placed on the mosaic a real, attributable measurement. **Feathering exists only
+as an opt-in, display-only mode.**
 
-**Fixture-vs-real-data seam disparity gap is the metric's property, not the geometry's.**
-The synthetic fixture (`tests/mosaic.rs`) measures p95 seam disparity of 0.000 on
-antialiased fiducials; the real-data example (`examples/birdseye_mosaic.rs`, a hard-edged
-checkerboard target) measures p95 of 251.00 on the *same* compositing rule. Both numbers
-are correct and expected — see B7 in the roadmap and both files' own doc comments for the
-full reasoning: a razor edge turns any sub-pixel disagreement (real calibration residual,
-an approximate standoff estimate, cascaded bilinear resampling) into a full-range
-intensity swing, where an antialiased pattern turns the same disagreement into a few
-intensity units. This is exactly why C1's own envelope-pinning convention pins to the
-*measured* number for a given fixture rather than to an assumed "small is always right"
-threshold.
+**The fixture-vs-real-data seam disparity gap is the metric's property, not the geometry's.**
+The synthetic fixture measures p95 seam disparity 0.000 on antialiased fiducials; the
+real-data example (a hard-edged checkerboard) measures p95 251.00 under the *same* compositing
+rule. Both are correct: a razor edge turns any sub-pixel disagreement into a full-range
+intensity swing, where an antialiased pattern turns the same disagreement into a few intensity
+units. This is why C1 pins envelopes to the *measured* number for a given fixture rather than
+to an assumed "small is always right" threshold.
 
-### `measure::diagnostics::layout`: caliper placement moves into Rust (2026-08)
-Roadmap B2.1, plan decision 7 (W6). The lab's Python backend re-implemented
-`MetrologyModel`'s per-caliper placement geometry by hand
-(`vm_lab/geometry.py`'s `rotate`/`perp`/`to_scene` plus `routers/measure.py`'s
-`_place_calipers`) purely to draw overlay boxes — a second copy of exactly the math
-`MetrologyModel::measure_one` already computes, and one with no compiler or test
-connecting it back to the original if that placement ever changed (`docs/backlog.md`'s
-"no per-caliper explain API" flagged this as the highest-value remaining duplication in
-`measure`).
+### Tauri desktop shell: commands/events, not a second HTTP backend
+The lab has a second shell, `lab/frontend/src-tauri` (crate `vm-lab-desktop`), alongside the
+FastAPI/browser one — **one frontend, two transports**, not two frontends. Browser stays on
+FastAPI; desktop talks to `vision-metrology` through **native Tauri commands and events**,
+never HTTP — no sidecar process, no port to discover, no CORS policy to keep in sync with a
+dev-server port. Neither path re-implements an algorithm: a command is the same shape as a
+FastAPI router (build a config, call the library, translate to a serializable DTO) without the
+PyO3 or HTTP hop, which is what makes "the two shells agree" mechanically checkable rather
+than asserted.
 
-**The fix is a refactor, not a new algorithm.** `measure_one`'s per-shape placement loop
-(build a `MeasureRect` per point along a line, or a `MeasureRadial` per angle around a
-circle) is pulled into `model::caliper_placements`, a `pub(crate)` function returning
-`Vec<CaliperShape>` where `CaliperShape` is `Rect(MeasureRect) | Radial(MeasureRadial)`.
-`measure_one` calls it and feeds each shape into `Caliper::set_rect`/`set_radial` as
-before; the new `measure::diagnostics::layout(&MetrologyModel, &Similarity2f) ->
-Vec<CaliperPlacement>` calls the *same* function and returns each shape tagged with
-`(object_index, caliper_index)`. There is exactly one place this geometry is written now,
-and `apply`/`layout` cannot disagree on where a caliper is because they call the same
-code, not two implementations kept in sync by convention.
+**Contract fixtures are the check.** `lab/contract/fixtures/` holds golden request/response
+JSON captured from the FastAPI backend over small deterministic synthetic images, replayed by
+two independent tests over the *same* JSON — `lab/backend/tests/test_contract_fixtures.py` and
+`lab/frontend/src-tauri/tests/contract_parity.rs` (plain functions over `&AppState`, no GUI).
+Both existing at once is the point: a change to `vm_lab`'s response shape *or* to the Rust
+command layer is caught by whichever replay it broke, not found later as a UI-only bug in one
+shell. It earned its keep on day one: `commands::rectify::rectify` locked `state.images`, then
+called `run_find`, which locks it again on the same thread — `std::sync::Mutex` is not
+reentrant, so that is a guaranteed self-deadlock on the path both `rectify` and (transitively)
+`measure` share. The test hung rather than failing fast (`cargo test` at ~0% CPU: a
+stuck-not-crashing test process under a mutex is a deadlock, not a slow computation).
 
-**`layout` needs no image, deliberately.** It is exactly what `apply` computes *before*
-measuring — useful for drawing a caliper before an image is even loaded in the UI, or for
-one that will go on to reject every sample. An object whose placement cannot be computed
-(fewer than two calipers, a degenerate zero-length line) contributes no entries rather
-than erroring, mirroring `apply`'s per-object result semantics without an error channel
-to attach the reason to.
+**Standalone Cargo workspace, verified, not assumed.** `src-tauri/Cargo.toml` declares its own
+empty `[workspace]` table specifically so Cargo's upward directory search cannot sweep it into
+the repo-root workspace — checked with `cargo metadata --no-deps` from the repo root.
 
-**The `Radial` overlay convention is preserved exactly, on purpose.** `MeasureRadial`'s
-`center` field is the *circle's* own centre (the measurement geometry's convention, not
-an overlay-box position) — for every caliper around the circle, not each caliper's own
-point on the boundary. The lab's existing overlay code already drew the caliper box at
-that same `(center, angle, half_len, half_width)` tuple, so `layout` reproducing it
-verbatim is what keeps `routers/measure.py`'s rewrite a pure refactor: overlay output is
-provably unchanged (every pre-existing backend smoke/mosaic test passes with no
-assertion changes) rather than merely believed unchanged. Whether that convention is the
-*best* one for a caliper-on-a-circle overlay is a separate, unopened question — this wave
-only removed the duplication, it did not redesign the visualization.
+**Superseded (roadmap Track E).** Two first-wave simplifications — PNG tiers re-encoded per
+request with no cache, and a synchronous-`imageUrl` blob-cache bridge returning a 1x1
+placeholder on a miss — are being replaced by a content-addressed on-disk tier cache served
+through Tauri's asset protocol, plus `async` command wrappers over `spawn_blocking`. The
+mosaic compositor still has no Tauri command; that gap is tracked once, in
+[`backlog.md`](backlog.md).
 
-**Python binding**: `MetrologyModel.layout(x, y, angle, scale, origin)` mirrors `apply`'s
-own fixture-construction signature (same `pose_from` helper) and returns
-`CaliperPlacement` pyclasses shaped to build `Caliper.rect`/`Caliper.radial` directly —
-`kind: "rect" | "radial"`, `center`, `angle`, `half_len`, `half_width`, and `radius`
-(only set for `"radial"`). `lab/backend/src/vm_lab/routers/measure.py` calls it once per
-`measure` request (grouped by `object_index`) instead of re-deriving placement per
-object; `geometry.py` is deleted, no remaining callers.
+### Scale-invariance: estimate-then-verify, not a wider scan
+C1's scale-sweep row found that a *taught-wide* model already found 100% of a clean synthetic
+sweep across 0.5–2.0×, contradicting the working hypothesis that the discrete scan degrades
+badly away from 1.0. That narrowed the real motivations to three: search **cost** across a
+wide range is linear in how wide it is; a model taught with the **default**
+`scale_range = (1, 1)` cannot be found away from 1.0 by a scan at all, however wide the search
+config asks (`matcher::intersect` clamps to the model's own range); and `(scale·d).round()`
+**point-collapse** at `scale < 1` silently inflates the score. The strategy is "estimate once,
+resample, verify narrow" — constant cost regardless of how wide a *would-be* scan would have
+needed to be.
 
-### Tauri desktop shell: commands/events, not a second HTTP backend (2026-08)
-Roadmap C4, plan decisions 7–8 (W6). The lab gets a second shell,
-`lab/frontend/src-tauri` (crate `vm-lab-desktop`), alongside the existing FastAPI/browser
-one — **one frontend, two transports**, not two frontends. The user's own decision:
-browser stays on FastAPI (already correct for that deployment shape); desktop talks to
-`vision-metrology` through **native Tauri commands and events**, never HTTP — there is no
-sidecar process, no port to discover, no CORS policy to keep in sync with a dev-server
-port.
+`ShapeModel::resample_at(s)` rebuilds every level by scaling each stored `TeachPoint.d` and
+feeding the result through `matching::build`'s own geometry-only assembly — the exact pipeline
+`from_directed_points` already uses, not a second implementation of "decimate a point cloud
+into levels". Why that is *exact* rather than approximate (pyramid coordinates are affine, so
+the additive term cancels on an offset) is derived in `matching::resample`'s module docs, where
+it belongs. The resampled model's `scale_range` is pinned to `(0.95, 1.05)`, or the
+constant-cost claim stops holding. `find_scale_invariant` chains an estimator, `resample_at`
+and the narrow verify, then rebuilds the returned pose into the **original** model's own
+reference frame — not the resampled model's, which is a fictional coordinate system scaled by
+`ŝ` that would corrupt anything downstream assuming taught coordinates.
 
-**Both shells call the same Rust code, by two different paths.** The browser path is
-UI → HTTP → FastAPI → PyO3 (`vm-python`) → `vision-metrology`/`vm-primitives`; the
-desktop path is UI → `invoke()` → Tauri command (`vm-lab-desktop`) →
-`vision-metrology`/`vm-primitives` directly, via ordinary path dependencies. Neither
-path re-implements an algorithm — `vm-lab-desktop`'s commands are the same shape as the
-FastAPI routers (build a config, call the library, translate the result to a
-serializable DTO), just without a PyO3 or HTTP hop. This is what makes "the two shells
-agree" a claim that can be checked mechanically rather than asserted by inspection.
+**Two independent scale estimators**, because they need different things from a scene.
+`estimate_scale_moments` segments an isolated blob and compares its **outer radius** (maximum
+distance from its own centroid to any foreground pixel) against `model.level(0).radius()`. The
+first implementation used a *radius of gyration* — the literal "second moment" — and was wrong
+by construction: a filled disc's is `R/√2` while its boundary ring's is `R`, so comparing a
+filled scene silhouette against boundary-only model points biased the result (recovered 1.13
+against a true 1.6). Outer radius needs no filled-area assumption, which is also why this
+estimator works on **any** `ShapeModel` — it never reads `teach_points`.
+`estimate_scale_logpolar` needs no segmentation but does need teach data and an approximate
+centre, and correlates **synthesized edge-density rasters** rather than photometric patches — a
+deliberate deviation from "resample the taught patch", forced by what the model stores: there
+is no reference *image* in a `ShapeModel`, only edge points. Both sides are splatted,
+log-polar-unwrapped (`warp::Map::log_polar` — logarithmic radial spacing, so a uniform scale
+change is a constant additive row shift: Fourier-Mellin without an FFT) and correlated with
+`corr::find`. Comparing edge-density fields is also what `ShapeMatcher` does, so the
+estimator's photometric assumptions stay consistent with the matcher it feeds.
 
-**Contract fixtures are the check.** `lab/contract/fixtures/`: golden request/response
-JSON, captured from the FastAPI backend over small deterministic synthetic images (an
-anti-aliased disc; two value-noise-textured frames shifted by an exact known `(4.0,
-3.0)` px, for `displacement`'s ground truth), for the six core operations (teach, find,
-measure with and without calibration/mm, rectify, displacement). Two independent replay
-tests consume the *same* JSON: `lab/backend/tests/test_contract_fixtures.py` (reruns the
-identical operation sequence against a fresh FastAPI backend, float tolerance) and
-`lab/frontend/src-tauri/tests/contract_parity.rs` (reruns it through the Tauri command
-layer directly — plain functions over `&AppState`, no GUI required to exercise them).
-Both existing at once is the point: a change to `vm_lab`'s response shape *or* to the
-Rust command layer is caught by whichever replay it broke, not discovered later as a
-UI-only bug in one shell. Normalization (id-shaped strings only, replaced by fixed
-placeholders like `$IMAGE_ID` — the two backends' id counters are unrelated and neither
-is reproducible run-to-run) is documented once, in `lab/contract/README.md`, rather than
-duplicated in each test's comments.
-
-**The Rust replay test earned its keep on day one.** `commands::rectify::rectify`
-originally locked `state.images`, then called `run_find` — which locks `state.images`
-again on the same thread. `std::sync::Mutex` is not reentrant, so this is a guaranteed
-self-deadlock, and it only ever fires on the code path both `rectify` and (transitively,
-through `measure`'s auto-find fallback) `measure` share. The contract-parity test hung
-instead of failing fast (`cargo test` sat at ~0% CPU, a symptom worth recognizing: a
-stuck-not-crashing test process under a mutex is a deadlock, not a slow computation —
-diagnosed with `sample <pid>`, which showed the blocked thread's stack sitting in
-`pthread_mutex_lock`). Fixed by calling `run_find` before acquiring the function's own
-`images` lock, not after.
-
-**Standalone Cargo workspace, verified, not assumed.** `src-tauri/Cargo.toml` declares
-its own empty `[workspace]` table specifically so it cannot be swept into the repo-root
-workspace by Cargo's upward directory search (a crate with no `[workspace]` table living
-under a directory tree whose ancestor declares one will otherwise try to join it). Checked
-by running `cargo metadata --no-deps` from the repo root and confirming the package list
-is still exactly `vm-primitives`/`vision-metrology`/`vm-python` — the desktop crate's
-Tauri/GUI dependency tree never touches a `cargo build --workspace` the library crates
-run.
-
-**Two deliberate simplifications, both documented at their command.** (1) `image_data`'s
-tiers are PNG at every size (full/preview/thumb), not the browser backend's WebP for
-preview/thumb — the plan's own instruction ("PNG bytes, no base64") plus one fewer image
-codec dependency; no on-disk tier cache either, since a resize costs a few milliseconds
-at lab image sizes and a cache-invalidation story is one more thing to keep correct for a
-single-user tool. (2) `imageUrl`/`rectifyCropUrl` must be synchronous (every
-`LabBackend` call site drops the result straight into `<img src>`), but the underlying
-data now arrives over an async `invoke()` returning raw bytes
-(`tauri::ipc::Response`, deliberately not base64-encoded). `tauriBackend.ts` bridges this
-with a blob-URL cache keyed by id/tier: the first call kicks off the fetch and returns a
-1x1 placeholder immediately, a later call (which this app's own re-renders — TanStack
-Query cache updates, selection changes — supply in practice) returns the cached `blob:`
-URL. A component that renders an image exactly once and never again would keep showing
-the placeholder; nothing in this app does that today, and the trade-off is recorded here
-rather than solved with a bigger re-render-forcing mechanism this wave did not need.
-
-**Mosaic has no Tauri command this wave, and says so at the call site rather than
-silently degrading.** `routers/mosaic.py`'s compositor (~315 lines: grid auto-fit,
-nearest-camera-centre priority, `source_id` map, opt-in feather display) was not ported.
-`tauriBackend.ts`'s `mosaic`/`mosaicImageUrl`/`mosaicSourceIdUrl` throw a clear "not
-available in the desktop build" error — satisfying `LabBackend`'s type contract without
-pretending the feature works, so the Bird's-eye tab fails loudly (browser-only) rather
-than rendering nothing.
-
-### Scale-invariance: estimate-then-verify, not a wider scan (2026-08)
-Roadmap W7, plan decision 9. C1's own scale-sweep row (warp wave) found that a *taught-wide*
-model (`scale_range = (0.45, 2.1)`) already found 100% of a clean synthetic sweep across
-0.5–2.0×, contradicting the plan's working hypothesis that the discrete scan degrades badly
-away from 1.0. That result narrowed this wave's real motivations to the three the plan
-already named as (a)/(b)/(c): search **cost** across a wide range is linear in how wide it
-is; a model taught with the **default** `scale_range = (1, 1)` cannot be found away from 1.0
-by a scan at all, however wide the search config asks for (`matcher::intersect` clamps to
-the model's own range); and `(scale·d).round()` **point-collapse** at `scale < 1` silently
-inflated the score. The strategy is "estimate once, resample, verify narrow" — a constant
-cost regardless of how wide a *would-be* scan would have needed to be, rather than a wider
-one.
-
-**Format 4: the model stores its own pre-decimation level-0 edge points.** Every
-`ShapeModel` already stores `level(0).points()` — but *after* grid decimation, which is
-exactly what a different scale needs to redo (invariant 4's spatially uniform decimation
-assumes the scale it was computed at). `TeachPoint { d, t, strength }` (`matching::model`,
-`pub(crate)`) is the same `RawPoint` triple `ShapeModelBuilder::build`/`from_edgels`/
-`from_directed_points`/`from_polylines` already compute internally before their one-time
-assembly, captured once (at `origin`-relative offsets, level 0) and kept on the model
-afterward. `FORMAT_VERSION` 3 → **4**; unlike the 2→3 bump this one is **backward-loading**:
-`teach_points: Option<Vec<TeachPoint>>` is `#[serde(default)]`, so a format-3 document
-(missing the field entirely) still loads, bit-identically for everything that does not read
-it, with `teach_point_count() == 0`. `resample_at`/`estimate_scale_logpolar` — the two
-functions that need it — report a clear `Error::InvalidConfig` rather than resampling from
-already-decimated (already-scale-1.0-shaped) points, which would silently bias the result.
-`estimate_scale_moments` deliberately needs none of this (see below), so it works on a
-format-3 model unchanged.
-
-**`ShapeModel::resample_at(s)`** (`matching::resample`) rebuilds every level at scale `s` by
-scaling each `TeachPoint.d` by `s` and feeding the result back through
-`matching::build`'s own geometry-only assembly (`from_raw`/`assemble`/`merge_into_cells`/
-`decimate`/`stratify`) — the exact pipeline `ShapeModel::from_directed_points` already uses,
-not a second implementation of "decimate a point cloud into levels." The trick that makes
-this exact rather than approximate: pyramid coordinates are affine
-(`(v − (2^l−1)/2) / 2^l`, invariant 2), so subtracting two points at the same level cancels
-the additive term and leaves a clean `offset / 2^l` — which is what dividing a level-0
-*offset* (not an absolute position) by `2^l` gives directly. Passing `origin: Some((0, 0))`
-into a synthetic `ShapeModelConfig` is what lets `from_raw`'s existing `to_level` + `p −
-ref_l` machinery treat the already-relative `TeachPoint.d * s` values as if they were
-absolute level-0 positions, with the origin's absolute value cancelling out regardless of
-what it is. The resampled model's own `scale_range` is pinned to `(0.95, 1.05)` — a caller
-doing estimate-then-verify searches that narrow band, not a widened one, or the
-constant-cost claim stops holding; `angle_range`/`polarity`/`smooth`/`pre_smooth` carry over
-unchanged (a uniform rescale affects none of them).
-
-**Decision 9g — offset-collapse dedup: three designs tried, all three rejected by
-measurement, none shipped.** Rotating and scaling a model point rounds it to an integer
-pixel (`(scale · d).round()`); at `scale < 1` two points distinct at their build-time grid
-resolution (invariant 4) can round onto the *same* pixel, and reading that scene pixel's
-gradient twice inflates a score for a rounding coincidence rather than real coverage — real,
-but (per the *first* C1 scale-sweep measurement, warp wave) small: worst measured position
-bias 0.022 px, scale bias 0.14%, on the clean synthetic fixture. This crate's own discipline
-is "measure before assuming a fix is worth its cost," and every fix attempted here failed
-that measurement, in three different ways:
+**Decision 9g — offset-collapse dedup: three designs tried, all three rejected by measurement,
+none shipped.** *(Authoritative account; `backlog.md` records only the open question a fourth
+attempt must answer.)* Rotating and scaling a model point rounds it to an integer pixel; at
+`scale < 1` two points distinct at their build-time grid resolution (invariant 4) can round
+onto the *same* pixel, and reading that scene pixel's gradient twice inflates a score for a
+rounding coincidence rather than real coverage — real, but small: worst measured position bias
+0.022 px, scale bias 0.14%, on the clean synthetic C1 fixture. The discipline is "measure
+before assuming a fix is worth its cost", and every fix failed that measurement, differently:
 
 1. **Dedup inside `matching::score::rotate_into` whenever `scale < 1`.** Simple, but
    `refine::interpolate`'s subpixel parabola fit perturbs an *already-found* pose by one
-   `scale_step` in each direction, which dips below 1.0 even when the model's own
-   `scale_range` never leaves `(1, 1)` — canend's own search config — so this version
-   measurably moved `examples/inspect_canend`'s rim radius by 0.002 px on a search that
-   never asked for a scale scan at all. This crate's own gate is "identical to the recorded
-   baseline," not "close to it," so this version was rejected.
-2. **Dedup in `rotate_into`, but only for the coarse-to-fine search sweep** (an explicit
-   `dedup` flag: `matcher::fill_map`/`refine_candidate` pass it, `refine::interpolate`
-   does not) **with a reused scratch buffer** so it does not allocate. This fixed the canend
-   regression, but `rotate_into` is the hot inner loop `match_shape`'s benches measure —
-   called once per (angle, scale) grid point during a scale-swept search — and even a reused
+   `scale_step` in each direction, which dips below 1.0 even when the model's own `scale_range`
+   never leaves `(1, 1)` — canend's own config — so this measurably moved `inspect_canend`'s
+   rim radius by 0.002 px on a search that never asked for a scale scan. The gate is "identical
+   to the recorded baseline", not "close to it".
+2. **Dedup in `rotate_into`, but only for the coarse-to-fine sweep**, with a reused scratch
+   buffer so it does not allocate. This fixed (1), but `rotate_into` is the hot inner loop
+   `match_shape`'s benches measure — once per (angle, scale) grid point — and even a reused
    `O(m log m)` sort there measured **+35%** on `shape_find_1280x1024_scale_0p8_1p25`
-   (16.83 → 23.4 ms) for a correction whose result is thrown away the moment a better
-   candidate is found: the search sweep's own scores exist only to *rank* candidates, never
-   to report one.
-3. **Dedup in [`score::score_pose`] only** — the function that computes the score actually
-   attached to a reported `ShapeMatch`, called a handful of times per `find()` (once per
-   candidate that survives to the final report), never once per search grid point. Cheap:
-   every `match_shape` bench held within noise. But **measured worse than the bug it fixed**:
-   `matcher::run` rejects a candidate whose `score_pose` result falls below
-   `ShapeSearchConfig::min_score` *after* the search sweep has already picked it as the best
-   candidate using the sweep's own, still-undeduped internal scores. Honestly *lowering* that
-   candidate's final score can push it under `min_score`, discarding the search's actual best
-   answer in favour of whatever next-best candidate — often at a substantially different
-   position or scale — still clears the threshold. Measured on the C1 fixture: position error
-   up to **0.46 px** at some swept scales (worst case, `scale ≈ 0.73`), roughly 20x the
-   ≤0.022 px the *unfixed* inflation ever cost. Reverted.
+   (→ 23.4 ms; baseline in the performance table) for a correction thrown away the moment a
+   better candidate is found: the sweep's scores exist only to *rank* candidates.
+3. **Dedup in `score::score_pose` only** — the function computing the score actually attached
+   to a reported `ShapeMatch`, called a handful of times per `find()`. Cheap: every bench held
+   within noise. But **measured worse than the bug it fixed**: `matcher::run` rejects a
+   candidate whose `score_pose` result falls below `min_score` *after* the sweep has already
+   picked it as best using the sweep's own still-undeduped scores. Honestly *lowering* that
+   score can push it under `min_score`, discarding the search's actual best answer in favour of
+   whatever next-best candidate — often at a substantially different position or scale — still
+   clears the threshold. Measured on the C1 fixture: position error up to **0.46 px** at some
+   swept scales (worst, `scale ≈ 0.73`), roughly 20x the ≤0.022 px the *unfixed* inflation ever
+   cost. Reverted.
 
 **What shipped: nothing changed in `matching::score`.** `rotate_into`/`score_pose` are
-bit-for-bit the pre-wave code; the offset-collapse inflation is documented (both functions'
-own doc comments) and pinned by a dedicated regression test
-(`score::tests::offset_collapse_at_reduced_scale_is_a_known_unfixed_score_inflation`) so a
-future change cannot silently reintroduce design 3's regression while believing it "fixed"
-the original bug. `docs/backlog.md` records what a real fourth attempt would need: the
-search sweep's own candidate selection and the final reported score have to agree on
-whether a duplicate counts — either dedup consistently through the whole pipeline (design
-2's cost, unless a genuinely allocation-and-sort-free formulation is found) or change how
-`min_score` interacts with a pose whose score is only known after the fact.
+bit-for-bit the pre-wave code; the inflation is documented on both functions and pinned by
+`score::tests::offset_collapse_at_reduced_scale_is_a_known_unfixed_score_inflation`, so a
+future change cannot silently reintroduce design 3's regression while believing it fixed the
+original bug.
 
-`examples/inspect_canend` and every `match_shape` bench are, as a direct consequence,
-unaffected by this wave: `inspect_canend` matches the recorded baseline **bit-for-bit** on
-both set1 folders (dome 365.237 px / σ 0.282 px, dark 365.696 px / σ 0.307 px), and the C1
-scale-sweep rows (`shape_matcher_scale_bias`/`_position`) match their pre-wave numbers
-exactly (|bias| 0.0014 / 0.0218 px, sigma 0.0003 / 0.0039 px).
-
-**Two independent scale estimators**, because they need different things from a scene
-(`scale` module):
-- **`estimate_scale_moments`** segments an isolated blob (`segment::otsu_threshold_u8` +
-  `label_connected_components_u8`, keeping the component nearest the ROI's own centre) and
-  compares its **outer radius** — maximum distance from its own centroid to any of its own
-  foreground pixels — against `model.level(0).radius()`. The first implementation compared
-  a *radius of gyration* instead (mean squared distance from centroid, the literal "second
-  moment" the plan's own text suggested), and it was wrong by construction: a filled disc's
-  radius of gyration is `R/√2` while its boundary ring's is `R`, so comparing a filled scene
-  silhouette against the model's boundary-only edge points introduced a systematic bias
-  (measured: recovered scale 1.13 instead of the true 1.6 on a synthetic test disc) before
-  outer-radius replaced it. Outer radius needs no filled-area assumption on the model side,
-  which is also why this estimator works on **any** `ShapeModel` (format 3 or 4) — it never
-  reads `teach_points`.
-- **`estimate_scale_logpolar`** needs no segmentation but does need format-4 teach data and
-  an approximate centre. Both sides of the correlation are **synthesized edge-density
-  rasters**, not photometric patches — a deliberate deviation from a literal reading of the
-  plan's "resample the taught patch" text, forced by what the model actually stores: there
-  is no reference *image* patch in a `ShapeModel`, only edge points. The model's own teach
-  points are splatted (Gaussian dab per point, weighted by gradient magnitude) onto a small
-  canvas; the scene side runs `Edge2DDetector` over a crop around the hint centre and splats
-  *its* edgels the same way — comparing two edge-density fields is also what
-  `ShapeMatcher` itself does (gradient direction, not raw intensity), so this keeps the
-  estimator's photometric assumptions consistent with the matcher it feeds. Both rasters are
-  then log-polar-unwrapped (`warp::Map::log_polar`, new this wave — logarithmic radial
-  spacing, so a uniform scale change is a constant additive row shift, the classic
-  Fourier-Mellin trick without an FFT) and correlated with `corr::find` (ZNCC, rotation off);
-  the row shift gives `log(ŝ)`, and an optional column-shift search (`angle_margin`) gives a
-  bounded rotation estimate.
-
-**`find_scale_invariant`** chains one estimator (moments given a ROI hint, log-polar given a
-centre hint), `resample_at`, and a narrow verify search, then rebuilds the returned
-`ShapeMatch::pose` into the **original** (pre-resample) model's own reference-image frame —
-not the resampled model's frame, which is a fictional coordinate system scaled by `ŝ`
-relative to the original and would corrupt anything downstream (`MetrologyModel::apply`,
-`model_frame_map`) that assumes the taught geometry's own coordinates. The reconstruction
-reuses `matcher::pose_from` (re-exported `pub(crate)` for this one caller, gated behind the
-`scale` feature so `matching` alone does not carry a dead re-export) with `true_scale =
-verify_scale · ŝ` and the *original* model's own `origin()` — algebraically the same
-`position + S·R·(p − origin)` form `pose_from` already computes internally, derived by
-composing the resampled model's pose (whose own origin is `(0, 0)`, so its translation term
-has no origin correction) with the `ŝ`-scaling `resample_at` applied to get there.
-
-**C1 numbers (`tests/accuracy.rs`, `estimate_verify_scale_bias`/`_position`).** Same
-12-scale × 3-rotation grid as the scan rows, but on a model taught with the **default**
-`scale_range` (motivation (b)) and recovered via `find_scale_invariant`'s moments hint:
-100% found-rate (matching `BASELINE_FOUND_RATE`, the scan's own regression guard) at every
-scale, |bias| 0.0014 / sigma 0.0003 (scale, fraction) and |bias| 0.0218 / sigma 0.0039 px
-(position) — **identical** to the scan rows' own numbers (decision 9g's offset-collapse
-dedup was not shipped, so "identical to the scan" here is a straightforward equivalence, not
-a "pre-dedup" qualifier). `scale_estimate_vs_scan_cost` (`tests/accuracy.rs`, timed, M4 Pro):
-a wide `scale_range` scan against a taught-wide model took ~1.6 s; estimate-then-verify
-against a default-taught model took 660–745 ms on the identical scene across separate
-measurement runs — **~2.2–2.4x** faster, and (unlike the scan) that cost does not grow with
-how wide a range *would* have needed to be scanned.
-
-**Python bindings.** `ShapeModel.resample_at`/`.teach_point_count`, `Map.log_polar`,
-`estimate_scale_moments`/`estimate_scale_logpolar`, and `find_scale_invariant_roi`/
-`find_scale_invariant_center` (two functions rather than one function plus a tagged-union
-argument — `scale::ScaleHint` is a two-variant Rust enum, and two named functions are
-simpler for a Python caller than modelling that as its own class for one call site).
-`MomentScaleConfig`/`LogPolarScaleConfig`/`ScaleInvariantConfig` mirror the Rust configs
-one-to-one, following the same `String`-tagged-enum convention as `Contrast`/`CorrMetric`
-for `BlobPolarity`.
+### Masked teaching and the model's own reference angle
+Two additions for the same reason: a model taught from a bare rectangle learns whatever
+background the rectangle contains, and because of invariant 4 those points *dilute* every later
+score. `ShapeModelBuilder::build_with_mask` takes an optional inclusion mask, tested at the
+level-0 position a point was aggregated from and dilated, because a coarse level's point can
+sit up to half its own pixel from the fine edge that produced it — being stingy silently
+deletes the coarse levels, far worse than admitting the odd neighbouring edgel.
+`ShapeModelConfig::reference_angle` rotates the model *frame* onto a caller-chosen canonical
+orientation at build time, so a found pose reads as "how far from canonical" rather than "how
+far from however the reference frame happened to be shot". It rotates the frame; it does not
+filter points, and `reference_geometry` still reports the taught geometry in the reference
+image's own frame while `model_geometry` reports it in the rotated model frame.
 
 ## Performance numbers (M4 Pro, single thread, release)
 
-Record per release. The target use case budgets ~30 ms for a full multi-stage
-image analysis; detection is stage 1 and must leave room for the rest.
+Record per release. The target use case budgets ~30 ms for a full multi-stage image analysis;
+detection is stage 1 and must leave room for the rest. **This table is the single place bench
+numbers are kept** — a decision entry that needs one links here rather than restating it.
 
-| Bench | post-#18 | post-tiling (Track 2) | post-v0.3 reset (Track D) |
+| Bench | post-#18 | post-tiling | post-v0.3 reset |
 |---|---|---|---|
 | `shape_model_create_1280x1024` | 0.49 ms | 0.49 ms | 0.49 ms |
 | `shape_find_1280x1024_360deg` | 7.8 ms | **3.46 ms** | **3.37 ms** |
@@ -1131,37 +740,21 @@ image analysis; detection is stage 1 and must leave room for the rest.
 | `direction_field_1280x1024` (full frame) | 4.0 ms | 4.0 ms (lazily skipped in find) | 4.0 ms |
 | `edge2d_detect_u8_1280x1024` | 5.6 ms | 5.6 ms | 5.6 ms |
 
-Canend real data, full 360°, median per frame: set1 dome 15 → **5.6 ms**,
-bright 16.9 → 9.2 ms, dark 15 → 11.5 ms, set2 dome 63 → **25.5 ms**, conveyor
-10.6 ms, CP34 9.2 ms. Detection 256/256 preserved; per-frame scores
-bit-identical to the pre-tiling code (verified against `main` on identical
-flags).
+Later module benches (all post-v0.3): `fit_circle_500pts` 2.6 µs, `+tukey` 4.2 µs,
+`fit_line_500pts` 1.7 µs, `fit_ellipse_100pts` 1.6 µs, `fit_ellipse_ransac_1000pts` 430 µs;
+`affine_apply_640x480_bilinear` ≈ 510 µs, `polar_apply_640x480_bilinear` ≈ 494 µs;
+`corr::find` (VGA scene, 64x64 template) 4.60 ms rotation-off / 22.1 ms rotation-on;
+`corr::displacement` (320x97 window) 1.60 ms quadratic / 1.71 ms +Lucas-Kanade.
 
-Re-validated after the v0.2 substrate reset (`Pixel` trait, generic pyramid,
-LTO profile), set1 `normal`, `--model-min-contrast 400`:
+Canend real data, full 360°, median per frame: set1 dome 15 → **5.6 ms**, bright
+16.9 → 9.2 ms, dark 15 → 11.5 ms, set2 dome 63 → **25.5 ms**, conveyor 10.6 ms, CP34 9.2 ms.
+Detection 256/256 preserved, scores bit-identical to the pre-tiling code. Re-validated after
+each reset wave (set1 `normal`, `--model-min-contrast 400`): dome 50/50 at shape p50 0.998 and
+~5.5–5.7 ms, bright 50/50 at p50 0.883 / 9.08 ms, dark 50/50 at p50 0.823 / 11.30 ms — at or
+below the pre-reset medians, no detection lost, `inspect_canend` matching the canend baseline
+table above.
 
-| folder | frames | found | shape p50 | ZNCC p50 | ms p50 |
-|---|---|---|---|---|---|
-| dome | 50 | 50/50 | 0.998 | 0.961 | 5.50 |
-| bright | 50 | 50/50 | 0.883 | 0.912 | 9.08 |
-| dark | 50 | 50/50 | 0.823 | 0.954 | 11.30 |
-
-Every folder is at or slightly below its pre-reset median (5.6 / 9.2 / 11.5 ms)
-and no detection was lost.
-
-Re-validated again after the **v0.3 API reset**, same flags: dome 50/50, shape
-p50 **0.998**, median 5.7 ms — identical to three decimals. `inspect_canend` on
-set1 `normal`: dome 50/50 measured, mean radius 365.237 px, σ 0.282 px; dark
-50/50, 365.696 px, σ 0.307 px — both matching the pre-reset numbers.
-
-A caution recorded while measuring: the `shape_matching` example's median score
-depends on which frame is taught. On set1/bright the same folder reads p50
-0.875 / 0.839 / 0.847 depending on whether the model comes from frame 1, 2 or
-25. Comparing runs across commits is only meaningful with the reference frame
-pinned.
-
-Where the remaining time goes (cluttered fixture, per stage): top-level sweep
-2.3 ms, candidate descent 4.2 ms, everything else <0.5 ms. The descent cost is
-dominated by well-scoring candidates that legitimately never trigger the
-greedy abort — reducing it further means quantized/SIMD scoring
-(see backlog).
+Where the remaining time goes (cluttered fixture, per stage): top-level sweep 2.3 ms, candidate
+descent 4.2 ms, everything else <0.5 ms. The descent is dominated by well-scoring candidates
+that legitimately never trigger the greedy abort — reducing it further means quantized/SIMD
+scoring (see `backlog.md`).

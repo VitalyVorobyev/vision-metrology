@@ -10,9 +10,11 @@
 //! `f32`, and the same-type variants had no caller. It is `pub(crate)` — the
 //! public entry point is [`Pyramid`](super::Pyramid).
 //!
-//! The `chunks_exact(2)` formulation gives the optimiser a compile-time-known
-//! chunk length, so the bounds checks fold away and the loop vectorises; it
-//! benchmarks at parity with the raw-pointer version it replaced.
+//! The `as_chunks::<2>()` formulation hands the optimiser a `[P; 2]` per pair
+//! rather than a slice, so there is no bounds check to elide and the loop
+//! vectorises; it benchmarks at parity with the raw-pointer version it
+//! replaced. (It was `chunks_exact(2)` until clippy 1.98 pointed out that
+//! `as_chunks` says the same thing in the type.)
 
 use crate::core::{Error, ImageView, ImageViewMut, Pixel};
 
@@ -54,11 +56,11 @@ pub(crate) fn downsample2x2_mean_to_f32_into<P: Pixel>(
     for y in 0..dst_h {
         let (r0, r1) = (src.row(2 * y), src.row(2 * y + 1));
         let out = dst.row_mut(y);
-        for ((o, a), b) in out
-            .iter_mut()
-            .zip(r0[..2 * dst_w].chunks_exact(2))
-            .zip(r1[..2 * dst_w].chunks_exact(2))
-        {
+        // `.0` discards a remainder that cannot exist: both rows are sliced to
+        // `2 * dst_w`, an exact multiple of 2.
+        let (a2, _) = r0[..2 * dst_w].as_chunks::<2>();
+        let (b2, _) = r1[..2 * dst_w].as_chunks::<2>();
+        for ((o, a), b) in out.iter_mut().zip(a2).zip(b2) {
             let sum = a[0].to_acc() + a[1].to_acc() + b[0].to_acc() + b[1].to_acc();
             *o = P::acc_to_f32(sum) * 0.25;
         }

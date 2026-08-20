@@ -13,6 +13,18 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  docs-invariants:
+    name: Invariant numbering
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # Invariant numbers in docs/system-design.md are cited by number from source
+      # files and docs, and nothing in the compiler checks them. This does.
+      - name: Check invariant numbering and citations
+        run: python3 tools/check-invariants.py
+
   rust-quality:
     name: Rust Quality (ubuntu)
     runs-on: ubuntu-latest
@@ -173,3 +185,74 @@ jobs:
 
       - name: Test
         run: cargo test --workspace --all-features
+
+  lab:
+    name: Lab (frontend + desktop shell)
+    runs-on: ubuntu-latest
+    steps:
+      # `lfs: true` because `.gitattributes` tracks `*.png` in Git LFS, and
+      # `tauri::generate_context!` reads the bundle icons at compile time — a
+      # plain checkout hands it the pointer file and the proc macro panics with
+      # "Invalid PNG signature". This is the only job that compiles the shell,
+      # so it is the only one that needs the objects.
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          lfs: true
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: lab/frontend/src-tauri
+
+      - name: Install bun
+        uses: oven-sh/setup-bun@v2
+
+      # @vitavision/lab-ui is a published package, so there is nothing to check
+      # out beside this repo and nothing to build first. While it was a
+      # `file:../../../lab-ui` path dependency this job was not possible without
+      # cloning a sibling repo, which is most of why the lab had no CI at all.
+      - name: Install frontend dependencies
+        working-directory: lab/frontend
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        working-directory: lab/frontend
+        run: bun run typecheck
+
+      - name: Test
+        working-directory: lab/frontend
+        run: bun run test
+
+      - name: Build
+        working-directory: lab/frontend
+        run: bun run build
+
+      # The desktop shell is a standalone cargo workspace (see its Cargo.toml),
+      # so `--workspace` in the jobs above never reaches it. Its GUI dependencies
+      # need the system webkit packages even for `cargo test`, which only touches
+      # the command layer.
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Desktop shell — format
+        working-directory: lab/frontend/src-tauri
+        run: cargo fmt --all --check
+
+      - name: Desktop shell — lint
+        working-directory: lab/frontend/src-tauri
+        run: cargo clippy --all-targets -- -D warnings
+
+      # Includes tests/contract_parity.rs, the desktop-side replay of the
+      # committed fixtures — the gate that keeps the two shells numerically
+      # in step. tests/folder_flow.rs skips itself here (no private dataset).
+      - name: Desktop shell — test
+        working-directory: lab/frontend/src-tauri
+        run: cargo test

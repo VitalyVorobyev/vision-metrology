@@ -242,7 +242,7 @@ cargo run --release -p vision-metrology --example inspect_canend -- \
 ```
 
 Units are **pixels** throughout `measure`. Millimetres arrive with the
-`metric` module (roadmap B5), which converts a fitted primitive through a
+`metric` module (PR #33), which converts a fitted primitive through a
 calibration.
 
 ## See also

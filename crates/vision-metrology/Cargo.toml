@@ -170,7 +170,7 @@ required-features = ["contour", "fit", "laser", "matching", "measure"]
 
 [[example]]
 name = "birdseye_mosaic"
-required-features = ["metric"]
+required-features = ["corr", "metric"]
 
 [[test]]
 name = "shape_matching"

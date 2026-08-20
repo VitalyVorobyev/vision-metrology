@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "What the Visual Metrology Lab window is allowed to do. Deliberately short: this app's own commands need no permission entry, so everything listed here is either a plugin the shell genuinely needs (the native file/folder picker) or a core capability the frontend calls directly (listening for lab://progress and lab://batch, and loading cached image tiers over the asset protocol, whose reach is separately narrowed to $APPCACHE by tauri.conf.json's assetProtocol scope).",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "core:webview:default",
+    "dialog:allow-open"
+  ]
+}

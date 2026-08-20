@@ -205,11 +205,31 @@ calibrations}/` on macOS. Same spirit as the backend's `data/` directory, differ
 and no shared code (a ~450-line, deliberately small module — not a byte-for-byte port of
 `store.py`, which also has thumbnail-tier caching this crate does not).
 
-**Progress events.** Long operations can emit `lab://progress` events
-(`{op, stage: "started"|"finished", elapsed_ms}`) over `tauri::Emitter`; `find` is wired
-today (the plan's "wire one real progress case") since its cost is the one that scales
-with scene size in a way a user notices. `teach`/`images_*` are effectively instant on
-lab-sized images and are not wired.
+**Every heavy command is `async`.** A synchronous `#[tauri::command]` runs on the main
+thread — the one that also paints the window — so a `find`, a PNG encode or a folder scan
+froze the UI for its whole duration, which is indistinguishable from a slow library. Each
+wrapper in `lib.rs` is `async` and hands the work to `spawn_blocking`.
+
+**Progress events.** Heavy operations emit `lab://progress`
+(`{op, stage: "started"|"finished", elapsed_ms}`) over `tauri::Emitter`, and the
+frontend's status bar (`shell/StatusBar.tsx`) shows the duration. This used to be emitted
+by `find` alone and listened to by nobody, which is why "find is slow" had no number
+attached to it. `batch_find` additionally emits `lab://batch` per frame.
+
+**Opening a folder.** `images_scan_dir` lists a directory and reads each file's *header*
+— no decode, no copy — so a capture of a few thousand frames opens as fast as the
+filesystem can list it (11 ms for 50 frames, measured). `images_open_paths` then
+registers frames **by path**: the pixels stay in the user's own files, and
+`AppState::decoded` decodes on demand behind a small LRU. `images_upload` (bytes over
+IPC) is kept for drag-and-drop and for browser parity.
+
+**Tiers are cached files, served over the asset protocol.** `image_tier_path` PNG-encodes
+each tier once into `{app_cache}/tiers/{sha256}/{tier}.png` and returns the path;
+`convertFileSrc` turns that into an `asset:` URL the webview loads, caches and decodes
+itself (scoped to `$APPCACHE` in `tauri.conf.json`). Measured 13.1 ms cold, 0.005 ms
+warm. Keying on the *pixel* hash rather than the image id makes the cache survive
+re-opening the same file. `image_data` still returns bytes for callers that cannot take a
+path.
 
 **Deliberately not ported this wave: mosaic.** `routers/mosaic.py` (~315 lines: grid
 auto-fit, nearest-camera-centre compositing, source_id map, feather display mode) has no
@@ -217,22 +237,30 @@ Tauri command. `tauriBackend.ts`'s `mosaic`/`mosaicImageUrl`/`mosaicSourceIdUrl`
 clear "not available in the desktop build" error rather than silently returning nothing —
 the Bird's-eye tab is browser-only until this is ported (tracked in `docs/backlog.md`).
 
-**`imageUrl`/`rectifyCropUrl` are synchronous** (every `LabBackend` call site drops the
-result straight into `<img src>`), but the underlying data arrives over an async
-`invoke()` returning raw bytes (`tauri::ipc::Response`, no base64). `tauriBackend.ts`
-bridges this with a blob-URL cache: the first call for a given id/tier kicks off the
-fetch in the background and returns a 1x1 placeholder immediately; the *next* call for
-that key (the app's own re-renders — TanStack Query updates, selection changes — happen
-often enough in practice) returns the real `blob:` URL. A component that renders an image
-exactly once and never again would keep showing the placeholder; no call site in this app
-does that today.
+**`imageUrl` is asynchronous, and that fixed a real bug.** It used to be synchronous, and
+the desktop implementation satisfied that by returning a 1×1 placeholder on a cold cache
+and swapping in the real bytes on some *later* render. Nothing forced that render, so the
+main canvas stayed blank after opening a frame until the user happened to click a
+thumbnail — and crossing `FULL_TIER_ZOOM` re-armed the same trap. Now the method returns
+a promise and `hooks/useImageUrl.ts` owns the loading state, so the URL's arrival *is* a
+render. Rectified and model crops (which exist only in memory, so they cannot be served
+as files) go through `rectifyCropUrl` → `resolveCropUrl`, split so the naming stays
+synchronous while the fetching is honest about being async.
 
 **Tiers are PNG, not WebP.** The browser backend's `thumb`/`preview` tiers are WebP
-(`media.py`); the desktop command (`image_data`) resizes and PNG-encodes all three tiers
-instead — the plan's own instruction ("PNG bytes, no base64") plus one fewer codec
-dependency. No on-disk tier cache either: a resize is a few milliseconds at lab image
-sizes, and a cache-invalidation story is a second thing to keep correct for a
-single-user workbench.
+(`media.py`); the desktop side PNG-encodes all three at `CompressionType::Fast` — one
+fewer codec dependency, and these are local cache entries read off the same disk, so
+chasing a smaller file buys nothing.
+
+**Desktop-only commands.** Opening folders, previewing and curating contours
+(`teach_preview` + `keep_contours`), reading a model's own points (`model_geometry`),
+rectifying the model's reference image (`model_crop`) and running a model across a set
+(`batch_find`) have **no FastAPI counterpart**, on purpose: a browser page has no native
+picker and no path it may read, so mirroring them would mean routes with no consumer. The
+committed contract and its fixtures keep covering the *shared* subset — images, models,
+find, measure, rectify, displacement — where parity is still checked exactly by
+`tests/contract_parity.rs`. `LabBackend.canOpenFiles()` is what the UI branches on; the
+HTTP backend throws a clear message rather than returning something plausible.
 
 ## Tests
 
@@ -243,7 +271,13 @@ cd backend && uv run pytest       # smoke: upload -> teach -> find -> measure a 
                                    # plus the contract-fixture replay (test_contract_fixtures.py)
 cd frontend && bun run typecheck && bun run test && bun run build
 cd frontend/src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
-                                   # cargo test includes tests/contract_parity.rs, the desktop-side replay
+                                   # includes tests/contract_parity.rs (the desktop-side replay of the
+                                   # committed fixtures) and tests/folder_flow.rs (the desktop-only path:
+                                   # scan -> open by path -> tier cache -> preview -> curated teach ->
+                                   # geometry -> find -> batch, over ~/privatedata/canend; skips loudly
+                                   # when that dataset is absent)
+
+cargo run --release --example find_probe   # where find time actually goes, as a table of settings
 ```
 
 ## Out of MVP scope
@@ -285,6 +319,15 @@ cd frontend/src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D w
   itself (calling `Caliper::measure` a second time per caliper to recover the rejection
   reason and raw profile `apply` doesn't surface) — both call sites start from identical
   geometry, so they can disagree on *why* a caliper failed but never on *where* it was.
+- **What "find is slow" actually was.** Measured with `examples/find_probe.rs` on
+  1280×1024 canend frames, release: a model taught from a sensible ROI searches a full
+  360° in **4.2 ms** — in line with the library's published 3.5 ms. The alarming numbers
+  all come from *settings*: a model whose ROI covers 60% of the frame has a ~400 px
+  radius, and since the per-level angle step is `clamp(1/radius, …)` a full turn costs
+  thousands of steps (**23 ms**); dropping `min_score` from 0.7 to 0.4 doubles it again
+  (**46 ms**). The old UI offered none of those knobs and reported no duration, so the
+  most expensive search was the only one reachable and there was no way to notice. The
+  matcher was never the problem — the shell was.
 - **UX left open**: no explicit-fixture entry in the Measure tab (auto-find only in the
   MVP UI, though the backend request schema supports an explicit `fixture`); no way to
   edit/delete a taught model; the ROI-drag layer assumes `full`/`preview` tiers share the

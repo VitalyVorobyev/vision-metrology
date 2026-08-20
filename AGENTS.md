@@ -15,20 +15,17 @@ across sessions — trust them over reconstructing state from git history.
 
 ## Project layout
 
-Three publishable crates with clear layering:
+Three publishable crates, strict one-way dependencies:
 
-- `crates/vm-primitives`: low-level building blocks.
-  - `core`: image views, `Pixel` trait, sampling, border modes, geometry (nalgebra aliases).
-  - `pyr`: `Pyramid`, 2×2 mean, generic over `Pixel`, optional binomial pre-smooth.
-  - `edge`: 1D/2D subpixel edges (DoG), edgels, edge-pairs.
-  - `morph`: binary morphology (parameterized SE), chamfer distance, Zhang-Suen thinning.
-- `crates/vision-metrology`: high-level algorithms; depends on `vm-primitives`; re-exports it entirely.
-  - `contour`: contour graph, junctions, per-edge tangent/curvature geometry, polyline smoothing.
-  - `laser`: laser stripe extraction (rows/cols, ROI+prior tracking).
-  - `matching`: `ShapeModel` + `ShapeMatcher`, gradient-orientation shape-based object detection.
-  - `segment`: Otsu/adaptive thresholding, CCL, watershed, edgel region growing.
-  - `shape`: LSD, Bookstein/Fitzgibbon conic fitting, RANSAC ellipse fitting.
-- `crates/vm-python`: PyO3 extension module; depends on both above crates.
+```
+vm-primitives  ──►  vision-metrology  ──►  vm-python
+(low-level)         (domain algorithms)    (PyO3 bindings)
+```
+
+**The module table in [`docs/system-design.md`](docs/system-design.md#layering) is the
+canonical map** — what each module contains, and which crate it lives in. It is kept in one
+place on purpose: four separate copies of it drifted, and each still named a `shape` module
+two waves after it was renamed to `lsd`. Read it there rather than trusting a summary here.
 
 ## Invariants and conventions
 - Pixel coordinate convention: **pixel centers** (`i` means coordinate `i as f32`).
@@ -66,36 +63,22 @@ Three publishable crates with clear layering:
 - Ensure invalid samples are still emitted in `LaserLine.samples`.
 
 ## Required quality checks before commit
-Run from workspace root:
+
+The gate commands, the CI job table, and the MSRV rationale live in
+[`CONTRIBUTING.md`](CONTRIBUTING.md#quality-gates) — one copy, so they cannot disagree. The
+short version, run from the workspace root:
 
 ```bash
 cargo fmt --all
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps
+python3 tools/check-invariants.py
 ```
 
-The workspace MSRV is `1.91` (declared in the root `Cargo.toml`; raised ahead
-of the planned corrmatch and box-image-pyramid dev-dependencies, while nalgebra
-0.35 itself needs only 1.89). Clippy enforces it via `incompatible_msrv`. To
-check it directly:
-
-```bash
-cargo +1.91.0 check --workspace --all-targets --all-features
-```
-
-If performance-sensitive code changed, also run benchmarks:
-
-```bash
-cargo bench --workspace
-```
-
-At minimum, run affected bench crate(s):
-
-```bash
-cargo bench -p vm-primitives
-cargo bench -p vision-metrology
-```
+If performance-sensitive code changed, also run the affected bench crate(s)
+(`cargo bench -p vm-primitives`, `cargo bench -p vision-metrology`); see CONTRIBUTING for the
+per-bench list.
 
 ## Commit checklist
 - Keep commits scoped and descriptive.
@@ -103,7 +86,12 @@ cargo bench -p vision-metrology
 - Update `README.md` when crate scope, commands, or benchmark reporting changes.
 - If behavior changes, include/adjust tests in the same commit.
 - If the change alters scope, decisions, or invariants, update `docs/roadmap.md`,
-  `docs/backlog.md`, and/or `docs/system-design.md` in the same commit.
+  `docs/backlog.md`, and/or `docs/system-design.md` in the same commit — **rewriting** the
+  affected entry, not appending a second one that contradicts it.
+- Completed work moves out of `docs/roadmap.md` into `CHANGELOG.md`'s `[Unreleased]`
+  section. The roadmap describes what is *ahead*.
+- Invariant numbers in `docs/system-design.md` are append-only and are cited by number from
+  source files; `tools/check-invariants.py` enforces that.
 - If the change adds public Rust API, update `vm-python` bindings and a Python test in
   the same PR.
 
@@ -111,11 +99,8 @@ cargo bench -p vision-metrology
 ```bash
 cargo test -p vm-primitives
 cargo test -p vision-metrology
-cargo bench -p vm-primitives --bench downsample
-cargo bench -p vm-primitives --bench edge2d
-cargo bench -p vision-metrology --bench extract
-cargo bench -p vision-metrology --bench detect_shape
-cargo bench -p vision-metrology --bench segment
-cargo bench -p vision-metrology --bench build_graph
 cargo bench -p vision-metrology --bench match_shape
+python3 tools/check-invariants.py
 ```
+
+The full bench list is in [`CONTRIBUTING.md`](CONTRIBUTING.md#benchmarks).
