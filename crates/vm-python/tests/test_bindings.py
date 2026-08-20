@@ -254,6 +254,77 @@ def test_shape_matcher_recovers_a_rotated_instance():
     assert abs(mapped[1] - 70.0) < 2.0
 
 
+def test_shape_match_rectifies_to_a_canonical_crop():
+    """teach -> find -> model_frame_map -> apply_with_mask round-trip."""
+    import math
+
+    reference = make_bracket()
+    model = vm.ShapeModel(reference, BRACKET_ROI, vm.ShapeModelConfig(max_points=400))
+
+    scene = make_bracket(cx=115.0, cy=70.0, angle=math.radians(10.0))
+    matcher = vm.ShapeMatcher(
+        vm.ShapeSearchConfig(min_score=0.6, refinement="least_squares")
+    )
+    matches = matcher.find(scene, model)
+    assert len(matches) == 1
+    m = matches[0]
+
+    spec = vm.CropSpec(BRACKET_ROI, 1.0)
+    assert spec.normalize_scale is True
+    assert spec.output_size == (int(BRACKET_ROI[2]), int(BRACKET_ROI[3]))
+
+    crop_map = m.model_frame_map(spec)
+    assert (crop_map.width, crop_map.height) == spec.output_size
+
+    rectified, mask = crop_map.apply_with_mask(scene, border_mode="constant")
+    assert rectified.dtype == np.uint8
+    assert mask.dtype == np.uint8
+    assert rectified.shape == (spec.output_size[1], spec.output_size[0])
+    assert mask.shape == rectified.shape
+
+    # Most of the crop should land inside the scene.
+    valid = mask == 255
+    assert valid.mean() > 0.8
+
+    # normalize_scale=True renders at model scale, so the rectified crop
+    # should closely match a direct crop of the untouched reference image
+    # (identity pose, no search) even though the found scene instance is
+    # rotated.
+    x0, y0, w0, h0 = (int(v) for v in BRACKET_ROI)
+    reference_crop = reference[y0 : y0 + h0, x0 : x0 + w0]
+    diff = np.abs(rectified.astype(np.float32) - reference_crop.astype(np.float32))
+    assert diff[valid].mean() < 5.0
+
+
+def test_model_frame_pose_normalize_scale_flag():
+    reference = make_bracket()
+    model = vm.ShapeModel(reference, BRACKET_ROI, vm.ShapeModelConfig(max_points=400))
+    scene = make_bracket(cx=112.0, cy=76.0)
+    matcher = vm.ShapeMatcher(
+        vm.ShapeSearchConfig(min_score=0.6, refinement="least_squares")
+    )
+    m = matcher.find(scene, model)[0]
+
+    spec_norm = vm.CropSpec(BRACKET_ROI, 1.0)
+    spec_found = vm.CropSpec(BRACKET_ROI, 1.0, normalize_scale=False)
+
+    pose_norm = np.array(m.model_frame_pose(spec_norm))
+    pose_found = np.array(m.model_frame_pose(spec_found))
+
+    # normalize_scale=True forces the linear block's scale to 1 regardless of
+    # the found scale; normalize_scale=False keeps the found scale, so its
+    # determinant equals `m.scale ** 2`.
+    det_norm = np.linalg.det(pose_norm[:, :2])
+    det_found = np.linalg.det(pose_found[:, :2])
+    assert abs(det_norm - 1.0) < 1e-5
+    assert abs(det_found - m.scale**2) < 1e-3
+
+    # normalize_scale=False must reproduce this match's full pose exactly —
+    # same matrix `matrix(model.origin)` reconstructs.
+    full_pose = np.array(m.matrix(model.origin))
+    assert np.allclose(pose_found, full_pose, atol=1e-4)
+
+
 def test_shape_matcher_dtype_dispatch_agrees_with_u8():
     """ShapeModel.build and ShapeMatcher.find both dispatch on dtype."""
     reference = make_bracket()

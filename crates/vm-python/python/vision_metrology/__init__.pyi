@@ -160,6 +160,25 @@ class ShapeSearchConfig:
         tuning: Optional[ShapeSearchTuning] = ...,
     ) -> None: ...
 
+class CropSpec:
+    """Fixed crop geometry for `ShapeMatch.model_frame_map` — rectify a
+    located match into a canonical, model-frame patch. `rect` is
+    `(x, y, width, height)` in model-frame coordinates. Output pixel size
+    (`output_size`) depends only on `rect` and `px_per_unit`, never on any
+    particular match."""
+
+    rect: Tuple[float, float, float, float]
+    px_per_unit: float
+    normalize_scale: bool
+    def __init__(
+        self,
+        rect: Tuple[float, float, float, float],
+        px_per_unit: float,
+        normalize_scale: bool = ...,
+    ) -> None: ...
+    @property
+    def output_size(self) -> Tuple[int, int]: ...
+
 class MeasureConfig:
     sigma: float
     threshold: float
@@ -238,6 +257,8 @@ class ShapeMatch:
     support: int
     level: int
     def matrix(self, origin: Tuple[float, float]) -> List[List[float]]: ...
+    def model_frame_map(self, spec: CropSpec) -> Map: ...
+    def model_frame_pose(self, spec: CropSpec) -> List[List[float]]: ...
 
 class ComponentStats:
     label: int
