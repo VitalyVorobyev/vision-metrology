@@ -13,9 +13,20 @@ made visible.
 ```
 lab/backend/    FastAPI, sync REST, in-memory registries + files under backend/data/
                 (gitignored). No jobs, no websockets, no database — see "Out of scope".
+lab/contract/   openapi.json — the committed wire contract, dumped from the FastAPI app
+                by `backend/scripts/export_openapi.py`. Source of truth for the
+                frontend's typed client; regenerate it whenever a route or schema
+                changes and commit the diff (the diff *is* the contract changing).
 lab/frontend/   Vite + React 19 + TypeScript strict + Tailwind v4, built on the shared
                 @vitavision/lab-ui design system (ZoomPanCanvas, MeasureOverlay,
-                LineProfile, SchemaForm, ...).
+                LineProfile, SchemaForm, ...). `src/api/generated.ts` (openapi-typescript
+                output, also committed) supplies every request/response type; `backend.ts`
+                is the one `LabBackend` interface every tab/component calls through
+                (`httpBackend` today, over `openapi-fetch`) — no raw `fetch` outside it.
+                `baseUrl.ts` resolves where the backend lives (env override, else
+                `127.0.0.1:8000`), with an injected-global hook already wired for a future
+                Tauri shell so a second `LabBackend` implementation can slot in behind
+                `getBackend()` without touching the UI.
 ```
 
 The backend does all the geometry: every response carries **source-image pixel
@@ -49,11 +60,30 @@ Two terminals, from `lab/`:
 
 ```bash
 cd backend && uv sync && uv run uvicorn vm_lab.app:app --reload   # :8000
-cd frontend && bun install && bun run dev                         # :5174, proxies /api -> :8000
+cd frontend && bun install && bun run dev                         # :5174, calls :8000 directly
 ```
 
 Open http://localhost:5174. Data lands under `lab/backend/data/` (images, tier cache,
 saved models) — gitignored, safe to delete to reset the workbench.
+
+The frontend talks to the backend over CORS'd HTTP (`Settings.cors_origins` in
+`config.py` allows `:5174`), not a dev-server proxy — `src/api/baseUrl.ts` resolves the
+backend's base URL itself (`VITE_API_BASE_URL` env override, else the `:8000` default),
+which is what lets the same bundle later run inside a Tauri shell that injects a
+different, ephemeral sidecar port.
+
+### Regenerating the API contract
+
+Whenever a backend route or Pydantic schema changes:
+
+```bash
+cd backend && uv run python scripts/export_openapi.py   # writes lab/contract/openapi.json
+cd frontend && bun run generate:api                       # writes src/api/generated.ts
+```
+
+Both outputs are committed. Review the diff — it *is* the contract changing. `backend.ts`
+should need no changes for a pure schema/route addition; only new operations that the UI
+needs to call require a new `LabBackend` method.
 
 `uv sync` resolves `vision-metrology` as an editable path dependency onto
 `crates/vm-python` (`pyproject.toml`'s `[tool.uv.sources]`), which `uv` builds through

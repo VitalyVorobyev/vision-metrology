@@ -2,8 +2,8 @@ import { Button, ErrorBox, Field, NumberInput, Panel, Select, Table } from "@vit
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 
-import { runFind } from "../api/client";
-import type { ImageOut, MatchOut, ModelOut, OverlayPrimitiveOut } from "../api/types";
+import { getBackend } from "../api/backend";
+import type { ImageOut, MatchOut, ModelOut, OverlayPrimitiveOut } from "../api/backend";
 
 export function FindTab({
   image,
@@ -21,7 +21,7 @@ export function FindTab({
 
   const mutation = useMutation({
     mutationFn: () =>
-      runFind({
+      getBackend().find({
         image_id: image.id,
         model_id: modelId,
         min_score: minScore,

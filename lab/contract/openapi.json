@@ -1,0 +1,1500 @@
+{
+  "components": {
+    "schemas": {
+      "Body_upload_image_api_images_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_image_api_images_post",
+        "type": "object"
+      },
+      "CaliperProfileOut": {
+        "properties": {
+          "edges": {
+            "items": {
+              "$ref": "#/components/schemas/EdgeMarkOut"
+            },
+            "title": "Edges",
+            "type": "array"
+          },
+          "step_px": {
+            "title": "Step Px",
+            "type": "number"
+          },
+          "values": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Values",
+            "type": "array"
+          }
+        },
+        "required": [
+          "values",
+          "step_px",
+          "edges"
+        ],
+        "title": "CaliperProfileOut",
+        "type": "object"
+      },
+      "CaliperResultOut": {
+        "properties": {
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/CaliperProfileOut"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "status": {
+            "enum": [
+              "hit",
+              "rejected"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "index",
+          "status",
+          "profile"
+        ],
+        "title": "CaliperResultOut",
+        "type": "object"
+      },
+      "EdgeMarkOut": {
+        "properties": {
+          "polarity": {
+            "title": "Polarity",
+            "type": "string"
+          },
+          "pos_px": {
+            "title": "Pos Px",
+            "type": "number"
+          }
+        },
+        "required": [
+          "pos_px",
+          "polarity"
+        ],
+        "title": "EdgeMarkOut",
+        "type": "object"
+      },
+      "FindRequest": {
+        "properties": {
+          "angle_range": {
+            "anyOf": [
+              {
+                "maxItems": 2,
+                "minItems": 2,
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Angle Range"
+          },
+          "image_id": {
+            "title": "Image Id",
+            "type": "string"
+          },
+          "max_matches": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Matches"
+          },
+          "min_score": {
+            "default": 0.7,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Min Score",
+            "type": "number"
+          },
+          "model_id": {
+            "title": "Model Id",
+            "type": "string"
+          },
+          "roi": {
+            "anyOf": [
+              {
+                "maxItems": 4,
+                "minItems": 4,
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Roi"
+          }
+        },
+        "required": [
+          "image_id",
+          "model_id"
+        ],
+        "title": "FindRequest",
+        "type": "object"
+      },
+      "FindResponse": {
+        "properties": {
+          "matches": {
+            "items": {
+              "$ref": "#/components/schemas/MatchOut"
+            },
+            "title": "Matches",
+            "type": "array"
+          }
+        },
+        "required": [
+          "matches"
+        ],
+        "title": "FindResponse",
+        "type": "object"
+      },
+      "FitConfigIn": {
+        "description": "Overrides for `vm.FitConfig`.",
+        "properties": {
+          "inlier_tol": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inlier Tol"
+          },
+          "loss": {
+            "anyOf": [
+              {
+                "enum": [
+                  "l2",
+                  "huber",
+                  "tukey"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loss"
+          }
+        },
+        "title": "FitConfigIn",
+        "type": "object"
+      },
+      "FixtureIn": {
+        "properties": {
+          "angle": {
+            "default": 0.0,
+            "title": "Angle",
+            "type": "number"
+          },
+          "scale": {
+            "default": 1.0,
+            "title": "Scale",
+            "type": "number"
+          },
+          "x": {
+            "title": "X",
+            "type": "number"
+          },
+          "y": {
+            "title": "Y",
+            "type": "number"
+          }
+        },
+        "required": [
+          "x",
+          "y"
+        ],
+        "title": "FixtureIn",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "ImageOut": {
+        "properties": {
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "height": {
+            "title": "Height",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "width": {
+            "title": "Width",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "filename",
+          "width",
+          "height",
+          "sha256"
+        ],
+        "title": "ImageOut",
+        "type": "object"
+      },
+      "MatchOut": {
+        "properties": {
+          "angle": {
+            "title": "Angle",
+            "type": "number"
+          },
+          "level": {
+            "title": "Level",
+            "type": "integer"
+          },
+          "scale": {
+            "title": "Scale",
+            "type": "number"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          },
+          "support": {
+            "title": "Support",
+            "type": "integer"
+          },
+          "x": {
+            "title": "X",
+            "type": "number"
+          },
+          "y": {
+            "title": "Y",
+            "type": "number"
+          }
+        },
+        "required": [
+          "x",
+          "y",
+          "angle",
+          "scale",
+          "score",
+          "support",
+          "level"
+        ],
+        "title": "MatchOut",
+        "type": "object"
+      },
+      "MeasureConfigIn": {
+        "description": "Overrides for `vm.MeasureConfig`; unset fields fall back to library defaults.",
+        "properties": {
+          "max_obliquity_deg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Obliquity Deg"
+          },
+          "polarity": {
+            "anyOf": [
+              {
+                "enum": [
+                  "bright_to_dark",
+                  "dark_to_bright",
+                  "either"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Polarity"
+          },
+          "sigma": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sigma"
+          },
+          "threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Threshold"
+          }
+        },
+        "title": "MeasureConfigIn",
+        "type": "object"
+      },
+      "MeasureObjectIn": {
+        "description": "One metrology object, nominal geometry given in **model frame** (the taught\n`ShapeModel`'s own coordinates, i.e. relative to its `origin`).",
+        "properties": {
+          "arc": {
+            "anyOf": [
+              {
+                "maxItems": 2,
+                "minItems": 2,
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Arc"
+          },
+          "ax": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ax"
+          },
+          "ay": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ay"
+          },
+          "bx": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bx"
+          },
+          "by": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "By"
+          },
+          "caliper_len": {
+            "default": 20.0,
+            "title": "Caliper Len",
+            "type": "number"
+          },
+          "caliper_width": {
+            "default": 8.0,
+            "title": "Caliper Width",
+            "type": "number"
+          },
+          "cx": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cx"
+          },
+          "cy": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cy"
+          },
+          "fit": {
+            "$ref": "#/components/schemas/FitConfigIn"
+          },
+          "kind": {
+            "enum": [
+              "circle",
+              "line"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "measure": {
+            "$ref": "#/components/schemas/MeasureConfigIn"
+          },
+          "n_calipers": {
+            "default": 12,
+            "title": "N Calipers",
+            "type": "integer"
+          },
+          "r": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "R"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "MeasureObjectIn",
+        "type": "object"
+      },
+      "MeasureObjectResultOut": {
+        "properties": {
+          "calipers": {
+            "items": {
+              "$ref": "#/components/schemas/CaliperResultOut"
+            },
+            "title": "Calipers",
+            "type": "array"
+          },
+          "circle_cx": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Circle Cx"
+          },
+          "circle_cy": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Circle Cy"
+          },
+          "circle_r": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Circle R"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "circle",
+                  "line"
+                ],
+                "type": "string"
+              },
+              {
+                "const": "error",
+                "type": "string"
+              }
+            ],
+            "title": "Kind"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "line_dx": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Line Dx"
+          },
+          "line_dy": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Line Dy"
+          },
+          "line_px": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Line Px"
+          },
+          "line_py": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Line Py"
+          },
+          "max_dev": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Dev"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "n_used": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Used"
+          },
+          "overlay": {
+            "items": {
+              "$ref": "#/components/schemas/OverlayPrimitiveOut"
+            },
+            "title": "Overlay",
+            "type": "array"
+          },
+          "rms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rms"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "MeasureObjectResultOut",
+        "type": "object"
+      },
+      "MeasureRequest": {
+        "properties": {
+          "fixture": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FixtureIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "image_id": {
+            "title": "Image Id",
+            "type": "string"
+          },
+          "min_score": {
+            "default": 0.7,
+            "title": "Min Score",
+            "type": "number"
+          },
+          "model_id": {
+            "title": "Model Id",
+            "type": "string"
+          },
+          "objects": {
+            "items": {
+              "$ref": "#/components/schemas/MeasureObjectIn"
+            },
+            "title": "Objects",
+            "type": "array"
+          }
+        },
+        "required": [
+          "image_id",
+          "model_id",
+          "objects"
+        ],
+        "title": "MeasureRequest",
+        "type": "object"
+      },
+      "MeasureResponse": {
+        "properties": {
+          "fixture": {
+            "$ref": "#/components/schemas/FixtureIn"
+          },
+          "fixture_source": {
+            "enum": [
+              "explicit",
+              "auto_find"
+            ],
+            "title": "Fixture Source",
+            "type": "string"
+          },
+          "objects": {
+            "items": {
+              "$ref": "#/components/schemas/MeasureObjectResultOut"
+            },
+            "title": "Objects",
+            "type": "array"
+          }
+        },
+        "required": [
+          "fixture",
+          "fixture_source",
+          "objects"
+        ],
+        "title": "MeasureResponse",
+        "type": "object"
+      },
+      "ModelCreateRequest": {
+        "properties": {
+          "image_id": {
+            "title": "Image Id",
+            "type": "string"
+          },
+          "min_contrast": {
+            "default": 0.1,
+            "description": "fraction of dtype range",
+            "exclusiveMinimum": 0.0,
+            "maximum": 1.0,
+            "title": "Min Contrast",
+            "type": "number"
+          },
+          "num_levels": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Num Levels"
+          },
+          "roi": {
+            "maxItems": 4,
+            "minItems": 4,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Roi",
+            "type": "array"
+          }
+        },
+        "required": [
+          "image_id",
+          "roi"
+        ],
+        "title": "ModelCreateRequest",
+        "type": "object"
+      },
+      "ModelOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "image_id": {
+            "title": "Image Id",
+            "type": "string"
+          },
+          "min_contrast": {
+            "title": "Min Contrast",
+            "type": "number"
+          },
+          "num_levels": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Num Levels"
+          },
+          "num_levels_built": {
+            "title": "Num Levels Built",
+            "type": "integer"
+          },
+          "origin": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Origin",
+            "type": "array"
+          },
+          "point_counts": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Point Counts",
+            "type": "array"
+          },
+          "roi": {
+            "maxItems": 4,
+            "minItems": 4,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Roi",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "image_id",
+          "roi",
+          "min_contrast",
+          "num_levels",
+          "origin",
+          "num_levels_built",
+          "point_counts"
+        ],
+        "title": "ModelOut",
+        "type": "object"
+      },
+      "OverlayPrimitiveOut": {
+        "description": "Mirrors `@vitavision/lab-ui`'s `MeasurePrimitive` union exactly (field names and\nunits \u2014 angles in radians) so the frontend can pass this straight through.",
+        "properties": {
+          "angle": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Angle"
+          },
+          "cross": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cross"
+          },
+          "cx": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cx"
+          },
+          "cy": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cy"
+          },
+          "dashed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dashed"
+          },
+          "endAngle": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endangle"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "kind": {
+            "enum": [
+              "point",
+              "segment",
+              "circle",
+              "arc",
+              "caliper",
+              "dimension"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "r": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "R"
+          },
+          "startAngle": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Startangle"
+          },
+          "tone": {
+            "anyOf": [
+              {
+                "enum": [
+                  "signal",
+                  "normal",
+                  "defect",
+                  "warn",
+                  "muted"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tone"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          },
+          "x": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X"
+          },
+          "x1": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X1"
+          },
+          "x2": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X2"
+          },
+          "y": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Y"
+          },
+          "y1": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Y1"
+          },
+          "y2": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Y2"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "OverlayPrimitiveOut",
+        "type": "object"
+      },
+      "Tier": {
+        "enum": [
+          "thumb",
+          "preview",
+          "full"
+        ],
+        "title": "Tier",
+        "type": "string"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "Visual Metrology Lab",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/find": {
+      "post": {
+        "operationId": "find_api_find_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FindRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FindResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Find",
+        "tags": [
+          "find"
+        ]
+      }
+    },
+    "/api/health": {
+      "get": {
+        "operationId": "health_api_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Health Api Health Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health"
+      }
+    },
+    "/api/images": {
+      "get": {
+        "operationId": "list_images_api_images_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ImageOut"
+                  },
+                  "title": "Response List Images Api Images Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Images",
+        "tags": [
+          "images"
+        ]
+      },
+      "post": {
+        "operationId": "upload_image_api_images_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_image_api_images_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload Image",
+        "tags": [
+          "images"
+        ]
+      }
+    },
+    "/api/images/{image_id}/{tier}": {
+      "get": {
+        "operationId": "get_image_tier_api_images__image_id___tier__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "image_id",
+            "required": true,
+            "schema": {
+              "title": "Image Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tier",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Tier"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Image Tier",
+        "tags": [
+          "images"
+        ]
+      }
+    },
+    "/api/measure": {
+      "post": {
+        "operationId": "measure_api_measure_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MeasureRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeasureResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Measure",
+        "tags": [
+          "measure"
+        ]
+      }
+    },
+    "/api/models": {
+      "get": {
+        "operationId": "list_models_api_models_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ModelOut"
+                  },
+                  "title": "Response List Models Api Models Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Models",
+        "tags": [
+          "models"
+        ]
+      },
+      "post": {
+        "operationId": "create_model_api_models_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Model",
+        "tags": [
+          "models"
+        ]
+      }
+    }
+  }
+}

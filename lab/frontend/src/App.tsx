@@ -2,8 +2,8 @@ import { Empty, PageHeader, Skeleton, Tabs, type TabItem } from "@vitavision/lab
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
-import { listImages, listModels, uploadImage } from "./api/client";
-import type { MatchOut, OverlayPrimitiveOut, Roi } from "./api/types";
+import { getBackend } from "./api/backend";
+import type { MatchOut, OverlayPrimitiveOut, Roi } from "./api/backend";
 import { CanvasStage } from "./components/CanvasStage";
 import { ImageRail } from "./components/ImageRail";
 import { FindTab } from "./tabs/FindTab";
@@ -19,9 +19,10 @@ const TABS: TabItem<TabId>[] = [
 ];
 
 export function App() {
+  const backend = getBackend();
   const queryClient = useQueryClient();
-  const imagesQuery = useQuery({ queryKey: ["images"], queryFn: listImages });
-  const modelsQuery = useQuery({ queryKey: ["models"], queryFn: listModels });
+  const imagesQuery = useQuery({ queryKey: ["images"], queryFn: () => backend.listImages() });
+  const modelsQuery = useQuery({ queryKey: ["models"], queryFn: () => backend.listModels() });
 
   const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
   const [tab, setTab] = useState<TabId>("teach");
@@ -39,7 +40,7 @@ export function App() {
   }, [images, selectedImageId]);
 
   const uploadMutation = useMutation({
-    mutationFn: uploadImage,
+    mutationFn: (file: File) => backend.uploadImage(file),
     onSuccess: (image) => {
       void queryClient.invalidateQueries({ queryKey: ["images"] });
       setSelectedImageId(image.id);

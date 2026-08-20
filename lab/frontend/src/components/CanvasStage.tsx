@@ -8,8 +8,8 @@ import {
 } from "@vitavision/lab-ui";
 import { useRef, useState } from "react";
 
-import { imageTierUrl } from "../api/client";
-import type { ImageOut, OverlayPrimitiveOut, Roi } from "../api/types";
+import { getBackend } from "../api/backend";
+import type { ImageOut, OverlayPrimitiveOut, Roi } from "../api/backend";
 import { RoiDragLayer } from "./RoiDragLayer";
 
 /** Backend overlay primitives are already `MeasurePrimitive`-shaped (same fields, same
@@ -57,7 +57,7 @@ export function CanvasStage({
         {/* eslint-disable-next-line jsx-a11y/img-redundant-alt -- key is content identity, not decoration */}
         <img
           key={`${image.id}-${tier}`}
-          src={imageTierUrl(image.id, tier)}
+          src={getBackend().imageUrl(image.id, tier)}
           alt={image.filename}
           className="h-full w-full object-contain"
           draggable={false}

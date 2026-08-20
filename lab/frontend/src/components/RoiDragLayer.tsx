@@ -14,8 +14,8 @@ import { contentUnder, type View } from "@vitavision/lab-ui";
 import { useRef, useState } from "react";
 import type { RefObject } from "react";
 
+import type { Roi } from "../api/backend";
 import { rectToRoi } from "../api/transforms";
-import type { Roi } from "../api/types";
 
 export function RoiDragLayer({
   frameRef,
