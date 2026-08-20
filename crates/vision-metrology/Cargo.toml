@@ -162,6 +162,10 @@ required-features = ["matching", "warp"]
 name = "gen_illustrations"
 required-features = ["contour", "fit", "laser", "matching", "measure"]
 
+[[example]]
+name = "birdseye_mosaic"
+required-features = ["metric"]
+
 [[test]]
 name = "shape_matching"
 required-features = ["matching"]
@@ -185,6 +189,10 @@ required-features = ["corr", "fit", "measure", "matching"]
 [[test]]
 name = "metric_rectify"
 required-features = ["matching", "metric"]
+
+[[test]]
+name = "mosaic"
+required-features = ["metric"]
 
 [package.metadata.docs.rs]
 all-features = true
