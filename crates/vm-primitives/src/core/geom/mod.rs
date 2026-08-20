@@ -17,7 +17,7 @@ mod transform;
 
 pub use shapes::{Circle2f, Conic2f, Ellipse2f};
 pub use transform::{
-    Affine2f, Angle, Isometry2f, Line2f, Point2f, Polyline2f, Projective2f, Rect2f, Similarity2f,
-    Vec2f, Vec2fExt, parabolic_peak_offset, similarity_from_parts, similarity_parts,
-    transform_point, transform_vec, wrap_angle,
+    Affine2f, Angle, Isometry2f, Isometry3f, Line2f, Point2f, Point3f, Polyline2f, Projective2f,
+    Rect2f, Similarity2f, Vec2f, Vec2fExt, Vec3f, parabolic_peak_offset, similarity_from_parts,
+    similarity_parts, transform_point, transform_vec, wrap_angle,
 };
