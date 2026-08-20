@@ -8,6 +8,7 @@ assertions are about correctness, not just "it didn't crash".
 from __future__ import annotations
 
 import io
+from pathlib import Path
 
 import numpy as np
 from fastapi.testclient import TestClient
@@ -15,6 +16,10 @@ from PIL import Image as PILImage
 
 from vm_lab.app import create_app
 from vm_lab.store import store
+
+_TABLE_CALIBRATION_FIXTURE = (
+    Path(__file__).resolve().parents[3] / "crates" / "vision-metrology" / "tests" / "fixtures" / "table_calibration.json"
+)
 
 DISC_CENTER = (100.0, 100.0)
 DISC_RADIUS = 40.0
@@ -40,6 +45,7 @@ def test_teach_find_measure_circle(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr("vm_lab.media.settings", isolated)
     store.images.clear()
     store.models.clear()
+    store.calibrations.clear()
 
     client = TestClient(create_app())
 
@@ -144,3 +150,94 @@ def test_teach_find_measure_circle(tmp_path, monkeypatch) -> None:
 
     missing_resp = client.get(f"/api/rectify/{image['id']}/{model['id']}/999")
     assert missing_resp.status_code == 404
+
+    # -- calibration: upload a real table_calibration.json, measure with mm ----------
+    resp = client.get("/api/calibration")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+    cal_bytes = _TABLE_CALIBRATION_FIXTURE.read_bytes()
+    resp = client.post(
+        "/api/calibration",
+        files={"file": ("calibration.json", cal_bytes, "application/json")},
+    )
+    assert resp.status_code == 200, resp.text
+    calibration = resp.json()
+    assert calibration["format"] == "table_calibration"
+    assert calibration["n_cameras"] == 2
+
+    resp = client.get("/api/calibration")
+    assert resp.status_code == 200
+    assert [c["id"] for c in resp.json()] == [calibration["id"]]
+
+    resp = client.post(
+        "/api/calibration",
+        files={"file": ("garbage.json", b"not json", "application/json")},
+    )
+    assert resp.status_code == 400
+
+    resp = client.post(
+        "/api/measure",
+        json={
+            "image_id": image["id"],
+            "model_id": model["id"],
+            "min_score": 0.5,
+            "calibration_id": calibration["id"],
+            # camera1: camera0's own extrinsics are the identity, which sits
+            # exactly *on* the default z=0 plane (degenerate); camera1's
+            # principal ray also points away from z=0 in this real rig, so
+            # the plane is offset to z=-100mm, which both cameras actually
+            # look toward — this is `PlaneIn` used for something other than
+            # its default, not a workaround for a library bug.
+            "camera_index": 1,
+            "plane": {"nx": 0.0, "ny": 0.0, "nz": 1.0, "d": -100.0},
+            "objects": [
+                {
+                    "kind": "circle",
+                    "label": "outer edge",
+                    "cx": DISC_CENTER[0],
+                    "cy": DISC_CENTER[1],
+                    "r": DISC_RADIUS,
+                    "n_calipers": 16,
+                    "caliper_len": 10.0,
+                    "caliper_width": 5.0,
+                }
+            ],
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    mm_body = resp.json()
+    (mm_result,) = mm_body["objects"]
+    assert mm_result["circle_cx_mm"] is not None
+    assert mm_result["circle_cy_mm"] is not None
+    assert mm_result["circle_r_mm"] is not None
+    assert mm_result["circle_r_mm"] > 0.0
+    hit = next(c for c in mm_result["calipers"] if c["status"] == "hit")
+    edge = hit["profile"]["edges"][0]
+    assert edge["x_mm"] is not None
+    assert edge["y_mm"] is not None
+
+    resp = client.post(
+        "/api/measure",
+        json={
+            "image_id": image["id"],
+            "model_id": model["id"],
+            "min_score": 0.5,
+            "calibration_id": calibration["id"],
+            "camera_index": 7,
+            "objects": [{"kind": "circle", "cx": 100.0, "cy": 100.0, "r": 40.0}],
+        },
+    )
+    assert resp.status_code == 400
+
+    resp = client.post(
+        "/api/measure",
+        json={
+            "image_id": image["id"],
+            "model_id": model["id"],
+            "min_score": 0.5,
+            "calibration_id": "cal-999",
+            "objects": [{"kind": "circle", "cx": 100.0, "cy": 100.0, "r": 40.0}],
+        },
+    )
+    assert resp.status_code == 404

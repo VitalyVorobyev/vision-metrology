@@ -19,6 +19,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
+import numpy as np
 from fastapi import APIRouter, HTTPException
 
 import vision_metrology as vm
@@ -40,6 +41,32 @@ from vm_lab.schemas import (
 from vm_lab.store import store
 
 router = APIRouter(prefix="/api/measure", tags=["measure"])
+
+
+def _resolve_metric(req: MeasureRequest) -> tuple[vm.CameraModel, np.ndarray, vm.Plane3] | None:
+    """`(camera, pose, plane)` when `req.calibration_id` is set, else `None` — the
+    off switch for every mm computation below."""
+    if req.calibration_id is None:
+        return None
+    if req.calibration_id not in store.calibrations:
+        raise HTTPException(404, f"no such calibration: {req.calibration_id}")
+    cameras = store.get_calibration(req.calibration_id)
+    if not 0 <= req.camera_index < len(cameras):
+        raise HTTPException(
+            400, f"camera_index {req.camera_index} out of range (calibration has {len(cameras)} cameras)"
+        )
+    camera, pose = cameras[req.camera_index]
+    plane = vm.Plane3((req.plane.nx, req.plane.ny, req.plane.nz), req.plane.d)
+    return camera, pose, plane
+
+
+def _pixel_to_plane_mm(metric: tuple[vm.CameraModel, np.ndarray, vm.Plane3], x: float, y: float) -> tuple[float, float] | None:
+    camera, pose, plane = metric
+    pixels = np.array([[x, y]], dtype=np.float32)
+    out = vm.pixel_to_plane(camera, pose, plane, pixels)[0]
+    if not np.isfinite(out).all():
+        return None
+    return float(out[0]), float(out[1])
 
 
 def _measure_config(obj: MeasureObjectIn) -> vm.MeasureConfig:
@@ -114,7 +141,10 @@ def _place_calipers(
 
 
 def _measure_calipers(
-    specs: list[tuple[str, dict[str, Any]]], config: vm.MeasureConfig, img: Any
+    specs: list[tuple[str, dict[str, Any]]],
+    config: vm.MeasureConfig,
+    img: Any,
+    metric: tuple[vm.CameraModel, np.ndarray, vm.Plane3] | None = None,
 ) -> tuple[list[CaliperResultOut], list[OverlayPrimitiveOut]]:
     results: list[CaliperResultOut] = []
     overlay: list[OverlayPrimitiveOut] = []
@@ -139,9 +169,17 @@ def _measure_calipers(
             )
             continue
         edge = edges[0]
+        mm = _pixel_to_plane_mm(metric, edge.x, edge.y) if metric is not None else None
         profile = CaliperProfileOut(
             values=list(cal.profile()), step_px=step_px,
-            edges=[EdgeMarkOut(pos_px=edge.t, polarity=edge.polarity)],
+            edges=[
+                EdgeMarkOut(
+                    pos_px=edge.t,
+                    polarity=edge.polarity,
+                    x_mm=mm[0] if mm is not None else None,
+                    y_mm=mm[1] if mm is not None else None,
+                )
+            ],
         )
         results.append(CaliperResultOut(index=i, status="hit", profile=profile))
         overlay.append(
@@ -178,6 +216,7 @@ async def measure(req: MeasureRequest) -> MeasureResponse:
     img = store.load_array(req.image_id)
     model = store.get_model(req.model_id)
     origin = model.origin
+    metric = _resolve_metric(req)
 
     metrology_model = vm.MetrologyModel()
     for obj in req.objects:
@@ -202,7 +241,7 @@ async def measure(req: MeasureRequest) -> MeasureResponse:
     for obj, raw in zip(req.objects, raw_results, strict=True):
         specs = _place_calipers(obj, origin, fixture.x, fixture.y, fixture.angle, fixture.scale)
         config = _measure_config(obj)
-        calipers, cal_overlay = _measure_calipers(specs, config, img)
+        calipers, cal_overlay = _measure_calipers(specs, config, img, metric)
 
         if isinstance(raw, vm.MetrologyError):
             out_objects.append(
@@ -225,6 +264,19 @@ async def measure(req: MeasureRequest) -> MeasureResponse:
                 )
             )
 
+        circle_cx_mm = circle_cy_mm = circle_r_mm = None
+        if metric is not None and raw.kind == "circle" and raw.circle is not None:
+            center_mm = _pixel_to_plane_mm(metric, raw.circle.cx, raw.circle.cy)
+            # Radius via two diametral points (exact per point; the distance
+            # between them is a fronto-parallel-view approximation of the
+            # radius under a tilted camera, see MeasureObjectResultOut docs).
+            p1_mm = _pixel_to_plane_mm(metric, raw.circle.cx + raw.circle.r, raw.circle.cy)
+            p2_mm = _pixel_to_plane_mm(metric, raw.circle.cx - raw.circle.r, raw.circle.cy)
+            if center_mm is not None:
+                circle_cx_mm, circle_cy_mm = center_mm
+            if p1_mm is not None and p2_mm is not None:
+                circle_r_mm = math.hypot(p1_mm[0] - p2_mm[0], p1_mm[1] - p2_mm[1]) / 2.0
+
         out_objects.append(
             MeasureObjectResultOut(
                 kind=raw.kind,
@@ -239,6 +291,9 @@ async def measure(req: MeasureRequest) -> MeasureResponse:
                 rms=raw.rms,
                 max_dev=raw.max_dev,
                 n_used=raw.n_used,
+                circle_cx_mm=circle_cx_mm,
+                circle_cy_mm=circle_cy_mm,
+                circle_r_mm=circle_r_mm,
                 calipers=calipers,
                 overlay=overlay,
             )

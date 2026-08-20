@@ -44,6 +44,28 @@ class ModelOut(BaseModel):
     point_counts: list[int]
 
 
+# -- calibration -------------------------------------------------------------------------
+
+CalibrationFormat = Literal["rig_extrinsics", "table_calibration"]
+
+
+class CalibrationOut(BaseModel):
+    id: str
+    filename: str
+    format: CalibrationFormat
+    n_cameras: int
+
+
+class PlaneIn(BaseModel):
+    """A plane in the calibration's reference frame: `n . X + d = 0`. Defaults to the
+    rig/table frame's own `z = 0` plane — the common case (a flat stage/conveyor)."""
+
+    nx: float = 0.0
+    ny: float = 0.0
+    nz: float = 1.0
+    d: float = 0.0
+
+
 # -- find ------------------------------------------------------------------------------
 
 
@@ -135,10 +157,20 @@ class MeasureRequest(BaseModel):
     min_score: float = 0.7
     objects: list[MeasureObjectIn]
 
+    calibration_id: str | None = Field(
+        default=None,
+        description="When set, the response is augmented with millimetre values "
+        "(pixel_to_plane over the calibration's camera_index camera and plane).",
+    )
+    camera_index: int = Field(default=0, description="Index into the calibration's camera list.")
+    plane: PlaneIn = Field(default_factory=PlaneIn)
+
 
 class EdgeMarkOut(BaseModel):
     pos_px: float
     polarity: str
+    x_mm: float | None = None
+    y_mm: float | None = None
 
 
 class CaliperProfileOut(BaseModel):
@@ -197,6 +229,14 @@ class MeasureObjectResultOut(BaseModel):
     max_dev: float | None = None
     n_used: int | None = None
     message: str | None = None
+
+    # Millimetre values, present only when `MeasureRequest.calibration_id` was set.
+    # `circle_r_mm` is measured via two diametral points converted through
+    # `pixel_to_plane` (exact at each point; a fronto-parallel-view
+    # approximation for the radius itself under a tilted camera).
+    circle_cx_mm: float | None = None
+    circle_cy_mm: float | None = None
+    circle_r_mm: float | None = None
 
     calipers: list[CaliperResultOut] = Field(default_factory=list)
     overlay: list[OverlayPrimitiveOut] = Field(default_factory=list)
