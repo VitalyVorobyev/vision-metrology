@@ -210,6 +210,20 @@ thread — the one that also paints the window — so a `find`, a PNG encode or 
 froze the UI for its whole duration, which is indistinguishable from a slow library. Each
 wrapper in `lib.rs` is `async` and hands the work to `spawn_blocking`.
 
+**The shell shows its own crashes.** A desktop build has no console, so an uncaught
+error is a *black window* and nothing else — React 19 unmounts the root, and
+`index.html`'s `color-scheme: dark` paints the empty document. `shell/CrashScreen.tsx` is
+an error boundary plus `error`/`unhandledrejection` handlers installed before the first
+render; it draws the message and stack into `#root` using inline styles and no
+design-system import, so it still works when the stylesheet or `@vitavision/lab-ui` is
+what failed. It paints only into an empty root — a live UI reports its own errors. The
+Rust side has the same rule: `AppState::rehydrate` drops a file it cannot read instead of
+taking `setup` (and therefore the window) down with it.
+
+Two contexts the app must mount for `@vitavision/lab-ui` to render at all: a **router**
+(`PageHeader` renders a `<Link>`) and a **`TooltipProvider`** (`ThemeToggle` and `InfoHint`
+render Radix tooltips, which throw without one). Both are in `main.tsx`.
+
 **Progress events.** Heavy operations emit `lab://progress`
 (`{op, stage: "started"|"finished", elapsed_ms}`) over `tauri::Emitter`, and the
 frontend's status bar (`shell/StatusBar.tsx`) shows the duration. This used to be emitted

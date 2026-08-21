@@ -351,23 +351,20 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            let data_dir = app
-                .path()
-                .app_data_dir()
-                .expect("app data dir should be resolvable");
+            let data_dir = app.path().app_data_dir()?;
             // Derived tiers go to the OS cache directory, not app-data: every
             // byte there is reproducible from the source image, so it should
             // be free to evict and should not ride along in a backup.
-            let cache_dir = app
-                .path()
-                .app_cache_dir()
-                .expect("app cache dir should be resolvable");
-            let state = AppState::with_cache_dir(data_dir, cache_dir)
-                .and_then(|s| {
-                    s.rehydrate()?;
-                    Ok(s)
-                })
-                .expect("app state should initialize");
+            let cache_dir = app.path().app_cache_dir()?;
+            // `?`, not `.expect(...)`: the window already exists by the time
+            // this runs, so a panic here is a *black window* — the failure mode
+            // this whole hook is least able to explain. Returning the error
+            // makes Tauri print it and exit. Everything recoverable is already
+            // handled one level down: `rehydrate` skips a file it cannot read
+            // rather than refusing to start (see `state::skip`), so what
+            // reaches here is only "this machine has no usable app directory".
+            let state = AppState::with_cache_dir(data_dir, cache_dir)?;
+            state.rehydrate()?;
             app.manage(Arc::new(state));
             Ok(())
         })
