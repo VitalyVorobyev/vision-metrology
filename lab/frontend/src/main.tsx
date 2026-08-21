@@ -13,6 +13,7 @@ import { HashRouter } from "react-router";
 
 import { App } from "./App";
 import { CrashBoundary, installCrashHandlers } from "./shell/CrashScreen";
+import { LAB_THEME_STORAGE_KEY } from "./shell/theme";
 import "./styles.css";
 
 const queryClient = new QueryClient();
@@ -28,8 +29,9 @@ if (container === null) {
 installCrashHandlers(container);
 
 // index.html already painted the stored choice before first paint; this subscribes so a
-// choice of "system" keeps following the OS after mount.
-initTheme();
+// choice of "system" keeps following the OS after mount. The key is passed explicitly:
+// the default is the package's own, which is not the one the toggle writes.
+initTheme(LAB_THEME_STORAGE_KEY);
 
 createRoot(container).render(
   <StrictMode>

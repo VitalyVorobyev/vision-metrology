@@ -9,6 +9,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+#### Desktop lab: the image and its overlay moved apart, and the contours were inert
+
+The Teach screen looked finished and behaved like a demo. Six things, one root cause between
+the first three.
+
+- **Image and overlay drifted apart on window resize.** `CanvasStage` handed
+  `ZoomPanCanvas` a full-size frame with **no aspect ratio**, then drew the photograph with
+  `object-contain` (letterboxing to the *image's* aspect) while every overlay SVG used
+  `preserveAspectRatio="none"` (stretching to the *frame's*). The two agreed at exactly one
+  window shape and nowhere else, and the same mismatch went through `contentUnder`, so ROI
+  drags and contour hit-tests were off by the letterbox as well.
+- **Contours, ROI and datum did not move with the image at all.** They were mounted as
+  *siblings* of the canvas rather than children, because `ZoomPanCanvas` called
+  `setPointerCapture` on every `pointerdown` and left no way for an interactive layer to live
+  inside it. So they stayed pinned at fit scale while the picture zoomed and panned away
+  underneath them.
+- **The datum read as decoration.** Its handles were `strokeWidthFor(zoom) * 4` inside that
+  stretched viewBox — about **three screen pixels** — and drawn in the same cyan as the
+  hundred and sixty-six contours around them.
+
+All three are gone by construction: the lab now builds on `@vitavision/lab-ui@0.2.0`'s
+`ImageStage`, whose stage element is laid out at exactly the image's pixel size and carries
+the whole transform. A layer is a child `<svg viewBox="0 0 W H">` and is registered with the
+photograph at every viewport size; panning is the default reading of a press and a layer opts
+out by claiming it. Handles are sized through `stage.imageLength`, so they are a constant
+number of *screen* pixels at any zoom, and the datum has its own colour.
+
+- **No zoom controls.** A wheel and a 10-pixel "Fit" chip were the whole vocabulary, and
+  zoom bottomed out *at* fit. There is now a toolbar over the canvas — zoom out / percentage
+  menu / zoom in / Fit / 1:1 — plus `+` `-` `0` `1`, and zooming out below fit. Double-click
+  toggles fit against **the view you were just at** rather than against 1:1.
+- **166 contours and 7365 points with nothing to do about them.** `teach_preview` has always
+  returned each contour's arc `length` and `mean_strength` — the two facts that separate the
+  part from the bench it is sitting on — and neither reached the screen. There is now an
+  inventory: sortable, filterable by keep state, hover-linked to the canvas in both
+  directions, with select / keep / drop / invert, `↑`/`↓` to step through, `Delete` to drop,
+  `Enter` to keep only the selection, `F` to frame it, and edge points drawn at 3× and above.
+  Selection and keep state are separate: clicking a contour *was* dropping it, so there was
+  no way to look at one without changing the model, and no way to act on several.
+- **A curated selection could be built against a different extraction.** Contour ids are
+  positions in the extraction — `models_create` re-runs `contours_in_roi` and trusts
+  determinism — so `keep_contours` only means anything for the exact `(image, roi,
+  min_contrast)` it came from, and nothing in the request records which. Moving the box after
+  curating built a model out of whichever contours landed on those indices, silently. The
+  panel now tracks the preview's own inputs, marks it stale and blocks the build until it is
+  re-extracted; while nothing has been curated yet it re-extracts on its own instead.
+- **Building wiped the evidence.** The contours were cleared on success, so "is the model
+  what I picked?" — the question a build actually raises — had nothing on screen to answer
+  it. They stay, and the model's points are a layer over them.
+
+#### Desktop lab: overlays were half a pixel off the pixels they marked
+
+Every result the canvas draws — a detected edge, a contour vertex, a fitted circle's centre —
+is in the library's own convention, where `i` means the **centre** of pixel `i`
+(`AGENTS.md`). CSS is the other one: an `<img>` at its natural size puts pixel `i` across
+`[i, i + 1)`, so SVG's `i` is that pixel's leading edge. Drawing a measured point at its raw
+coordinate therefore put it on the *boundary* of the pixel it was measured in, and reading a
+pointer back named the pixel up and to the left of the one under the cursor.
+
+Half a pixel, and it scales with the zoom: 0.4 screen pixels at fit, four at 8× — invisible
+exactly where overlays get glanced at, and plainly wrong exactly where someone zooms in to
+check whether one lands on the edge it claims to mark. `@vitavision/lab-ui@0.3.0` carries the
+offset in `toImage`/`toScreen` and in `imageViewBox`, which every layer here now uses.
+
+#### Desktop lab: the theme toggle's choice was not what the pre-paint script read
+
+`index.html`'s no-flash script read `"vitavision-theme"` while `ThemeToggle` wrote
+`"metrology-lab-theme"` and `main.tsx` called `initTheme()` with neither. A dark-mode user
+got a light flash on every start — which in a desktop window looks like a slow load — and a
+reload could come back in the palette they had just changed away from. One constant now
+(`shell/theme.ts`), used by all three.
+
 #### Desktop lab: a black window on every start, and no way to see why
 
 - `lab/frontend`'s new routed shell put a `ThemeToggle` in its header, and
@@ -60,6 +132,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   why the broken asset shipped with a paragraph explaining away a p95 of 251/255. Measured:
   **0.9927** on the estimated plane, **0.0656** on the plane the example used to assume.
 - The example now needs the `corr` feature as well as `metric`.
+
+### Changed
+
+#### Desktop lab: an inspector you can work in, and a frame switcher on every screen
+
+- **The right panel is the work, not instructions for it.** Three numbered steps whose bodies
+  were read-only sentences are replaced by the region as four editable numbers, the
+  extraction and whether it still describes them, the contour inventory, the datum as
+  numbers beside its handles, and what the model came out as — per-level point counts
+  included, because a top pyramid level with a handful of points is where a model quietly
+  fails. The build button is pinned to the foot of the column so a hundred and sixty-six rows
+  cannot scroll it away.
+- **The column is resizable and dense.** It was a fixed `22rem` at page density; a panel
+  body's `p-4` inside a section's `gap-3` inside the column's own padding is three margins
+  deep before a control appears. It now drags between 18 and 40 rem, remembers its width, and
+  renders under `@vitavision/lab-ui`'s `compact` density — which drops leading and padding
+  and keeps hit targets.
+- **Frames can be changed from anywhere.** The header's `8.bmp · model-2` was dead text, so
+  changing frame meant a round trip through Library — impossible to discover on Find, whose
+  whole task is running a model against a different frame. It is now a switcher with
+  thumbnails, prev/next, and `[` / `]`.
+- **Layers are toggleable** — region, kept and dropped contours separately, edge points,
+  datum, model points — from the canvas toolbar, which is what makes "what is actually in the
+  model" a thing you can see rather than infer.
 
 ### Added
 
