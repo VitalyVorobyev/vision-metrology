@@ -4,8 +4,10 @@
  *
  * The bug this replaces was invisible in a screenshot at one window size and obvious at the
  * next, so it is worth asserting structurally — the stage is laid out at the image's own
- * pixel size and every overlay's `viewBox` is that same size, which is what makes the
- * mapping the identity no matter what shape the panel is.
+ * pixel size and every overlay's `viewBox` covers exactly that image, which is what makes the
+ * mapping the identity no matter what shape the panel is — offset by the half pixel between
+ * "the centre of pixel i" (what a detector reports) and "the leading edge of pixel i" (what
+ * CSS and SVG mean by it).
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -169,7 +171,10 @@ describe("CanvasStage", () => {
     const overlays = stage.querySelectorAll("svg");
     expect(overlays.length).toBeGreaterThanOrEqual(3); // results, surface, contours, roi
     for (const svg of overlays) {
-      expect(svg.getAttribute("viewBox")).toBe("0 0 1280 1024");
+      // `imageViewBox`, not `0 0 W H`: a contour vertex at `i` must land on the centre of
+      // pixel `i`, not on its boundary. Every layer has to agree, or they disagree with
+      // each other as well as with the photograph.
+      expect(svg.getAttribute("viewBox")).toBe("-0.5 -0.5 1280 1024");
     }
 
     // And the photograph is laid out at that same size rather than letterboxed inside it —

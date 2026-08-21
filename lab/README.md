@@ -115,6 +115,13 @@ Range-select lives in the inspector's list, where a range over rows is something
 see. On Teach, `↑`/`↓` step the inventory, `Space` toggles keep, `Delete` drops, `Enter` keeps
 only the selection, `F` frames it, `Esc` clears it.
 
+**Image coordinates name pixel centres**, the same convention the library states in
+`AGENTS.md` (`i` means coordinate `i as f32`). CSS and SVG name a pixel's *leading edge*, so
+every layer drawn in image coordinates uses `imageViewBox(stage.image)` rather than
+`0 0 W H`, and `stage.toImage` / `stage.toScreen` carry the same half pixel. It is 0.4 screen
+pixels at fit and four at 8x — invisible where overlays are glanced at, and wrong exactly
+where someone zooms in to check whether one lands on the edge it claims to mark.
+
 **Colours** are one vocabulary, stated in the canvas's own layer menu: kept contours
 `signal` solid, dropped `muted` dashed, selected `warn`, hovered white, datum `normal`,
 model points `signal-strong`.

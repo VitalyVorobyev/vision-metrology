@@ -20,7 +20,7 @@
  * `useCanvasInteraction`.
  */
 
-import { toneColor, useStage } from "@vitavision/lab-ui";
+import { imageViewBox, toneColor, useStage } from "@vitavision/lab-ui";
 import type { PointerEvent as ReactPointerEvent } from "react";
 
 import type { ContourSelection, LayerVisibility } from "../state/LabContext";
@@ -65,7 +65,7 @@ export function ContourLayer({
 
   return (
     <svg
-      viewBox={`0 0 ${stage.image.width} ${stage.image.height}`}
+      viewBox={imageViewBox(stage.image)}
       className="absolute inset-0 h-full w-full"
       // Only the fat hit strokes below take events; everything else here is drawing, and a
       // press on bare image must reach the surface underneath so it can pan or sweep.

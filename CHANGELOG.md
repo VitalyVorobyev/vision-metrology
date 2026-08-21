@@ -59,6 +59,20 @@ number of *screen* pixels at any zoom, and the datum has its own colour.
   what I picked?" — the question a build actually raises — had nothing on screen to answer
   it. They stay, and the model's points are a layer over them.
 
+#### Desktop lab: overlays were half a pixel off the pixels they marked
+
+Every result the canvas draws — a detected edge, a contour vertex, a fitted circle's centre —
+is in the library's own convention, where `i` means the **centre** of pixel `i`
+(`AGENTS.md`). CSS is the other one: an `<img>` at its natural size puts pixel `i` across
+`[i, i + 1)`, so SVG's `i` is that pixel's leading edge. Drawing a measured point at its raw
+coordinate therefore put it on the *boundary* of the pixel it was measured in, and reading a
+pointer back named the pixel up and to the left of the one under the cursor.
+
+Half a pixel, and it scales with the zoom: 0.4 screen pixels at fit, four at 8× — invisible
+exactly where overlays get glanced at, and plainly wrong exactly where someone zooms in to
+check whether one lands on the edge it claims to mark. `@vitavision/lab-ui@0.3.0` carries the
+offset in `toImage`/`toScreen` and in `imageViewBox`, which every layer here now uses.
+
 #### Desktop lab: the theme toggle's choice was not what the pre-paint script read
 
 `index.html`'s no-flash script read `"vitavision-theme"` while `ThemeToggle` wrote

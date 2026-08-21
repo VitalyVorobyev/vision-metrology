@@ -15,7 +15,7 @@
  * handled by the background surface underneath them (see `useCanvasInteraction`).
  */
 
-import { toneColor, useStage } from "@vitavision/lab-ui";
+import { imageViewBox, toneColor, useStage } from "@vitavision/lab-ui";
 import type { PointerEvent as ReactPointerEvent } from "react";
 
 import type { Roi } from "../api/backend";
@@ -40,7 +40,7 @@ export function RoiLayer({
 
   return (
     <svg
-      viewBox={`0 0 ${stage.image.width} ${stage.image.height}`}
+      viewBox={imageViewBox(stage.image)}
       className="absolute inset-0 h-full w-full"
       style={{ pointerEvents: "none" }}
     >

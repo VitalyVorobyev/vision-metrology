@@ -18,7 +18,15 @@
  * handle each win over the background without competing with each other.
  */
 
-import { ImageStage, MeasureOverlay, StageReadout, StageToolbar, toneColor, useStage } from "@vitavision/lab-ui";
+import {
+  ImageStage,
+  MeasureOverlay,
+  StageReadout,
+  StageToolbar,
+  imageViewBox,
+  toneColor,
+  useStage,
+} from "@vitavision/lab-ui";
 import type { MeasurePrimitive } from "@vitavision/lab-ui";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -118,7 +126,7 @@ function Layers({ image }: { image: ImageOut }) {
       {/* The one full-frame target. It declines any press it has no use for, and a declined
           press bubbles to the stage and pans. */}
       <svg
-        viewBox={`0 0 ${image.width} ${image.height}`}
+        viewBox={imageViewBox(image)}
         className="absolute inset-0 h-full w-full"
         style={{ pointerEvents: "none" }}
       >

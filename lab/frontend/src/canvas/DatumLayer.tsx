@@ -14,7 +14,7 @@
  * covered in cyan contours, it was one more inert line among a hundred and sixty-six.
  */
 
-import { toneColor, useStage } from "@vitavision/lab-ui";
+import { imageViewBox, toneColor, useStage } from "@vitavision/lab-ui";
 import { useRef } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 
@@ -65,7 +65,7 @@ export function DatumLayer({ handles }: { handles: FrameHandles }) {
 
   return (
     <svg
-      viewBox={`0 0 ${stage.image.width} ${stage.image.height}`}
+      viewBox={imageViewBox(stage.image)}
       className="absolute inset-0 h-full w-full"
       style={{ pointerEvents: "none" }}
     >
