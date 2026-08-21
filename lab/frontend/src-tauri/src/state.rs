@@ -127,6 +127,23 @@ fn calibrations_dir(root: &Path) -> PathBuf {
     root.join("calibrations")
 }
 
+/// Read and parse a JSON sidecar. Errors are per-file and recoverable — see [`skip`].
+fn read_sidecar<T: serde::de::DeserializeOwned>(path: &Path) -> AppResult<T> {
+    Ok(serde_json::from_slice(&std::fs::read(path)?)?)
+}
+
+/// One unreadable file must not cost the whole session.
+///
+/// Rehydration used to be all-or-nothing: a single sidecar this build cannot
+/// parse, or a model written in a format it no longer accepts, propagated out
+/// of `setup` and took the *whole app* down — which, since the window is
+/// already on screen by then, looked like a black window and nothing else. A
+/// missing model is a missing row in a list the user can see; a dead startup
+/// is not something they can act on at all.
+fn skip(path: &Path, why: impl std::fmt::Display) {
+    eprintln!("vm-lab: ignoring {}: {why}", path.display());
+}
+
 impl AppState {
     /// A fresh, empty state rooted at `data_dir` — directories are created but nothing
     /// is loaded. Use [`AppState::rehydrated`] to also load what a previous run left.
@@ -220,7 +237,13 @@ impl AppState {
             if path.extension().and_then(|e| e.to_str()) != Some("json") {
                 continue;
             }
-            let sidecar: ImageSidecar = serde_json::from_slice(&std::fs::read(&path)?)?;
+            let sidecar: ImageSidecar = match read_sidecar(&path) {
+                Ok(s) => s,
+                Err(e) => {
+                    skip(&path, e);
+                    continue;
+                }
+            };
             // Prefer the file the user opened; fall back to our own copy for
             // an entry that came from a byte upload. Neither is decoded here —
             // rehydrating a session must not cost one decode per image.
@@ -258,13 +281,27 @@ impl AppState {
             if path.extension().and_then(|e| e.to_str()) != Some("json") {
                 continue;
             }
-            let sidecar: ModelSidecar = serde_json::from_slice(&std::fs::read(&path)?)?;
+            let sidecar: ModelSidecar = match read_sidecar(&path) {
+                Ok(s) => s,
+                Err(e) => {
+                    skip(&path, e);
+                    continue;
+                }
+            };
             let bin_path = dir.join(format!("{}.bin", sidecar.id));
             if !bin_path.is_file() {
                 continue;
             }
-            let model = ShapeModel::load(&bin_path)
-                .map_err(|e| AppError(format!("loading {}: {e}", bin_path.display())))?;
+            // A model written by a newer build, or one old enough that its
+            // format is no longer supported, is exactly the case this must
+            // survive: drop the model, keep the workbench.
+            let model = match ShapeModel::load(&bin_path) {
+                Ok(m) => m,
+                Err(e) => {
+                    skip(&bin_path, e);
+                    continue;
+                }
+            };
             counters.next_model = counters.next_model.max(next_counter(&sidecar.id));
             models.insert(
                 sidecar.id.clone(),
@@ -293,13 +330,27 @@ impl AppState {
             if path.extension().and_then(|e| e.to_str()) != Some("meta") {
                 continue;
             }
-            let sidecar: CalibrationSidecar = serde_json::from_slice(&std::fs::read(&path)?)?;
+            let sidecar: CalibrationSidecar = match read_sidecar(&path) {
+                Ok(s) => s,
+                Err(e) => {
+                    skip(&path, e);
+                    continue;
+                }
+            };
             let json_path = dir.join(format!("{}.json", sidecar.id));
             if !json_path.is_file() {
                 continue;
             }
-            let raw = std::fs::read(&json_path)?;
-            let cameras = load_calibration(&sidecar.format, &raw)?;
+            let cameras = match std::fs::read(&json_path)
+                .map_err(AppError::from)
+                .and_then(|raw| load_calibration(&sidecar.format, &raw))
+            {
+                Ok(c) => c,
+                Err(e) => {
+                    skip(&json_path, e);
+                    continue;
+                }
+            };
             counters.next_calibration = counters.next_calibration.max(next_counter(&sidecar.id));
             calibrations.insert(
                 sidecar.id.clone(),

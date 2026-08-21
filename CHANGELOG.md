@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+#### Desktop lab: a black window on every start, and no way to see why
+
+- `lab/frontend`'s new routed shell put a `ThemeToggle` in its header, and
+  `@vitavision/lab-ui` renders that inside a Radix tooltip — which **throws** when no
+  `TooltipProvider` is mounted above it. React 19 unmounts the whole root on an uncaught
+  render error, and `index.html`'s `color-scheme: dark` then paints the empty document
+  black, so `bun run tauri dev` opened a window with nothing in it and no message
+  anywhere. `main.tsx` now mounts `TooltipProvider` at the root, next to the router
+  context `PageHeader`'s `<Link>` already required. Reproducible in the browser build too;
+  it was never Tauri-specific.
+- **The shell now says when it breaks.** `shell/CrashScreen.tsx` adds an error boundary
+  around the tree plus `error`/`unhandledrejection` handlers installed before the first
+  render, painting the message and stack into `#root`. It imports no design system, uses
+  no Tailwind class and no token — inline styles only, because a crash screen that needs
+  the stylesheet is another black window on the day the stylesheet is what failed. It
+  paints only when the root is otherwise empty, so a live UI keeps reporting its own
+  errors.
+- **Startup no longer dies over one unreadable file.** `AppState::rehydrate` skipped
+  nothing: a sidecar this build cannot parse, or a `ShapeModel` whose format it no longer
+  accepts, propagated out of Tauri's `setup` hook through `.expect(...)` — a panic *after*
+  the window exists, i.e. the same black rectangle. Each registry now drops the entry it
+  cannot read (with a line on stderr) and keeps the rest, and `setup` returns its
+  remaining errors instead of panicking on them.
+
 #### `birdseye_mosaic` example: the mosaic plane is measured, not assumed
 
 - The real-data bird's-eye example placed its plane **perpendicular to camera0's optical
