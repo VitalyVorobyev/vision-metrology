@@ -12,6 +12,13 @@ import { Button, Field, NumberInput, Panel } from "@vitavision/lab-ui";
 import type { Roi } from "../../api/backend";
 import type { Bounds } from "../../canvas/contourSelection";
 
+/** An empty field is a field being retyped: `Number("")` is `0`, which would jump the datum. */
+function parse(raw: string): number | null {
+  if (raw.trim() === "") return null;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : null;
+}
+
 export function DatumSection({
   origin,
   angle,
@@ -47,7 +54,10 @@ export function DatumSection({
             <NumberInput
               value={round(origin[0])}
               step={1}
-              onChange={(event) => onOrigin([Number(event.target.value), origin[1]])}
+              onChange={(event) => {
+                const value = parse(event.target.value);
+                if (value !== null) onOrigin([value, origin[1]]);
+              }}
               className="px-1.5 text-[11px]"
             />
           </Field>
@@ -55,7 +65,10 @@ export function DatumSection({
             <NumberInput
               value={round(origin[1])}
               step={1}
-              onChange={(event) => onOrigin([origin[0], Number(event.target.value)])}
+              onChange={(event) => {
+                const value = parse(event.target.value);
+                if (value !== null) onOrigin([origin[0], value]);
+              }}
               className="px-1.5 text-[11px]"
             />
           </Field>
@@ -64,8 +77,8 @@ export function DatumSection({
               value={round(degrees)}
               step={1}
               onChange={(event) => {
-                const value = Number(event.target.value);
-                if (Number.isFinite(value)) onAngle((value * Math.PI) / 180);
+                const value = parse(event.target.value);
+                if (value !== null) onAngle((value * Math.PI) / 180);
               }}
               className="px-1.5 text-[11px]"
             />

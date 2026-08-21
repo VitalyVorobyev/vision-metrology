@@ -66,6 +66,8 @@ export function ExtractSection({
               step={0.01}
               value={minContrast}
               onChange={(event) => {
+                // See `RoiSection`: an empty field is mid-edit, not a zero.
+                if (event.target.value.trim() === "") return;
                 const value = Number(event.target.value);
                 if (Number.isFinite(value)) onMinContrast(clamp(value, 0.01, 0.6));
               }}

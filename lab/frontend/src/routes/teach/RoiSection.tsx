@@ -24,8 +24,11 @@ export function RoiSection({
   onRedraw: () => void;
   drawing: boolean;
 }) {
-  const set = (index: 0 | 1 | 2 | 3, value: number) => {
-    if (!roi || !Number.isFinite(value)) return;
+  // An empty field is a field being retyped, not a zero: `Number("")` is `0`, which would
+  // snap the box to the image's corner between two keystrokes.
+  const set = (index: 0 | 1 | 2 | 3, raw: string) => {
+    const value = Number(raw);
+    if (!roi || raw.trim() === "" || !Number.isFinite(value)) return;
     const next: Roi = [...roi];
     next[index] = value;
     onRoi(clampRoi(next, image));
@@ -57,7 +60,7 @@ export function RoiSection({
                 <NumberInput
                   value={round(roi[index as 0 | 1 | 2 | 3])}
                   step={1}
-                  onChange={(event) => set(index as 0 | 1 | 2 | 3, Number(event.target.value))}
+                  onChange={(event) => set(index as 0 | 1 | 2 | 3, event.target.value)}
                   className="px-1.5 text-[11px]"
                   aria-label={`ROI ${name}`}
                 />
