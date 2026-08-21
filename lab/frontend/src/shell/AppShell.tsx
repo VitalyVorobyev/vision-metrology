@@ -12,16 +12,16 @@
  * there to be aimed, not admired.
  */
 
-import { Empty, PageHeader, Skeleton, ThemeToggle } from "@vitavision/lab-ui";
+import { Empty, Skeleton, ThemeToggle } from "@vitavision/lab-ui";
 import type { ReactNode } from "react";
 
-import { CanvasStage } from "../components/CanvasStage";
+import { CanvasStage } from "../canvas/CanvasStage";
+import { LAB_THEME_STORAGE_KEY } from "./theme";
+import { FrameSwitcher } from "./FrameSwitcher";
+import { InspectorColumn } from "./InspectorColumn";
 import { useLab } from "../state/LabContext";
 import { StatusBar } from "./StatusBar";
 import { WorkspaceRail } from "./WorkspaceRail";
-
-/** This app's own `localStorage` key, so it does not share one with a sibling lab. */
-const THEME_STORAGE_KEY = "metrology-lab-theme";
 
 export function AppShell({
   steps,
@@ -34,32 +34,16 @@ export function AppShell({
   inspector: ReactNode;
   fullBleed?: ReactNode;
 }) {
-  const {
-    selectedImage,
-    selectedModel,
-    imagesLoading,
-    overlay,
-    roi,
-    setRoi,
-    roiMode,
-    contourSelection,
-    frameHandles,
-  } = useLab();
+  const { selectedImage, imagesLoading } = useLab();
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-4 border-b border-line bg-surface px-4 py-2">
-        <PageHeader
-          title="Visual Metrology Lab"
-          meta={
-            <span className="font-mono text-xs">
-              {selectedImage ? selectedImage.filename : "no frame"}
-              {selectedModel && ` · ${selectedModel.id}`}
-            </span>
-          }
-        />
+      {/* `relative` because the frame switcher's dropdown is positioned against this bar. */}
+      <div className="relative flex items-center gap-3 border-b border-line bg-surface px-3 py-1.5">
+        <h1 className="shrink-0 text-sm font-semibold tracking-tight text-fg">Visual Metrology Lab</h1>
+        <FrameSwitcher />
         <div className="ml-auto">
-          <ThemeToggle storageKey={THEME_STORAGE_KEY} />
+          <ThemeToggle storageKey={LAB_THEME_STORAGE_KEY} />
         </div>
       </div>
 
@@ -70,28 +54,18 @@ export function AppShell({
           {steps && <div className="border-b border-line bg-surface">{steps}</div>}
 
           <div className="flex min-h-0 flex-1">
-            <main className="min-w-0 flex-1 p-3">
+            <main className="min-w-0 flex-1 p-2">
               {fullBleed ??
                 (imagesLoading ? (
                   <Skeleton className="h-full w-full" />
                 ) : selectedImage === null ? (
                   <Empty>Open a frame to begin — the Library workspace is where they come from.</Empty>
                 ) : (
-                  <CanvasStage
-                    image={selectedImage}
-                    overlay={overlay}
-                    roiMode={roiMode}
-                    onRoiChange={setRoi}
-                    roiPreview={roi}
-                    contourSelection={contourSelection}
-                    frameHandles={frameHandles}
-                  />
+                  <CanvasStage image={selectedImage} />
                 ))}
             </main>
 
-            <aside className="w-[22rem] shrink-0 overflow-y-auto border-l border-line bg-surface p-3">
-              {inspector}
-            </aside>
+            <InspectorColumn>{inspector}</InspectorColumn>
           </div>
         </div>
       </div>

@@ -73,6 +73,46 @@ describe("createTauriBackend", () => {
     }
   });
 
+  /*
+   * `teach_preview` is the one command with no OpenAPI counterpart *and* no contract
+   * fixture — `lab/contract/fixtures/teach.json` pins the plain rectangle build only, and
+   * `contract_parity.rs` passes `keep_contours: None` because the fixtures predate curated
+   * teaching. So a renamed field on the Rust side is a runtime mismatch here, not a type
+   * error, and this is the only thing standing between the contour inventory and a silently
+   * empty list.
+   */
+  it("teachPreview() invokes teach_preview and passes ContourOut through field for field", async () => {
+    invokeMock.mockResolvedValueOnce({
+      contours: [
+        { id: 0, points: [1, 2, 3, 4], closed: false, length: 2.83, mean_strength: 0.42 },
+        { id: 1, points: [5, 6, 7, 8, 9, 10], closed: true, length: 5.66, mean_strength: 0.19 },
+      ],
+      total_points: 5,
+    });
+    const backend = createTauriBackend();
+
+    const response = await backend.teachPreview({
+      image_id: "img-1",
+      roi: [24, 24, 80, 80],
+      min_contrast: 0.15,
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith("teach_preview", {
+      req: { image_id: "img-1", roi: [24, 24, 80, 80], min_contrast: 0.15 },
+    });
+    expect(response.total_points).toBe(5);
+    expect(response.contours).toHaveLength(2);
+    // Named individually rather than compared as a blob: a field the Rust side renames
+    // should fail on the field, not on a diff of two objects.
+    const [first, second] = response.contours;
+    expect(first?.id).toBe(0);
+    expect(first?.points).toEqual([1, 2, 3, 4]);
+    expect(first?.closed).toBe(false);
+    expect(first?.length).toBeCloseTo(2.83, 6);
+    expect(first?.mean_strength).toBeCloseTo(0.42, 6);
+    expect(second?.closed).toBe(true);
+  });
+
   it("rectify() renames the Rust side's crop_key to the LabBackend's crop_url", async () => {
     invokeMock.mockResolvedValueOnce({
       width: 10,

@@ -14,7 +14,7 @@ import { AlignPage, MeasurePage } from "./routes/GaugePage";
 import { FindPage } from "./routes/FindPage";
 import { LibraryPage } from "./routes/LibraryPage";
 import { MosaicPage, MotionPage } from "./routes/CameraPage";
-import { TeachPage } from "./routes/TeachPage";
+import { TeachPage } from "./routes/teach/TeachPage";
 import { VerifyPage } from "./routes/VerifyPage";
 import { LabProvider } from "./state/LabContext";
 
