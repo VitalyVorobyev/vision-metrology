@@ -5,22 +5,17 @@ measures each requested object. Everything the frontend needs to draw is compute
 in source-image pixel coordinates — the client never reconstructs geometry (see
 lab/README.md's "source-frame" rule).
 
-Two passes over the same calipers, deliberately:
-1. `vm.MetrologyModel.apply` does the real measurement — robust fit, residuals.
-2. This module's own `_measure_calipers` re-measures each caliper individually, only to
-   report **why** a caliper was rejected and to expose its raw profile for `LineProfile`
-   — detail `apply`'s binding does not surface. Both passes share the same
-   `MeasureConfig`, so they agree on every caliper that succeeds.
-
-The caliper *placements* come from `vm.MetrologyModel.layout`, the same placement code
-`apply` calls internally (`vision_metrology::measure::diagnostics::layout`), so an overlay
-can never show a caliper somewhere the measurement did not look.
+One pass: `vm.MetrologyModel.explain` measures every caliper once and returns, per
+object, what `apply` returns (the robust fit and its residuals) together with each
+caliper's placement and trace (`vision_metrology::measure::diagnostics::explain_model`).
+The placements are the ones the measurement used, so an overlay can never show a caliper
+somewhere the measurement did not look; the traces say **why** a caliper was rejected and
+carry its raw profile for `LineProfile`.
 """
 
 from __future__ import annotations
 
 import math
-from collections import defaultdict
 from typing import Any
 
 import numpy as np
@@ -73,9 +68,8 @@ def _pixel_to_plane_mm(metric: tuple[vm.CameraModel, np.ndarray, vm.Plane3], x: 
 
 
 def _measure_config(obj: MeasureObjectIn) -> vm.MeasureConfig:
-    # `select="strongest"` matches `MetrologyObject::new`'s Rust default (model.rs) —
-    # forced explicitly here rather than left to the binding's own default, so this
-    # config is guaranteed identical to the one handed to `vm.MetrologyObject` below.
+    # `select="strongest"` matches `MetrologyObject::new`'s Rust default (model.rs): a
+    # caliper on a nominal edge reports that edge, not every edge it crosses.
     return vm.MeasureConfig(
         sigma=obj.measure.sigma,
         threshold=obj.measure.threshold,
@@ -102,38 +96,22 @@ def _vm_shape(obj: MeasureObjectIn) -> Any:
     return vm.MetrologyShape.line((obj.ax, obj.ay), (obj.bx, obj.by))
 
 
-def _caliper_for(placement: vm.CaliperPlacement, config: vm.MeasureConfig) -> vm.Caliper:
-    if placement.kind == "radial":
-        assert placement.radius is not None
-        return vm.Caliper.radial(
-            placement.center, placement.radius, placement.angle,
-            placement.half_len, placement.half_width, config,
-        )
-    return vm.Caliper.rect(placement.center, placement.angle, placement.half_len, placement.half_width, config)
-
-
-def _measure_calipers(
-    placements: list[vm.CaliperPlacement],
-    config: vm.MeasureConfig,
-    img: Any,
+def _caliper_results(
+    trace: vm.ObjectTrace,
     metric: tuple[vm.CameraModel, np.ndarray, vm.Plane3] | None = None,
 ) -> tuple[list[CaliperResultOut], list[OverlayPrimitiveOut]]:
-    """Measures each of `placements` (one object's worth, in caliper order — see
-    `layout`'s grouping in `measure()` below) and builds the matching overlay."""
+    """One object's calipers, in caliper order, from its `explain` trace, and the
+    matching overlay."""
     results: list[CaliperResultOut] = []
     overlay: list[OverlayPrimitiveOut] = []
-    step_px = config.step
-    for placement in placements:
-        cal = _caliper_for(placement, config)
+    for placement, cal in zip(trace.placements, trace.calipers, strict=True):
         cx, cy = placement.center
         box_angle = placement.angle
         i = placement.caliper_index
-        try:
-            edges = cal.measure(img)
-        except vm.MeasureRejected as exc:
-            reason = str(exc.args[0]) if exc.args else "rejected"
-            profile = CaliperProfileOut(values=list(cal.profile()), step_px=step_px, edges=[])
-            results.append(CaliperResultOut(index=i, status="rejected", reason=reason, profile=profile))
+        values = [float(v) for v in cal.profile]
+        if cal.reject is not None:
+            profile = CaliperProfileOut(values=values, step_px=cal.spacing, edges=[])
+            results.append(CaliperResultOut(index=i, status="rejected", reason=cal.reject, profile=profile))
             overlay.append(
                 OverlayPrimitiveOut(
                     kind="caliper", tone="defect", cx=cx, cy=cy,
@@ -141,10 +119,10 @@ def _measure_calipers(
                 )
             )
             continue
-        edge = edges[0]
+        edge = cal.edges[0]
         mm = _pixel_to_plane_mm(metric, edge.x, edge.y) if metric is not None else None
         profile = CaliperProfileOut(
-            values=list(cal.profile()), step_px=step_px,
+            values=values, step_px=cal.spacing,
             edges=[
                 EdgeMarkOut(
                     pos_px=edge.t,
@@ -206,22 +184,14 @@ async def measure(req: MeasureRequest) -> MeasureResponse:
             )
         )
 
-    raw_results = metrology_model.apply(
+    traces = metrology_model.explain(
         img, x=fixture.x, y=fixture.y, angle=fixture.angle, scale=fixture.scale, origin=origin
     )
-    # Same placement code `apply` used internally, exposed for the overlay
-    # (`vm.MetrologyModel.layout` -> `vision_metrology::measure::diagnostics::layout`).
-    placements = metrology_model.layout(
-        x=fixture.x, y=fixture.y, angle=fixture.angle, scale=fixture.scale, origin=origin
-    )
-    placements_by_object: dict[int, list[vm.CaliperPlacement]] = defaultdict(list)
-    for p in placements:
-        placements_by_object[p.object_index].append(p)
 
     out_objects: list[MeasureObjectResultOut] = []
-    for i, (obj, raw) in enumerate(zip(req.objects, raw_results, strict=True)):
-        config = _measure_config(obj)
-        calipers, cal_overlay = _measure_calipers(placements_by_object.get(i, []), config, img, metric)
+    for obj, trace in zip(req.objects, traces, strict=True):
+        raw = trace.result
+        calipers, cal_overlay = _caliper_results(trace, metric)
 
         if isinstance(raw, vm.MetrologyError):
             out_objects.append(

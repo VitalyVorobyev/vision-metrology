@@ -40,7 +40,7 @@ use detector::EdgeDetector;
 use match_py::{CropSpec, ShapeMatcher, ShapeModel};
 use measure_py::{
     Caliper, CaliperPlacement, CaliperTrace, MeasureRejected, MetrologyError, MetrologyModel,
-    MetrologyObject, MetrologyResult, MetrologyShape,
+    MetrologyObject, MetrologyResult, MetrologyShape, ObjectTrace,
 };
 use metric_py::{
     BrownConrady5, CameraModel, PinholeIntrinsics, Plane3, PlaneGrid, load_rig_extrinsics,
@@ -118,6 +118,7 @@ fn vision_metrology(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<MetrologyError>()?;
     m.add_class::<CaliperPlacement>()?;
     m.add_class::<CaliperTrace>()?;
+    m.add_class::<ObjectTrace>()?;
     m.add_class::<CorrMatch>()?;
     m.add_class::<Displacement>()?;
     m.add_class::<ScaleEstimate>()?;

@@ -33,7 +33,8 @@ use pyo3::{
 use numpy::{IntoPyArray, PyArray1};
 use vision_metrology::measure::diagnostics::{
     CaliperPlacement as NativeCaliperPlacement, CaliperShape as NativeCaliperShape,
-    explain as native_explain, layout as native_layout,
+    CaliperTrace as NativeCaliperTrace, explain as native_explain,
+    explain_model as native_explain_model, layout as native_layout,
 };
 use vision_metrology::measure::{
     Caliper as NativeCaliper, MeasureArc, MeasureRadial, MeasureRect, MeasureStrip,
@@ -344,23 +345,7 @@ impl Caliper {
     pub fn explain(&mut self, py: Python<'_>, img: &Bound<'_, PyAny>) -> PyResult<CaliperTrace> {
         let any = any_image_from_numpy(py, img)?;
         let trace = with_any_image!(any, view => native_explain(&mut self.inner, &view));
-        Ok(CaliperTrace {
-            spacing: trace.spacing,
-            samples: trace.samples,
-            across: trace.across,
-            threshold: trace.threshold,
-            profile: trace.profile.into_pyarray(py).unbind(),
-            smoothed: trace.smoothed.into_pyarray(py).unbind(),
-            response: trace.response.into_pyarray(py).unbind(),
-            candidates: trace
-                .candidates
-                .into_iter()
-                .map(MeasureEdge::from)
-                .collect(),
-            levels: trace.levels.into_iter().map(LevelEdge::from).collect(),
-            edges: trace.edges.into_iter().map(MeasureEdge::from).collect(),
-            reject: trace.reject.map(reject_reason_str),
-        })
+        Ok(CaliperTrace::from_native(py, trace))
     }
 
     /// The level crossings behind the last `measure` call's edges: one for
@@ -396,6 +381,28 @@ pub struct CaliperTrace {
     pub levels: Vec<LevelEdge>,
     pub edges: Vec<MeasureEdge>,
     pub reject: Option<&'static str>,
+}
+
+impl CaliperTrace {
+    fn from_native(py: Python<'_>, trace: NativeCaliperTrace) -> Self {
+        Self {
+            spacing: trace.spacing,
+            samples: trace.samples,
+            across: trace.across,
+            threshold: trace.threshold,
+            profile: trace.profile.into_pyarray(py).unbind(),
+            smoothed: trace.smoothed.into_pyarray(py).unbind(),
+            response: trace.response.into_pyarray(py).unbind(),
+            candidates: trace
+                .candidates
+                .into_iter()
+                .map(MeasureEdge::from)
+                .collect(),
+            levels: trace.levels.into_iter().map(LevelEdge::from).collect(),
+            edges: trace.edges.into_iter().map(MeasureEdge::from).collect(),
+            reject: trace.reject.map(reject_reason_str),
+        }
+    }
 }
 
 #[pymethods]
@@ -621,6 +628,50 @@ impl MetrologyError {
     }
 }
 
+/// One object's `apply` outcome as a Python object: a [`MetrologyResult`], or a
+/// [`MetrologyError`] carrying the native error's message.
+fn outcome_to_py(
+    py: Python<'_>,
+    outcome: Result<vision_metrology::measure::MetrologyResult, vm_primitives::Error>,
+) -> PyResult<Py<PyAny>> {
+    Ok(match outcome {
+        Ok(res) => Py::new(py, MetrologyResult::from(res))?.into(),
+        Err(e) => Py::new(
+            py,
+            MetrologyError {
+                message: e.to_string(),
+            },
+        )?
+        .into(),
+    })
+}
+
+/// One object of a [`MetrologyModel`], measured and explained — mirrors
+/// `vision_metrology::measure::diagnostics::ObjectTrace`.
+///
+/// `result` is what `apply` returns for the object (a [`MetrologyResult`] or a
+/// [`MetrologyError`]); `placements` and `calipers` are parallel lists, one entry per
+/// caliper in caliper order. A caliper hit when its trace's `edges` is not empty, and its
+/// first edge is the one the fit used.
+#[pyclass(get_all, skip_from_py_object)]
+pub struct ObjectTrace {
+    pub object_index: usize,
+    pub result: Py<PyAny>,
+    pub placements: Vec<CaliperPlacement>,
+    pub calipers: Vec<Py<CaliperTrace>>,
+}
+
+#[pymethods]
+impl ObjectTrace {
+    fn __repr__(&self) -> String {
+        format!(
+            "ObjectTrace(object_index={}, calipers={})",
+            self.object_index,
+            self.calipers.len()
+        )
+    }
+}
+
 /// Where one caliper of a [`MetrologyModel`] sits at a fixture pose, without
 /// measuring — mirrors `vision_metrology::measure::diagnostics::CaliperPlacement`.
 ///
@@ -751,18 +802,60 @@ impl MetrologyModel {
             Point2f::new(origin.0, origin.1),
         );
         let outcomes = with_any_image!(any, view => self.inner.apply(&view, &fixture));
+        outcomes.into_iter().map(|r| outcome_to_py(py, r)).collect()
+    }
 
-        outcomes
+    /// Measure every object as [`apply`](Self::apply) does and keep each caliper's
+    /// trace, in one pass: one [`ObjectTrace`] per object, in [`add`](Self::add) order.
+    /// Same fixture semantics as `apply`, and each `result` is what `apply` returns.
+    #[pyo3(signature = (image, x, y, angle=0.0, scale=1.0, origin=(0.0, 0.0)))]
+    #[allow(clippy::too_many_arguments)]
+    pub fn explain(
+        &self,
+        py: Python<'_>,
+        image: &Bound<'_, PyAny>,
+        x: f32,
+        y: f32,
+        angle: f32,
+        scale: f32,
+        origin: (f32, f32),
+    ) -> PyResult<Vec<ObjectTrace>> {
+        let any = any_image_from_numpy(py, image)?;
+        let fixture = pose_from(
+            Point2f::new(x, y),
+            angle,
+            scale,
+            Point2f::new(origin.0, origin.1),
+        );
+        let traces =
+            with_any_image!(any, view => native_explain_model(&self.inner, &view, &fixture));
+        traces
             .into_iter()
-            .map(|r| match r {
-                Ok(res) => Ok(Py::new(py, MetrologyResult::from(res))?.into()),
-                Err(e) => Ok(Py::new(
-                    py,
-                    MetrologyError {
-                        message: e.to_string(),
-                    },
-                )?
-                .into()),
+            .enumerate()
+            .map(|(object_index, t)| {
+                let placements = t
+                    .placements
+                    .into_iter()
+                    .enumerate()
+                    .map(|(caliper_index, shape)| {
+                        CaliperPlacement::from(NativeCaliperPlacement {
+                            object_index,
+                            caliper_index,
+                            shape,
+                        })
+                    })
+                    .collect();
+                let calipers = t
+                    .calipers
+                    .into_iter()
+                    .map(|c| Py::new(py, CaliperTrace::from_native(py, c)))
+                    .collect::<PyResult<_>>()?;
+                Ok(ObjectTrace {
+                    object_index,
+                    result: outcome_to_py(py, t.result)?,
+                    placements,
+                    calipers,
+                })
             })
             .collect()
     }

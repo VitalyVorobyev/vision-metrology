@@ -1,18 +1,15 @@
 //! `measure` — mirrors `lab/backend/src/vm_lab/routers/measure.py`.
 //!
-//! Two passes over the same calipers, same reasoning as the Python router: (1)
-//! `MetrologyModel::apply` does the real measurement (robust fit, residuals); (2) this
-//! module re-measures each caliper individually, using the *exact same placement*
-//! `apply` used internally (`measure::diagnostics::layout`), only to
-//! report which caliper was rejected and why, and to expose its raw profile. Both passes
-//! share the same `MeasureConfig`, so they agree on every caliper that succeeds.
-
-use std::collections::HashMap;
+//! One pass, as in the Python router: `measure::diagnostics::explain_model` measures every
+//! caliper once and returns, per object, what `MetrologyModel::apply` returns (the robust
+//! fit and its residuals) with each caliper's placement and trace. The traces say which
+//! caliper was rejected and why, and carry its raw profile; the placements are the ones
+//! the measurement used.
 
 use vision_metrology::fit::{FitConfig, RobustLoss};
-use vision_metrology::measure::diagnostics::{CaliperShape, layout};
+use vision_metrology::measure::diagnostics::{CaliperShape, ObjectTrace, explain_model};
 use vision_metrology::measure::{
-    Caliper, EdgeSelect, MeasureConfig as NativeMeasureConfig, MetrologyFit, MetrologyModel,
+    EdgeSelect, MeasureConfig as NativeMeasureConfig, MetrologyFit, MetrologyModel,
     MetrologyObject, MetrologyShape, PolaritySelect, ProfileConfig, RejectReason,
 };
 use vision_metrology::metric::{CameraModel, Plane3, Pose3, pixel_to_plane};
@@ -181,13 +178,6 @@ fn resolve_fixture(state: &AppState, req: &MeasureRequest) -> AppResult<(Fixture
     ))
 }
 
-fn caliper_for(shape: &CaliperShape, config: NativeMeasureConfig) -> Caliper {
-    match *shape {
-        CaliperShape::Rect(r) => Caliper::rect(r, config),
-        CaliperShape::Radial(r) => Caliper::radial(r, config),
-    }
-}
-
 fn reject_reason_str(r: RejectReason) -> &'static str {
     match r {
         RejectReason::ProfileTooShort => "profile_too_short",
@@ -208,23 +198,22 @@ fn placement_geometry(shape: &CaliperShape) -> (Point2f, f32, f32, f32) {
     }
 }
 
-fn measure_calipers(
-    shapes: &[CaliperShape],
-    config: NativeMeasureConfig,
-    img: &vm_primitives::ImageView<'_, u8>,
+/// One object's calipers, in caliper order, from its `explain_model` trace, and the
+/// matching overlay.
+fn caliper_results(
+    trace: &ObjectTrace,
     metric: Option<&Metric>,
 ) -> (Vec<CaliperResultOut>, Vec<OverlayPrimitiveOut>) {
-    let mut results = Vec::with_capacity(shapes.len());
+    let mut results = Vec::with_capacity(trace.calipers.len());
     let mut overlay = Vec::new();
-    let step_px = config.profile.step;
 
-    for (i, shape) in shapes.iter().enumerate() {
-        let mut cal = caliper_for(shape, config);
+    for (i, (shape, cal)) in trace.placements.iter().zip(&trace.calipers).enumerate() {
         let (center, angle, half_len, half_width) = placement_geometry(shape);
-        match cal.measure(img) {
-            Err(reason) => {
+        let step_px = cal.spacing;
+        match cal.reject {
+            Some(reason) => {
                 let profile = CaliperProfileOut {
-                    values: cal.profile().to_vec(),
+                    values: cal.profile.clone(),
                     step_px,
                     edges: Vec::new(),
                 };
@@ -245,11 +234,11 @@ fn measure_calipers(
                     ..Default::default()
                 });
             }
-            Ok(edges) => {
-                let edge = edges[0];
+            None => {
+                let edge = cal.edges[0];
                 let mm = metric.and_then(|m| pixel_to_plane_mm(m, edge.p));
                 let profile = CaliperProfileOut {
-                    values: cal.profile().to_vec(),
+                    values: cal.profile.clone(),
                     step_px,
                     edges: vec![EdgeMarkOut {
                         pos_px: edge.t,
@@ -332,21 +321,13 @@ pub fn measure(state: &AppState, req: MeasureRequest) -> AppResult<MeasureRespon
         });
     }
 
-    let view = image.as_view();
-    let raw_results = metrology_model.apply(&view, &pose);
-    let placements = layout(&metrology_model, &pose);
-    let mut by_object: HashMap<usize, Vec<CaliperShape>> = HashMap::new();
-    for p in placements {
-        by_object.entry(p.object_index).or_default().push(p.shape);
-    }
+    let traces = explain_model(&metrology_model, &image.as_view(), &pose);
 
     let mut out_objects = Vec::with_capacity(req.objects.len());
-    for (i, (obj, raw)) in req.objects.iter().zip(raw_results).enumerate() {
-        let config = measure_config_from(obj.measure.as_ref());
-        let shapes = by_object.remove(&i).unwrap_or_default();
-        let (calipers, cal_overlay) = measure_calipers(&shapes, config, &view, metric.as_ref());
+    for (obj, trace) in req.objects.iter().zip(traces) {
+        let (calipers, cal_overlay) = caliper_results(&trace, metric.as_ref());
 
-        let raw = match raw {
+        let raw = match trace.result {
             Err(e) => {
                 out_objects.push(MeasureObjectResultOut {
                     kind: "error",
@@ -482,4 +463,67 @@ pub fn measure(state: &AppState, req: MeasureRequest) -> AppResult<MeasureRespon
         fixture_source: source,
         objects: out_objects,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use vm_primitives::Image;
+
+    /// A disc of radius 30 at (64, 64) on a dark 128 × 128 image.
+    fn disc() -> Image<u8> {
+        let data = (0..128 * 128)
+            .map(|i| {
+                let (x, y) = ((i % 128) as f32 - 64.0, (i / 128) as f32 - 64.0);
+                let cover = (30.5 - (x * x + y * y).sqrt()).clamp(0.0, 1.0);
+                (20.0 + 180.0 * cover).round() as u8
+            })
+            .collect();
+        Image::from_vec(128, 128, data).expect("valid image")
+    }
+
+    /// The caliper list comes from the one `explain_model` pass: hits with their edge on
+    /// the rim, and rejections, with their reason, on flat ground.
+    #[test]
+    fn calipers_are_read_from_the_traces() {
+        let mut model = MetrologyModel::new();
+        let mut rim = MetrologyObject::new(MetrologyShape::Circle {
+            center: Point2f::new(64.0, 64.0),
+            radius: 30.0,
+            arc: None,
+        });
+        rim.n_calipers = 8;
+        model.add(rim);
+        let mut flat = MetrologyObject::new(MetrologyShape::Line {
+            a: Point2f::new(8.0, 10.0),
+            b: Point2f::new(8.0, 40.0),
+        });
+        flat.n_calipers = 3;
+        flat.caliper_len = 4.0;
+        model.add(flat);
+        let img = disc();
+        let traces = explain_model(&model, &img.as_view(), &Similarity2f::identity());
+
+        let (rim, rim_overlay) = caliper_results(&traces[0], None);
+        assert_eq!(rim.len(), 8);
+        assert!(
+            rim.iter()
+                .all(|c| c.status == "hit" && c.profile.edges.len() == 1)
+        );
+        assert_eq!(rim_overlay.len(), 16, "a box and an edge point per hit");
+        let hits = &traces[0].result.as_ref().expect("the rim fits").hits;
+        for (c, hit) in rim.iter().zip(hits) {
+            assert_eq!(c.profile.edges[0].pos_px, hit.t);
+        }
+
+        let (flat, flat_overlay) = caliper_results(&traces[1], None);
+        assert!(traces[1].result.is_err(), "nothing to fit");
+        assert_eq!(flat.len(), 3);
+        for (i, c) in flat.iter().enumerate() {
+            assert_eq!((c.index, c.status), (i, "rejected"));
+            assert_eq!(c.reason.as_deref(), Some("no_edge"));
+            assert_eq!(c.profile.values.len(), 9);
+        }
+        assert!(flat_overlay.iter().all(|o| o.tone == Some("defect")));
+    }
 }

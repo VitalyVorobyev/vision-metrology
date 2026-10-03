@@ -237,44 +237,64 @@ impl MetrologyModel {
         obj: &MetrologyObject,
     ) -> Result<MetrologyResult, Error> {
         let placements = caliper_placements(obj, fixture)?;
-        let mut hits: Vec<MeasureEdge> = Vec::new();
         let cal = self
             .caliper
             .get_or_insert_with(|| Caliper::rect(placeholder_rect(), obj.measure));
-        cal.set_config(obj.measure);
+        measure_placed(cal, obj, &placements, &mut self.points, |cal| {
+            match cal.measure(img) {
+                Ok(&[e, ..]) => Some(e),
+                _ => None,
+            }
+        })
+    }
+}
 
-        self.points.clear();
-        for placement in &placements {
-            match *placement {
-                CaliperShape::Rect(r) => cal.set_rect(r),
-                CaliperShape::Radial(r) => cal.set_radial(r),
-            }
-            if let Ok(&[e, ..]) = cal.measure(img) {
-                self.points.push(e.p);
-                hits.push(e);
-            }
+/// Measure `obj` with `cal` at each of `placements`, in order, and fit the hits.
+///
+/// `probe` runs one measurement on the placed caliper and returns the edge it hit, if
+/// any: the first edge `measure` returns. [`MetrologyModel::apply`] and
+/// [`diagnostics::explain_model`](super::diagnostics::explain_model) both measure through
+/// here, so the traced model fits exactly what the applied one does.
+pub(crate) fn measure_placed(
+    cal: &mut Caliper,
+    obj: &MetrologyObject,
+    placements: &[CaliperShape],
+    points: &mut Vec<Point2f>,
+    mut probe: impl FnMut(&mut Caliper) -> Option<MeasureEdge>,
+) -> Result<MetrologyResult, Error> {
+    let mut hits: Vec<MeasureEdge> = Vec::new();
+    cal.set_config(obj.measure);
+    points.clear();
+    for placement in placements {
+        match *placement {
+            CaliperShape::Rect(r) => cal.set_rect(r),
+            CaliperShape::Radial(r) => cal.set_radial(r),
         }
+        if let Some(e) = probe(cal) {
+            points.push(e.p);
+            hits.push(e);
+        }
+    }
 
-        match obj.shape {
-            MetrologyShape::Line { .. } => {
-                let fit = fit_line(&self.points, &obj.fit)?;
-                Ok(MetrologyResult {
-                    fit: MetrologyFit::Line(fit),
-                    hits,
-                })
-            }
-            MetrologyShape::Circle { .. } => {
-                let fit = fit_circle(&self.points, &obj.fit)?;
-                Ok(MetrologyResult {
-                    fit: MetrologyFit::Circle(fit),
-                    hits,
-                })
-            }
+    match obj.shape {
+        MetrologyShape::Line { .. } => {
+            let fit = fit_line(points, &obj.fit)?;
+            Ok(MetrologyResult {
+                fit: MetrologyFit::Line(fit),
+                hits,
+            })
+        }
+        MetrologyShape::Circle { .. } => {
+            let fit = fit_circle(points, &obj.fit)?;
+            Ok(MetrologyResult {
+                fit: MetrologyFit::Circle(fit),
+                hits,
+            })
         }
     }
 }
 
-fn placeholder_rect() -> MeasureRect {
+pub(crate) fn placeholder_rect() -> MeasureRect {
     MeasureRect {
         center: Point2f::origin(),
         angle: 0.0,

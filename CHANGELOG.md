@@ -66,6 +66,10 @@ The workspace was consolidated from twelve crates into three: `vm-primitives`,
     serializes, and `MeasureEdge`, `RejectReason`, `EdgePolarity` and `LevelEdge`
     (de)serialize. Python: `Caliper.explain(img)`, `Caliper.spacing()`,
     `vm.CaliperTrace`.
+  - `measure::diagnostics::explain_model` explains a whole `MetrologyModel` in one pass.
+    It returns one `ObjectTrace` per object: what `apply` returns, with every caliper's
+    placement and `CaliperTrace`, each caliper measured once. Python:
+    `MetrologyModel.explain(...)`, `vm.ObjectTrace`.
 - **Robust fitting** (`fit`): `fit_line`, `fit_circle` (Taubin then Gauss–Newton) and
   `fit_ellipse`, with `RobustLoss::{Huber, Tukey}` (annealed) and `RansacConfig`. Every fit
   reports `rms`, `max_dev` and `n_used`.
