@@ -314,6 +314,7 @@ class MeasureConfig:
     threshold: float
     polarity: str
     select: str
+    sequence: List[str]
     step: float
     max_obliquity_deg: float
     border_mode: str
@@ -328,6 +329,7 @@ class MeasureConfig:
         threshold: Optional[float] = ...,
         polarity: Optional[str] = ...,
         select: Optional[str] = ...,
+        sequence: Optional[List[str]] = ...,
         step: Optional[float] = ...,
         max_obliquity_deg: Optional[float] = ...,
         border_mode: Optional[str] = ...,
@@ -337,7 +339,11 @@ class MeasureConfig:
         locate: Optional[Locate] = ...,
         off_image: Optional[str] = ...,
     ) -> None:
-        """`derivative` is "dog" (derivative of Gaussian, default) or
+        """`select` is "all" (default), "first", "last", "strongest" or
+        "in_order"; "in_order" needs `sequence`, one or two of "rising",
+        "falling" and "either", found in scan order, each the strongest edge of
+        its polarity after the previous one (equal strength: the earlier edge).
+        `derivative` is "dog" (derivative of Gaussian, default) or
         "smooth_central" (Gaussian of half-width `kernel_radius_px`, then central
         differences). `off_image` is "fill" (default: sample outside the image with
         `border_mode` and measure) or "reject" (raise `MeasureRejected("off_image")`
@@ -629,7 +635,8 @@ class Caliper:
 
 class MeasureRejected(Exception):
     """Raised by `Caliper.measure`; `args[0]` is one of `"profile_too_short"`,
-    `"no_edge"`, `"wrong_polarity"`, `"too_oblique"`, `"off_image"`."""
+    `"no_edge"`, `"wrong_polarity"`, `"too_oblique"`, `"off_image"`,
+    `"incomplete_sequence"`."""
 
 # ---------------------------------------------------------------------------
 # Detectors, fitters, matchers, segmentation

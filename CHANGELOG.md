@@ -44,6 +44,10 @@ The workspace was consolidated from twelve crates into three: `vm-primitives`,
     `start`. `ProfileConfig::off_image` (`OffImage::{Fill, Reject}`) rejects a placement
     that leaves the image. Python: `Caliper.strip`, `Caliper.move_to_{rect, arc, radial,
     strip}`, `MeasureConfig(off_image=...)`.
+  - `EdgeSelect::StrongestInOrder(EdgeSequence)`: one or two edges in scan order, each
+    the strongest of its polarity after the previous one, with
+    `RejectReason::IncompleteSequence` when a later one is missing. Python:
+    `MeasureConfig(select="in_order", sequence=[...])`.
   - `MetrologyModel` applies line and circle objects at a fixture pose and fits them.
   - `measure::diagnostics::layout` gives caliper placement without an image.
 - **Robust fitting** (`fit`): `fit_line`, `fit_circle` (Taubin then Gauss–Newton) and

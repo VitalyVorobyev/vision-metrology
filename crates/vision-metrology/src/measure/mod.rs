@@ -43,8 +43,8 @@ mod select;
 
 pub use caliper::Caliper;
 pub use config::{
-    Derivative, EdgeSelect, Locate, MeasureConfig, OffImage, PolaritySelect, ProfileConfig,
-    RejectReason,
+    Derivative, EdgeSelect, EdgeSequence, Locate, MeasureConfig, OffImage, PolaritySelect,
+    ProfileConfig, RejectReason,
 };
 pub use model::{MetrologyFit, MetrologyModel, MetrologyObject, MetrologyResult, MetrologyShape};
 pub use placement::{MeasureArc, MeasureRadial, MeasureRect, MeasureStrip};

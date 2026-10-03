@@ -5,12 +5,13 @@
 //! `Caliper::measure` returns `Result<&[MeasureEdge], RejectReason>` on the
 //! Rust side — see invariant 21 and the module's own docs on why an empty
 //! result is unrepresentable. The Python mirror raises [`MeasureRejected`],
-//! a plain exception whose single argument is one of the five reason strings
+//! a plain exception whose single argument is one of the six reason strings
 //! (`"profile_too_short"`, `"no_edge"`, `"wrong_polarity"`, `"too_oblique"`,
-//! `"off_image"`): `except vm.MeasureRejected as e: reason = e.args[0]`. This
-//! is the ordinary Python idiom for "this call has a well-defined failure
-//! mode", and it composes with `try`/`except` instead of asking every caller
-//! to unwrap a tagged result by hand.
+//! `"off_image"`, `"incomplete_sequence"`):
+//! `except vm.MeasureRejected as e: reason = e.args[0]`. This is the ordinary
+//! Python idiom for "this call has a well-defined failure mode", and it composes
+//! with `try`/`except` instead of asking every caller to unwrap a tagged result
+//! by hand.
 //!
 //! `MetrologyModel.apply` is different: it always returns one entry per
 //! object, in order, and an exception on the first failure would discard the
@@ -73,6 +74,7 @@ fn reject_reason_str(r: NativeRejectReason) -> &'static str {
         NativeRejectReason::WrongPolarity => "wrong_polarity",
         NativeRejectReason::TooOblique => "too_oblique",
         NativeRejectReason::OffImage => "off_image",
+        NativeRejectReason::IncompleteSequence => "incomplete_sequence",
     }
 }
 
@@ -163,13 +165,13 @@ impl Caliper {
         half_len: f32,
         half_width: f32,
         config: Option<MeasureConfig>,
-    ) -> Self {
-        Self {
+    ) -> PyResult<Self> {
+        Ok(Self {
             inner: NativeCaliper::rect(
                 rect_from(center, angle, half_len, half_width),
-                config.unwrap_or_default().to_native(),
+                config.unwrap_or_default().to_native()?,
             ),
-        }
+        })
     }
 
     /// An annular caliper: scans along a circular arc, averages radially.
@@ -182,13 +184,13 @@ impl Caliper {
         angle_extent: f32,
         half_width: f32,
         config: Option<MeasureConfig>,
-    ) -> Self {
-        Self {
+    ) -> PyResult<Self> {
+        Ok(Self {
             inner: NativeCaliper::arc(
                 arc_from(center, radius, angle_start, angle_extent, half_width),
-                config.unwrap_or_default().to_native(),
+                config.unwrap_or_default().to_native()?,
             ),
-        }
+        })
     }
 
     /// A radial caliper: scans outward from `center`, averaging along the
@@ -202,13 +204,13 @@ impl Caliper {
         half_len: f32,
         half_width: f32,
         config: Option<MeasureConfig>,
-    ) -> Self {
-        Self {
+    ) -> PyResult<Self> {
+        Ok(Self {
             inner: NativeCaliper::radial(
                 radial_from(center, radius, angle, half_len, half_width),
-                config.unwrap_or_default().to_native(),
+                config.unwrap_or_default().to_native()?,
             ),
-        }
+        })
     }
 
     /// A strip from `start` to `end`: scans along it, averages across it.
@@ -230,7 +232,7 @@ impl Caliper {
         Ok(Self {
             inner: NativeCaliper::strip(
                 strip_from(start, end, half_width, samples, across)?,
-                config.unwrap_or_default().to_native(),
+                config.unwrap_or_default().to_native()?,
             ),
         })
     }
@@ -449,7 +451,7 @@ impl MetrologyObject {
             n_calipers: self.n_calipers,
             caliper_len: self.caliper_len,
             caliper_width: self.caliper_width,
-            measure: self.measure.to_native(),
+            measure: self.measure.to_native()?,
             fit: self.fit.to_native()?,
         })
     }

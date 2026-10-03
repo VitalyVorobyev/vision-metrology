@@ -710,6 +710,40 @@ def test_caliper_move_to_keeps_the_config():
         arc.measure(disc)  # entirely inside the disc: nothing to cross
 
 
+def test_caliper_in_order_selection_reads_a_bar_and_names_a_missing_edge():
+    bar = np.zeros((96, 96), dtype=np.uint8)
+    bar[:, 30:60] = 200
+
+    def measure(sequence, polarity="any"):
+        cfg = vm.MeasureConfig(select="in_order", sequence=sequence, polarity=polarity)
+        return vm.Caliper.rect((48.0, 48.0), 0.0, 40.0, 8.0, config=cfg).measure(bar)
+
+    edges = measure(["rising", "falling"])
+    assert [e.polarity for e in edges] == ["rising", "falling"]
+    assert abs(edges[0].x - 29.5) < 0.1 and abs(edges[1].x - 59.5) < 0.1
+    assert [e.polarity for e in measure(["either"])] in (["rising"], ["falling"])
+
+    with pytest.raises(vm.MeasureRejected) as exc_info:
+        measure(["falling", "rising"])
+    assert exc_info.value.args[0] == "incomplete_sequence"
+    with pytest.raises(vm.MeasureRejected) as exc_info:
+        measure(["rising"], polarity="falling")
+    assert exc_info.value.args[0] == "wrong_polarity"
+
+    cfg = vm.MeasureConfig(select="in_order", sequence=["rising", "either"])
+    assert cfg.sequence == ["rising", "either"]
+    assert "sequence" in repr(cfg)
+    for bad in ([], ["up"], ["rising", "falling", "rising"]):
+        with pytest.raises(ValueError):
+            vm.MeasureConfig(select="in_order", sequence=bad)
+    with pytest.raises(ValueError):
+        vm.MeasureConfig(select="strongest", sequence=["rising"])
+    # An attribute edit is checked when the config is used.
+    cfg.sequence = []
+    with pytest.raises(ValueError):
+        vm.Caliper.rect((48.0, 48.0), 0.0, 40.0, 8.0, config=cfg)
+
+
 def test_fit_line_object_and_function():
     pts = np.array([[float(i), 2.0] for i in range(10)], dtype=np.float32)
     obj = vm.Fitter().fit_line(pts)

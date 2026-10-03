@@ -195,6 +195,7 @@ fn reject_reason_str(r: RejectReason) -> &'static str {
         RejectReason::WrongPolarity => "wrong_polarity",
         RejectReason::TooOblique => "too_oblique",
         RejectReason::OffImage => "off_image",
+        RejectReason::IncompleteSequence => "incomplete_sequence",
     }
 }
 

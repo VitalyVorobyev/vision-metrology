@@ -3,7 +3,8 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use vision_metrology::measure::{
-    Derivative as NativeDerivative, EdgeSelect as NativeEdgeSelect, Locate as NativeLocate,
+    Derivative as NativeDerivative, EdgeSelect as NativeEdgeSelect,
+    EdgeSequence as NativeEdgeSequence, Locate as NativeLocate,
     MeasureConfig as NativeMeasureConfig, OffImage as NativeOffImage,
     PolaritySelect as NativePolaritySelect, ProfileConfig as NativeProfileConfig,
 };
@@ -72,6 +73,34 @@ impl Default for Locate {
     }
 }
 
+/// Polarity names a `sequence` entry accepts; "either" and "any" both mean either.
+const SEQUENCE_POLARITIES: [&str; 4] = ["rising", "falling", "either", "any"];
+
+fn polarity_from(name: &str) -> NativePolaritySelect {
+    match name {
+        "rising" => NativePolaritySelect::Rising,
+        "falling" => NativePolaritySelect::Falling,
+        _ => NativePolaritySelect::Any,
+    }
+}
+
+/// The native sequence for `select="in_order"`: one or two known polarity names.
+fn sequence_to_native(sequence: &[String]) -> PyResult<NativeEdgeSequence> {
+    let known = sequence
+        .iter()
+        .all(|p| SEQUENCE_POLARITIES.contains(&p.as_str()));
+    match sequence {
+        [first, rest @ ..] if known && rest.len() <= 1 => Ok(NativeEdgeSequence {
+            first: polarity_from(first),
+            second: rest.first().map(|p| polarity_from(p)),
+        }),
+        _ => Err(PyValueError::new_err(format!(
+            "select='in_order' needs a sequence of one or two of {SEQUENCE_POLARITIES:?}, \
+             got {sequence:?}"
+        ))),
+    }
+}
+
 /// Mirrors `vision_metrology::measure::MeasureConfig`.
 #[pyclass(get_all, set_all, from_py_object)]
 #[derive(Debug, Clone)]
@@ -82,8 +111,11 @@ pub struct MeasureConfig {
     pub threshold: f32,
     /// "any", "rising" or "falling".
     pub polarity: String,
-    /// "all", "first", "last" or "strongest".
+    /// "all", "first", "last", "strongest" or "in_order".
     pub select: String,
+    /// For `select="in_order"`: one or two polarities ("rising", "falling", "either"),
+    /// found in scan order, each the strongest of its polarity after the previous one.
+    pub sequence: Vec<String>,
     /// Profile sampling step along the scan axis, in pixels.
     pub step: f32,
     /// Maximum angle, in degrees, between scan direction and image gradient.
@@ -115,6 +147,7 @@ impl MeasureConfig {
         threshold=None,
         polarity=None,
         select=None,
+        sequence=None,
         step=None,
         max_obliquity_deg=None,
         border_mode=None,
@@ -129,6 +162,7 @@ impl MeasureConfig {
         threshold: Option<f32>,
         polarity: Option<String>,
         select: Option<String>,
+        sequence: Option<Vec<String>>,
         step: Option<f32>,
         max_obliquity_deg: Option<f32>,
         border_mode: Option<String>,
@@ -148,7 +182,7 @@ impl MeasureConfig {
             (
                 "select",
                 select.as_deref(),
-                &["all", "first", "last", "strongest"][..],
+                &["all", "first", "last", "strongest", "in_order"][..],
             ),
             (
                 "border_mode",
@@ -170,11 +204,21 @@ impl MeasureConfig {
                 )));
             }
         }
+        let select = select.unwrap_or(d.select);
+        let sequence = sequence.unwrap_or_default();
+        if select == "in_order" {
+            sequence_to_native(&sequence)?;
+        } else if !sequence.is_empty() {
+            return Err(PyValueError::new_err(
+                "sequence is only used with select='in_order'",
+            ));
+        }
         Ok(Self {
             sigma: sigma.unwrap_or(d.sigma),
             threshold: threshold.unwrap_or(d.threshold),
             polarity: polarity.unwrap_or(d.polarity),
-            select: select.unwrap_or(d.select),
+            select,
+            sequence,
             step: step.unwrap_or(d.step),
             max_obliquity_deg: max_obliquity_deg.unwrap_or(d.max_obliquity_deg),
             border_mode: border_mode.unwrap_or(d.border_mode),
@@ -187,8 +231,13 @@ impl MeasureConfig {
     }
 
     fn __repr__(&self) -> String {
+        let sequence = if self.select == "in_order" {
+            format!(", sequence={:?}", self.sequence)
+        } else {
+            String::new()
+        };
         format!(
-            "MeasureConfig(sigma={:.3}, threshold={:.3}, polarity='{}', select='{}')",
+            "MeasureConfig(sigma={:.3}, threshold={:.3}, polarity='{}', select='{}'{sequence})",
             self.sigma, self.threshold, self.polarity, self.select
         )
     }
@@ -202,6 +251,7 @@ impl Default for MeasureConfig {
             threshold: n.threshold,
             polarity: "any".to_string(),
             select: "all".to_string(),
+            sequence: Vec::new(),
             step: n.profile.step,
             max_obliquity_deg: n.max_obliquity_deg,
             border_mode: "clamp".to_string(),
@@ -215,18 +265,18 @@ impl Default for MeasureConfig {
 }
 
 impl MeasureConfig {
-    pub fn to_native(&self) -> NativeMeasureConfig {
-        NativeMeasureConfig {
+    /// The native config; fails when `select="in_order"` has no valid `sequence`.
+    pub fn to_native(&self) -> PyResult<NativeMeasureConfig> {
+        Ok(NativeMeasureConfig {
             threshold: self.threshold,
-            polarity: match self.polarity.as_str() {
-                "rising" => NativePolaritySelect::Rising,
-                "falling" => NativePolaritySelect::Falling,
-                _ => NativePolaritySelect::Any,
-            },
+            polarity: polarity_from(&self.polarity),
             select: match self.select.as_str() {
                 "first" => NativeEdgeSelect::First,
                 "last" => NativeEdgeSelect::Last,
                 "strongest" => NativeEdgeSelect::Strongest,
+                "in_order" => {
+                    NativeEdgeSelect::StrongestInOrder(sequence_to_native(&self.sequence)?)
+                }
                 _ => NativeEdgeSelect::All,
             },
             locate: self.locate.to_native(),
@@ -250,6 +300,6 @@ impl MeasureConfig {
                     _ => NativeOffImage::Fill,
                 },
             },
-        }
+        })
     }
 }
