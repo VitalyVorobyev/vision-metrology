@@ -77,7 +77,7 @@ Each Rust config is a Python class with keyword arguments, for example
 | `lsd` | `LsdDetector`, `detect_line_segments`, `LineSegment` |
 | `fit` | `Fitter` (`fit_line`, `fit_circle`, `fit_ellipse`), `fit_line`, `fit_ellipse`, `FitConfig` |
 | `matching` | `ShapeModel` (incl. `save`/`load`), `ShapeMatcher`, `ShapeMatch`, `find_shape_model`, `ShapeModelConfig`, `ShapeSearchConfig`, `Contrast`, `CropSpec` (`ShapeMatch.model_frame_map`) |
-| `measure` | `Caliper` (`rect`/`arc`/`radial`/`strip`, `move_to_*`, `measure`, `measure_pairs`, `profile`), `MeasureConfig`, `MetrologyModel` (`apply`, `layout`), `MetrologyObject`, `MetrologyShape`, `MetrologyResult`, `MetrologyError`, `CaliperPlacement`, `MeasureRejected` |
+| `measure` | `Caliper` (`rect`/`arc`/`radial`/`strip`, `move_to_*`, `measure`, `measure_pairs`, `profile`, `levels`), `MeasureConfig`, `Locate`, `LevelEdge`, `MetrologyModel` (`apply`, `layout`), `MetrologyObject`, `MetrologyShape`, `MetrologyResult`, `MetrologyError`, `CaliperPlacement`, `MeasureRejected` |
 | `warp` | `Map` (`affine`, `projective`, `polar`, `log_polar`, `apply`, `apply_with_mask`) |
 | `metric` | `CameraModel`, `PinholeIntrinsics`, `BrownConrady5`, `Plane3`, `PlaneGrid`, `pixel_to_plane`, `project_plane_points`, `plane_grid_map`, `undistort_map`, `load_rig_extrinsics`, `load_table_calibration` |
 | `corr` | `CorrTemplate`, `find`, `find_topk`, `displacement`, `CorrConfig`, `CorrTemplateConfig`, `DisplacementConfig`, `Refine` |
@@ -90,7 +90,7 @@ Each Rust config is a Python class with keyword arguments, for example
 - `laser`;
 - `segment::watershed` and edgel region growing;
 - `contour::build_graph_from_edgels` (the raw-edgel constructor);
-- the standalone 1-D edge detector (reachable through `Caliper`);
+- the standalone 1-D edge detector and level-crossing locator (reachable through `Caliper`);
 - pyramids and direction fields.
 
 Runnable scripts are in

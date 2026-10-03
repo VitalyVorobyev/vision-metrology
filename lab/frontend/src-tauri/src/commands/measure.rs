@@ -196,6 +196,8 @@ fn reject_reason_str(r: RejectReason) -> &'static str {
         RejectReason::TooOblique => "too_oblique",
         RejectReason::OffImage => "off_image",
         RejectReason::IncompleteSequence => "incomplete_sequence",
+        RejectReason::LowContrast => "low_contrast",
+        RejectReason::NoCrossing => "no_crossing",
     }
 }
 

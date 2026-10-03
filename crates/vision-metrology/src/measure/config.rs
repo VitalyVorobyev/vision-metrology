@@ -1,5 +1,7 @@
 //! What a caliper looks for, and how it builds the profile it looks in.
 
+use std::num::NonZeroUsize;
+
 use vm_primitives::{BorderMode, EdgePolarity, SubpixRefine};
 
 /// Which edges to keep from a profile.
@@ -76,12 +78,68 @@ pub enum Derivative {
 }
 
 /// How an edge position is located on the profile.
+///
+/// [`GradientPeak`](Self::GradientPeak) finds where the intensity changes fastest; the two
+/// level methods find where the smoothed profile crosses the level halfway between the
+/// intensities on either side. On a symmetric edge they agree. On an asymmetric one (a
+/// shadow, a bevel, a long tail) they do not, and the level crossing is the definition a
+/// width or a datum usually means. Both level methods read the profile smoothed with the
+/// Gaussian of [`ProfileConfig::sigma`], at the half-width [`ProfileConfig::derivative`]
+/// sets.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Locate {
     /// A local extremum of the derivative, refined to subpixel position.
     GradientPeak {
         /// Subpixel refinement of the extremum.
         refine: SubpixRefine,
+    },
+    /// One edge where the profile crosses the mean of its two end levels, the crossing
+    /// nearest the middle of the profile.
+    ///
+    /// The checks run in this order:
+    /// 1. the end levels, the medians of the first and last `endpoint_samples` samples,
+    ///    must differ by at least `min_contrast`, or the caliper reports
+    ///    [`RejectReason::LowContrast`];
+    /// 2. their order gives the polarity (rising when the last level is the higher), which
+    ///    [`MeasureConfig::polarity`] and the first entry of an
+    ///    [`EdgeSelect::StrongestInOrder`] sequence must admit, or the caliper reports
+    ///    [`RejectReason::WrongPolarity`];
+    /// 3. the crossing of that polarity nearest sample `(n − 1) / 2` is the edge (equal
+    ///    distances: the earlier one), or the caliper reports
+    ///    [`RejectReason::NoCrossing`].
+    ///
+    /// `threshold` is not used. The edge's amplitude is the contrast between the levels.
+    MidpointCrossing {
+        /// Samples at each end whose median gives that end's level.
+        endpoint_samples: NonZeroUsize,
+        /// Minimum difference between the two end levels, on the input pixel scale.
+        min_contrast: f32,
+    },
+    /// Edges found as gradient peaks (refined with a three-point parabola, filtered by
+    /// threshold and polarity, narrowed by [`MeasureConfig::select`]), each then moved
+    /// to the crossing of its local half-contrast level.
+    ///
+    /// The local level is the mean of the median intensities `flank_near_px` to
+    /// `flank_far_px` before and after the current position; the position moves to the
+    /// crossing of that level nearest it, within `flank_near_px`, until it moves by
+    /// `tol_px` or less or `max_iter` iterations have run. An edge that ends up more than
+    /// `flank_near_px` from its gradient peak, or whose flanks fall off the profile,
+    /// reports [`RejectReason::NoCrossing`]; flanks closer than `min_contrast` report
+    /// [`RejectReason::LowContrast`]. When refined edges are no longer in strictly
+    /// increasing order along the profile, the caliper reports
+    /// [`RejectReason::IncompleteSequence`]. An edge's amplitude is the contrast between
+    /// its flanks.
+    HalfContrast {
+        /// Inner edge of each flank window, in pixels from the current position.
+        flank_near_px: f32,
+        /// Outer edge of each flank window, in pixels from the current position.
+        flank_far_px: f32,
+        /// Convergence tolerance, in pixels.
+        tol_px: f32,
+        /// The most iterations per edge.
+        max_iter: NonZeroUsize,
+        /// Minimum difference between the two flank levels, on the input pixel scale.
+        min_contrast: f32,
     },
 }
 
@@ -204,6 +262,12 @@ pub enum RejectReason {
     /// fill rather than data.
     OffImage,
     /// [`EdgeSelect::StrongestInOrder`] found its first edge but no edge for a later
-    /// entry after it.
+    /// entry after it, or [`Locate::HalfContrast`] moved edges out of order.
     IncompleteSequence,
+    /// The levels a [`Locate::MidpointCrossing`] or [`Locate::HalfContrast`] edge sits
+    /// between differ by less than its `min_contrast`.
+    LowContrast,
+    /// A level method found no crossing: the profile never crosses the midpoint level
+    /// with the expected polarity, or a half-contrast edge has no crossing near it.
+    NoCrossing,
 }

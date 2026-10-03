@@ -298,15 +298,40 @@ class ScaleInvariantConfig:
 
 class Locate:
     """How a caliper locates an edge on its profile. Construct with
-    `Locate.gradient_peak(refine=...)`."""
+    `Locate.gradient_peak(refine=...)`, `Locate.midpoint_crossing(...)` or
+    `Locate.half_contrast(...)`."""
 
     kind: str
     refine: str
     centroid_radius: int
+    endpoint_samples: int
+    min_contrast: float
+    flank_px: Tuple[float, float]
+    tol_px: float
+    max_iter: int
     @staticmethod
     def gradient_peak(refine: str = ..., centroid_radius: int = ...) -> Locate:
         """A local extremum of the derivative. `refine` is "none", "parabolic"
         (default), "gaussian" (log-parabola) or "centroid"."""
+        ...
+    @staticmethod
+    def midpoint_crossing(endpoint_samples: int = ..., min_contrast: float = ...) -> Locate:
+        """One edge where the smoothed profile crosses the mean of its end levels
+        (medians of the first and last `endpoint_samples` samples), nearest the
+        middle. Raises `MeasureRejected("low_contrast")` when the levels differ by
+        less than `min_contrast`, `"wrong_polarity"` when their order is not the
+        configured polarity, and `"no_crossing"` when there is no crossing."""
+        ...
+    @staticmethod
+    def half_contrast(
+        flank_px: Tuple[float, float] = ...,
+        tol_px: float = ...,
+        max_iter: int = ...,
+        min_contrast: float = ...,
+    ) -> Locate:
+        """Gradient peaks, each moved to the crossing of its local half-contrast
+        level: the mean of the medians `flank_px[0]` to `flank_px[1]` pixels before
+        and after it, iterated until it moves by `tol_px` or less."""
         ...
 
 class MeasureConfig:
@@ -632,11 +657,24 @@ class Caliper:
     def measure(self, img: ImageAny) -> List[MeasureEdge]: ...
     def measure_pairs(self, img: ImageAny) -> List[MeasurePair]: ...
     def profile(self) -> List[float]: ...
+    def levels(self) -> List[LevelEdge]:
+        """The level crossings behind the last `measure` call's edges (none for
+        `Locate.gradient_peak`); `x` is in profile samples."""
+        ...
+
+class LevelEdge:
+    """An edge located as a level crossing."""
+
+    x: float
+    before: float
+    after: float
+    level: float
+    iterations: int
 
 class MeasureRejected(Exception):
     """Raised by `Caliper.measure`; `args[0]` is one of `"profile_too_short"`,
     `"no_edge"`, `"wrong_polarity"`, `"too_oblique"`, `"off_image"`,
-    `"incomplete_sequence"`."""
+    `"incomplete_sequence"`, `"low_contrast"`, `"no_crossing"`."""
 
 # ---------------------------------------------------------------------------
 # Detectors, fitters, matchers, segmentation

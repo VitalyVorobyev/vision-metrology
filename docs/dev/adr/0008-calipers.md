@@ -34,21 +34,41 @@ whether the result is unbiased:
   circle of radius 40, a sample 5 px to the side sits at radius 40.31, on the wrong side of
   the edge. A 32-caliper fit reads 39.88 px; `MeasureRadial` reads 39.990 px, and its bias
   no longer grows with width.
-- **Edges along the profile** come from `Edge1DDetector`, filtered by threshold and
-  `PolaritySelect`, and narrowed by `EdgeSelect`. `EdgeSelect::StrongestInOrder` is
-  CaliperBench's greedy rule (per entry, the strongest edge strictly after the previous
-  choice, ties to the earlier edge). It orders by subpixel profile position rather than
-  `t`, because `t` decreases along an arc with a negative extent. The derivative operator and the
-  subpixel refinement are configurable (`ProfileConfig::derivative`,
-  `Locate::GradientPeak { refine }`). The defaults, derivative of Gaussian and a
-  three-point parabola, are what the accuracy envelopes and the can-end baseline
-  are pinned to. The textbook alternatives (Gaussian then central differences, a
-  log-parabola) exist so results can be compared with reference implementations
-  operator for operator.
+- **Edges along the profile** are located one of three ways (`Locate`):
+  - `GradientPeak { refine }`, the default: extrema of `Edge1DDetector`'s derivative,
+    filtered by threshold and `PolaritySelect` and narrowed by `EdgeSelect`. The
+    derivative operator and the refinement are configurable
+    (`ProfileConfig::derivative`, `refine`). The defaults, derivative of Gaussian and a
+    three-point parabola, are what the accuracy envelopes and the can-end baseline are
+    pinned to; the textbook alternatives (Gaussian then central differences, a
+    log-parabola) exist so results can be compared with reference implementations
+    operator for operator.
+  - `MidpointCrossing`: CaliperBench's `midpoint_crossing` baseline. The smoothed
+    profile's end levels (medians of `endpoint_samples` at each end) give one level and
+    one polarity, and the crossing nearest the middle is the edge. Its checks run in
+    CaliperBench's order (contrast, then polarity, then the crossing), so a rejection
+    names the same gate the reference would.
+  - `HalfContrast`: CaliperBench's reference edge definition, the local half-contrast
+    crossing. Gradient edges are the seeds; each moves to the crossing of the mean of the
+    flank medians either side of it, re-centred until it settles. It is a refinement of
+    a selected edge, not a selector, so it keeps `select` and the gradient's
+    seed-finding.
+
+  The level primitives (`LevelCrossing1D`: end levels, interpolated crossings, the
+  half-contrast iteration) live in `vm-primitives` next to `Edge1DDetector`, in
+  samples, with `measure` converting pixel distances by the profile's spacing.
+  Gradient peaks stay the default because they need no flat material either side of
+  the edge, find several edges in one window, and are what existing results are pinned
+  to.
+- **`EdgeSelect::StrongestInOrder`** is CaliperBench's greedy rule (per entry, the
+  strongest edge strictly after the previous choice, ties to the earlier edge). It
+  orders by subpixel profile position rather than `t`, because `t` decreases along an
+  arc with a negative extent.
 - **An optional obliquity gate** rejects an edge whose image gradient is too oblique to the
   scan. A glancing crossing reports a position along the scan rather than along the edge
   normal, and the two differ by `1/cos θ`.
-- **A rejection is typed** (`RejectReason`, ADR-0006).
+- **A rejection is typed** (`RejectReason`, ADR-0006). The level methods add
+  `LowContrast` and `NoCrossing`.
 - **The config separates what is looked for from how the profile is built.**
   `MeasureConfig` holds threshold, polarity, selection and the obliquity gate;
   `MeasureConfig::profile` (`ProfileConfig`) holds smoothing, sampling step and

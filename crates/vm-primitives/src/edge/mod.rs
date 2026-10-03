@@ -19,6 +19,7 @@ mod edge2d;
 mod gradient;
 mod kernels1d;
 mod laser1d;
+mod level1d;
 
 pub use conv1d::convolve_f32;
 pub use edge1d::{
@@ -30,3 +31,4 @@ pub use edge2d::{
 pub use gradient::{DirectionField, TiledField};
 pub use kernels1d::DoGKernel1D;
 pub use laser1d::{EdgePair1D, EdgePairConfig, best_edge_pair, best_edge_pair_in_row_u8};
+pub use level1d::{HalfContrastConfig, LevelCrossing1D, LevelEdge, LevelOutcome};

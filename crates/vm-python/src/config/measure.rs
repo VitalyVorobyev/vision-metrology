@@ -1,5 +1,7 @@
 //! Python-visible [`MeasureConfig`](vision_metrology::measure::MeasureConfig) mirror.
 
+use std::num::NonZeroUsize;
+
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use vision_metrology::measure::{
@@ -11,17 +13,29 @@ use vision_metrology::measure::{
 use vm_primitives::{BorderMode, SubpixRefine};
 
 /// How a caliper locates an edge on its profile — construct with
-/// `Locate.gradient_peak(refine=...)`.
+/// `Locate.gradient_peak(refine=...)`, `Locate.midpoint_crossing(...)` or
+/// `Locate.half_contrast(...)`.
 #[pyclass(frozen, get_all, from_py_object)]
 #[derive(Debug, Clone)]
 pub struct Locate {
-    /// "gradient_peak".
+    /// "gradient_peak", "midpoint_crossing" or "half_contrast".
     pub kind: String,
     /// Subpixel refinement of a gradient peak: "none", "parabolic", "gaussian" or
     /// "centroid".
     pub refine: String,
     /// Half-width of the centroid window, in samples (only for `refine="centroid"`).
     pub centroid_radius: usize,
+    /// `midpoint_crossing`: samples at each end whose median is that end's level.
+    pub endpoint_samples: usize,
+    /// `midpoint_crossing` and `half_contrast`: minimum difference between the two
+    /// levels, on the input pixel scale.
+    pub min_contrast: f32,
+    /// `half_contrast`: inner and outer edges of each flank window, in pixels.
+    pub flank_px: (f32, f32),
+    /// `half_contrast`: convergence tolerance, in pixels.
+    pub tol_px: f32,
+    /// `half_contrast`: the most iterations per edge.
+    pub max_iter: usize,
 }
 
 #[pymethods]
@@ -37,29 +51,98 @@ impl Locate {
             )));
         }
         Ok(Self {
-            kind: "gradient_peak".into(),
             refine: refine.into(),
             centroid_radius,
+            ..Self::default()
+        })
+    }
+
+    /// One edge where the smoothed profile crosses the mean of its two end levels (the
+    /// medians of the first and last `endpoint_samples` samples), nearest the middle.
+    #[staticmethod]
+    #[pyo3(signature = (endpoint_samples=3, min_contrast=0.05))]
+    pub fn midpoint_crossing(endpoint_samples: usize, min_contrast: f32) -> PyResult<Self> {
+        positive("endpoint_samples", endpoint_samples)?;
+        Ok(Self {
+            kind: "midpoint_crossing".into(),
+            endpoint_samples,
+            min_contrast,
+            ..Self::default()
+        })
+    }
+
+    /// Gradient peaks, each moved to the crossing of its local half-contrast level: the
+    /// mean of the medians `flank_px[0]` to `flank_px[1]` pixels either side of it.
+    #[staticmethod]
+    #[pyo3(signature = (flank_px=(3.0, 8.0), tol_px=0.01, max_iter=5, min_contrast=0.0))]
+    pub fn half_contrast(
+        flank_px: (f32, f32),
+        tol_px: f32,
+        max_iter: usize,
+        min_contrast: f32,
+    ) -> PyResult<Self> {
+        positive("max_iter", max_iter)?;
+        if !(flank_px.0 >= 0.0 && flank_px.0 <= flank_px.1) {
+            return Err(PyValueError::new_err(format!(
+                "flank_px must be (near, far) with 0 <= near <= far, got {flank_px:?}"
+            )));
+        }
+        Ok(Self {
+            kind: "half_contrast".into(),
+            flank_px,
+            tol_px,
+            max_iter,
+            min_contrast,
+            ..Self::default()
         })
     }
 
     fn __repr__(&self) -> String {
-        format!("Locate.gradient_peak(refine='{}')", self.refine)
+        match self.kind.as_str() {
+            "midpoint_crossing" => format!(
+                "Locate.midpoint_crossing(endpoint_samples={}, min_contrast={})",
+                self.endpoint_samples, self.min_contrast
+            ),
+            "half_contrast" => format!(
+                "Locate.half_contrast(flank_px={:?}, tol_px={}, max_iter={}, min_contrast={})",
+                self.flank_px, self.tol_px, self.max_iter, self.min_contrast
+            ),
+            _ => format!("Locate.gradient_peak(refine='{}')", self.refine),
+        }
     }
 }
 
+/// `value` as a `NonZeroUsize`, or a `ValueError` naming `name`.
+fn positive(name: &str, value: usize) -> PyResult<NonZeroUsize> {
+    NonZeroUsize::new(value)
+        .ok_or_else(|| PyValueError::new_err(format!("{name} must be at least 1")))
+}
+
 impl Locate {
-    pub fn to_native(&self) -> NativeLocate {
-        NativeLocate::GradientPeak {
-            refine: match self.refine.as_str() {
-                "none" => SubpixRefine::None,
-                "gaussian" => SubpixRefine::Gaussian3,
-                "centroid" => SubpixRefine::Centroid {
-                    radius: self.centroid_radius,
-                },
-                _ => SubpixRefine::Parabolic3,
+    pub fn to_native(&self) -> PyResult<NativeLocate> {
+        Ok(match self.kind.as_str() {
+            "midpoint_crossing" => NativeLocate::MidpointCrossing {
+                endpoint_samples: positive("endpoint_samples", self.endpoint_samples)?,
+                min_contrast: self.min_contrast,
             },
-        }
+            "half_contrast" => NativeLocate::HalfContrast {
+                flank_near_px: self.flank_px.0,
+                flank_far_px: self.flank_px.1,
+                tol_px: self.tol_px,
+                max_iter: positive("max_iter", self.max_iter)?,
+                min_contrast: self.min_contrast,
+            },
+            _ => NativeLocate::GradientPeak {
+                refine: match self.refine.as_str() {
+                    "none" => SubpixRefine::None,
+                    "gaussian" => SubpixRefine::Gaussian3,
+                    "centroid" => SubpixRefine::Centroid {
+                        radius: self.centroid_radius,
+                    },
+                    _ => SubpixRefine::Parabolic3,
+                },
+            },
+        })
     }
 }
 
@@ -69,6 +152,11 @@ impl Default for Locate {
             kind: "gradient_peak".into(),
             refine: "parabolic".into(),
             centroid_radius: 2,
+            endpoint_samples: 3,
+            min_contrast: 0.05,
+            flank_px: (3.0, 8.0),
+            tol_px: 0.01,
+            max_iter: 5,
         }
     }
 }
@@ -279,7 +367,7 @@ impl MeasureConfig {
                 }
                 _ => NativeEdgeSelect::All,
             },
-            locate: self.locate.to_native(),
+            locate: self.locate.to_native()?,
             max_obliquity_deg: self.max_obliquity_deg,
             profile: NativeProfileConfig {
                 sigma: self.sigma,

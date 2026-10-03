@@ -15,7 +15,9 @@ pub struct MeasureEdge {
     /// the signed distance from the centre for rect and radial placements, the arc
     /// length from `angle_start` for an arc.
     pub t: f32,
-    /// `|DoG response|` at the edge — the local contrast.
+    /// The local contrast: the `|derivative response|` at a gradient peak, or
+    /// `|after − before|` between the levels of a level crossing
+    /// ([`Locate`](super::Locate)).
     pub amplitude: f32,
     /// Direction of the intensity transition along the scan axis.
     pub polarity: EdgePolarity,
@@ -42,25 +44,25 @@ pub(crate) struct Candidate {
     pub edge: MeasureEdge,
 }
 
-/// Append the edges `select` keeps from `cands` (in profile order) to `out`.
+/// Append the candidates `select` keeps from `cands` (in profile order) to `out`.
 ///
 /// Only [`EdgeSelect::StrongestInOrder`] can come up empty on a non-empty `cands`; it
 /// then leaves `out` as it was and names the entry that failed.
 pub(crate) fn select_edges(
     cands: &[Candidate],
     select: EdgeSelect,
-    out: &mut Vec<MeasureEdge>,
+    out: &mut Vec<Candidate>,
 ) -> Result<(), RejectReason> {
     match select {
-        EdgeSelect::All => out.extend(cands.iter().map(|c| c.edge)),
-        EdgeSelect::First => out.extend(cands.first().map(|c| c.edge)),
-        EdgeSelect::Last => out.extend(cands.last().map(|c| c.edge)),
+        EdgeSelect::All => out.extend_from_slice(cands),
+        EdgeSelect::First => out.extend(cands.first().copied()),
+        EdgeSelect::Last => out.extend(cands.last().copied()),
         // Equal amplitudes resolve to the later edge.
         EdgeSelect::Strongest => out.extend(
             cands
                 .iter()
                 .max_by(|a, b| a.edge.amplitude.total_cmp(&b.edge.amplitude))
-                .map(|c| c.edge),
+                .copied(),
         ),
         EdgeSelect::StrongestInOrder(seq) => {
             let start = out.len();
@@ -82,7 +84,7 @@ pub(crate) fn select_edges(
                         _ => RejectReason::IncompleteSequence,
                     });
                 };
-                out.push(best.edge);
+                out.push(*best);
                 after = Some(best.x);
             }
         }
@@ -148,7 +150,7 @@ mod tests {
 
     fn select(cands: &[Candidate], sel: EdgeSelect) -> Result<Vec<f32>, RejectReason> {
         let mut out = Vec::new();
-        select_edges(cands, sel, &mut out).map(|()| out.iter().map(|e| e.t).collect())
+        select_edges(cands, sel, &mut out).map(|()| out.iter().map(|c| c.edge.t).collect())
     }
 
     #[test]
@@ -213,10 +215,10 @@ mod tests {
         );
 
         // A failed selection leaves the output untouched.
-        let mut out = vec![cands[0].edge];
+        let mut out = vec![cands[0]];
         let r = select_edges(&cands, in_order(rising, Some(falling)), &mut out);
         assert_eq!(r, Err(RejectReason::IncompleteSequence));
-        assert_eq!(out, vec![cands[0].edge]);
+        assert_eq!(out, vec![cands[0]]);
     }
 
     /// CaliperBench's greedy selection, line for line: for each requested polarity the

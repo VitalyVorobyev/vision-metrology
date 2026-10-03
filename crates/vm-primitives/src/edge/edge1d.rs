@@ -176,6 +176,51 @@ impl Edge1DDetector {
         self.find_local_extrema(cfg)
     }
 
+    /// Smooth a 1-D signal with the Gaussian `cfg` describes, borrowing the internal
+    /// buffer.
+    ///
+    /// The kernel is the one the detector smooths with: σ = `cfg.sigma`, normalised, with
+    /// the half-width `cfg.derivative` gives (`ceil(3σ)` for
+    /// [`DerivativeOfGaussian`](Derivative1D::DerivativeOfGaussian), the explicit radius
+    /// for [`SmoothThenCentral`](Derivative1D::SmoothThenCentral)), extended with
+    /// `cfg.border`. For `SmoothThenCentral` this is exactly the signal the central
+    /// differences are taken of. The slice is valid until the next call; it leaves
+    /// [`response`](Self::response) as it was.
+    pub fn smooth_in_ref<'a, P: Pixel>(
+        &'a mut self,
+        signal: &[P],
+        cfg: &Edge1DConfig,
+    ) -> &'a [f32] {
+        if let Some(direct) = P::as_f32_slice(signal) {
+            self.smooth_into(direct, cfg);
+        } else {
+            let mut tmp = std::mem::take(&mut self.tmp);
+            tmp.clear();
+            tmp.extend(signal.iter().map(|v| v.to_f32()));
+            self.smooth_into(&tmp, cfg);
+            self.tmp = tmp;
+        }
+        &self.smooth
+    }
+
+    /// Fill `smooth` with `signal` convolved with the Gaussian of `cfg`.
+    fn smooth_into(&mut self, signal: &[f32], cfg: &Edge1DConfig) {
+        let radius = match cfg.derivative {
+            Derivative1D::DerivativeOfGaussian => None,
+            Derivative1D::SmoothThenCentral { radius } => Some(radius.get()),
+        };
+        self.ensure_kernel(cfg.sigma, radius);
+        self.smooth.clear();
+        self.smooth.resize(signal.len(), 0.0);
+        convolve_f32(
+            signal,
+            &self.kernel.g,
+            self.kernel.radius,
+            cfg.border,
+            &mut self.smooth,
+        );
+    }
+
     /// Fill `resp` with the derivative of `signal` under `cfg`.
     fn respond(&mut self, signal: &[f32], cfg: &Edge1DConfig) {
         self.resp.clear();
@@ -194,17 +239,8 @@ impl Edge1DDetector {
                     &mut self.resp,
                 );
             }
-            Derivative1D::SmoothThenCentral { radius } => {
-                self.ensure_kernel(cfg.sigma, Some(radius.get()));
-                self.smooth.clear();
-                self.smooth.resize(signal.len(), 0.0);
-                convolve_f32(
-                    signal,
-                    &self.kernel.g,
-                    self.kernel.radius,
-                    cfg.border,
-                    &mut self.smooth,
-                );
+            Derivative1D::SmoothThenCentral { .. } => {
+                self.smooth_into(signal, cfg);
                 central_difference(&self.smooth, &mut self.resp);
             }
         }
@@ -614,6 +650,39 @@ mod tests {
         assert_eq!(peaks.len(), 1, "{peaks:?}");
         assert_eq!(peaks[0].idx, 3);
         assert!((peaks[0].x - 2.5).abs() < 1e-6, "x = {}", peaks[0].x);
+    }
+
+    /// `smooth_in_ref` is the signal `SmoothThenCentral` differentiates, and for the
+    /// derivative of Gaussian it uses the same `ceil(3σ)` kernel.
+    #[test]
+    fn smooth_in_ref_is_the_detectors_own_smoothing() {
+        let sig: Vec<f32> = (0..24).map(|i| if i < 11 { 0.2 } else { 0.9 }).collect();
+        let central = Edge1DConfig {
+            sigma: 1.0,
+            derivative: Derivative1D::SmoothThenCentral {
+                radius: NonZeroUsize::new(3).expect("nonzero"),
+            },
+            ..Edge1DConfig::default()
+        };
+        let mut det = Edge1DDetector::new(1.0);
+        let smooth = det.smooth_in_ref(&sig, &central).to_vec();
+        let mut diff = vec![0.0f32; sig.len()];
+        central_difference(&smooth, &mut diff);
+        let _ = det.detect_in_ref(&sig, &central);
+        assert_eq!(det.response(), &diff[..]);
+        // Smoothing does not disturb the response of the last detection.
+        let _ = det.smooth_in_ref(&sig, &Edge1DConfig::default());
+        assert_eq!(det.response(), &diff[..]);
+
+        let k = DoGKernel1D::new(1.2);
+        let mut want = vec![0.0f32; sig.len()];
+        convolve_f32(&sig, &k.g, k.radius, BorderMode::Clamp, &mut want);
+        let u8_sig: Vec<u8> = sig.iter().map(|&v| (v * 10.0).round() as u8).collect();
+        assert_eq!(det.smooth_in_ref(&sig, &Edge1DConfig::default()), &want[..]);
+        assert_eq!(
+            det.smooth_in_ref(&u8_sig, &Edge1DConfig::default()).len(),
+            24
+        );
     }
 
     /// At a strict local maximum (`b ≥ a`, `b > c`) the parabola vertex never leaves
