@@ -71,26 +71,47 @@ React UI ── LabBackend ─┬─ httpBackend  ── openapi-fetch ──►
 `src/canvas/CanvasStage.tsx` mounts one `ImageStage` (`@vitavision/stage2d`) for every
 workspace, so switching screens keeps the view. The stage element is laid out at
 the source image's pixel size and carries the whole transform, so every layer is a child
-`<svg>` in image coordinates and stays registered at any viewport size.
+`<svg>` in image coordinates and stays registered at any viewport size. A `null` view
+opens at fit (`initialView="fit"`), small frames included.
 
 Layers, bottom to top:
 
 ```
-ImageLayer            the photograph; pixelated past 4×; preview → full tier on zoom
-MeasureOverlay        results, pointer-events: none
-interaction surface   the one full-frame pointer target (useCanvasInteraction)
-ContourLayer          candidate contours with wide transparent hit strokes
-RoiLayer              region outline and eight handles
-DatumLayer            model origin and its 0° arm
+ImageLayer       the photograph (stage2d): preview tier, full tier past it, pixelated past 4×
+MeasureOverlay   results, pointer-events: none
+sweep surface    the bare-image target (useCanvasInteraction)
+RectRoiEditor    the region (stage2d): interior, eight handles, and the box tool's draw surface
+ContourLayer     candidate contours with wide transparent hit strokes
+DatumLayer       model origin and its 0° arm
 ```
 
-- **Who handles a press.** `useCanvasInteraction` decides what a press means (move the
-  region, draw a box, sweep-select, or decline so the stage pans). Drags listen on
-  `window`.
+- **Who handles a press.** The topmost element under the pointer gets it:
+  - a datum handle, then a contour stroke (click selects, ⌘/Ctrl toggles, shift starts a
+    sweep);
+  - then the region: a handle resizes it, the interior moves it, and with the box tool (or
+    no region yet) a drag elsewhere draws a new one;
+  - then the sweep surface, which sweeps on shift or with the marquee tool and otherwise
+    declines, so the stage pans.
+
+  The region sits under the contours so a contour inside it stays clickable. A wrapper
+  offers each press on the region to the sweep first, in the capture phase, so shift-drag
+  over the region selects rather than moves; a handle is exempt. Sweeps listen on `window`.
+- **The region commits on release.** The editor's moves go to a local draft, and the shared
+  `roi` changes once per gesture, which is what the Teach panel re-extracts from.
+  `canvas/roi.ts` converts between the backend's `Roi` tuple and stage2d's `Rect`, so a
+  typed region and a dragged one go through the same `clampRect`.
+- **Panels drive the view** through the stage's own handle: `ImageStage`'s `ref` is
+  `LabContext`'s `canvas` (`frame`, `fit`, `zoomTo`), `null` while no canvas is mounted.
+- **The full tier is resolved lazily.** stage2d's `ImageLayer` wants the full tier's URL up
+  front, but on the desktop asking for a tier renders it. `CanvasStage` asks only once the
+  preview would be magnified, `ImageLayer`'s own rule, and keeps it for that frame.
 - **Screen-space sizes.** Handle and stroke sizes go through `stage.imageLength`, so they
   stay a constant number of screen pixels.
 - **The half-pixel convention.** Layers use `imageViewBox(stage.image)` rather than
   `0 0 W H`, because image coordinates name pixel centres and SVG names pixel edges.
+- **The layers menu stays local** (`CanvasControls.tsx`). stage2d's `StageLayersMenu` names a
+  layer with a plain string, so it cannot show the colour swatches, and its one label would
+  put the hidden count in the menu's heading too.
 
 ## Contract and fixtures
 

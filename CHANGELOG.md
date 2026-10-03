@@ -121,6 +121,10 @@ The workspace was consolidated from twelve crates into three: `vm-primitives`,
 
 ### Lab
 
+- The canvas runs on `@vitavision/stage2d` 0.8: its image layer, its region editor and its
+  stage handle. Frames open at fit whatever their size, and the focused region moves with
+  the arrow keys (Shift ×10) and resizes with Alt + arrows. The workspace rail sits in
+  `@vitavision/workbench` 0.2's shell rail.
 - The frontend builds on TypeScript 6, React 19.3, vitest 5 and ESLint 10 with the shared
   `@vitavision/config-ts` and `@vitavision/config-eslint` presets; CI lints it.
 - The frontend uses the `@vitavision/ui`, `stage2d`, `charts` and `workbench` packages

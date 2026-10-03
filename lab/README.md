@@ -53,6 +53,9 @@ A frame switcher in the header changes the current frame on every screen (`[` / 
   toggles between fit and the previous view.
 - **Keys.** `+` / `-` zoom, `0` fits, `1` is 100%. Space or middle-drag pans from any
   tool.
+- **The region (Teach).** Drag a box on the image, or press Redraw for a new one. Its eight
+  handles resize it and its inside moves it. Focused, it moves with the arrow keys (Shift
+  ×10) and resizes with Alt + arrows.
 - **Selecting contours.** Click selects a contour; ⌘/Ctrl-click adds or removes one;
   shift-drag sweeps a selection.
 - **Inventory keys (Teach).** `↑` / `↓` step through the inventory, `Space` toggles keep,

@@ -9,8 +9,8 @@
  * That is what lets stepping from Teach to Find keep the image on screen at the same zoom
  * instead of unmounting and re-fetching it.
  *
- * The workspace rail sits inside the main surface rather than in workbench's `left` slot:
- * that slot is a resizable panel, and the rail is a fixed-width column of icons.
+ * The workspace rail goes in workbench's `rail` slot, a fixed-width `<nav>` at the far left
+ * outside the resizable panels, rather than in `left`, which is a resizable panel.
  */
 
 import { DensityProvider, Empty, Skeleton, ThemeToggle } from "@vitavision/ui";
@@ -54,21 +54,19 @@ export function AppShell({
           </div>
         </div>
       }
+      rail={<WorkspaceRail />}
       main={
-        <div className="flex h-full min-h-0">
-          <WorkspaceRail />
-          <div className="flex min-w-0 flex-1 flex-col">
-            {steps && <div className="border-b border-line bg-surface">{steps}</div>}
-            <div className="min-h-0 flex-1 p-2">
-              {fullBleed ??
-                (imagesLoading ? (
-                  <Skeleton className="h-full w-full" />
-                ) : selectedImage === null ? (
-                  <Empty>Open a frame to begin — the Library workspace is where they come from.</Empty>
-                ) : (
-                  <CanvasStage image={selectedImage} />
-                ))}
-            </div>
+        <div className="flex h-full min-h-0 flex-col">
+          {steps && <div className="border-b border-line bg-surface">{steps}</div>}
+          <div className="min-h-0 flex-1 p-2">
+            {fullBleed ??
+              (imagesLoading ? (
+                <Skeleton className="h-full w-full" />
+              ) : selectedImage === null ? (
+                <Empty>Open a frame to begin — the Library workspace is where they come from.</Empty>
+              ) : (
+                <CanvasStage image={selectedImage} />
+              ))}
           </div>
         </div>
       }

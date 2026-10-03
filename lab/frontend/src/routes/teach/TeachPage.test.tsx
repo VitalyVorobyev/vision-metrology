@@ -1,9 +1,9 @@
 /**
  * The teaching workflow, end to end through the real components.
  *
- * The pure modules (`canvas/contourSelection`, `canvas/roiEdit`) are tested on their own;
- * what this covers is the wiring between them, the panel and the shared canvas state —
- * which is where the behaviour the old screen lacked actually lives. In particular the
+ * The pure modules (`canvas/contourSelection`, and stage2d's region arithmetic) are tested
+ * on their own; what this covers is the wiring between them, the panel and the shared canvas
+ * state — which is where the behaviour the old screen lacked actually lives. In particular the
  * stale-preview rule, which is a correctness property rather than a nicety: contour ids are
  * positions in an extraction, so a curated selection sent with a changed region names
  * different edges, silently.

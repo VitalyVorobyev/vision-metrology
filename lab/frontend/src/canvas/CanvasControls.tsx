@@ -8,7 +8,7 @@
  */
 
 import { Hand, Layers, SquareDashed, SquareMousePointer } from "lucide-react";
-import { StageButton, StageToolbarDivider } from "@vitavision/stage2d";
+import { StageButton, StageToolbarDivider, overlayRole } from "@vitavision/stage2d";
 import { DropdownMenu, MenuCheckboxItem } from "@vitavision/ui";
 
 import type { CanvasTool, LayerVisibility } from "../state/LabContext";
@@ -43,7 +43,7 @@ export function ToolGroup({
 }
 
 const LAYER_LABELS: { key: keyof LayerVisibility; label: string; swatch?: string }[] = [
-  { key: "roi", label: "ROI box", swatch: "var(--signal)" },
+  { key: "roi", label: "ROI box", swatch: overlayRole("selection") },
   { key: "kept", label: "Kept contours", swatch: "var(--signal)" },
   { key: "dropped", label: "Dropped contours", swatch: "var(--fg-subtle)" },
   { key: "vertices", label: "Edge points (at 3× and above)" },
@@ -51,6 +51,14 @@ const LAYER_LABELS: { key: keyof LayerVisibility; label: string; swatch?: string
   { key: "model", label: "Model points", swatch: "var(--signal-strong)" },
 ];
 
+/**
+ * The layer toggles, with each layer's colour beside its name and the hidden count in the
+ * button's name.
+ *
+ * Not stage2d's `StageLayersMenu`: its layers are named by a plain string, so a menu item
+ * cannot carry a swatch, and its one `label` is both the button's name and the menu's
+ * heading, so "Layers (2 hidden)" would head the menu too.
+ */
 export function LayersMenu({
   layers,
   onLayer,

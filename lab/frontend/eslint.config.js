@@ -36,11 +36,10 @@ export default [
       // Draws when the app failed to start — possibly without its stylesheet, so no tokens.
       "src/shell/CrashScreen.tsx",
       // Canvas overlays need halo and highlight colours that stay legible on any photograph.
-      // The design system has no overlay role tokens yet; until it does, these layers keep
-      // their literal colours.
+      // These two keep their literal colours until they move onto stage2d's overlay role
+      // tokens.
       "src/canvas/ContourLayer.tsx",
       "src/canvas/DatumLayer.tsx",
-      "src/canvas/RoiLayer.tsx",
     ],
     rules: { "vitavision/tokens-only": "off" },
   },
