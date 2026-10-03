@@ -7,8 +7,12 @@ use vm_primitives::{
     Point2f, Vec2f, Vec2fExt, sample_bilinear_at, sample_bilinear_f32,
 };
 
-use super::config::{Derivative, EdgeSelect, Locate, MeasureConfig, PolaritySelect, RejectReason};
-use super::placement::{MeasureArc, MeasureRadial, MeasureRect, Placement};
+use super::config::{
+    Derivative, EdgeSelect, Locate, MeasureConfig, OffImage, PolaritySelect, RejectReason,
+};
+use super::placement::{
+    MeasureArc, MeasureRadial, MeasureRect, MeasureStrip, Placement, StripGeometry,
+};
 use super::select::{MeasureEdge, MeasurePair, pair_edges, select_edges};
 
 /// A reusable caliper: place it, then measure frame after frame.
@@ -79,6 +83,14 @@ impl Caliper {
         Self::new(Placement::Radial(radial), cfg)
     }
 
+    /// Place a caliper on a strip between two points.
+    ///
+    /// The strip can fix its sample counts and reports `t` as the distance from
+    /// `start` — see [`MeasureStrip`].
+    pub fn strip(strip: MeasureStrip, cfg: MeasureConfig) -> Self {
+        Self::new(Placement::Strip(strip), cfg)
+    }
+
     fn new(placement: Placement, cfg: MeasureConfig) -> Self {
         Self {
             placement,
@@ -104,6 +116,11 @@ impl Caliper {
     /// Move the caliper to a new radial placement, keeping its buffers.
     pub fn set_radial(&mut self, radial: MeasureRadial) {
         self.placement = Placement::Radial(radial);
+    }
+
+    /// Move the caliper to a new strip, keeping its buffers.
+    pub fn set_strip(&mut self, strip: MeasureStrip) {
+        self.placement = Placement::Strip(strip);
     }
 
     /// Replace the extraction config.
@@ -138,6 +155,11 @@ impl Caliper {
         img: &ImageView<'_, P>,
     ) -> Result<&[MeasureEdge], RejectReason> {
         let inside = self.build_profile(img);
+        if !inside && self.cfg.profile.off_image == OffImage::Reject {
+            self.cands.clear();
+            self.edges.clear();
+            return Err(RejectReason::OffImage);
+        }
         match self.extract(img, !inside) {
             Some(reason) => Err(reason),
             None => Ok(&self.edges),
@@ -177,31 +199,27 @@ impl Caliper {
         if n == 0 || img.width() == 0 || img.height() == 0 {
             return false;
         }
-
         let half_width = self.placement.half_width();
-        let across = (2.0 * half_width).max(0.0) as usize + 1;
-        let across_denom = (across.saturating_sub(1)).max(1) as f32;
-        let (w, h) = (img.width() as f32, img.height() as f32);
+        let across = self.placement.across_count();
         let border = self.cfg.profile.border;
-        let mut inside = true;
-
-        for i in 0..n {
-            let mut acc = 0.0f32;
-            for j in 0..across {
-                let s = if across == 1 {
-                    0.0
-                } else {
-                    -half_width + 2.0 * half_width * j as f32 / across_denom
-                };
-                let q = self.placement.sample_point(i, n, s);
-                if q.x < 0.0 || q.y < 0.0 || q.x > w - 1.0 || q.y > h - 1.0 {
-                    inside = false;
-                }
-                acc += sample_bilinear_at(img, q, border);
+        let profile = &mut self.profile;
+        // One loop per placement, so the per-sample geometry is not dispatched in it.
+        match self.placement {
+            Placement::Rect(r) => fill_profile(profile, img, half_width, across, border, |i, s| {
+                r.sample_point(i, n, s)
+            }),
+            Placement::Arc(a) => fill_profile(profile, img, half_width, across, border, |i, s| {
+                a.sample_point(i, n, s)
+            }),
+            Placement::Radial(r) => {
+                fill_profile(profile, img, half_width, across, border, |i, s| {
+                    r.sample_point(i, n, s)
+                })
             }
-            self.profile[i] = acc / across as f32;
+            Placement::Strip(st) => {
+                fill_strip_profile(profile, img, st.geometry(), half_width, across, border)
+            }
         }
-        inside
     }
 
     /// Run the 1-D detector on the profile and map peaks back to image space.
@@ -222,8 +240,8 @@ impl Caliper {
         // indistinguishable from no edge at all, and those two call for
         // opposite fixes.
         let threshold = self.cfg.threshold;
-        // `sigma` is in pixels but the profile is indexed in steps.
-        let step = self.cfg.profile.step.max(1e-3);
+        // `sigma` is in pixels but the profile is indexed in samples.
+        let step = self.placement.spacing(self.cfg.profile.step, n);
         let Locate::GradientPeak { refine } = self.cfg.locate;
         let det_cfg = Edge1DConfig {
             sigma: (self.cfg.profile.sigma / step).max(1e-3),
@@ -298,6 +316,83 @@ fn derivative_in_samples(d: Derivative, spacing: f32) -> Derivative1D {
                 .unwrap_or(NonZeroUsize::MIN),
         },
     }
+}
+
+/// Fill `profile` with the mean of `across` points `point(i, s)`, `s` spread evenly over
+/// `±half_width`, sampled bilinearly. Returns `false` when any point fell outside the image.
+fn fill_profile<P: Pixel>(
+    profile: &mut [f32],
+    img: &ImageView<'_, P>,
+    half_width: f32,
+    across: usize,
+    border: BorderMode<f32>,
+    point: impl Fn(usize, f32) -> Point2f,
+) -> bool {
+    let across_denom = (across.saturating_sub(1)).max(1) as f32;
+    let (w, h) = (img.width() as f32, img.height() as f32);
+    let mut inside = true;
+    for (i, out) in profile.iter_mut().enumerate() {
+        let mut acc = 0.0f32;
+        for j in 0..across {
+            let s = if across == 1 {
+                0.0
+            } else {
+                -half_width + 2.0 * half_width * j as f32 / across_denom
+            };
+            let q = point(i, s);
+            if q.x < 0.0 || q.y < 0.0 || q.x > w - 1.0 || q.y > h - 1.0 {
+                inside = false;
+            }
+            acc += sample_bilinear_at(img, q, border);
+        }
+        *out = acc / across as f32;
+    }
+    inside
+}
+
+/// [`fill_profile`] for a strip: points and bilinear weights in `f64`, the mean over the
+/// lines across accumulated in `f64` and stored as `f32`.
+fn fill_strip_profile<P: Pixel>(
+    profile: &mut [f32],
+    img: &ImageView<'_, P>,
+    g: StripGeometry,
+    half_width: f32,
+    across: usize,
+    border: BorderMode<f32>,
+) -> bool {
+    let n = profile.len();
+    let (wf, hf) = ((img.width() - 1) as f64, (img.height() - 1) as f64);
+    let mut inside = true;
+    for (i, out) in profile.iter_mut().enumerate() {
+        let t = g.along(i, n);
+        let mut acc = 0.0f64;
+        for j in 0..across {
+            let o = StripGeometry::across(f64::from(half_width), j, across);
+            let (x, y) = g.point(t, o);
+            acc += if x >= 0.0 && y >= 0.0 && x <= wf && y <= hf {
+                bilinear_inside(img, x, y)
+            } else {
+                inside = false;
+                f64::from(sample_bilinear_f32(img, x as f32, y as f32, border))
+            };
+        }
+        *out = (acc / across as f64) as f32;
+    }
+    inside
+}
+
+/// Bilinear interpolation at a point inside `[0, w − 1] × [0, h − 1]`, in `f64`; the
+/// right and bottom neighbours are clamped to the last column and row.
+fn bilinear_inside<P: Pixel>(img: &ImageView<'_, P>, x: f64, y: f64) -> f64 {
+    let (w, h) = (img.width(), img.height());
+    let (x0, y0) = (x.floor() as usize, y.floor() as usize);
+    let (x1, y1) = ((x0 + 1).min(w - 1), (y0 + 1).min(h - 1));
+    let (dx, dy) = (x - x0 as f64, y - y0 as f64);
+    let at = |xx: usize, yy: usize| f64::from(img.row(yy)[xx].to_f32());
+    (1.0 - dx) * (1.0 - dy) * at(x0, y0)
+        + dx * (1.0 - dy) * at(x1, y0)
+        + (1.0 - dx) * dy * at(x0, y1)
+        + dx * dy * at(x1, y1)
 }
 
 /// Unit image-gradient direction at `p`, by central differences on bilinear
@@ -797,5 +892,156 @@ mod tests {
         let img = step_image(64, 64, 30);
         let mut cal = Caliper::rect(rect(2.0, 2.0, 0.0, 40.0, 20.0), MeasureConfig::default());
         let _ = cal.measure(&img.as_view());
+    }
+
+    mod strip {
+        use std::num::NonZeroUsize;
+
+        use super::super::Caliper;
+        use crate::measure::{
+            Derivative, MeasureConfig, MeasureStrip, OffImage, ProfileConfig, RejectReason,
+        };
+        use vm_primitives::{EdgePolarity, Image, Point2f};
+
+        fn nz(n: usize) -> Option<NonZeroUsize> {
+            NonZeroUsize::new(n)
+        }
+
+        fn strip(
+            start: (f32, f32),
+            end: (f32, f32),
+            half_width: f32,
+            n: usize,
+            a: usize,
+        ) -> MeasureStrip {
+            MeasureStrip {
+                start: Point2f::new(start.0, start.1),
+                end: Point2f::new(end.0, end.1),
+                half_width,
+                samples: nz(n),
+                across: nz(a),
+            }
+        }
+
+        /// The textbook settings: σ = 1 sample, a radius-3 Gaussian, central
+        /// differences, strict bounds, a response floor of 0.01 on a [0, 1] image.
+        fn textbook(spacing: f32) -> MeasureConfig {
+            MeasureConfig {
+                threshold: 0.01,
+                profile: ProfileConfig {
+                    sigma: spacing,
+                    derivative: Derivative::SmoothThenCentral {
+                        radius_px: 3.0 * spacing,
+                    },
+                    off_image: OffImage::Reject,
+                    ..ProfileConfig::default()
+                },
+                ..MeasureConfig::default()
+            }
+        }
+
+        /// A bright bar on columns 16..48 of a 9 × 64 image in [0, 1].
+        fn bar() -> Image<f32> {
+            let data = (0..9 * 64)
+                .map(|i| {
+                    if (16..48).contains(&(i % 64)) {
+                        1.0
+                    } else {
+                        0.0
+                    }
+                })
+                .collect();
+            Image::from_vec(64, 9, data).expect("valid image")
+        }
+
+        /// On the plane `2x + 3y` every sample of a straight strip is exact, so the
+        /// profile of a diagonal strip 3 wide is a straight ramp from 25 to 100.
+        #[test]
+        fn the_strip_profile_is_bilinear_and_averaged_across() {
+            let data = (0..30 * 30)
+                .map(|i| 2.0 * (i % 30) as f32 + 3.0 * (i / 30) as f32)
+                .collect();
+            let img: Image<f32> = Image::from_vec(30, 30, data).expect("valid image");
+            let mut cal =
+                Caliper::strip(strip((5.0, 5.0), (20.0, 20.0), 1.0, 16, 3), textbook(1.0));
+            let _ = cal.measure(&img.as_view());
+            let prof = cal.profile();
+            assert_eq!(prof.len(), 16);
+            for (i, &v) in prof.iter().enumerate() {
+                let want = 25.0 + 5.0 * i as f32;
+                assert!(
+                    (v - want).abs() < 1e-4,
+                    "profile[{i}] = {v}, expected {want}"
+                );
+            }
+        }
+
+        /// Positions are distances from `start` in image pixels, whatever the
+        /// direction or the number of samples.
+        #[test]
+        fn edges_are_distances_from_the_start() {
+            let img = bar();
+            for (start, end, n) in [
+                ((0.0, 4.0), (63.0, 4.0), 64),
+                ((63.0, 4.0), (0.0, 4.0), 64),
+                ((0.0, 4.0), (63.0, 4.0), 127),
+            ] {
+                let spacing = 63.0 / (n - 1) as f32;
+                let mut cal = Caliper::strip(strip(start, end, 0.0, n, 1), textbook(spacing));
+                let edges = cal.measure(&img.as_view()).expect("two edges");
+                let ts: Vec<f32> = edges.iter().map(|e| e.t).collect();
+                assert_eq!(edges.len(), 2, "{start:?} -> {end:?}, n={n}: {ts:?}");
+                assert!((ts[0] - 15.5).abs() < 1e-4, "{start:?}, n={n}: {ts:?}");
+                assert!((ts[1] - 47.5).abs() < 1e-4, "{start:?}, n={n}: {ts:?}");
+                assert_eq!(edges[0].polarity, EdgePolarity::Rising);
+                assert_eq!(edges[1].polarity, EdgePolarity::Falling);
+            }
+        }
+
+        /// A strip ending exactly on the last pixel centre is inside; one row lower
+        /// than the image is not, and `Reject` says so before looking for edges.
+        #[test]
+        fn strict_bounds_accept_the_last_pixel_centre_and_reject_beyond() {
+            let img = bar();
+            let mut inside =
+                Caliper::strip(strip((0.0, 8.0), (63.0, 8.0), 0.0, 64, 1), textbook(1.0));
+            assert!(inside.measure(&img.as_view()).is_ok());
+
+            let short: Image<f32> = Image::from_vec(64, 3, vec![0.0; 64 * 3]).expect("valid");
+            let mut out = Caliper::strip(strip((0.0, 4.0), (63.0, 4.0), 0.0, 64, 1), textbook(1.0));
+            assert_eq!(out.measure(&short.as_view()), Err(RejectReason::OffImage));
+
+            // A wide strip whose outer line leaves the image is rejected too.
+            let mut wide =
+                Caliper::strip(strip((0.0, 7.0), (63.0, 7.0), 2.0, 64, 5), textbook(1.0));
+            assert_eq!(wide.measure(&img.as_view()), Err(RejectReason::OffImage));
+        }
+
+        /// Without explicit counts a strip samples like a rect: one sample per step
+        /// along, about one line per pixel across.
+        #[test]
+        fn unset_counts_follow_the_step() {
+            let img = bar();
+            let mut cal = Caliper::strip(
+                MeasureStrip {
+                    samples: None,
+                    across: None,
+                    ..strip((0.0, 4.0), (63.0, 4.0), 1.5, 2, 2)
+                },
+                MeasureConfig::default(),
+            );
+            let _ = cal.measure(&img.as_view());
+            assert_eq!(cal.profile().len(), 64, "floor(63 / 1) + 1");
+        }
+
+        #[test]
+        fn a_zero_length_strip_is_too_short() {
+            let img = bar();
+            let mut cal = Caliper::strip(strip((5.0, 4.0), (5.0, 4.0), 0.0, 16, 1), textbook(1.0));
+            assert_eq!(
+                cal.measure(&img.as_view()),
+                Err(RejectReason::ProfileTooShort)
+            );
+        }
     }
 }

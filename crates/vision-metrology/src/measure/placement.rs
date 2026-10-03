@@ -1,5 +1,7 @@
 //! Caliper placements: where a caliper sits, and how a profile index maps to the image.
 
+use std::num::NonZeroUsize;
+
 use vm_primitives::{Point2f, Vec2f, Vec2fExt};
 
 /// A rectangular measurement region.
@@ -73,18 +75,151 @@ pub struct MeasureRadial {
     pub half_width: f32,
 }
 
+/// A straight strip from `start` to `end`: scans along it, averages across it.
+///
+/// Unlike [`MeasureRect`], a strip is anchored at its endpoints and can fix its
+/// sample counts, so a profile can be specified sample for sample:
+///
+/// - `samples` points along the strip, **both endpoints included**, spaced
+///   `length / (samples − 1)` apart;
+/// - `across` lines spread evenly over `±half_width` (one line sits on the centre line);
+/// - an edge's `t` is its distance from `start`.
+///
+/// `None` counts fall back to the same rule as a rect: one sample per
+/// [`ProfileConfig::step`](super::ProfileConfig::step) along the strip and about one
+/// line per pixel across it.
+///
+/// # Example
+/// ```
+/// use std::num::NonZeroUsize;
+/// use vision_metrology::measure::{Caliper, MeasureConfig, MeasureStrip};
+/// use vision_metrology::{Image, Point2f};
+///
+/// // A bright bar on columns 16..48, scanned right to left.
+/// let data: Vec<f32> = (0..9 * 64)
+///     .map(|i| if (16..48).contains(&(i % 64)) { 1.0 } else { 0.0 })
+///     .collect();
+/// let img = Image::from_vec(64, 9, data).unwrap();
+/// let strip = MeasureStrip {
+///     start: Point2f::new(63.0, 4.0),
+///     end: Point2f::new(0.0, 4.0),
+///     half_width: 0.0,
+///     samples: NonZeroUsize::new(64),
+///     across: NonZeroUsize::new(1),
+/// };
+/// let cfg = MeasureConfig { threshold: 0.01, ..MeasureConfig::default() };
+/// let mut cal = Caliper::strip(strip, cfg);
+/// let edges = cal.measure(&img.as_view()).expect("two edges");
+/// // Distances from `start` = (63, 4): the edges at x = 47.5 and x = 15.5.
+/// assert!((edges[0].t - 15.5).abs() < 1e-3 && (edges[1].t - 47.5).abs() < 1e-3);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MeasureStrip {
+    /// First end of the scan, in image coordinates.
+    pub start: Point2f,
+    /// Last end of the scan, in image coordinates.
+    pub end: Point2f,
+    /// Half-width across the scan, in pixels.
+    pub half_width: f32,
+    /// Number of samples along the strip, endpoints included.
+    pub samples: Option<NonZeroUsize>,
+    /// Number of lines averaged across the strip.
+    pub across: Option<NonZeroUsize>,
+}
+
+impl MeasureStrip {
+    /// Length of the strip, in pixels.
+    pub fn length(&self) -> f32 {
+        self.geometry().length as f32
+    }
+
+    /// Unit scan direction and its left normal, and the length — in `f64`, the way
+    /// every strip coordinate is computed.
+    pub(crate) fn geometry(&self) -> StripGeometry {
+        let (dx, dy) = (
+            f64::from(self.end.x) - f64::from(self.start.x),
+            f64::from(self.end.y) - f64::from(self.start.y),
+        );
+        let length = dx.hypot(dy);
+        let (ux, uy) = if length > 0.0 {
+            (dx / length, dy / length)
+        } else {
+            (1.0, 0.0)
+        };
+        StripGeometry {
+            start: (f64::from(self.start.x), f64::from(self.start.y)),
+            u: (ux, uy),
+            normal: (-uy, ux),
+            length,
+        }
+    }
+}
+
+/// [`MeasureStrip`] geometry in `f64`.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct StripGeometry {
+    pub start: (f64, f64),
+    pub u: (f64, f64),
+    pub normal: (f64, f64),
+    pub length: f64,
+}
+
+impl StripGeometry {
+    /// Distance from `start` of sample `i` of `n`: `i · length / (n − 1)`, the last one
+    /// exactly `length` (numpy's `linspace`).
+    pub(crate) fn along(&self, i: usize, n: usize) -> f64 {
+        if n < 2 {
+            0.0
+        } else if i + 1 == n {
+            self.length
+        } else {
+            i as f64 * (self.length / (n - 1) as f64)
+        }
+    }
+
+    /// Offset of line `j` of `a` across the strip, evenly over `±half_width` with the
+    /// last one exactly `+half_width`; a single line sits on the centre line.
+    pub(crate) fn across(half_width: f64, j: usize, a: usize) -> f64 {
+        if a < 2 {
+            0.0
+        } else if j + 1 == a {
+            half_width
+        } else {
+            j as f64 * (2.0 * half_width / (a - 1) as f64) - half_width
+        }
+    }
+
+    /// The image point `t` along and `o` across.
+    pub(crate) fn point(&self, t: f64, o: f64) -> (f64, f64) {
+        (
+            self.start.0 + t * self.u.0 + o * self.normal.0,
+            self.start.1 + t * self.u.1 + o * self.normal.1,
+        )
+    }
+}
+
 /// The geometry a caliper is currently placed on.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum Placement {
     Rect(MeasureRect),
     Arc(MeasureArc),
     Radial(MeasureRadial),
+    Strip(MeasureStrip),
 }
 
 impl Placement {
     /// Number of profile samples this placement produces at `step` pixels.
     pub(crate) fn profile_len(&self, step: f32) -> usize {
         let step = step.max(1e-3);
+        if let Placement::Strip(s) = *self {
+            let length = s.geometry().length;
+            if length <= 0.0 {
+                return 1;
+            }
+            return s
+                .samples
+                .map_or((length / f64::from(step)) as usize + 1, NonZeroUsize::get);
+        }
         let span = match *self {
             Placement::Rect(r) => 2.0 * r.half_len,
             Placement::Radial(r) => 2.0 * r.half_len,
@@ -92,8 +227,30 @@ impl Placement {
             // comparable to a rect's, so `sigma` and `threshold` mean the same
             // thing for both.
             Placement::Arc(a) => a.angle_extent.abs() * a.radius,
+            Placement::Strip(_) => unreachable!("handled above"),
         };
         (span.max(0.0) / step) as usize + 1
+    }
+
+    /// Distance between profile samples, in pixels, for a profile of `n` samples.
+    ///
+    /// A strip's samples are exactly `length / (n − 1)` apart. The other placements
+    /// convert σ with the nominal `step`.
+    pub(crate) fn spacing(&self, step: f32, n: usize) -> f32 {
+        match *self {
+            Placement::Strip(s) if n >= 2 => (s.geometry().length / (n - 1) as f64) as f32,
+            _ => step.max(1e-3),
+        }
+    }
+
+    /// Number of lines averaged across the scan.
+    pub(crate) fn across_count(&self) -> usize {
+        match *self {
+            Placement::Strip(MeasureStrip {
+                across: Some(a), ..
+            }) => a.get(),
+            _ => (2.0 * self.half_width()).max(0.0) as usize + 1,
+        }
     }
 
     /// Half-width of the cross-scan average, in pixels.
@@ -102,36 +259,7 @@ impl Placement {
             Placement::Rect(r) => r.half_width,
             Placement::Arc(a) => a.half_width,
             Placement::Radial(r) => r.half_width,
-        }
-    }
-
-    /// Absolute position of profile sample `i` of `n`, offset `s` across the scan.
-    ///
-    /// For [`Placement::Radial`] the cross-offset is applied **along the arc**
-    /// at the sample's own radius rather than along a straight chord — that is
-    /// the whole reason the variant exists.
-    pub(crate) fn sample_point(&self, i: usize, n: usize, s: f32) -> Point2f {
-        let denom = (n.saturating_sub(1)).max(1) as f32;
-        match *self {
-            Placement::Rect(r) => {
-                let (sa, ca) = r.angle.sin_cos();
-                let u = Vec2f::new(ca, sa);
-                let t = -r.half_len + 2.0 * r.half_len * i as f32 / denom;
-                r.center + u * t + u.perp() * s
-            }
-            Placement::Arc(a) => {
-                let phi = a.angle_start + a.angle_extent * i as f32 / denom;
-                let (sp, cp) = phi.sin_cos();
-                let radial = Vec2f::new(cp, sp);
-                a.center + radial * (a.radius + s)
-            }
-            Placement::Radial(r) => {
-                let rad = r.radius - r.half_len + 2.0 * r.half_len * i as f32 / denom;
-                // Arc length `s` at radius `rad` is an angle of `s / rad`.
-                let dphi = if rad.abs() > 1e-3 { s / rad } else { 0.0 };
-                let (sp, cp) = (r.angle + dphi).sin_cos();
-                r.center + Vec2f::new(cp, sp) * rad
-            }
+            Placement::Strip(s) => s.half_width,
         }
     }
 
@@ -153,6 +281,10 @@ impl Placement {
                 let (sp, cp) = phi.sin_cos();
                 let t = Vec2f::new(-sp, cp);
                 if a.angle_extent < 0.0 { -t } else { t }
+            }
+            Placement::Strip(s) => {
+                let g = s.geometry();
+                Vec2f::new(g.u.0 as f32, g.u.1 as f32)
             }
         }
     }
@@ -178,6 +310,12 @@ impl Placement {
                 let t = -r.half_len + 2.0 * r.half_len * x / denom;
                 (r.center + Vec2f::new(c, s) * (r.radius + t), t)
             }
+            Placement::Strip(st) => {
+                let g = st.geometry();
+                let t = f64::from(x) * (g.length / f64::from(denom));
+                let (px, py) = g.point(t, 0.0);
+                (Point2f::new(px as f32, py as f32), t as f32)
+            }
         }
     }
 
@@ -202,6 +340,56 @@ impl Placement {
                     t / a.radius / a.angle_extent * denom
                 }
             }
+            Placement::Strip(s) => {
+                let length = s.geometry().length as f32;
+                if length <= 0.0 {
+                    0.0
+                } else {
+                    t * denom / length
+                }
+            }
         }
+    }
+}
+
+/// `(n − 1)` as the divisor of a profile index, at least 1.
+#[inline]
+fn index_denom(n: usize) -> f32 {
+    (n.saturating_sub(1)).max(1) as f32
+}
+
+impl MeasureRect {
+    /// Position of profile sample `i` of `n`, offset `s` across the scan.
+    #[inline]
+    pub(crate) fn sample_point(&self, i: usize, n: usize, s: f32) -> Point2f {
+        let (sa, ca) = self.angle.sin_cos();
+        let u = Vec2f::new(ca, sa);
+        let t = -self.half_len + 2.0 * self.half_len * i as f32 / index_denom(n);
+        self.center + u * t + u.perp() * s
+    }
+}
+
+impl MeasureArc {
+    /// Position of profile sample `i` of `n`, offset `s` radially.
+    #[inline]
+    pub(crate) fn sample_point(&self, i: usize, n: usize, s: f32) -> Point2f {
+        let phi = self.angle_start + self.angle_extent * i as f32 / index_denom(n);
+        let (sp, cp) = phi.sin_cos();
+        let radial = Vec2f::new(cp, sp);
+        self.center + radial * (self.radius + s)
+    }
+}
+
+impl MeasureRadial {
+    /// Position of profile sample `i` of `n`, offset `s` **along the arc** at the
+    /// sample's own radius rather than along a straight chord — the reason the
+    /// placement exists.
+    #[inline]
+    pub(crate) fn sample_point(&self, i: usize, n: usize, s: f32) -> Point2f {
+        let rad = self.radius - self.half_len + 2.0 * self.half_len * i as f32 / index_denom(n);
+        // Arc length `s` at radius `rad` is an angle of `s / rad`.
+        let dphi = if rad.abs() > 1e-3 { s / rad } else { 0.0 };
+        let (sp, cp) = (self.angle + dphi).sin_cos();
+        self.center + Vec2f::new(cp, sp) * rad
     }
 }

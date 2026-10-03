@@ -21,17 +21,22 @@
 //! place of an exception, because the caller needs all the entries, not just
 //! the first problem.
 
+use std::num::NonZeroUsize;
+
 use pyo3::prelude::*;
-use pyo3::{create_exception, exceptions::PyException};
+use pyo3::{
+    create_exception,
+    exceptions::{PyException, PyValueError},
+};
 
 use vision_metrology::measure::diagnostics::{
     CaliperPlacement as NativeCaliperPlacement, CaliperShape as NativeCaliperShape,
     layout as native_layout,
 };
 use vision_metrology::measure::{
-    Caliper as NativeCaliper, MetrologyModel as NativeMetrologyModel,
-    MetrologyObject as NativeMetrologyObject, MetrologyShape as NativeMetrologyShape,
-    RejectReason as NativeRejectReason,
+    Caliper as NativeCaliper, MeasureArc, MeasureRadial, MeasureRect, MeasureStrip,
+    MetrologyModel as NativeMetrologyModel, MetrologyObject as NativeMetrologyObject,
+    MetrologyShape as NativeMetrologyShape, RejectReason as NativeRejectReason,
 };
 use vm_primitives::{Point2f, Similarity2f, Vec2f, similarity_from_parts, wrap_angle};
 
@@ -71,12 +76,77 @@ fn reject_reason_str(r: NativeRejectReason) -> &'static str {
     }
 }
 
-/// A reusable caliper: place it on a rectangle, arc or radial path, then
+fn rect_from(center: (f32, f32), angle: f32, half_len: f32, half_width: f32) -> MeasureRect {
+    MeasureRect {
+        center: Point2f::new(center.0, center.1),
+        angle,
+        half_len,
+        half_width,
+    }
+}
+
+fn arc_from(
+    center: (f32, f32),
+    radius: f32,
+    angle_start: f32,
+    angle_extent: f32,
+    half_width: f32,
+) -> MeasureArc {
+    MeasureArc {
+        center: Point2f::new(center.0, center.1),
+        radius,
+        angle_start,
+        angle_extent,
+        half_width,
+    }
+}
+
+fn radial_from(
+    center: (f32, f32),
+    radius: f32,
+    angle: f32,
+    half_len: f32,
+    half_width: f32,
+) -> MeasureRadial {
+    MeasureRadial {
+        center: Point2f::new(center.0, center.1),
+        radius,
+        angle,
+        half_len,
+        half_width,
+    }
+}
+
+/// A strip; `samples` and `across` must be at least 1 when given.
+fn strip_from(
+    start: (f32, f32),
+    end: (f32, f32),
+    half_width: f32,
+    samples: Option<usize>,
+    across: Option<usize>,
+) -> PyResult<MeasureStrip> {
+    let count = |name: &str, v: Option<usize>| match v {
+        None => Ok(None),
+        Some(n) => NonZeroUsize::new(n)
+            .map(Some)
+            .ok_or_else(|| PyValueError::new_err(format!("{name} must be at least 1"))),
+    };
+    Ok(MeasureStrip {
+        start: Point2f::new(start.0, start.1),
+        end: Point2f::new(end.0, end.1),
+        half_width,
+        samples: count("samples", samples)?,
+        across: count("across", across)?,
+    })
+}
+
+/// A reusable caliper: place it on a rectangle, arc, radial path or strip, then
 /// measure frame after frame.
 ///
-/// Construct with [`rect`](Self::rect), [`arc`](Self::arc) or
-/// [`radial`](Self::radial); `move_to_*` variants reposition an existing
-/// caliper, keeping its scratch buffers.
+/// Construct with [`rect`](Self::rect), [`arc`](Self::arc),
+/// [`radial`](Self::radial) or [`strip`](Self::strip); the matching
+/// `move_to_rect`, `move_to_arc`, `move_to_radial` and `move_to_strip` reposition an
+/// existing caliper, keeping its config and scratch buffers.
 #[pyclass]
 pub struct Caliper {
     inner: NativeCaliper,
@@ -96,12 +166,7 @@ impl Caliper {
     ) -> Self {
         Self {
             inner: NativeCaliper::rect(
-                vision_metrology::measure::MeasureRect {
-                    center: Point2f::new(center.0, center.1),
-                    angle,
-                    half_len,
-                    half_width,
-                },
+                rect_from(center, angle, half_len, half_width),
                 config.unwrap_or_default().to_native(),
             ),
         }
@@ -120,13 +185,7 @@ impl Caliper {
     ) -> Self {
         Self {
             inner: NativeCaliper::arc(
-                vision_metrology::measure::MeasureArc {
-                    center: Point2f::new(center.0, center.1),
-                    radius,
-                    angle_start,
-                    angle_extent,
-                    half_width,
-                },
+                arc_from(center, radius, angle_start, angle_extent, half_width),
                 config.unwrap_or_default().to_native(),
             ),
         }
@@ -146,16 +205,86 @@ impl Caliper {
     ) -> Self {
         Self {
             inner: NativeCaliper::radial(
-                vision_metrology::measure::MeasureRadial {
-                    center: Point2f::new(center.0, center.1),
-                    radius,
-                    angle,
-                    half_len,
-                    half_width,
-                },
+                radial_from(center, radius, angle, half_len, half_width),
                 config.unwrap_or_default().to_native(),
             ),
         }
+    }
+
+    /// A strip from `start` to `end`: scans along it, averages across it.
+    ///
+    /// `samples` points along the strip include both endpoints; `across` lines are
+    /// spread evenly over `±half_width`. Left as `None`, they follow the config's
+    /// `step` along and about one line per pixel across. An edge's `t` is its
+    /// distance from `start`.
+    #[staticmethod]
+    #[pyo3(signature = (start, end, half_width=0.0, samples=None, across=None, config=None))]
+    pub fn strip(
+        start: (f32, f32),
+        end: (f32, f32),
+        half_width: f32,
+        samples: Option<usize>,
+        across: Option<usize>,
+        config: Option<MeasureConfig>,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            inner: NativeCaliper::strip(
+                strip_from(start, end, half_width, samples, across)?,
+                config.unwrap_or_default().to_native(),
+            ),
+        })
+    }
+
+    /// Move to a new rectangle, keeping the config and buffers.
+    pub fn move_to_rect(&mut self, center: (f32, f32), angle: f32, half_len: f32, half_width: f32) {
+        self.inner
+            .set_rect(rect_from(center, angle, half_len, half_width));
+    }
+
+    /// Move to a new arc, keeping the config and buffers.
+    pub fn move_to_arc(
+        &mut self,
+        center: (f32, f32),
+        radius: f32,
+        angle_start: f32,
+        angle_extent: f32,
+        half_width: f32,
+    ) {
+        self.inner.set_arc(arc_from(
+            center,
+            radius,
+            angle_start,
+            angle_extent,
+            half_width,
+        ));
+    }
+
+    /// Move to a new radial placement, keeping the config and buffers.
+    pub fn move_to_radial(
+        &mut self,
+        center: (f32, f32),
+        radius: f32,
+        angle: f32,
+        half_len: f32,
+        half_width: f32,
+    ) {
+        self.inner
+            .set_radial(radial_from(center, radius, angle, half_len, half_width));
+    }
+
+    /// Move to a new strip, keeping the config and buffers.
+    #[pyo3(signature = (start, end, half_width=0.0, samples=None, across=None))]
+    pub fn move_to_strip(
+        &mut self,
+        start: (f32, f32),
+        end: (f32, f32),
+        half_width: f32,
+        samples: Option<usize>,
+        across: Option<usize>,
+    ) -> PyResult<()> {
+        self.inner
+            .set_strip(strip_from(start, end, half_width, samples, across)?);
+        Ok(())
     }
 
     /// Extract edges under the current placement.

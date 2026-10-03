@@ -151,7 +151,9 @@ pub struct MeasureEdge {
     pub x: f32,
     /// Subpixel y coordinate in image coordinates.
     pub y: f32,
-    /// Signed distance from the caliper centre along the scan axis, in pixels.
+    /// Position along the scan, in pixels: the distance from `start` for a strip,
+    /// the signed distance from the centre for rect and radial calipers, the arc
+    /// length from `angle_start` for an arc.
     pub t: f32,
     /// `|DoG response|` at the edge — the local contrast.
     pub amplitude: f32,

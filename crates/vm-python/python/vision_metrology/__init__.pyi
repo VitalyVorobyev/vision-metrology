@@ -321,6 +321,7 @@ class MeasureConfig:
     derivative: str
     kernel_radius_px: float
     locate: Locate
+    off_image: str
     def __init__(
         self,
         sigma: Optional[float] = ...,
@@ -334,10 +335,13 @@ class MeasureConfig:
         derivative: Optional[str] = ...,
         kernel_radius_px: Optional[float] = ...,
         locate: Optional[Locate] = ...,
+        off_image: Optional[str] = ...,
     ) -> None:
         """`derivative` is "dog" (derivative of Gaussian, default) or
         "smooth_central" (Gaussian of half-width `kernel_radius_px`, then central
-        differences)."""
+        differences). `off_image` is "fill" (default: sample outside the image with
+        `border_mode` and measure) or "reject" (raise `MeasureRejected("off_image")`
+        whenever any sample lies outside the image)."""
         ...
 
 # ---------------------------------------------------------------------------
@@ -411,6 +415,10 @@ class ComponentStats:
     bbox_h: float
 
 class MeasureEdge:
+    """One caliper edge. `t` is the position along the scan, in pixels: the
+    distance from `start` for a strip, the signed distance from the centre for
+    rect and radial calipers, the arc length from `angle_start` for an arc."""
+
     x: float
     y: float
     t: float
@@ -540,6 +548,10 @@ class MetrologyModel:
     ) -> List[CaliperPlacement]: ...
 
 class Caliper:
+    """A reusable caliper. Construct with `rect`, `arc`, `radial` or `strip`;
+    `move_to_rect`, `move_to_arc`, `move_to_radial` and `move_to_strip`
+    reposition it, keeping its config and scratch buffers."""
+
     @staticmethod
     def rect(
         center: Tuple[float, float],
@@ -566,6 +578,51 @@ class Caliper:
         half_width: float,
         config: Optional[MeasureConfig] = ...,
     ) -> Caliper: ...
+    @staticmethod
+    def strip(
+        start: Tuple[float, float],
+        end: Tuple[float, float],
+        half_width: float = ...,
+        samples: Optional[int] = ...,
+        across: Optional[int] = ...,
+        config: Optional[MeasureConfig] = ...,
+    ) -> Caliper:
+        """A strip from `start` to `end`. `samples` points along it include both
+        endpoints; `across` lines are spread evenly over `+-half_width`. `None`
+        follows the config's `step` along and about one line per pixel across.
+        An edge's `t` is its distance from `start`."""
+        ...
+    def move_to_rect(
+        self,
+        center: Tuple[float, float],
+        angle: float,
+        half_len: float,
+        half_width: float,
+    ) -> None: ...
+    def move_to_arc(
+        self,
+        center: Tuple[float, float],
+        radius: float,
+        angle_start: float,
+        angle_extent: float,
+        half_width: float,
+    ) -> None: ...
+    def move_to_radial(
+        self,
+        center: Tuple[float, float],
+        radius: float,
+        angle: float,
+        half_len: float,
+        half_width: float,
+    ) -> None: ...
+    def move_to_strip(
+        self,
+        start: Tuple[float, float],
+        end: Tuple[float, float],
+        half_width: float = ...,
+        samples: Optional[int] = ...,
+        across: Optional[int] = ...,
+    ) -> None: ...
     def measure(self, img: ImageAny) -> List[MeasureEdge]: ...
     def measure_pairs(self, img: ImageAny) -> List[MeasurePair]: ...
     def profile(self) -> List[float]: ...

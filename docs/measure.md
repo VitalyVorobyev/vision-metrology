@@ -53,7 +53,7 @@ println!("edge at {:.3}", edges[0].p.x); // 29.5 — the pixel-centre convention
 
 ## Rect, arc, and radial — and why radial exists
 
-There are three placements, and the choice is about the geometry of the edge
+There are four placements, and the choice is about the geometry of the edge
 being crossed, not a style preference:
 
 | Placement | Scans | Averages | Use for |
@@ -61,6 +61,7 @@ being crossed, not a style preference:
 | [`MeasureRect`] | along its own axis | across, on a **straight chord** | a straight edge, at any angle |
 | [`MeasureArc`] | along a circular arc | radially | a feature that *crosses* a circular path (a gear tooth, a slot, the tab on a can end) |
 | [`MeasureRadial`] | radially | along the arc, at constant radius | the circular edge itself |
+| [`MeasureStrip`] | from `start` to `end` | across, on a straight line | a scan with exact endpoints and sample counts ([below](#strips)) |
 
 `MeasureRect` and `MeasureArc` sound interchangeable with `MeasureRadial` for
 measuring a circle, and picking wrong is a bias you won't see unless you go
@@ -88,6 +89,59 @@ reduction in bias, and it no longer grows with `half_width`.
 for `MeasureArc` only when the feature you are measuring *crosses* the circle
 rather than *is* the circle.
 
+## Strips
+
+A [`MeasureStrip`] is a straight scan from `start` to `end`, averaged across.
+It covers the same ground as a rect, but it is specified sample for sample,
+which is what reproducing another implementation's numbers, or a scan line
+taken from a drawing, needs:
+
+- **Exact endpoints.** `samples` points include both ends, `length / (samples − 1)`
+  apart, and the last one sits exactly on `end`.
+- **Explicit counts.** `across` lines are spread evenly over `±half_width`:
+  `half_width = 7.0, across = 15` is one line per pixel over a 15 px strip.
+  Left as `None`, a count follows the rect rule: one sample per `profile.step`
+  along, about one line per pixel across.
+- **`t` from the start.** An edge's `t` is its distance from `start`, in pixels,
+  not a signed offset from a centre. Reversing the strip moves an edge from `t`
+  to `length − t`.
+- **`sigma` stays in pixels.** It is converted to samples with the strip's true
+  spacing, so the same `sigma` smooths the same distance at any `samples`.
+
+```rust
+use std::num::NonZeroUsize;
+use vision_metrology::measure::{Caliper, MeasureConfig, MeasureStrip, OffImage, ProfileConfig};
+use vision_metrology::{Image, Point2f};
+
+// A bright bar on columns 16..48.
+let data: Vec<f32> = (0..9 * 64)
+    .map(|i| if (16..48).contains(&(i % 64)) { 1.0 } else { 0.0 })
+    .collect();
+let img = Image::from_vec(64, 9, data).unwrap();
+
+let strip = MeasureStrip {
+    start: Point2f::new(0.0, 4.0),
+    end: Point2f::new(63.0, 4.0),
+    half_width: 0.0,
+    samples: NonZeroUsize::new(64),
+    across: NonZeroUsize::new(1),
+};
+let cfg = MeasureConfig {
+    threshold: 0.01,
+    profile: ProfileConfig { off_image: OffImage::Reject, ..ProfileConfig::default() },
+    ..MeasureConfig::default()
+};
+let mut cal = Caliper::strip(strip, cfg);
+let edges = cal.measure(&img.as_view()).expect("two edges");
+println!("{:.2} {:.2}", edges[0].t, edges[1].t); // 15.50 47.50
+```
+
+A reference usually also wants strict bounds. With `profile.off_image =
+OffImage::Reject`, a placement with any sample outside `[0, w − 1] × [0, h − 1]`
+is rejected with `RejectReason::OffImage` before edges are searched. The
+default, `OffImage::Fill`, samples the outside with `profile.border` and
+measures anyway. Both apply to every placement, not only strips.
+
 ## `MeasureConfig`
 
 ```rust
@@ -97,7 +151,7 @@ pub struct MeasureConfig {
     pub select: EdgeSelect,
     pub locate: Locate,
     pub max_obliquity_deg: f32,
-    pub profile: ProfileConfig, // sigma, derivative, step, border
+    pub profile: ProfileConfig, // sigma, derivative, step, border, off_image
 }
 ```
 
@@ -129,6 +183,10 @@ pub struct MeasureConfig {
   sharp edge at proportional cost. `sigma` stays in pixels, so the same
   `sigma` smooths the same distance at any step.
 - **`profile.border`** — sampling behaviour when the caliper overhangs the image.
+- **`profile.off_image`** — `OffImage::Fill` (the default) measures a caliper
+  that overhangs the image, sampling the outside with `profile.border`;
+  `OffImage::Reject` rejects it with `RejectReason::OffImage` before looking for
+  edges.
 - **`max_obliquity_deg`** — the obliquity gate. A caliper that crosses an edge
   at a glancing angle reports a position along its own scan axis rather than
   the edge's true normal, and the two differ by `1/cos θ`; at a corner there
@@ -150,7 +208,7 @@ short":
 | `NoEdge` | no response reached `threshold` anywhere in the window |
 | `WrongPolarity` | edges were found, but none had the polarity `MeasureConfig::polarity` asked for |
 | `TooOblique` | the best edge crossed at more than `max_obliquity_deg` from the scan direction |
-| `OffImage` | the caliper reached outside the image, so the profile is partly border fill |
+| `OffImage` | the caliper reached outside the image: always with `OffImage::Reject`, and with `Fill` when the partly filled profile held no edge |
 
 There is deliberately no variant of `measure` that discards this and returns
 an empty slice instead — `Ok(&[])` is unrepresentable, because an extraction
@@ -263,8 +321,9 @@ fitted primitive through a camera calibration with the `metric` module
   noise envelope, and the can-end reference numbers.
 
 [`Caliper`]: ../crates/vision-metrology/src/measure/caliper.rs
-[`MeasureRect`]: ../crates/vision-metrology/src/measure/caliper.rs
-[`MeasureArc`]: ../crates/vision-metrology/src/measure/caliper.rs
-[`MeasureRadial`]: ../crates/vision-metrology/src/measure/caliper.rs
+[`MeasureRect`]: ../crates/vision-metrology/src/measure/placement.rs
+[`MeasureArc`]: ../crates/vision-metrology/src/measure/placement.rs
+[`MeasureRadial`]: ../crates/vision-metrology/src/measure/placement.rs
+[`MeasureStrip`]: ../crates/vision-metrology/src/measure/placement.rs
 [`MetrologyModel`]: ../crates/vision-metrology/src/measure/model.rs
 [`ShapeMatch::pose`]: ../crates/vision-metrology/src/matching/matcher.rs
