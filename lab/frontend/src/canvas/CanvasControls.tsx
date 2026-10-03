@@ -9,8 +9,7 @@
 
 import { Hand, Layers, SquareDashed, SquareMousePointer } from "lucide-react";
 import { StageButton, StageToolbarDivider } from "@vitavision/stage2d";
-import { cn, focusRing } from "@vitavision/ui";
-import { useEffect, useRef, useState } from "react";
+import { DropdownMenu, MenuCheckboxItem } from "@vitavision/ui";
 
 import type { CanvasTool, LayerVisibility } from "../state/LabContext";
 
@@ -59,60 +58,30 @@ export function LayersMenu({
   layers: LayerVisibility;
   onLayer: (key: keyof LayerVisibility, on: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const box = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const close = (event: MouseEvent) => {
-      if (!box.current?.contains(event.target as Node)) setOpen(false);
-    };
-    window.addEventListener("pointerdown", close);
-    return () => window.removeEventListener("pointerdown", close);
-  }, [open]);
-
   const hidden = LAYER_LABELS.filter(({ key }) => !layers[key]).length;
 
   return (
     <>
       <StageToolbarDivider />
-      <div className="relative" ref={box}>
-        <StageButton
-          label={hidden > 0 ? `Layers (${hidden} hidden)` : "Layers"}
-          pressed={hidden > 0}
-          onClick={() => setOpen((value) => !value)}
-        >
-          <Layers className="size-4" aria-hidden />
-        </StageButton>
-        {open && (
-          <div className="absolute bottom-9 left-0 z-20 min-w-56 rounded-panel border border-line bg-overlay p-1 shadow-lg">
-            {LAYER_LABELS.map(({ key, label, swatch }) => (
-              <label
-                key={key}
-                className={cn(
-                  "flex cursor-pointer items-center gap-2 rounded-control px-2 py-1 text-xs text-fg hover:bg-raised",
-                  focusRing,
-                )}
-              >
-                <input
-                  type="checkbox"
-                  checked={layers[key]}
-                  onChange={(event) => onLayer(key, event.target.checked)}
-                  className="size-3.5 accent-[var(--signal)]"
-                />
-                {swatch && (
-                  <span
-                    aria-hidden
-                    className="size-2 shrink-0 rounded-full"
-                    style={{ background: swatch }}
-                  />
-                )}
-                {label}
-              </label>
-            ))}
-          </div>
-        )}
-      </div>
+      <DropdownMenu
+        side="top"
+        trigger={
+          <StageButton label={hidden > 0 ? `Layers (${hidden} hidden)` : "Layers"} pressed={hidden > 0}>
+            <Layers className="size-4" aria-hidden />
+          </StageButton>
+        }
+      >
+        {LAYER_LABELS.map(({ key, label, swatch }) => (
+          <MenuCheckboxItem key={key} checked={layers[key]} onCheckedChange={(on) => onLayer(key, on)}>
+            <span className="flex items-center gap-2">
+              {swatch && (
+                <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: swatch }} />
+              )}
+              {label}
+            </span>
+          </MenuCheckboxItem>
+        ))}
+      </DropdownMenu>
     </>
   );
 }

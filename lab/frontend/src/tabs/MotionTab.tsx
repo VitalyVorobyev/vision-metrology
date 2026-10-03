@@ -2,12 +2,13 @@ import { LineChart } from "@vitavision/charts";
 import {
   Badge,
   Button,
+  cn,
   ErrorBox,
   Field,
+  NumberInput,
   Panel,
   Section,
   Select,
-  cn,
 } from "@vitavision/ui";
 import type { Series } from "@vitavision/charts";
 import { useMutation } from "@tanstack/react-query";
@@ -16,7 +17,6 @@ import { useState } from "react";
 import { getBackend } from "../api/backend";
 import { Thumb } from "../components/Thumb";
 import type { DisplacementResponse, ImageOut, Roi } from "../api/backend";
-import { QuantityInput } from "../components/QuantityInput";
 
 /** Cumulative trajectory as two `LineChart` series (frame index on x, px on y) —
  * pure so the mapping is covered without rendering the chart. */
@@ -129,10 +129,10 @@ export function MotionTab({
           <Section step={3} title="Config">
             <div className="grid grid-cols-2 gap-3">
               <Field label="Search x">
-                <QuantityInput unit="px" min={1} value={searchX} onValueChange={setSearchX} />
+                <NumberInput unit="px" min={1} value={searchX} onValueChange={setSearchX} />
               </Field>
               <Field label="Search y">
-                <QuantityInput unit="px" min={1} value={searchY} onValueChange={setSearchY} />
+                <NumberInput unit="px" min={1} value={searchY} onValueChange={setSearchY} />
               </Field>
               <Field label="Refine">
                 <Select
@@ -142,7 +142,7 @@ export function MotionTab({
                 />
               </Field>
               <Field label="LK iterations">
-                <QuantityInput
+                <NumberInput
                   min={1}
                   max={20}
                   value={lkIters}
@@ -151,7 +151,7 @@ export function MotionTab({
                 />
               </Field>
               <Field label="Min score" annotation="-1..1">
-                <QuantityInput min={-1} max={1} step={0.05} value={minScore} onValueChange={setMinScore} />
+                <NumberInput min={-1} max={1} step={0.05} value={minScore} onValueChange={setMinScore} />
               </Field>
             </div>
           </Section>

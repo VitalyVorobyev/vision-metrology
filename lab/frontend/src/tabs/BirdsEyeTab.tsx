@@ -4,6 +4,7 @@ import {
   Dialog,
   ErrorBox,
   Field,
+  NumberInput,
   Panel,
   ReadoutStrip,
   Section,
@@ -17,7 +18,6 @@ import { useState } from "react";
 
 import { getBackend } from "../api/backend";
 import type { CalibrationOut, ImageOut, MosaicCameraCoverageOut, MosaicRequest } from "../api/backend";
-import { QuantityInput } from "../components/QuantityInput";
 
 type OverlayMode = "none" | "source_id" | "feather";
 
@@ -157,19 +157,19 @@ export function BirdsEyeTab({
             {!autoGrid && (
               <div className="mt-3 grid grid-cols-2 gap-3">
                 <Field label="Origin x">
-                  <QuantityInput unit="mm" value={originX} onValueChange={setOriginX} />
+                  <NumberInput unit="mm" value={originX} onValueChange={setOriginX} />
                 </Field>
                 <Field label="Origin y">
-                  <QuantityInput unit="mm" value={originY} onValueChange={setOriginY} />
+                  <NumberInput unit="mm" value={originY} onValueChange={setOriginY} />
                 </Field>
                 <Field label="Scale">
-                  <QuantityInput unit="mm/px" min={0.001} step={0.01} value={mmPerPx} onValueChange={setMmPerPx} />
+                  <NumberInput unit="mm/px" min={0.001} step={0.01} value={mmPerPx} onValueChange={setMmPerPx} />
                 </Field>
                 <Field label="Width">
-                  <QuantityInput unit="px" min={1} value={gridWidth} onValueChange={setGridWidth} />
+                  <NumberInput unit="px" min={1} value={gridWidth} onValueChange={setGridWidth} />
                 </Field>
                 <Field label="Height">
-                  <QuantityInput unit="px" min={1} value={gridHeight} onValueChange={setGridHeight} />
+                  <NumberInput unit="px" min={1} value={gridHeight} onValueChange={setGridHeight} />
                 </Field>
               </div>
             )}

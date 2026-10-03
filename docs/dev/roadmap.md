@@ -42,9 +42,9 @@ as lab-ui issues and stay local here.
 **Accept:** each component is released, with stories and tests, and passes lab-ui's
 definition-of-done checks.
 
-### L4: use the upstreamed components, `planned`
-- Delete the local ROI layer, contour selection, interaction hook, image layer, layers
-  menu, image grid and frame-switcher listbox in favour of U1–U7.
+### L4: use the upstreamed components, `in progress`
+- Delete the local ROI layer, contour selection, interaction hook, image layer and image
+  grid in favour of U2–U7, as each is released.
 - `MeasureOverlay` changes stay additive, because `OverlayPrimitiveOut` in the contract
   mirrors it.
 

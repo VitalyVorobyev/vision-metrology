@@ -17,7 +17,6 @@ import { useState } from "react";
 import { getBackend } from "../api/backend";
 import { CropImage } from "../components/CropImage";
 import type { ImageOut, ModelOut, Roi } from "../api/backend";
-import { QuantityInput } from "../components/QuantityInput";
 
 const RECT_LABELS = ["x", "y", "w", "h"] as const;
 
@@ -106,7 +105,7 @@ export function AlignTab({ image, models }: { image: ImageOut; models: ModelOut[
           </Field>
 
           <Field label="Pixels per model unit">
-            <QuantityInput min={0.1} step={0.1} value={pxPerUnit} onValueChange={setPxPerUnit} />
+            <NumberInput min={0.1} step={0.1} value={pxPerUnit} onValueChange={setPxPerUnit} />
           </Field>
 
           <Switch
@@ -118,7 +117,7 @@ export function AlignTab({ image, models }: { image: ImageOut; models: ModelOut[
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="Min score" annotation="0–1">
-              <QuantityInput min={0} max={1} step={0.05} value={minScore} onValueChange={setMinScore} />
+              <NumberInput min={0} max={1} step={0.05} value={minScore} onValueChange={setMinScore} />
             </Field>
             <Field label="Max matches" annotation="optional">
               <NumberInput

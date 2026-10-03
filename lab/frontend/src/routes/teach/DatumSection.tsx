@@ -7,11 +7,10 @@
  * matters when the answer is "the tab's centre" or "45°, exactly".
  */
 
-import { Button, Field, Panel, VectorInput } from "@vitavision/ui";
+import { Button, Field, NumberInput, Panel, VectorInput } from "@vitavision/ui";
 
 import type { Roi } from "../../api/backend";
 import type { Bounds } from "../../canvas/contourSelection";
-import { QuantityInput } from "../../components/QuantityInput";
 
 export function DatumSection({
   origin,
@@ -53,7 +52,7 @@ export function DatumSection({
           aria-label="Origin"
         />
         <Field label="0° at">
-          <QuantityInput
+          <NumberInput
             unit="°"
             step={1}
             value={Math.round(degrees * 10) / 10}

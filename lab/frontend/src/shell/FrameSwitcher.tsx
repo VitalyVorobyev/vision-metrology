@@ -8,9 +8,9 @@
  * one frame at a time is what the Find and Verify steps are for.
  */
 
-import { Button, cn, focusRing } from "@vitavision/ui";
+import { Button, cn, focusRing, Listbox, Popover } from "@vitavision/ui";
 import { ChevronDown, ChevronLeft, ChevronRight, Images } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 
 import type { ImageOut } from "../api/backend";
@@ -21,7 +21,7 @@ export function FrameSwitcher() {
   const { images, selectedImage, selectImage, selectedModel, models, selectModel } = useLab();
   const navigate = useNavigate();
   const [open, setOpen] = useState<"frames" | "models" | null>(null);
-  const box = useRef<HTMLDivElement>(null);
+  const imageById = useMemo(() => new Map(images.map((image) => [image.id, image])), [images]);
 
   const index = selectedImage ? images.findIndex((image) => image.id === selectedImage.id) : -1;
   const step = (delta: 1 | -1) => {
@@ -29,15 +29,6 @@ export function FrameSwitcher() {
     const next = index < 0 ? 0 : (index + delta + images.length) % images.length;
     selectImage(images[next]!.id);
   };
-
-  useEffect(() => {
-    if (open === null) return;
-    const close = (event: MouseEvent) => {
-      if (!box.current?.contains(event.target as Node)) setOpen(null);
-    };
-    window.addEventListener("pointerdown", close);
-    return () => window.removeEventListener("pointerdown", close);
-  }, [open]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -59,128 +50,108 @@ export function FrameSwitcher() {
   }
 
   return (
-    <div ref={box} className="flex items-center gap-1">
+    <div className="flex items-center gap-1">
       <IconStep label="Previous frame ([)" onClick={() => step(-1)} disabled={images.length < 2}>
         <ChevronLeft className="size-4" aria-hidden />
       </IconStep>
 
-      <button
-        type="button"
-        aria-haspopup="listbox"
-        aria-expanded={open === "frames"}
-        onClick={() => setOpen((value) => (value === "frames" ? null : "frames"))}
-        className={cn(
-          "flex h-7 items-center gap-1.5 rounded-control px-2 font-mono text-xs text-fg hover:bg-raised",
-          focusRing,
-        )}
+      <Popover
+        open={open === "frames"}
+        onOpenChange={(isOpen) => setOpen(isOpen ? "frames" : null)}
+        align="start"
+        aria-label="Frames"
+        trigger={
+          <button
+            type="button"
+            className={cn(
+              "flex h-7 items-center gap-1.5 rounded-control px-2 font-mono text-xs text-fg hover:bg-raised",
+              focusRing,
+            )}
+          >
+            <span className="max-w-52 truncate">{selectedImage?.filename ?? "no frame"}</span>
+            <span className="text-fg-subtle tabular-nums">
+              {index >= 0 ? `${index + 1}/${images.length}` : `–/${images.length}`}
+            </span>
+            <ChevronDown className="size-3.5 text-fg-subtle" aria-hidden />
+          </button>
+        }
       >
-        <span className="max-w-52 truncate">{selectedImage?.filename ?? "no frame"}</span>
-        <span className="text-fg-subtle tabular-nums">
-          {index >= 0 ? `${index + 1}/${images.length}` : `–/${images.length}`}
-        </span>
-        <ChevronDown className="size-3.5 text-fg-subtle" aria-hidden />
-      </button>
+        <Listbox
+          aria-label="Frames"
+          autoFocus
+          className="max-h-96 min-w-72 overflow-y-auto"
+          options={images.map((image) => ({ value: image.id, label: image.filename }))}
+          value={selectedImage?.id ?? null}
+          onValueChange={(id) => {
+            selectImage(id);
+            setOpen(null);
+          }}
+          renderOption={(option) => {
+            const image = imageById.get(option.value);
+            return image ? <FrameRow image={image} /> : option.label;
+          }}
+        />
+      </Popover>
 
       <IconStep label="Next frame (])" onClick={() => step(1)} disabled={images.length < 2}>
         <ChevronRight className="size-4" aria-hidden />
       </IconStep>
 
       {selectedModel && (
-        <button
-          type="button"
-          aria-haspopup="listbox"
-          aria-expanded={open === "models"}
-          onClick={() => setOpen((value) => (value === "models" ? null : "models"))}
-          className={cn(
-            "ml-1 flex h-7 items-center gap-1.5 rounded-control bg-signal/10 px-2 font-mono text-xs text-signal hover:bg-signal/20",
-            focusRing,
-          )}
-        >
-          {selectedModel.id}
-          <ChevronDown className="size-3.5" aria-hidden />
-        </button>
-      )}
-
-      {open === "frames" && (
-        <Dropdown>
-          {images.map((image) => (
-            <FrameRow
-              key={image.id}
-              image={image}
-              active={image.id === selectedImage?.id}
-              onPick={() => {
-                selectImage(image.id);
-                setOpen(null);
-              }}
-            />
-          ))}
-        </Dropdown>
-      )}
-
-      {open === "models" && (
-        <Dropdown>
-          {models.map((model) => (
+        <Popover
+          open={open === "models"}
+          onOpenChange={(isOpen) => setOpen(isOpen ? "models" : null)}
+          align="start"
+          aria-label="Models"
+          trigger={
             <button
-              key={model.id}
               type="button"
-              onClick={() => {
-                selectModel(model.id);
-                setOpen(null);
-              }}
               className={cn(
-                "flex w-full items-baseline gap-2 rounded-control px-2 py-1 text-left font-mono text-xs hover:bg-raised",
-                model.id === selectedModel?.id ? "text-signal" : "text-fg",
+                "ml-1 flex h-7 items-center gap-1.5 rounded-control bg-signal/10 px-2 font-mono text-xs text-signal hover:bg-signal/20",
                 focusRing,
               )}
             >
-              {model.id}
-              <span className="text-fg-subtle">{model.point_counts.join("/")}</span>
+              {selectedModel.id}
+              <ChevronDown className="size-3.5" aria-hidden />
             </button>
-          ))}
-        </Dropdown>
+          }
+        >
+          <Listbox
+            aria-label="Models"
+            autoFocus
+            className="max-h-96 min-w-56 overflow-y-auto"
+            options={models.map((model) => ({
+              value: model.id,
+              label: model.id,
+              description: model.point_counts.join("/"),
+            }))}
+            value={selectedModel.id}
+            onValueChange={(id) => {
+              selectModel(id);
+              setOpen(null);
+            }}
+            renderOption={(option) => (
+              <span className="flex items-baseline gap-2 font-mono text-xs">
+                {option.label}
+                <span className="text-fg-subtle">{option.description}</span>
+              </span>
+            )}
+          />
+        </Popover>
       )}
     </div>
   );
 }
 
-function Dropdown({ children }: { children: React.ReactNode }) {
+function FrameRow({ image }: { image: ImageOut }) {
   return (
-    <div
-      role="listbox"
-      className="absolute top-11 left-0 z-30 max-h-96 min-w-72 overflow-y-auto rounded-panel border border-line bg-overlay p-1 shadow-lg"
-    >
-      {children}
-    </div>
-  );
-}
-
-function FrameRow({
-  image,
-  active,
-  onPick,
-}: {
-  image: ImageOut;
-  active: boolean;
-  onPick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="option"
-      aria-selected={active}
-      onClick={onPick}
-      className={cn(
-        "flex w-full items-center gap-2 rounded-control p-1 text-left hover:bg-raised",
-        active && "bg-signal/10",
-        focusRing,
-      )}
-    >
+    <span className="flex w-full items-center gap-2">
       <Thumb imageId={image.id} alt="" className="size-8 shrink-0 rounded object-cover" />
       <span className="min-w-0 flex-1 truncate font-mono text-xs text-fg">{image.filename}</span>
       <span className="shrink-0 font-mono text-[10px] text-fg-subtle tabular-nums">
         {image.width}×{image.height}
       </span>
-    </button>
+    </span>
   );
 }
 
