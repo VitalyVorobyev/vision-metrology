@@ -1,15 +1,15 @@
 /**
  * Where frames come from, and where a model is judged across all of them.
  *
- * The old image rail was a 224 px column of thumbnails with an "Upload
- * PNG/BMP" button — one file at a time, through a hidden `<input type=file>`,
- * with every byte marshalled over IPC as a JSON array of numbers. A metrology
- * capture is a folder, not a file, so that shape of "open" made the interesting
- * question (how does this model behave across the set?) impossible to ask.
+ * A metrology capture is a folder, not a file, so the question worth asking here is how a
+ * model behaves across the set. Opening a folder reads only directory entries and image
+ * headers. Nothing is decoded, nothing is copied, and the frames stay where the user put
+ * them, so a set of several thousand opens as fast as the filesystem can list it.
  *
- * Opening a folder here reads only directory entries and image headers. Nothing
- * is decoded, nothing is copied, and the frames stay where the user put them —
- * so a set of several thousand opens as fast as the filesystem can list it.
+ * Single files come in through workbench's `FileDrop`: its picker, or a drop anywhere on the
+ * window. On the desktop both yield **paths** (the shell's native picker and drops, through
+ * `LabBackend.pickImages` / `onFileDrop`), and the files are opened in place like a folder's.
+ * In the browser they are `File`s, uploaded into the lab.
  */
 
 import { ScoreHistogram } from "@vitavision/charts";
@@ -17,7 +17,6 @@ import {
   Badge,
   Button,
   Callout,
-  Empty,
   ErrorBox,
   Field,
   NumberInput,
@@ -27,24 +26,28 @@ import {
   Select,
   Table,
 } from "@vitavision/ui";
+import { FileDrop, type PathSource } from "@vitavision/workbench";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 
 import { getBackend } from "../api/backend";
-import type { BatchFindItem, BatchProgress, DirEntry } from "../api/backend";
+import type { BatchFindItem, BatchProgress, DirEntry, ImageOut } from "../api/backend";
 import { ImageGrid } from "../components/ImageGrid";
 import { AppShell } from "../shell/AppShell";
 import { useLab } from "../state/LabContext";
 
 export function LibraryPage() {
   const backend = getBackend();
+  const desktop = backend.canOpenFiles();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { images, models, selectImage, selectedImage, selectModel } = useLab();
 
   const [scanned, setScanned] = useState<DirEntry[] | null>(null);
   const [folder, setFolder] = useState<string | null>(null);
+  /** What the last drop or pick brought that this transport cannot open. */
+  const [skipped, setSkipped] = useState<string[]>([]);
 
   const openFolder = useMutation({
     mutationFn: async () => {
@@ -60,17 +63,65 @@ export function LibraryPage() {
     },
   });
 
-  const openFiles = useMutation({
-    mutationFn: async () => {
-      const paths = await backend.pickImages();
-      if (paths.length === 0) return [];
-      return backend.openImagePaths(paths);
-    },
-    onSuccess: (opened) => {
-      void queryClient.invalidateQueries({ queryKey: ["images"] });
-      if (opened.length > 0) selectImage(opened[0]!.id);
-    },
+  const opened = (frames: ImageOut[]) => {
+    void queryClient.invalidateQueries({ queryKey: ["images"] });
+    if (frames.length > 0) selectImage(frames[0]!.id);
+  };
+
+  /** The desktop route: files opened where they are, by path. */
+  const openPaths = useMutation({
+    mutationFn: (paths: string[]) => backend.openImagePaths(paths),
+    onSuccess: opened,
   });
+
+  /** The browser route: each file uploaded, one at a time, in the order given. */
+  const uploadFiles = useMutation({
+    mutationFn: async (files: File[]) => {
+      const frames: ImageOut[] = [];
+      for (const file of files) frames.push(await backend.uploadImage(file));
+      return frames;
+    },
+    onSuccess: opened,
+  });
+
+  /* The shell's native picker and drops, which give paths. Built once: a new source would
+   * make `FileDrop` unsubscribe and subscribe again. */
+  const pathSource = useMemo<PathSource | undefined>(
+    () =>
+      desktop
+        ? { pick: () => backend.pickImages(), subscribe: (handlers) => backend.onFileDrop(handlers) }
+        : undefined,
+    [backend, desktop],
+  );
+
+  const accept = backend.imageAccept();
+  const opening = openPaths.isPending || uploadFiles.isPending;
+  const openError = openPaths.error ?? uploadFiles.error;
+
+  /** One `FileDrop` is mounted at a time: each one listens for drops on the whole window. */
+  const fileDrop = (zone: boolean) => (
+    <FileDrop
+      overlay={!zone}
+      accept={accept}
+      pathSource={pathSource}
+      onPaths={(paths) => {
+        setSkipped([]);
+        openPaths.mutate(paths);
+      }}
+      onFiles={(files) => {
+        setSkipped([]);
+        uploadFiles.mutate(files);
+      }}
+      onRejectPaths={(paths) => setSkipped(paths.map(baseName))}
+      onReject={(files) => setSkipped(files.map((file) => file.name))}
+      disabled={opening}
+      buttonLabel={zone ? "Open files…" : "Files…"}
+      overlayMessage="Drop to open these frames"
+      className={zone ? "w-full max-w-md" : undefined}
+    >
+      No frames yet. Drop images here, or
+    </FileDrop>
+  );
 
   /**
    * Register the scanned folder's frames.
@@ -104,26 +155,13 @@ export function LibraryPage() {
     [backend],
   );
 
+  const empty = images.length === 0 && scanned === null;
+
   return (
     <AppShell
       fullBleed={
-        images.length === 0 && scanned === null ? (
-          <Empty
-            action={
-              backend.canOpenFiles() ? (
-                <div className="flex gap-2">
-                  <Button variant="primary" loading={openFolder.isPending} onClick={() => openFolder.mutate()}>
-                    Open folder…
-                  </Button>
-                  <Button loading={openFiles.isPending} onClick={() => openFiles.mutate()}>
-                    Open files…
-                  </Button>
-                </div>
-              ) : undefined
-            }
-          >
-            No frames yet.
-          </Empty>
+        empty ? (
+          <div className="grid h-full place-items-center p-6">{fileDrop(true)}</div>
         ) : (
           <ImageGrid
             images={images}
@@ -140,22 +178,31 @@ export function LibraryPage() {
         <div className="flex flex-col gap-3">
           <Panel title="Frames">
             <div className="flex flex-col gap-3">
-              {!backend.canOpenFiles() && (
+              {!desktop && (
                 <Callout tone="info">
-                  This is the browser build; opening files from disk needs the desktop app.
+                  This is the browser build: opened files are uploaded into the lab, and
+                  opening a folder needs the desktop app.
                 </Callout>
               )}
-              {backend.canOpenFiles() && (
+              {(desktop || !empty) && (
                 <div className="flex gap-2">
-                  <Button size="sm" variant="primary" loading={openFolder.isPending} onClick={() => openFolder.mutate()}>
-                    Open folder…
-                  </Button>
-                  <Button size="sm" loading={openFiles.isPending} onClick={() => openFiles.mutate()}>
-                    Files…
-                  </Button>
+                  {desktop && (
+                    <Button size="sm" variant="primary" loading={openFolder.isPending} onClick={() => openFolder.mutate()}>
+                      Open folder…
+                    </Button>
+                  )}
+                  {/* While the library is empty the drop zone in its place is the file route. */}
+                  {!empty && fileDrop(false)}
                 </div>
               )}
               {openFolder.isError && <ErrorBox>{openFolder.error.message}</ErrorBox>}
+              {openError && <ErrorBox>{openError.message}</ErrorBox>}
+              {skipped.length > 0 && (
+                <Callout tone="warning">
+                  Not opened: {skipped.join(", ")}. The lab opens {listOf(accept.split(","))} files
+                  {desktop ? "; a folder opens with Open folder…" : "."}
+                </Callout>
+              )}
 
               {scanned !== null && (
                 <Section step={1} title={`${scanned.length} images in this folder`} hint={folder ?? undefined}>
@@ -317,4 +364,14 @@ function BatchPanel({
 
 function best(item: BatchFindItem): number {
   return item.matches.reduce((m, x) => Math.max(m, x.score), 0);
+}
+
+/** A path's last component, for naming a skipped file. */
+function baseName(path: string): string {
+  return path.split(/[\\/]/).pop() ?? path;
+}
+
+/** `[".png", ".bmp", ".pgm"]` → ".png, .bmp or .pgm". */
+function listOf(items: string[]): string {
+  return items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} or ${items.at(-1)}`;
 }

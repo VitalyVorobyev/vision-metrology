@@ -12,9 +12,17 @@
  * says where an edge is; a tick says which way its gradient runs, which is the
  * thing the matcher actually scores and therefore the thing worth being able to
  * see. At a distance the ticks read as a contour anyway.
+ *
+ * They stay one `segment` per point rather than a `polyline` through the points,
+ * because the points are not in contour order: the model stores them stratified
+ * (a golden-ratio permutation, so every prefix the search scores early is spread
+ * over the whole shape), and a line through them in that order is a scribble.
+ *
+ * Everything here is drawn in the overlay grammar's `model` role: it is what the
+ * model predicts, not what was detected.
  */
 
-import type { MeasurePrimitive } from "@vitavision/stage2d";
+import type { MeasurePrimitive, OverlayState } from "@vitavision/stage2d";
 
 import type { MatchOut, ModelGeometryOut } from "../api/backend";
 
@@ -24,10 +32,8 @@ const TICK = 2.5;
 const ARM = 40;
 
 /** A model drawn where it was taught. */
-export function modelOverlay(
-  geometry: ModelGeometryOut,
-  tone: "signal" | "normal" | "muted" = "signal",
-): MeasurePrimitive[] {
+export function modelOverlay(geometry: ModelGeometryOut): MeasurePrimitive[] {
+  const role = "model";
   const out: MeasurePrimitive[] = [];
   const { points, origin, reference_angle: refAngle } = geometry;
 
@@ -35,7 +41,7 @@ export function modelOverlay(
     const [x, y, dx, dy] = [points[i]!, points[i + 1]!, points[i + 2]!, points[i + 3]!];
     out.push({
       kind: "segment",
-      tone,
+      role,
       x1: x - dx * TICK,
       y1: y - dy * TICK,
       x2: x + dx * TICK,
@@ -43,10 +49,10 @@ export function modelOverlay(
     });
   }
 
-  out.push({ kind: "point", tone, x: origin[0], y: origin[1], cross: true });
+  out.push({ kind: "point", role, x: origin[0], y: origin[1], cross: true });
   out.push({
     kind: "segment",
-    tone,
+    role,
     dashed: true,
     x1: origin[0],
     y1: origin[1],
@@ -64,12 +70,15 @@ export function modelOverlay(
  * `(x, y, angle, scale)` and the model's origin. Drawing the *model* on the
  * instance is what makes a match verifiable at a glance: a cross with a score
  * next to it tells you the search returned something, not whether it was right.
+ *
+ * `state` is the overlay grammar's: `selected` is the match the table points at.
  */
 export function matchOverlay(
   geometry: ModelGeometryOut,
   match: MatchOut,
-  tone: "signal" | "normal" | "warn" = "normal",
+  state: OverlayState = "default",
 ): MeasurePrimitive[] {
+  const role = "model";
   const { points, origin } = geometry;
   const cos = Math.cos(match.angle) * match.scale;
   const sin = Math.sin(match.angle) * match.scale;
@@ -92,7 +101,8 @@ export function matchOverlay(
     const [dx, dy] = rot(points[i + 2]!, points[i + 3]!);
     out.push({
       kind: "segment",
-      tone,
+      role,
+      state,
       x1: px - dx * TICK,
       y1: py - dy * TICK,
       x2: px + dx * TICK,
@@ -102,7 +112,8 @@ export function matchOverlay(
 
   out.push({
     kind: "point",
-    tone,
+    role,
+    state,
     x: match.x,
     y: match.y,
     cross: true,
@@ -110,7 +121,8 @@ export function matchOverlay(
   });
   out.push({
     kind: "segment",
-    tone,
+    role,
+    state,
     x1: match.x,
     y1: match.y,
     x2: match.x + ARM * match.scale * Math.cos(match.angle),

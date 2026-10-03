@@ -107,8 +107,8 @@ deleted here.
   `routers/mosaic.py` covers grid auto-fit, nearest-centre priority, the `source_id` map
   and PNG encoding.
 - **The contour inventory renders every row.** Hundreds of rows are fine. Thousands, at a
-  low `min_contrast`, need windowing or a visible cap. The canvas layer has the same limit;
-  Track L's `PolylineSet` addresses it.
+  low `min_contrast`, need windowing or a visible cap. The canvas does not share the limit:
+  stage2d's `PolylineSet` draws batched paths and picks through a spatial index.
 - **`ContourOut` drops free data:** per-point strengths and the junction node ids. Add them
   if a question needs them.
 - **`teach_preview` has no browser counterpart and no contract fixture.** It is covered by

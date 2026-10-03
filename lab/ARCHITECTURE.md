@@ -46,7 +46,10 @@ React UI ── LabBackend ─┬─ httpBackend  ── openapi-fetch ──►
   window keeps painting.
 - **Images are registered by path.** `images_scan_dir` reads headers only;
   `images_open_paths` registers files without copying, and `AppState` decodes on demand
-  behind a small LRU. `images_upload` (bytes over IPC) remains for drag-and-drop.
+  behind a small LRU. Dropped files arrive as paths too: the Library's `FileDrop`
+  (`@vitavision/workbench`) takes a `PathSource` built on `pickImages` and
+  `LabBackend.onFileDrop`, which listens to the webview's native drag and drop.
+  `images_upload` (bytes over IPC) remains for a bare `File`.
 - **Tiers are cached on disk.** The tiers are `thumb` 256, `preview` 1024 and `full`. Each
   is PNG-encoded once into `{app_cache}/tiers/{sha256}/{tier}.png` and served to the
   webview as an `asset:` URL (`convertFileSrc`, scoped to `$APPCACHE`). Keying on the pixel
@@ -79,23 +82,31 @@ Layers, bottom to top:
 ```
 ImageLayer       the photograph (stage2d): preview tier, full tier past it, pixelated past 4×
 MeasureOverlay   results, pointer-events: none
-sweep surface    the bare-image target (useCanvasInteraction)
+StageSurface     the bare-image target (stage2d): starts a sweep, declines everything else
 RectRoiEditor    the region (stage2d): interior, eight handles, and the box tool's draw surface
-ContourLayer     candidate contours with wide transparent hit strokes
+PolylineSet      candidate contours (stage2d), drawn batched and picked through a spatial index
+vertices         the hovered and selected contours' samples, from 3×
+sweep band       the rubber band while a sweep is in flight
 DatumLayer       model origin and its 0° arm
 ```
 
 - **Who handles a press.** The topmost element under the pointer gets it:
-  - a datum handle, then a contour stroke (click selects, ⌘/Ctrl toggles, shift starts a
-    sweep);
+  - a datum handle, then a contour (click selects, ⌘/Ctrl toggles);
   - then the region: a handle resizes it, the interior moves it, and with the box tool (or
     no region yet) a drag elsewhere draws a new one;
-  - then the sweep surface, which sweeps on shift or with the marquee tool and otherwise
+  - then `StageSurface`, which sweeps on shift or with the marquee tool and otherwise
     declines, so the stage pans.
 
-  The region sits under the contours so a contour inside it stays clickable. A wrapper
-  offers each press on the region to the sweep first, in the capture phase, so shift-drag
-  over the region selects rather than moves; a handle is exempt. Sweeps listen on `window`.
+  The region sits under the contours so a contour inside it stays clickable. One wrapper
+  around both offers each press to the sweep first, in the capture phase, so shift or the
+  marquee tool selects over the region and over a contour rather than moving one or
+  picking the other; a region handle is exempt. `PolylineSet`'s own band starts only from
+  its lines, so the lab never lets it start one and draws a single band for all three
+  starting points. Every drag (sweep, datum) is stage2d's `useStageDrag`, which listens on
+  `window`.
+- **Hover is shared.** `PolylineSet`'s hover is controlled by the Teach inventory's
+  `hovered`, so a row hovered in the list and a contour hovered on the image are the same
+  state.
 - **The region commits on release.** The editor's moves go to a local draft, and the shared
   `roi` changes once per gesture, which is what the Teach panel re-extracts from.
   `canvas/roi.ts` converts between the backend's `Roi` tuple and stage2d's `Rect`, so a
@@ -105,10 +116,30 @@ DatumLayer       model origin and its 0° arm
 - **The full tier is resolved lazily.** stage2d's `ImageLayer` wants the full tier's URL up
   front, but on the desktop asking for a tier renders it. `CanvasStage` asks only once the
   preview would be magnified, `ImageLayer`'s own rule, and keeps it for that frame.
-- **Screen-space sizes.** Handle and stroke sizes go through `stage.imageLength`, so they
-  stay a constant number of screen pixels.
+- **Screen-space sizes.** Handle and stroke sizes go through `useScreenPx`
+  (`stage.imageLength`), so they stay a constant number of screen pixels. No layer uses
+  `vector-effect: non-scaling-stroke`, which is unreliable under a CSS transform.
+- **Colours are overlay roles.** Overlays take stage2d's role tokens (`overlayRole()`,
+  `--stage-*`), one set for both themes, with a halo under the lab's own strokes:
+  - kept contours are `feature`, dropped ones dashed `structure`, and a selection
+    `selection`;
+  - the datum and the model's points are `model`, and Find draws the match the table
+    points at in the `selected` state;
+  - vertices are `label` dots. `PolylineSet` can draw them, but in the selection colour,
+    so on a selected line they vanish.
+
+  Measurement verdicts (caliper hit or miss) keep their verdict tones. ESLint's
+  `tokens-only` rule covers every overlay file; only `CrashScreen.tsx` is exempt.
+- **Model points stay ticks.** A model's points are drawn as one `segment` each, not as a
+  `polyline`: the model stores them stratified (a golden-ratio permutation), not in contour
+  order.
 - **The half-pixel convention.** Layers use `imageViewBox(stage.image)` rather than
   `0 0 W H`, because image coordinates name pixel centres and SVG names pixel edges.
+- **Frames.** The header's frame switcher is workbench's `SequenceNavigator` (a lazy
+  thumbnail strip with previous, next and `[` / `]`) plus a menu of every frame. The Library
+  keeps its own grid: browsing wants each frame's name and size and a double-click to open
+  it, not a strip. Thumbnails everywhere are fetched once near the viewport
+  (`hooks/useNearViewport.ts`), because on the desktop asking for a tier renders it.
 - **The layers menu stays local** (`CanvasControls.tsx`). stage2d's `StageLayersMenu` names a
   layer with a plain string, so it cannot show the colour swatches, and its one label would
   put the hidden count in the menu's heading too.

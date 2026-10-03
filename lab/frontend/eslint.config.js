@@ -28,19 +28,13 @@ export default [
     files: ["**/*.test.{ts,tsx}"],
     rules: { "@typescript-eslint/require-await": "off" },
   },
-  // Gate G5.1 (the @vitavision visual language): in src/, colour comes from the @vitavision/ui design
-  // tokens — no raw Tailwind palette classes, no hex literals (tests are exempt by the rule).
+  // The @vitavision visual language: in src/, colour comes from the design tokens (ui's, and
+  // stage2d's overlay roles on the canvas) — no raw Tailwind palette classes, no hex literals
+  // (tests are exempt by the rule).
   tokensOnly(["src/**"]),
   {
-    files: [
-      // Draws when the app failed to start — possibly without its stylesheet, so no tokens.
-      "src/shell/CrashScreen.tsx",
-      // Canvas overlays need halo and highlight colours that stay legible on any photograph.
-      // These two keep their literal colours until they move onto stage2d's overlay role
-      // tokens.
-      "src/canvas/ContourLayer.tsx",
-      "src/canvas/DatumLayer.tsx",
-    ],
+    // Draws when the app failed to start — possibly without its stylesheet, so no tokens.
+    files: ["src/shell/CrashScreen.tsx"],
     rules: { "vitavision/tokens-only": "off" },
   },
 ];

@@ -11,40 +11,64 @@
  *
  * Stacking order is the order a hand expects to reach things, and it is load-bearing:
  *
- *     photograph → results overlay → sweep surface → region → contours → datum
+ *     photograph → results overlay → surface → region → contours → sweep band → datum
  *
- * The sweep surface is the bare-image target (see `useCanvasInteraction`). The region sits
- * under the contours so a contour inside it stays clickable and hoverable; its interior moves
- * it, and with the box tool its own surface draws a new one. The layers above carry only
- * their own small targets, so a contour stroke and a datum handle each win over the
- * background without competing with each other.
+ * The surface (stage2d's `StageSurface`) is the bare-image target: it starts a sweep and
+ * declines everything else, so the stage pans. The region sits under the contours so a
+ * contour inside it stays clickable and hoverable; its interior moves it, and with the box
+ * tool its own surface draws a new one. The contours (stage2d's `PolylineSet`) and the datum
+ * carry only their own small targets, so a contour stroke and a datum handle each win over
+ * the background without competing with each other.
  */
 
 import {
   ImageLayer,
   ImageStage,
   MeasureOverlay,
+  PolylineSet,
   RectRoiEditor,
   StageReadout,
+  StageSurface,
   StageToolbar,
+  buildPolylineIndex,
   imageViewBox,
+  overlayRole,
+  polylinesInRect,
+  useScreenPx,
   useStage,
+  useStageDrag,
 } from "@vitavision/stage2d";
-import type { MeasurePrimitive, Rect } from "@vitavision/stage2d";
-import { Skeleton, toneColor } from "@vitavision/ui";
+import type {
+  MeasurePrimitive,
+  Point,
+  PolylineId,
+  PolylineSetItem,
+  Rect,
+  StageDrag,
+  StagePress,
+} from "@vitavision/stage2d";
+import { Skeleton } from "@vitavision/ui";
 import { useCallback, useMemo, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 
 import type { ImageOut } from "../api/backend";
 import { useImageUrl, useLazyImageUrl } from "../hooks/useImageUrl";
+import type { SelectMode } from "../state/contourInventory";
 import { useLab } from "../state/LabContext";
-import { ContourLayer } from "./ContourLayer";
+import type { ContourSelection, LayerVisibility } from "../state/LabContext";
 import { DatumLayer } from "./DatumLayer";
 import { LayersMenu, ToolGroup } from "./CanvasControls";
 import { MIN_ROI, rectToRoi, roiToRect } from "./roi";
-import { useCanvasInteraction } from "./useCanvasInteraction";
 
-const BAND = toneColor("warn");
+/** A dropped contour: present, but not in play. */
+const DROPPED_STROKE = overlayRole("structure");
+const SELECTION = overlayRole("selection");
+const VERTEX = overlayRole("label");
+const HALO = overlayRole("halo");
+/** Vertices become worth drawing once one image pixel is this many screen pixels. */
+const VERTEX_SCALE = 3;
+/** The most vertices drawn at once; past this the dots are noise and a cost. */
+const MAX_VERTICES = 5000;
 
 /** The `preview` tier's long edge (see the backend's media tiers). */
 const PREVIEW_LONG_EDGE = 1024;
@@ -106,10 +130,18 @@ function Layers({ image }: { image: ImageOut }) {
   const stage = useStage();
   const { overlay, roi, setRoi, roiMode, contourSelection, frameHandles, layers, tool } = useLab();
 
-  const interaction = useCanvasInteraction({
-    tool,
-    contours: contourSelection?.contours ?? null,
+  const contours = useContourItems(contourSelection, layers);
+  const selected = contourSelection?.selected;
+  const hovered = contourSelection?.hovered ?? null;
+  /** The contours being looked at: their vertices are drawn when the zoom allows. */
+  const lookedAt = useMemo(
+    () => new Set(hovered === null ? (selected ?? []) : [...(selected ?? []), hovered]),
+    [selected, hovered],
+  );
+  const sweep = useSweep({
+    items: contours,
     onSelect: contourSelection?.onSelect ?? null,
+    marquee: tool === "marquee",
   });
 
   /* The region as it is being dragged. The shared `roi` changes once, on release: the Teach
@@ -126,13 +158,14 @@ function Layers({ image }: { image: ImageOut }) {
   );
   const drawRegion = roiMode && (tool === "box" || roi === null);
 
-  /* A sweep outranks the region's interior, which would otherwise take the press as a move:
-   * contours are usually inside the region (that is what a region is for), so shift-dragging
-   * over them has to select them. Offered in the capture phase, before the editor hears the
-   * press; a handle is the one target that outranks a sweep. */
-  const sweepOverRegion = (event: ReactPointerEvent<HTMLDivElement>) => {
+  /* A sweep outranks the region's interior, which would otherwise take the press as a move,
+   * and a contour's own click: contours are usually inside the region (that is what a region
+   * is for), so shift-dragging over them has to select them. Offered in the capture phase,
+   * before either layer hears the press; a region handle is the one target that outranks a
+   * sweep. */
+  const offerSweep = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.target instanceof Element && event.target.closest("[data-handle]")) return;
-    interaction.startBand(event);
+    sweep.offer(event);
   };
 
   const primitives: MeasurePrimitive[] = layers.model ? overlay : [];
@@ -150,41 +183,13 @@ function Layers({ image }: { image: ImageOut }) {
       />
 
       {/* The bare-image target. It declines any press it has no use for, and a declined
-          press bubbles to the stage and pans. */}
-      <svg
-        viewBox={imageViewBox(image)}
-        className="absolute inset-0 h-full w-full"
-        style={{ pointerEvents: "none" }}
-      >
-        <rect
-          x={-0.5}
-          y={-0.5}
-          width={image.width}
-          height={image.height}
-          fill="transparent"
-          style={{ pointerEvents: "all", cursor: interaction.cursor }}
-          {...interaction.surface}
-        />
-        {interaction.band && (
-          <rect
-            x={interaction.band.x}
-            y={interaction.band.y}
-            width={interaction.band.width}
-            height={interaction.band.height}
-            fill={BAND}
-            fillOpacity={0.12}
-            stroke={BAND}
-            strokeWidth={1}
-            vectorEffect="non-scaling-stroke"
-            style={{ pointerEvents: "none" }}
-          />
-        )}
-      </svg>
+          press reaches the stage, which pans. */}
+      <StageSurface onPress={sweep.onPress} cursor={sweep.cursor} />
 
-      {/* Hidden with its layer, except while a box is being drawn: "Redraw" with the layer
-          off would otherwise do nothing visible at all. */}
-      {(layers.roi || drawRegion) && (
-        <div className="pointer-events-none absolute inset-0" onPointerDownCapture={sweepOverRegion}>
+      <div className="pointer-events-none absolute inset-0" onPointerDownCapture={offerSweep}>
+        {/* Hidden with its layer, except while a box is being drawn: "Redraw" with the layer
+            off would otherwise do nothing visible at all. */}
+        {(layers.roi || drawRegion) && (
           <RectRoiEditor
             value={region}
             onValueChange={setDraft}
@@ -193,20 +198,193 @@ function Layers({ image }: { image: ImageOut }) {
             draw={drawRegion}
             minSize={MIN_ROI}
           />
-        </div>
+        )}
+
+        {contourSelection && contours && (
+          <PolylineSet
+            label="Contours"
+            items={contours}
+            selected={contourSelection.selected}
+            hovered={contourSelection.hovered}
+            onHover={(id) => contourSelection.onHover(contourId(id))}
+            onSelect={(ids, mode) => contourSelection.onSelect(ids.map(Number), mode)}
+            // The vertices are drawn below, where they show on a selected line too.
+            vertexScale={Infinity}
+          />
+        )}
+      </div>
+
+      {contourSelection && contours && layers.vertices && stage.view.scale >= VERTEX_SCALE && (
+        <ContourVertices items={contours} ids={lookedAt} />
       )}
 
-      {contourSelection && (
-        <ContourLayer
-          selection={contourSelection}
-          layers={layers}
-          sweeping={tool === "marquee"}
-          onSweep={interaction.startBand}
-        />
-      )}
+      {sweep.band && <SweepBand rect={sweep.band} />}
 
       {frameHandles && layers.datum && <DatumLayer handles={frameHandles} />}
     </>
+  );
+}
+
+/**
+ * The contours as `PolylineSet` items: kept ones in the set's own `feature` colour, dropped
+ * ones dashed in `structure`, each kind hidden with its layer.
+ *
+ * Keyed on the contours and the keep set, not on the selection object, which is rebuilt on
+ * every hover: a new item list rebuilds the set's spatial index.
+ */
+function useContourItems(
+  selection: ContourSelection | null,
+  layers: LayerVisibility,
+): PolylineSetItem[] | null {
+  const contours = selection?.contours ?? null;
+  const kept = selection?.kept ?? null;
+  const showKept = layers.kept;
+  const showDropped = layers.dropped;
+  return useMemo(() => {
+    if (contours === null || kept === null) return null;
+    const items: PolylineSetItem[] = [];
+    for (const contour of contours) {
+      const isKept = kept.has(contour.id);
+      if (isKept ? !showKept : !showDropped) continue;
+      const line = { id: contour.id, points: contour.points, closed: contour.closed };
+      items.push(isKept ? line : { ...line, stroke: DROPPED_STROKE, dashed: true });
+    }
+    return items;
+  }, [contours, kept, showKept, showDropped]);
+}
+
+/**
+ * The samples of the contours being looked at (hovered or selected), once a pixel is big
+ * enough to hold a dot. "7365 points" is otherwise a number with nothing behind it; drawing
+ * all of them at once is both unreadable and slow.
+ *
+ * Drawn here rather than by `PolylineSet`, whose dots are the selection colour 3 px wide: on a
+ * selected line, which is the selection colour 2.5 px wide, they disappear exactly where they
+ * are wanted. These are the `label` role on a halo.
+ */
+function ContourVertices({ items, ids }: { items: PolylineSetItem[]; ids: ReadonlySet<number> }) {
+  const stage = useStage();
+  const px = useScreenPx();
+  const d = useMemo(() => {
+    let path = "";
+    let count = 0;
+    for (const item of items) {
+      if (!ids.has(Number(item.id))) continue;
+      const p = item.points;
+      for (let i = 0; i + 1 < p.length && count < MAX_VERTICES; i += 2, count++) {
+        path += `M${p[i]} ${p[i + 1]}h0`;
+      }
+    }
+    return path;
+  }, [items, ids]);
+  if (d === "") return null;
+  return (
+    <svg
+      viewBox={imageViewBox(stage.image)}
+      className="pointer-events-none absolute inset-0 h-full w-full overflow-visible"
+      aria-hidden
+    >
+      <g fill="none" strokeLinecap="round">
+        <path d={d} stroke={HALO} strokeWidth={px(5)} />
+        <path data-vertices="" d={d} stroke={VERTEX} strokeWidth={px(3)} />
+      </g>
+    </svg>
+  );
+}
+
+/** The ids are the backend's contour ids, which are numbers. */
+function contourId(id: PolylineId | null): number | null {
+  return id === null ? null : Number(id);
+}
+
+/**
+ * The sweep: a rubber band that selects every drawn contour it touches.
+ *
+ * Shift-drag sweeps in any tool, and any drag sweeps with the marquee tool. Only the topmost
+ * element under the pointer receives a press, so a band has to be startable from the bare
+ * image (the surface's `onPress`) and from the layers above it (`offer`, called in the
+ * capture phase): a frame with a hundred and sixty-six contours is mostly strokes, and the
+ * region's interior covers most of the rest. `PolylineSet` has a band of its own, but only
+ * for presses on its lines, so the lab draws one band for all three.
+ *
+ * The drag itself is stage2d's `useStageDrag`: it claims the press and listens on `window`,
+ * so the band survives the pointer leaving the canvas.
+ */
+function useSweep({
+  items,
+  onSelect,
+  marquee,
+}: {
+  items: PolylineSetItem[] | null;
+  onSelect: ((ids: number[], mode: SelectMode) => void) | null;
+  marquee: boolean;
+}) {
+  const stage = useStage();
+  const startDrag = useStageDrag();
+  const [band, setBand] = useState<Rect | null>(null);
+
+  const wants = (shift: boolean) => items !== null && onSelect !== null && (shift || marquee);
+
+  const drag = (from: Point, additive: boolean): StageDrag => {
+    setBand({ x: from.x, y: from.y, width: 0, height: 0 });
+    return {
+      onMove: (point) => setBand(boxBetween(from, point)),
+      onEnd: (point) => {
+        setBand(null);
+        // Indexed on release rather than kept: one sweep is the only reader, and the set
+        // changes with every keep and drop.
+        const caught = items === null ? [] : polylinesInRect(buildPolylineIndex(items), boxBetween(from, point));
+        // An empty sweep clears the selection, which is how you let go of one with a tool in
+        // hand rather than having to find empty background to click.
+        onSelect?.(caught.map(Number), additive ? "add" : "replace");
+      },
+      onCancel: () => setBand(null),
+    };
+  };
+
+  return {
+    band,
+    cursor: items !== null && marquee ? "crosshair" : undefined,
+    onPress: (press: StagePress) => (wants(press.shiftKey) ? drag(press.point, press.metaKey) : null),
+    offer: (event: ReactPointerEvent<Element>) => {
+      if (event.button !== 0 || stage.panMode || !wants(event.shiftKey)) return;
+      const from = stage.toImage({ x: event.clientX, y: event.clientY });
+      startDrag(event, drag(from, event.metaKey || event.ctrlKey));
+    },
+  };
+}
+
+function boxBetween(a: Point, b: Point): Rect {
+  return {
+    x: Math.min(a.x, b.x),
+    y: Math.min(a.y, b.y),
+    width: Math.abs(b.x - a.x),
+    height: Math.abs(b.y - a.y),
+  };
+}
+
+/** The band, drawn as `PolylineSet` draws its own: the selection colour at 12 %. */
+function SweepBand({ rect }: { rect: Rect }) {
+  const stage = useStage();
+  const px = useScreenPx();
+  return (
+    <svg
+      viewBox={imageViewBox(stage.image)}
+      className="pointer-events-none absolute inset-0 h-full w-full overflow-visible"
+      aria-hidden
+      data-sweep=""
+    >
+      <rect
+        x={rect.x}
+        y={rect.y}
+        width={rect.width}
+        height={rect.height}
+        fill={SELECTION}
+        fillOpacity={0.12}
+        stroke={SELECTION}
+        strokeWidth={px(1)}
+      />
+    </svg>
   );
 }
 

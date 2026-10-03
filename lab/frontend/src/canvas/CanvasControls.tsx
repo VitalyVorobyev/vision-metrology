@@ -42,13 +42,14 @@ export function ToolGroup({
   );
 }
 
+/** Each swatch is the overlay role its layer is drawn in (see `CanvasStage`, `DatumLayer`). */
 const LAYER_LABELS: { key: keyof LayerVisibility; label: string; swatch?: string }[] = [
   { key: "roi", label: "ROI box", swatch: overlayRole("selection") },
-  { key: "kept", label: "Kept contours", swatch: "var(--signal)" },
-  { key: "dropped", label: "Dropped contours", swatch: "var(--fg-subtle)" },
-  { key: "vertices", label: "Edge points (at 3× and above)" },
-  { key: "datum", label: "Datum", swatch: "var(--normal)" },
-  { key: "model", label: "Model points", swatch: "var(--signal-strong)" },
+  { key: "kept", label: "Kept contours", swatch: overlayRole("feature") },
+  { key: "dropped", label: "Dropped contours", swatch: overlayRole("structure") },
+  { key: "vertices", label: "Edge points (at 3× and above)", swatch: overlayRole("selection") },
+  { key: "datum", label: "Datum", swatch: overlayRole("model") },
+  { key: "model", label: "Model points", swatch: overlayRole("model") },
 ];
 
 /**
@@ -83,7 +84,13 @@ export function LayersMenu({
           <MenuCheckboxItem key={key} checked={layers[key]} onCheckedChange={(on) => onLayer(key, on)}>
             <span className="flex items-center gap-2">
               {swatch && (
-                <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: swatch }} />
+                <span
+                  aria-hidden
+                  // The halo every overlay stroke is drawn on, so the white `structure` swatch
+                  // shows on a light menu.
+                  className="size-2 shrink-0 rounded-full ring-1 ring-stage-halo"
+                  style={{ background: swatch }}
+                />
               )}
               {label}
             </span>

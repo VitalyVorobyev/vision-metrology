@@ -18,6 +18,20 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
   open: vi.fn().mockResolvedValue(null),
 }));
 
+/** The webview's drag-and-drop handler, as `onFileDrop` registers it. */
+type DragDropHandler = (event: { payload: { type: string; paths?: string[] } }) => void;
+let dragDrop: DragDropHandler | null = null;
+const unlistenDragDrop = vi.fn();
+
+vi.mock("@tauri-apps/api/webview", () => ({
+  getCurrentWebview: () => ({
+    onDragDropEvent: (handler: DragDropHandler) => {
+      dragDrop = handler;
+      return Promise.resolve(unlistenDragDrop);
+    },
+  }),
+}));
+
 // Imported after the mocks so `tauriBackend.ts`'s own imports resolve to them.
 const { createTauriBackend } = await import("./tauriBackend");
 
@@ -176,6 +190,28 @@ describe("createTauriBackend", () => {
     expect(invokeMock).toHaveBeenLastCalledWith("images_open_paths", {
       paths: ["/frames/a.png"],
     });
+  });
+
+  it("onFileDrop() reports the webview's native drags as paths, and unlistens", async () => {
+    const backend = createTauriBackend();
+    const handlers = { onEnter: vi.fn(), onLeave: vi.fn(), onDrop: vi.fn() };
+    const stop = backend.onFileDrop(handlers);
+
+    dragDrop!({ payload: { type: "enter", paths: ["/cap/a.png"] } });
+    dragDrop!({ payload: { type: "over" } });
+    dragDrop!({ payload: { type: "leave" } });
+    dragDrop!({ payload: { type: "drop", paths: ["/cap/a.png", "/cap/b.bmp"] } });
+    expect(handlers.onEnter).toHaveBeenCalledTimes(1);
+    expect(handlers.onLeave).toHaveBeenCalledTimes(1);
+    expect(handlers.onDrop).toHaveBeenCalledWith(["/cap/a.png", "/cap/b.bmp"]);
+
+    stop();
+    await Promise.resolve();
+    expect(unlistenDragDrop).toHaveBeenCalled();
+  });
+
+  it("imageAccept() names what the native picker offers", () => {
+    expect(createTauriBackend().imageAccept()).toBe(".png,.bmp,.pgm");
   });
 
   it("mosaic()/mosaicImageUrl()/mosaicSourceIdUrl() are unsupported in the desktop build", async () => {

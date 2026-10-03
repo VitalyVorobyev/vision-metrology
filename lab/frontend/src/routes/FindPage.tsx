@@ -86,13 +86,13 @@ export function FindPage() {
     },
   });
 
-  // Hovering a row re-draws that one match in the accent tone, so the table and
-  // the picture are talking about the same thing.
+  // Hovering a row draws that one match selected (thicker, with the selection
+  // ring), so the table and the picture are talking about the same thing.
   useEffect(() => {
     if (geometry === null || matches.length === 0) return;
     setOverlay(
       matches.flatMap((m, i) =>
-        matchOverlay(geometry, m, i === highlightedMatch ? "signal" : "normal"),
+        matchOverlay(geometry, m, i === highlightedMatch ? "selected" : "default"),
       ),
     );
   }, [highlightedMatch, matches, geometry, setOverlay]);
@@ -213,7 +213,7 @@ export function FindPage() {
 function crossesOnly(matches: MatchOut[]) {
   return matches.map((m) => ({
     kind: "point" as const,
-    tone: "signal" as const,
+    role: "model" as const,
     x: m.x,
     y: m.y,
     cross: true,

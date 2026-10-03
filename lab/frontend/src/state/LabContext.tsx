@@ -19,7 +19,7 @@ import type { MeasurePrimitive, StageHandle, StageView } from "@vitavision/stage
 import { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 
-import type { ContourStat, SelectMode } from "../canvas/contourSelection";
+import type { ContourStat, SelectMode } from "./contourInventory";
 import { getBackend } from "../api/backend";
 import type {
   CalibrationOut,

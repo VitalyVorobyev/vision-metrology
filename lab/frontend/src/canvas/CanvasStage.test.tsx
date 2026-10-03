@@ -22,10 +22,11 @@ import type { RefObject } from "react";
 
 import type * as BackendModule from "../api/backend";
 import type { ContourOut, ImageOut, LabBackend } from "../api/backend";
-import type { SelectMode } from "./contourSelection";
+import type { SelectMode } from "../state/contourInventory";
+import { describeContours } from "../state/contourInventory";
 import { LabProvider, useLab } from "../state/LabContext";
+import type { CanvasTool } from "../state/LabContext";
 import { CanvasStage } from "./CanvasStage";
-import { describeContours } from "./contourSelection";
 
 const IMAGE: ImageOut = { id: "img-1", filename: "8.bmp", width: 1280, height: 1024 } as ImageOut;
 /** What the fake backend lists; a test may swap in a different frame. */
@@ -84,13 +85,36 @@ function withViewport(box: { width: number; height: number }) {
 }
 
 const selectSpy = vi.fn<(ids: number[], mode: SelectMode) => void>();
+const hoverSpy = vi.fn<(id: number | null) => void>();
+const originSpy = vi.fn<(p: [number, number]) => void>();
+const angleSpy = vi.fn<(radians: number) => void>();
 const roiSpy = vi.fn();
 /** Hears the lab's handle on the stage, as a panel holds it. */
 const handleSpy = vi.fn<(handle: RefObject<StageHandle | null>) => void>();
 
-function Seed({ withContours = false }: { withContours?: boolean }) {
-  const { images, selectedImage, selectImage, roi, setRoi, setRoiMode, setContourSelection, canvas } =
-    useLab();
+/** What a test puts on the canvas besides the frame and its region. */
+interface SeedOptions {
+  contours?: boolean;
+  kept?: number[];
+  selected?: number[];
+  hovered?: number | null;
+  tool?: CanvasTool;
+  datum?: boolean;
+}
+
+function Seed({ contours = false, kept = [0, 1], selected = [], hovered = null, tool = "pan", datum = false }: SeedOptions) {
+  const {
+    images,
+    selectedImage,
+    selectImage,
+    roi,
+    setRoi,
+    setRoiMode,
+    setContourSelection,
+    setFrameHandles,
+    setTool,
+    canvas,
+  } = useLab();
   useEffect(() => handleSpy(canvas), [canvas]);
   useEffect(() => {
     if (roi) roiSpy(roi);
@@ -98,26 +122,30 @@ function Seed({ withContours = false }: { withContours?: boolean }) {
   useEffect(() => {
     if (images.length > 0 && selectedImage === null) selectImage(images[0]!.id);
   }, [images, selectedImage, selectImage]);
+  useEffect(() => setTool(tool), [setTool, tool]);
   // Only once a frame is selected: `selectImage` clears the region and the contour layer,
   // so seeding them before it lands would be undone by it.
+  const keptKey = kept.join(",");
+  const selectedKey = selected.join(",");
   useEffect(() => {
     if (selectedImage === null) return;
     setRoi([500, 350, 340, 275]);
     setRoiMode(true);
-    if (withContours) {
+    if (contours) {
       setContourSelection({
         contours: CONTOURS,
         stats: describeContours(CONTOURS),
-        kept: new Set([0, 1]),
-        selected: new Set(),
-        hovered: null,
+        kept: new Set(keptKey === "" ? [] : keptKey.split(",").map(Number)),
+        selected: new Set(selectedKey === "" ? [] : selectedKey.split(",").map(Number)),
+        hovered,
         order: [0, 1],
-        onHover: () => {},
+        onHover: hoverSpy,
         onSelect: selectSpy,
         onKeep: () => {},
       });
     }
-  }, [selectedImage, setRoi, setRoiMode, setContourSelection, withContours]);
+    if (datum) setFrameHandles({ origin: [640, 512], angle: 0, onOrigin: originSpy, onAngle: angleSpy });
+  }, [selectedImage, setRoi, setRoiMode, setContourSelection, setFrameHandles, contours, keptKey, selectedKey, hovered, datum]);
   return null;
 }
 
@@ -126,14 +154,15 @@ function Canvas() {
   return selectedImage ? <CanvasStage image={selectedImage} /> : null;
 }
 
-function renderCanvas(withContours = false) {
+function renderCanvas(seed: SeedOptions | boolean = {}) {
+  const options = typeof seed === "boolean" ? { contours: seed } : seed;
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <MemoryRouter>
       <QueryClientProvider client={client}>
         <TooltipProvider>
           <LabProvider>
-            <Seed withContours={withContours} />
+            <Seed {...options} />
             <Canvas />
           </LabProvider>
         </TooltipProvider>
@@ -145,6 +174,9 @@ function renderCanvas(withContours = false) {
 describe("CanvasStage", () => {
   beforeEach(() => {
     selectSpy.mockReset();
+    hoverSpy.mockReset();
+    originSpy.mockReset();
+    angleSpy.mockReset();
     roiSpy.mockReset();
     frames = [IMAGE];
   });
@@ -230,14 +262,56 @@ describe("CanvasStage", () => {
     await screen.findByRole("application");
 
     const stage = container.querySelector("[data-stage]") as HTMLElement;
-    const hitStroke = stage.querySelector('path[stroke="transparent"]') as SVGPathElement;
-    expect(hitStroke).toBeTruthy();
+    const hit = stage.querySelector("[data-hit]") as SVGPathElement;
+    expect(hit).toBeTruthy();
 
-    fireEvent.pointerDown(hitStroke, { button: 0, clientX: 100, clientY: 100, pointerId: 1 });
+    // On contour 0's top edge, which runs from (600, 400) to (700, 400).
+    fireEvent.pointerDown(hit, { button: 0, pointerId: 1, ...client(650, 400) });
     expect(selectSpy).toHaveBeenCalledWith([0], "replace");
 
-    fireEvent.pointerDown(hitStroke, { button: 0, clientX: 100, clientY: 100, pointerId: 2, metaKey: true });
+    fireEvent.pointerDown(hit, { button: 0, pointerId: 2, metaKey: true, ...client(650, 400) });
     expect(selectSpy).toHaveBeenLastCalledWith([0], "toggle");
+  });
+
+  it("links hover both ways with the inventory", async () => {
+    withViewport({ width: 1200, height: 500 });
+    const { container, unmount } = renderCanvas({ contours: true });
+    await screen.findByRole("application");
+
+    // Canvas to inventory: the line under the pointer is reported.
+    const hit = container.querySelector("[data-stage] [data-hit]")!;
+    fireEvent.pointerMove(hit, { pointerId: 1, ...client(925, 825) });
+    expect(hoverSpy).toHaveBeenLastCalledWith(1);
+    unmount();
+
+    // Inventory to canvas: a row hovered in the list is drawn hovered.
+    const again = renderCanvas({ contours: true, hovered: 1 });
+    await screen.findByRole("application");
+    expect(again.container.querySelector("svg[data-hovered='1'] [data-hovered-line]")).not.toBeNull();
+  });
+
+  it("draws kept and dropped contours differently", async () => {
+    withViewport({ width: 1200, height: 500 });
+    const { container } = renderCanvas({ contours: true, kept: [0] });
+    await screen.findByRole("application");
+
+    const set = screen.getByRole("img", { name: "Contours: 2 lines, 0 selected" });
+    // The dropped contour is batched apart from the kept one: dashed, in the structure role.
+    const dropped = set.querySelector('path[stroke="var(--stage-structure)"]');
+    expect(dropped?.getAttribute("stroke-dasharray")).toBeTruthy();
+    expect(set.querySelector('path[stroke="var(--stage-feature)"]')?.getAttribute("stroke-dasharray")).toBeNull();
+    expect(container.querySelector("[data-stage]")).toBeTruthy();
+  });
+
+  it("shows a selected contour's vertices from 3× up, not at fit", async () => {
+    withViewport({ width: 1200, height: 500 });
+    const { container } = renderCanvas({ contours: true, selected: [0] });
+    await screen.findByRole("application");
+    expect(container.querySelector("[data-vertices]")).toBeNull();
+
+    const handle = handleSpy.mock.calls[handleSpy.mock.calls.length - 1]![0];
+    act(() => handle.current!.zoomTo(4));
+    expect(container.querySelector("[data-vertices]")).not.toBeNull();
   });
 
   it("resizes the region by its corner handle, and commits once, on release", async () => {
@@ -287,9 +361,9 @@ describe("CanvasStage", () => {
     await screen.findByRole("application");
 
     const stage = container.querySelector("[data-stage]") as HTMLElement;
-    const hitStroke = stage.querySelector('path[stroke="transparent"]') as SVGPathElement;
+    const hit = stage.querySelector("[data-hit]") as SVGPathElement;
 
-    drag(hitStroke, client(1000, 900), { ...client(100, 100), shiftKey: true });
+    drag(hit, client(1000, 900), { ...client(100, 100), shiftKey: true });
 
     // A sweep, not the single-contour selection a plain press would have made.
     const swept = selectSpy.mock.calls[selectSpy.mock.calls.length - 1]!;
@@ -311,6 +385,61 @@ describe("CanvasStage", () => {
     expect(swept).toEqual([[0, 1], "replace"]);
     expect(roiSpy.mock.calls.length).toBe(commits);
     expect(lastRoi()).toEqual(before);
+  });
+
+  it("sweeps from bare image with the marquee tool, and leaves a plain press to the stage", async () => {
+    withViewport({ width: 1200, height: 500 });
+    const { container } = renderCanvas({ contours: true, tool: "marquee" });
+    await screen.findByRole("application");
+
+    const surface = container.querySelector("[data-stage] [data-stage-surface]")!;
+    // Above and left of both contours, outside the region, down past contour 1.
+    drag(surface, client(1000, 900), { ...client(100, 100) });
+    expect(selectSpy).toHaveBeenLastCalledWith([0, 1], "replace");
+
+    // With ⌘ the sweep adds to the selection.
+    drag(surface, client(960, 860), { ...client(890, 790), metaKey: true });
+    expect(selectSpy).toHaveBeenLastCalledWith([1], "add");
+  });
+
+  it("declines a plain press on bare image in the pan tool, so the stage pans", async () => {
+    withViewport({ width: 1200, height: 500 });
+    const { container } = renderCanvas({ contours: true });
+    await screen.findByRole("application");
+
+    const surface = container.querySelector("[data-stage] [data-stage-surface]")!;
+    drag(surface, client(1000, 900), { ...client(100, 100) });
+    expect(selectSpy).not.toHaveBeenCalled();
+    expect(container.querySelector("[data-sweep]")).toBeNull();
+  });
+
+  it("drags the datum origin with the pointer, wherever it goes", async () => {
+    withViewport({ width: 1200, height: 500 });
+    const { container } = renderCanvas({ datum: true });
+    await screen.findByRole("application");
+
+    const origin = container.querySelector("[data-stage] [data-datum=origin]")!;
+    // The moves arrive at the window: a fast pointer outruns a handle.
+    drag(origin, client(300, 200), { ...client(640, 512) });
+    const [x, y] = originSpy.mock.calls[originSpy.mock.calls.length - 1]![0];
+    expect(x).toBeCloseTo(300, 3);
+    expect(y).toBeCloseTo(200, 3);
+  });
+
+  it("turns the datum's 0° arm, snapping to 15° with shift", async () => {
+    withViewport({ width: 1200, height: 500 });
+    const { container } = renderCanvas({ datum: true });
+    await screen.findByRole("application");
+
+    const tip = container.querySelector("[data-stage] [data-datum=angle]")!;
+    // Down and to the right of the origin at 40°: free, then held to the nearest 15° (45°).
+    const at40 = client(640 + 100 * Math.cos((40 * Math.PI) / 180), 512 + 100 * Math.sin((40 * Math.PI) / 180));
+    drag(tip, at40);
+    expect((angleSpy.mock.calls.at(-1)![0] * 180) / Math.PI).toBeCloseTo(40, 1);
+    fireEvent.pointerDown(tip, { button: 0, pointerId: 1 });
+    fireEvent(window, new window.PointerEvent("pointermove", { ...at40, shiftKey: true }));
+    fireEvent(window, new window.PointerEvent("pointerup", at40));
+    expect((angleSpy.mock.calls.at(-1)![0] * 180) / Math.PI).toBeCloseTo(45, 6);
   });
 
   it("opens a small frame at fit, not at 1:1", async () => {
