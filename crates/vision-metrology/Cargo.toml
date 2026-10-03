@@ -189,6 +189,10 @@ name = "corrmatch_bridge"
 required-features = ["corr", "matching"]
 
 [[test]]
+name = "caliper_bits"
+required-features = ["measure"]
+
+[[test]]
 name = "accuracy"
 required-features = ["corr", "fit", "measure", "matching"]
 
