@@ -1,7 +1,7 @@
-//! Synthetic 3-camera bird's-eye mosaic (roadmap mosaic wave, plan decision 6).
+//! Synthetic 3-camera bird's-eye mosaic.
 //!
-//! Mosaicking is deliberately **not** a library module — the plan's own words are "the
-//! library already has everything" (per-camera [`plane_grid_map`] + [`Map::apply_with_mask`]).
+//! Mosaicking is deliberately **not** a library module — the library already has everything
+//! it needs (per-camera [`plane_grid_map`] + [`Map::apply_with_mask`]).
 //! This test is the CI-gated proof that composing those two primitives with a documented,
 //! deterministic priority rule produces a geometrically correct mosaic; `examples/birdseye_mosaic.rs`
 //! reuses the same composition pattern on real Table_Calibration data (not a CI gate there —

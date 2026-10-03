@@ -7,8 +7,8 @@
 //! | `raster` | `Image`/`ImageView`/`ImageViewMut`, `Pixel`, `BorderMode`, sampling, `Error` | **none** |
 //! | `geom` | nalgebra aliases, `Vec2fExt`, transforms, `Circle2f`/`Ellipse2f`/`Conic2f` | yes |
 //!
-//! Both submodules are private: every name keeps one canonical path, `core::…`
-//! (invariant 17). The division is a rule about *dependencies*, not about
+//! Both submodules are private: every name keeps one canonical path, `core::…`.
+//! The division is a rule about *dependencies*, not about
 //! import paths — the raster layer must stay free of linear algebra so it
 //! could be shared with crates pinned to a different nalgebra major version.
 //! Read the `raster` module's own note (in the source) before adding

@@ -127,7 +127,7 @@ pub struct MeasureConfig {
   is no meaningful crossing at all. Comparing the local image gradient
   against the scan direction and rejecting beyond this angle is what keeps a
   bad caliper *out* of a fit rather than merely down-weighted. `180.0`
-  disables the check. Idea adapted from the caliper in `rtvt-pano`.
+  disables the check.
 - **`border`** — sampling behaviour when the caliper overhangs the image.
 
 ## `RejectReason`
@@ -233,24 +233,27 @@ the measured radius across frames is the fixture *and* the measurement
 combined, not a restatement of where the part happened to sit under a fixed
 camera. Measured on set1 (Tukey(2 px), 96 calipers, tolerance 2 px on
 `max_dev`): 100/100 frames measured across two lighting conditions, mean rim
-radius 365.2–365.7 px, σ ≈ 0.3 px — see `system-design.md` for the full table.
+radius 365.2–365.7 px, σ ≈ 0.3 px. The full table is in
+[performance and accuracy](performance.md#real-data-the-can-end-chain).
 
 ```text
 cargo run --release -p vision-metrology --example inspect_canend -- \
-  --scene-dir ~/privatedata/canend/set1/normal/dome \
+  --scene-dir /path/to/canend/set1/normal/dome \
   --roi 420,350,420,320 --rim-radius 367 --tolerance 1.5
 ```
 
-Units are **pixels** throughout `measure`. Millimetres arrive with the
-`metric` module (PR #33), which converts a fitted primitive through a
-calibration.
+The can-end dataset is not distributed with this repository.
+
+Units are **pixels** throughout `measure`. To report millimetres, convert the
+fitted primitive through a camera calibration with the `metric` module
+(`metric::pixel_to_plane`).
 
 ## See also
 
 - [Shape-based object detection](shape-matching.md) — how `ShapeMatch::pose`,
   the fixture this module applies, is found in the first place.
-- `docs/system-design.md` — the chord-bias measurement and the design
-  decisions behind `RejectReason` and the `Result`-returning `measure`/`apply`.
+- [Performance and accuracy](performance.md) — the caliper's measured bias and
+  noise envelope, and the can-end reference numbers.
 
 [`Caliper`]: ../crates/vision-metrology/src/measure/caliper.rs
 [`MeasureRect`]: ../crates/vision-metrology/src/measure/caliper.rs

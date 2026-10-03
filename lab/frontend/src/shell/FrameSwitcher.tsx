@@ -1,10 +1,8 @@
 /**
  * Which frame is on the canvas — as a control, in the header, on every screen.
  *
- * It used to be dead text. Changing frame meant navigating to Library, clicking a card and
- * navigating back, which is a long way round on Teach and impossible to discover on Find,
- * where the whole task is "run this model against a different frame" and there was no way
- * to pick one.
+ * Changing frame must not require a round trip through Library: on Find the whole task is
+ * "run this model against a different frame".
  *
  * `[` and `]` step the sequence, because a capture is an ordered set and stepping through it
  * one frame at a time is what the Find and Verify steps are for.

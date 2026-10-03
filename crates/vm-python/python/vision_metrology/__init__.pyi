@@ -628,7 +628,7 @@ class ShapeModel:
 
     def resample_at(self, s: float) -> ShapeModel:
         """Rebuild this model with every point resampled at scale `s`
-        (roadmap W7, estimate-then-verify). The result's own scale_range is
+        (estimate-then-verify). The result's own scale_range is
         a narrow band around 1.0 -- search that, and multiply a found
         match's own `scale` by `s` to recover scale relative to *this*
         model. Raises ValueError if `s` is not finite/positive, or this
@@ -859,7 +859,7 @@ def displacement(
     default) translation-only Lucas-Kanade refinement."""
 
 # ---------------------------------------------------------------------------
-# scale: estimate-then-verify (roadmap W7)
+# scale: estimate-then-verify
 # ---------------------------------------------------------------------------
 
 def estimate_scale_moments(

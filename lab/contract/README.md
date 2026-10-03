@@ -8,7 +8,7 @@ Two artifacts, both generated, both committed:
   whenever a route or schema changes.
 - `fixtures/` — golden request/response pairs for the core operations, over small
   deterministic synthetic images. This is the anti-drift gate between the two backends
-  (plan decision 7, wave W6): the browser (FastAPI) and desktop (Tauri, native Rust
+  ([ADR-0015](../../docs/dev/adr/0015-the-lab.md)): the browser (FastAPI) and desktop (Tauri, native Rust
   commands over `vision-metrology` directly) shells must agree on what teach/find/
   measure/rectify/displacement report for the same input, even though neither talks to
   the other and one of them never goes over HTTP at all.

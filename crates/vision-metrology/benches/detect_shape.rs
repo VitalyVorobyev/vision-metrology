@@ -125,7 +125,7 @@ fn bench_ellipse_direct(c: &mut Criterion) {
     });
 }
 
-/// The two fits this crate previously had no implementation of at all.
+/// Circle and line fitting.
 fn bench_circle_and_line(c: &mut Criterion) {
     use core::f32::consts::TAU;
     let truth = Circle2f {

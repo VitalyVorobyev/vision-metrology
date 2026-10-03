@@ -1,9 +1,9 @@
 /**
  * The ROI as four numbers you can type, beside the box you can drag.
  *
- * It used to be a read-only sentence. A region is the one input to teaching that a person
- * often knows exactly — "the same crop as last time", "square, centred on the tab" — and a
- * box that can only be dragged cannot express that.
+ * A region is the one input to teaching that a person often knows exactly — "the same crop
+ * as last time", "square, centred on the tab" — and a box that can only be dragged cannot
+ * express that.
  */
 
 import { Button, NumberInput, Panel } from "@vitavision/lab-ui";

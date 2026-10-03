@@ -16,7 +16,7 @@ nalgebra = { workspace = true }
 libm = "0.2"
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
-# The standard cross-correlation engine (user decision, corr wave): a
+# The standard cross-correlation engine: a
 # pyramidal ZNCC/SSD matcher with rotation search and subpixel refinement.
 # Optional, tied to the `corr` feature — `corr::CorrTemplate` is a thin
 # zero-copy-when-possible adapter over it, not a reimplementation.
@@ -48,7 +48,7 @@ metric = ["dep:serde", "dep:serde_json", "warp"]
 ## Shape-based object detection (ShapeModel / ShapeMatcher). `ShapeMatch`
 ## rectifies into a canonical crop via `warp::Map`, so this implies `warp`.
 matching = ["warp"]
-## Scale estimation for `matching` ("estimate-then-verify", roadmap W7):
+## Scale estimation for `matching` ("estimate-then-verify"):
 ## `estimate_scale_moments` (segment a blob, compare its size to the taught
 ## model) and `estimate_scale_logpolar` (log-polar ZNCC correlation over
 ## `corr` + `warp::Map::log_polar`), plus the `find_scale_invariant`

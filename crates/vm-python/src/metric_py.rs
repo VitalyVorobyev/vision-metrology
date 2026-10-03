@@ -3,9 +3,9 @@
 //! **`Pose3` is not a Python class.** Every function here that takes or
 //! returns a camera-from-reference pose uses a plain `(4, 4)` `float64`
 //! numpy array (row-major, homogeneous: top-left 3x3 rotation, last column
-//! translation in millimetres) — the numpy-friendly representation the
-//! roadmap plan calls for, and the shape every other pose-shaped array in
-//! this codebase (calibration exports, robotics stacks) already uses.
+//! translation in millimetres) — the numpy-friendly representation, and the
+//! shape every other pose-shaped array in this codebase (calibration exports,
+//! robotics stacks) already uses.
 //! [`pose_from_numpy`]/[`pose_to_numpy`] are the two conversion points.
 
 use nalgebra::{Quaternion, Translation3, UnitQuaternion};

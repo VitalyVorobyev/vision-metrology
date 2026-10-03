@@ -403,8 +403,8 @@ mod tests {
     fn non_finite_points_report_degenerate_not_panic() {
         // A NaN coordinate propagates into the scatter matrix and makes every
         // eigenvalue NaN. `partial_cmp` returns None for NaN, so ranking them
-        // with `.unwrap()` used to panic inside library code on ordinary bad
-        // input rather than returning an error.
+        // with `.unwrap()` would panic inside library code on ordinary bad
+        // input rather than return an error.
         let pts = vec![
             Point2f::new(0.0, 0.0),
             Point2f::new(1.0, 0.0),

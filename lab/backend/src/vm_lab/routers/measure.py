@@ -12,13 +12,9 @@ Two passes over the same calipers, deliberately:
    — detail `apply`'s binding does not surface. Both passes share the same
    `MeasureConfig`, so they agree on every caliper that succeeds.
 
-The caliper *placements* (`vm.MetrologyModel.layout`) used to be re-derived here by hand,
-in a module `geometry.py` that had to mirror `MetrologyModel::measure_one`
-(`crates/vision-metrology/src/measure/model.rs`) exactly — duplicated geometry that would
-silently go stale if that function's placement math ever changed. `layout` is the same
-placement code `apply` calls internally (`vision_metrology::measure::diagnostics::layout`,
-`docs/backlog.md`'s "No per-caliper explain API", now closed), so this module no longer
-needs its own copy.
+The caliper *placements* come from `vm.MetrologyModel.layout`, the same placement code
+`apply` calls internally (`vision_metrology::measure::diagnostics::layout`), so an overlay
+can never show a caliper somewhere the measurement did not look.
 """
 
 from __future__ import annotations

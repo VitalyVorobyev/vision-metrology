@@ -1,8 +1,7 @@
 //! Line-segment detection (LSD).
 //!
-//! Named `lsd` because that is what it is. It used to be `shape`, a name that
-//! stopped being true when algebraic conic fitting and the RANSAC ellipse
-//! wrapper moved into [`fit`](crate::fit) — what remained was one algorithm.
+//! Conic and ellipse fitting live in [`fit`](crate::fit); this module is the
+//! one detector.
 //!
 //! ## Line Segment Detection (LSD)
 //! [`LsdDetector`] implements gradient-coherence region growing with NFA
@@ -41,9 +40,8 @@
 //!
 //! ## Allocation policy
 //! All per-frame scratch allocations (gradient images, region buffers, bucket
-//! arrays, RANSAC inlier indices) are owned by the detector/fitter struct and
-//! reused across `detect` / `fit` calls. Only the output `Vec<LineSegment2f>`
-//! or `Result<Ellipse2f>` is allocated per call.
+//! arrays) are owned by [`LsdDetector`] and reused across `detect` calls. Only
+//! the output `Vec<LineSegment2f>` is allocated per call.
 
 mod detect;
 mod nfa;

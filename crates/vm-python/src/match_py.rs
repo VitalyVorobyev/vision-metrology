@@ -227,8 +227,8 @@ impl ShapeModel {
         self.inner.teach_point_count()
     }
 
-    /// Rebuild this model with every point resampled at scale `s` (roadmap
-    /// W7, "estimate-then-verify"). The result's own `scale_range` is a
+    /// Rebuild this model with every point resampled at scale `s`
+    /// ("estimate-then-verify"). The result's own `scale_range` is a
     /// narrow band around 1.0 — search that, and multiply a found match's
     /// own `scale` by `s` to recover scale relative to *this* model.
     ///

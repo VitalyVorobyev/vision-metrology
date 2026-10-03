@@ -4,7 +4,7 @@
 //!
 //! Both sides of the correlation are **synthesized edge-density rasters**,
 //! not raw photometric patches: a [`ShapeModel`] stores teach-time edge
-//! points (format 4), not pixels, so there is no reference *image* patch to
+//! points, not pixels, so there is no reference *image* patch to
 //! reach for. The model's own teach points are splatted onto a small
 //! canvas (a Gaussian dab per point, weighted by its own gradient
 //! magnitude); the scene side runs [`Edge2DDetector`] over a crop around

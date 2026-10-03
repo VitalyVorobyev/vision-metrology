@@ -20,8 +20,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      # Invariant numbers in docs/system-design.md are cited by number from source
-      # files and docs, and nothing in the compiler checks them. This does.
+      # Invariant numbers in docs/dev/system-design.md are cited by number from
+      # source files and docs, and nothing in the compiler checks them. This does,
+      # along with dangling plan labels and user-facing links into docs/dev/.
       - name: Check invariant numbering and citations
         run: python3 tools/check-invariants.py
 

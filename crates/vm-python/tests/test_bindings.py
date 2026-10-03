@@ -660,11 +660,11 @@ def test_metrology_model_measures_a_circle():
 
 
 def test_metrology_model_apply_honors_nonzero_origin():
-    """Regression for the origin-correction bug (docs/backlog.md, now fixed):
-    `apply` used to build `scale·R(angle)·point + (x, y)`, skipping the
-    `point - origin` subtraction that `ShapeMatch::pose` applies. Here the
-    model's origin is (20, 10), the circle (radius ~40) is taught off-origin
-    at (35, 10), and the fixture rotates by ~-90 degrees -- if `origin` were
+    """Regression for the origin correction: `apply` must not build
+    `scale·R(angle)·point + (x, y)`, skipping the `point - origin`
+    subtraction that `ShapeMatch::pose` applies. Here the model's origin is
+    (20, 10), the circle (radius ~40) is taught off-origin at (35, 10), and the
+    fixture rotates by ~-90 degrees -- if `origin` were
     ignored the fitted circle would land 15 px away from the true center."""
     origin = (20.0, 10.0)
     shape_center = (35.0, 10.0)  # origin + (15, 0) in model space
@@ -1279,7 +1279,7 @@ def test_corr_template_config_has_nested_tuning():
 
 
 # ---------------------------------------------------------------------------
-# scale: estimate-then-verify (roadmap W7)
+# scale: estimate-then-verify
 # ---------------------------------------------------------------------------
 
 

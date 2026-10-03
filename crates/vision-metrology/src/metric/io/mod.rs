@@ -2,8 +2,8 @@
 //!
 //! Wire structs live only in the two submodules and are never public — only
 //! [`CameraModel`](super::CameraModel) / [`Pose3`](super::Pose3) escape this
-//! module, per the offline/runtime split recorded in `docs/system-design.md`
-//! ("vision-calibration: offline/runtime split"). Both importers return
+//! module: calibration stays an offline concern, and only its results cross
+//! into this crate. Both importers return
 //! `Vec<(CameraModel, Pose3)>` in camera-index order, `Pose3` always
 //! **camera-from-reference** — see [`Pose3`](super::Pose3)'s own docs for
 //! that direction convention, which every importer here follows regardless

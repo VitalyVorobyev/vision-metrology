@@ -5,8 +5,7 @@
 //! [`Plane3`], [`PlaneGrid`]) on `nalgebra` 0.35, and turns them into pixel
 //! ↔ millimetre conversions. `calibration-rs` remains the **offline**
 //! calibration system (it is pinned to nalgebra 0.34 and cannot be a direct
-//! dependency here — see `docs/system-design.md`'s "vision-calibration:
-//! offline/runtime split"); [`io`] imports its JSON exports.
+//! dependency here); [`io`] imports its JSON exports.
 //!
 //! ## Units: this module works in millimetres
 //! Every 3-D/plane quantity here (`Pose3` translations, `Plane3::d`,
@@ -38,12 +37,13 @@
 //! homogeneous coordinates, distortion is not) — see
 //! [`homography_plane_to_image`]'s own docs for how the two are composed.
 //!
-//! ## `f32` storage, `f64` accumulation (invariant 20)
+//! ## `f32` storage, `f64` accumulation
 //! Every type here stores `f32`. The iterative undistortion solve, the
 //! ray/plane intersection, and the homography construction all accumulate
 //! in `f64` internally — plane-adjacent quantities (millimetres, near-zero
-//! ray/plane denominators) are exactly the kind of computation invariant 20
-//! exists for.
+//! ray/plane denominators) lose precision in `f32` first.
+
+// Invariant 20: f32 storage, f64 accumulation.
 
 mod distortion;
 mod homography;

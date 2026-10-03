@@ -13,7 +13,7 @@ def main():
     img[10:118, 90] = 0
 
     det = vm.LsdDetector(vm.LsdConfig())
-    segs = det.detect_u8(img)
+    segs = det.detect(img)
     print(f"Detected {len(segs)} line segments")
     for s in segs:
         print(f"  {s}")

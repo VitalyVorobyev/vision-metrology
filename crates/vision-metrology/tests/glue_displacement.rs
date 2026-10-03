@@ -1,13 +1,12 @@
 //! Real-data cross-check: `corr::displacement` on the `data/42781` glue rig.
 //!
-//! This dataset (`docs/backlog.md` / roadmap: no calibration, three cameras
-//! glued vertically into one 320x291 frame) has no recorded ground truth for
-//! inter-frame motion — `tools/glue-42781/motion.py` (phase correlation) only
+//! This dataset (no calibration, three cameras glued vertically into one
+//! 320x291 frame) has no recorded ground truth for inter-frame motion — `tools/glue-42781/motion.py` (phase correlation) only
 //! ever wrote PNG plots, no numeric trajectory file to compare against (see
 //! `data/42781/output/`). So this is **agreement, not a gate**: it asserts
 //! the trajectory this crate's `displacement` produces is internally
 //! consistent (bounded frame-to-frame delta, no NaN/degenerate steps) and
-//! prints a summary for the wave report. Skips cleanly when the (gitignored,
+//! prints a summary. Skips cleanly when the (gitignored,
 //! locally-fetched) dataset is absent — nothing here should fail CI on a
 //! fresh checkout.
 

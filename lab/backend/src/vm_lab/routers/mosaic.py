@@ -1,6 +1,6 @@
 """POST /api/mosaic — composite N calibrated cameras' rectified views of the calibration's
-own `z = 0` plane into one grid, using the roadmap plan's **no-blending, nearest-camera-
-centre priority** rule: for each destination pixel, among the cameras whose validity mask
+own `z = 0` plane into one grid, using the **no-blending, nearest-camera-centre priority**
+rule: for each destination pixel, among the cameras whose validity mask
 is set there, keep the one whose reprojection of that plane point lands closest to its own
 principal point (`vm.project_plane_points` -- the exact forward geometry `plane_grid_map`
 composes internally, exposed pointwise so every *candidate* camera's own reprojection is

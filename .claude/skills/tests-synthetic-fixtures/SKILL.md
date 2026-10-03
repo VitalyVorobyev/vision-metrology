@@ -1,8 +1,7 @@
 ---
-
 name: tests-synthetic-fixtures
 description: Use this to create deterministic test images/signals with known subpixel ground truth (edges, stripes, circles). Helps lock correctness before optimizing.
------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+---
 
 # Synthetic fixtures (deterministic)
 
@@ -24,15 +23,16 @@ description: Use this to create deterministic test images/signals with known sub
 * **Stripe (laser)** as difference of two steps (bright-on-dark):
 
   * known left/right subpixel positions → known center + width
-* **Circle / ring boundary** (later):
+* **Circle / ring boundary**:
 
   * implicit distance function `d = sqrt((x-cx)^2+(y-cy)^2)-r`
   * intensity from sign(d) and controlled blur
 
 ## Expected-value checks
 
-* Keep early tests loose (~0.1–0.2 px).
-* Add tighter tests later (aim 0.05 px) on higher-fidelity fixtures.
+* Keep unit tests loose (~0.1–0.2 px).
+* Precision belongs in the accuracy suite (`crates/vision-metrology/tests/accuracy.rs`):
+  sweep the fixture, report the worst bias and sigma, and pin them at ~1.5× as the envelope.
 
 ## Regression strategy
 

@@ -1,60 +1,22 @@
-PyO3 Python bindings for the vision-metrology workspace.
+# vision-metrology for Python
 
-This package is published as `vision-metrology` and imported as `vision_metrology`.
-It provides both:
-- stateful object APIs (`EdgeDetector`, `ShapeMatcher`, ...), and
-- declarative free functions (`detect_edges`, `find_shape_model`, ...).
+Python bindings for [vision-metrology](https://github.com/VitalyVorobyev/vision-metrology):
+industrial machine-vision metrology with subpixel edges, shape-based matching, calipers,
+robust fitting, the pixel → millimetre calibration bridge, image warping and
+cross-correlation. numpy in, numpy out.
 
-## Breaking change (hard break)
+- Install name: `vision-metrology`; import name: `vision_metrology`.
+- Python 3.10 or newer; ABI3 wheels (`abi3-py310`).
+- Ships `__init__.pyi` and `py.typed`, so type checkers and IDEs see the real signatures.
 
-Legacy names were removed:
-- `import vm_python` -> `import vision_metrology as vm`
-- `PyEdgeDetector` -> `EdgeDetector`
-- `PyLsdDetector` -> `LsdDetector`
-- `PyConicFitter` -> `Fitter` (also gained `fit_circle`, matching the Rust `fit` module)
-- `PySegmenter` -> `Segmenter`
-- `PyEdgel` -> `Edgel`
-- `PyLineSegment` -> `LineSegment`
-- `PyEllipse` -> `Ellipse`
-- `PyComponentStats` -> `ComponentStats`
-
-The chamfer-based `RigidMatcher` / `MatchResult` / `RigidMatchConfig` /
-`match_rigid_model` API has been **removed**, not deprecated. Shape-based
-object detection replaces it:
-
-```python
-model = vm.ShapeModel(reference, (x, y, width, height))
-for m in vm.ShapeMatcher(vm.ShapeSearchConfig(min_score=0.6)).find(scene, model):
-    print(m.score, m.x, m.y, m.angle, m.scale)
-```
-
-## Python version and wheels
-
-- Requires Python `>=3.10`.
-- Built as ABI3 (`abi3-py310`) wheels.
-
-## Type stubs
-
-The wheel ships `vision_metrology/__init__.pyi` and `py.typed` (PEP 561), so
-mypy/pyright and IDE autocomplete see the real signatures without importing
-the compiled extension. This is maturin's documented layout for a pure Rust
-extension with hand-written stubs: `python-source = "python"` in
-`pyproject.toml` points at `python/vision_metrology/`, which holds
-`__init__.pyi` + `py.typed` plus a thin `__init__.py` that re-exports the
-compiled submodule maturin places alongside them (`from .vision_metrology
-import *`) — the bridge is needed because the extension's own module name
-matches the wrapping package's, so nothing imports it automatically. The
-stub is hand-maintained: it must be updated in the same PR as any change to
-`src/lib.rs`'s `#[pymodule]` registration list, and a test
-(`test_package_ships_py_typed_and_a_stub_matching_the_runtime_surface`)
-checks every name the stub declares actually exists at runtime.
-
-## Quick start
+## Install from source
 
 ```bash
 cd crates/vm-python
-maturin develop
+maturin develop --release
 ```
+
+## Quick start
 
 ```python
 import numpy as np
@@ -63,101 +25,77 @@ import vision_metrology as vm
 img = np.zeros((64, 64), dtype=np.uint8)
 img[:, 32:] = 200
 
-# Object API
-edgels_obj = vm.EdgeDetector(vm.EdgeConfig()).detect(img)
-
-# Free-function API
-edgels_fn = vm.detect_edges(img, vm.EdgeConfig())
+edgels = vm.EdgeDetector(vm.EdgeConfig()).detect(img)   # object API
+edgels = vm.detect_edges(img, vm.EdgeConfig())          # free-function API
 ```
 
-`detect` / `detect_edges` and every other entry point onto a Rust function
-generic over `Pixel` accepts `uint8`, `uint16` or `float32` arrays — dispatch
-happens on the array's own dtype, no `_u8`/`_u16`/`_f32` suffix. An
-unsupported dtype raises `ValueError` naming the three that work.
+Every entry point that is generic over the pixel type in Rust accepts `uint8`, `uint16`
+or `float32` arrays and dispatches on the array's dtype. Any other dtype raises
+`ValueError`.
 
-## Config classes
-
-- `EdgeConfig`
-- `LsdConfig`
-- `FitConfig`
-- `MeasureConfig`
-- `ShapeModelConfig` (nests `EdgeConfig` as `.edge`)
-- `ShapeSearchConfig` (nests `ShapeSearchTuning` as `.tuning`; `.roi`,
-  `.angle_range`, `.scale_range` narrow the search)
-- `Contrast` — `Contrast.raw(v)` / `Contrast.fraction_of_range(f)`, the two
-  variants of `min_contrast` on `ShapeModelConfig` and `ShapeSearchConfig`
-
-### Config design notes
-
-- **Sentinels are `None`.** Every "auto" / "unlimited" Rust `Option<T>` is a
-  Python `None` — `num_levels=None` picks the pyramid depth automatically,
-  `max_matches=None` reports every instance, and so on.
-- **`Hysteresis` is a pair of optionals, not its own type.** `EdgeConfig`'s
-  `low_thresh` / `high_thresh` are both `None` for automatic thresholding, or
-  both set for manual — the familiar `argparse`-style optional-pair idiom,
-  rather than a second small enum type for one either/or choice.
-- **`Contrast` *is* its own type.** A bare `float` for `min_contrast` would
-  have to silently pick a unit, and picking the wrong one changes behaviour
-  by up to 257x between `uint8` and `uint16` images — exactly the ambiguity
-  the Rust `Contrast` type exists to remove. Construct with the two static
-  methods.
-- **Search effort is nested.** `ShapeSearchConfig`'s top-level fields say
-  *what* to look for (`min_score`, `roi`, `angle_range`, ...); the six fields
-  on `ShapeSearchConfig.tuning` say *how hard* the search works
-  (`greediness`, `max_candidates`, ...) and are rarely touched.
-
-## Free functions
-
-- `detect_edges(img, config)` — `uint8`/`uint16`/`float32`
-- `detect_line_segments(img, config)` — `uint8`/`uint16`/`float32`
-- `fit_ellipse(pts, config)`
-- `fit_line(pts, config)`
-- `find_shape_model(model_image, roi, scene_image, model_config=None, search_config=None)`
-- `otsu_threshold(img)`
-- `threshold_binary(img, threshold)`
-- `label_components(img, connectivity=8)`
-- `component_stats(label_img, n_labels, min_area=1)`
-- `build_contour_graph(img, edge_config=None, connectivity="c8", ...)`
-- `smooth_polyline(points, sigma)`
-- `erode(img, shape="square", radius=1)` / `dilate(...)` / `open(...)` / `close(...)`
-- `thin(img)`, `chamfer_distance(img)`
-
-## Measuring: `Caliper` and `MetrologyModel`
-
-`Caliper.rect(...)` / `.arc(...)` / `.radial(...)` place a caliper and
-`.measure(img)` runs it, returning a list of `MeasureEdge`. A caliper that
-finds nothing raises `MeasureRejected` — `except vm.MeasureRejected as e:
-e.args[0]` names the gate (`"no_edge"`, `"too_oblique"`, ...). See the
-`measure_py` module docstring for why this is an exception while
-`MetrologyModel.apply` is not.
+Locate a part and measure it at the found pose:
 
 ```python
-disc = ...  # (H, W) uint8
-model = vm.MetrologyModel()
-model.add(vm.MetrologyObject(vm.MetrologyShape.circle((0.0, 0.0), 40.0)))
-# fixture = (x, y, angle, scale), typically a ShapeMatch's own fields
-results = model.apply(disc, x=80.0, y=80.0)
-r = results[0]  # MetrologyResult or MetrologyError, one per object, in order
-print(r.kind, r.circle.r, r.rms, len(r.hits))
+model = vm.ShapeModel(reference, (x, y, width, height))
+matches = vm.ShapeMatcher(vm.ShapeSearchConfig(min_score=0.6)).find(scene, model)
+
+# Nominal geometry in the reference image's coordinates.
+metrology = vm.MetrologyModel()
+metrology.add(vm.MetrologyObject(vm.MetrologyShape.circle((cx, cy), 40.0)))
+for m in matches:
+    results = metrology.apply(scene, x=m.x, y=m.y, angle=m.angle, scale=m.scale,
+                              origin=model.origin())
+    for r in results:  # one result per object, in order
+        print(r.kind, r.circle.r, r.rms, len(r.hits))
 ```
 
-## Python surface coverage
+A single `Caliper` that finds nothing raises `vm.MeasureRejected`, and `e.args[0]` names
+the reason (`"no_edge"`, `"wrong_polarity"`, `"too_oblique"`, `"off_image"`,
+`"profile_too_short"`). `MetrologyModel.apply` reports a failed object as a
+`MetrologyError` in its slot instead of raising, so one bad object does not hide the
+others.
 
-Every public `vision-metrology` / `vm-primitives` domain module has a Python
-path, except where noted:
+## Configs
 
-| Rust module | Python surface | Notes |
-|---|---|---|
-| `edge` (2D) | `EdgeDetector`, `detect_edges` | `uint8`/`uint16`/`float32` dispatch |
-| `edge` (1D) | via `Caliper` | not exposed standalone |
-| `lsd` | `LsdDetector`, `detect_line_segments` | `uint8`/`uint16`/`float32` dispatch |
-| `fit` | `Fitter`, `fit_ellipse`, `fit_line` | `fit_circle` via `Fitter` only |
-| `matching` | `ShapeModel`, `ShapeMatcher`, `find_shape_model` | `uint8`/`uint16`/`float32` dispatch on build and find |
-| `measure` | `Caliper`, `MetrologyModel`, `MetrologyObject`, `MetrologyShape`, `MetrologyResult` | |
-| `contour` | `build_contour_graph`, `ContourGraph`, `smooth_polyline` | detector-output variant only, not the raw-edgel constructor |
-| `segment` | `Segmenter`, free functions | watershed and edgel region growing not yet bound |
-| `morph` | `erode`/`dilate`/`open`/`close`/`thin`/`chamfer_distance` | |
-| `laser` | — | **deliberately excluded this wave** — no laser detector was in scope for the v0.3 Python parity pass; tracked for a future wave |
-| `pyr`, `core::raster` internals, `DirectionField` | — | implementation details, never meant to be public even in Rust |
+Each Rust config is a Python class with keyword arguments, for example
+`vm.ShapeSearchConfig(min_score=0.6)`.
+- **Automatic and unlimited values are `None`.** For example, `num_levels=None` picks the
+  pyramid depth.
+- **Search effort is nested.** `ShapeSearchConfig.tuning` (`ShapeSearchTuning`) holds
+  `greediness`, `max_candidates` and the other rarely touched fields.
+- **Contrast thresholds carry their unit.** Use `vm.Contrast.raw(v)` (Scharr response on
+  the input pixel scale) or `vm.Contrast.fraction_of_range(f)` (transfers between `uint8`
+  and `uint16`).
+- **Hysteresis is a pair of optionals.** `EdgeConfig.low_thresh` / `high_thresh` are both
+  `None` (automatic) or both set.
 
-See `examples/python/` for runnable scripts.
+## Coverage
+
+| Rust module | Python |
+|---|---|
+| `edge` (2-D) | `EdgeDetector`, `detect_edges`, `Edgel` |
+| `lsd` | `LsdDetector`, `detect_line_segments`, `LineSegment` |
+| `fit` | `Fitter` (`fit_line`, `fit_circle`, `fit_ellipse`), `fit_line`, `fit_ellipse`, `FitConfig` |
+| `matching` | `ShapeModel` (incl. `save`/`load`), `ShapeMatcher`, `ShapeMatch`, `find_shape_model`, `ShapeModelConfig`, `ShapeSearchConfig`, `Contrast`, `CropSpec` (`ShapeMatch.model_frame_map`) |
+| `measure` | `Caliper` (`rect`/`arc`/`radial`, `measure`, `measure_pairs`, `profile`), `MeasureConfig`, `MetrologyModel` (`apply`, `layout`), `MetrologyObject`, `MetrologyShape`, `MetrologyResult`, `MetrologyError`, `CaliperPlacement`, `MeasureRejected` |
+| `warp` | `Map` (`affine`, `projective`, `polar`, `log_polar`, `apply`, `apply_with_mask`) |
+| `metric` | `CameraModel`, `PinholeIntrinsics`, `BrownConrady5`, `Plane3`, `PlaneGrid`, `pixel_to_plane`, `project_plane_points`, `plane_grid_map`, `undistort_map`, `load_rig_extrinsics`, `load_table_calibration` |
+| `corr` | `CorrTemplate`, `find`, `find_topk`, `displacement`, `CorrConfig`, `CorrTemplateConfig`, `DisplacementConfig`, `Refine` |
+| `scale` | `estimate_scale_moments`, `estimate_scale_logpolar`, `find_scale_invariant_roi`, `find_scale_invariant_center`, `ScaleEstimate` |
+| `segment` | `Segmenter`, `otsu_threshold`, `threshold_binary`, `label_components`, `component_stats` |
+| `contour` | `build_contour_graph`, `ContourGraph`, `smooth_polyline` |
+| `morph` | `erode`, `dilate`, `open`, `close`, `thin`, `chamfer_distance` |
+
+**Not bound:**
+- `laser`;
+- `segment::watershed` and edgel region growing;
+- `contour::build_graph_from_edgels` (the raw-edgel constructor);
+- the standalone 1-D edge detector (reachable through `Caliper`);
+- pyramids and direction fields.
+
+Runnable scripts are in
+[`examples/python/`](https://github.com/VitalyVorobyev/vision-metrology/tree/main/examples/python).
+
+## License
+
+Licensed under either of Apache License, Version 2.0 or MIT license at your option.

@@ -1,9 +1,7 @@
 //! The scan loops, shared by every pixel type.
 //!
-//! `u8`, `u16` and `f32` extraction used to be six hand-copied ~60-line
-//! functions (rows × 3 types, gathered columns × 3 types). They are now two
-//! generic loops over [`Pixel`]; the compiler emits the same specialised code
-//! the hand-written versions did.
+//! Two generic loops over [`Pixel`] — rows and gathered columns — cover
+//! `u8`, `u16` and `f32`; the compiler emits a specialised copy per type.
 
 use std::ops::Range;
 

@@ -3,7 +3,7 @@ name: Benchmarks
 # Manually triggered: criterion numbers from shared CI runners are too noisy
 # for a hard perf gate, but a on-demand run with the table in the job summary
 # is useful for spotting order-of-magnitude regressions and for comparing
-# branches. Reference numbers (M4 Pro) live in docs/system-design.md.
+# branches. Reference numbers (M4 Pro) live in docs/performance.md.
 on:
   workflow_dispatch:
     inputs:
@@ -51,7 +51,7 @@ jobs:
           print("## Criterion results")
           print()
           print("Runner: `ubuntu-latest` (shared; treat as indicative, not as a")
-          print("reference — M4 Pro reference numbers are in docs/system-design.md).")
+          print("reference — M4 Pro reference numbers are in docs/performance.md).")
           print()
           print("| Benchmark | Low | Median | High |")
           print("|---|---|---|---|")

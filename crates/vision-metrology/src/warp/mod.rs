@@ -33,7 +33,7 @@
 //!
 //! ## Pixel centers
 //!
-//! Per the workspace-wide convention (invariant 1), integer destination pixel
+//! Per the workspace-wide convention, integer destination pixel
 //! `(i, j)` means the coordinate `(i as f32, j as f32)` — its center, not its
 //! corner. Every builder here evaluates its mapping at exactly that point.
 //!
@@ -59,9 +59,8 @@
 //! does. Downsample through [`crate::vm_primitives::pyr::Pyramid`] first
 //! (or apply the map at a coarser destination size and read the matching
 //! pyramid level as `src`) rather than asking one `Map` to both minify
-//! heavily and resample; `filter` (roadmap B3, not yet landed) is not a
-//! prerequisite for this module and is not needed for the common case of
-//! rectifying a fixture pose at roughly unit scale.
+//! heavily and resample. The common case — rectifying a fixture pose at
+//! roughly unit scale — needs no prefilter.
 //!
 //! ## Quick start
 //!

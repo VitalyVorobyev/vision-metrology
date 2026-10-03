@@ -1,13 +1,10 @@
 //! 2×2 box-mean downsampling, generic over [`Pixel`].
 //!
-//! This used to be ten hand-written functions — five pixel-type/output-type
-//! combinations, each with a raw-pointer "contiguous and even" fast path and a
-//! safe fallback. [`Pixel::to_acc`] carries the only part that actually
-//! differed (accumulator width), so one generic loop now covers all of them,
-//! with no `unsafe`.
+//! [`Pixel::to_acc`] carries the only per-type difference (accumulator
+//! width), so one generic loop covers every pixel type, with no `unsafe`.
 //!
-//! Only the `f32`-destination kernel survives: every pyramid level above 0 is
-//! `f32`, and the same-type variants had no caller. It is `pub(crate)` — the
+//! Only an `f32`-destination kernel exists: every pyramid level above 0 is
+//! `f32`. It is `pub(crate)` — the
 //! public entry point is [`Pyramid`](super::Pyramid).
 //!
 //! The `as_chunks::<2>()` formulation hands the optimiser a `[P; 2]` per pair

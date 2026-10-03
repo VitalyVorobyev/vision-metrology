@@ -25,9 +25,9 @@ pub fn pixel_to_ray(camera: &CameraModel, pixel: Point2f) -> Vec3f {
 /// (`t < 0`) — a pixel whose back-projected ray cannot physically see the
 /// plane it was asked to intersect.
 ///
-/// Runs in `f64` internally (invariant 20: accumulation f64) since a
-/// near-glancing ray/plane angle can lose precision in `f32` well before the
-/// division.
+/// Runs in `f64` internally, since a near-glancing ray/plane angle can lose
+/// precision in `f32` well before the division.
+// Invariant 20.
 pub fn ray_plane_intersect(origin: Point3f, dir: Vec3f, plane: &Plane3) -> Option<Point3f> {
     let n = plane.n.cast::<f64>();
     let o = origin.coords.cast::<f64>();

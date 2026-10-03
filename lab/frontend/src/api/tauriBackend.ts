@@ -268,9 +268,8 @@ export function createTauriBackend(): LabBackend {
       return invoke<DisplacementResponse>("displacement", { req });
     },
 
-    // Deliberately not implemented this wave — the mosaic compositor
-    // (`lab/backend/src/vm_lab/routers/mosaic.py`, ~315 lines) was not ported to a
-    // Tauri command; see lab/README.md's desktop section for the reasoning.
+    // Not implemented: the mosaic compositor (`lab/backend/src/vm_lab/routers/mosaic.py`)
+    // has no Tauri command yet (docs/dev/backlog.md, "Lab").
     async mosaic(_req: MosaicRequest): Promise<MosaicResponse> {
       unsupported("Bird's-eye mosaic");
     },

@@ -83,8 +83,9 @@ pub use crop::CropSpec;
 pub use matcher::{ShapeMatch, ShapeMatcher};
 pub use model::{ModelPoint, ShapeModel, ShapeModelLevel};
 
+// Invariant 17.
 /// Re-exported for `scale::find_scale_invariant` only — not part of this
-/// crate's public API (invariant 17). Gated the same as `scale` itself so
+/// crate's public API. Gated the same as `scale` itself so
 /// `matching` alone (without `scale`) does not carry a dead re-export.
 #[cfg(feature = "scale")]
 pub(crate) use matcher::pose_from;

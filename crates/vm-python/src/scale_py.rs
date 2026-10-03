@@ -1,6 +1,6 @@
 //! Python bindings for `scale`: `estimate_scale_moments`,
 //! `estimate_scale_logpolar`, `find_scale_invariant_roi`/
-//! `find_scale_invariant_center` (roadmap W7, "estimate-then-verify").
+//! `find_scale_invariant_center` ("estimate-then-verify").
 //!
 //! `u8`-only, like `corr` — both estimators build on `segment`/`corr`,
 //! which are `u8`-only in this workspace already.

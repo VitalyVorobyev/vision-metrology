@@ -1,9 +1,7 @@
 //! Cross-correlation matching and inter-frame subpixel displacement.
 //!
 //! `corr` is a thin wrapper over [`corrmatch`], the project's standard
-//! cross-correlation engine (see `docs/system-design.md`'s corr-wave
-//! decision — this supersedes the earlier "keep corrmatch dev-only, for
-//! validation only" stance). It does **not** reimplement corrmatch's
+//! cross-correlation engine. It does **not** reimplement corrmatch's
 //! pyramid, angle bank, beam search, or subpixel refinement: [`CorrTemplate`]
 //! adapts this crate's [`ImageView`](crate::ImageView) into corrmatch's own,
 //! and [`find`] /
@@ -28,9 +26,9 @@
 //!
 //! Both [`CorrTemplate::from_image`] and [`displacement`] take
 //! `ImageView<'_, u8>` only — no `Pixel` generic pretense. corrmatch's
-//! published API (0.2.5) is `u8`-only; adding `u16`/`f32` support is
-//! corrmatch's own backlog (`docs/backlog.md`), not something this wrapper
-//! can quantize its way around without lying about precision.
+//! published API (0.2.5) is `u8`-only; `u16`/`f32` support belongs in
+//! corrmatch itself, not in a wrapper that would have to quantize its way
+//! around it and misreport the precision.
 //!
 //! # Quick start
 //!

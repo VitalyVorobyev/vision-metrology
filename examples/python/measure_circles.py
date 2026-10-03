@@ -28,7 +28,7 @@ def main():
     img = generate_image(w, h)
 
     print("Running EdgeDetector...")
-    edgels = vm.detect_edges_u8(img, vm.EdgeConfig())
+    edgels = vm.detect_edges(img, vm.EdgeConfig())
     print(f"  Detected {len(edgels)} edgels")
 
     if not edgels:

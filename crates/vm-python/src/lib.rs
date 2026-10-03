@@ -5,6 +5,11 @@
 //! This module exposes both object-oriented detector/matcher classes and
 //! declarative free functions.
 
+// `#[pyclass(from_py_object)]` generates a `.clone()` when extracting a pyclass by
+// value, and clippy (1.99+) reports it as `clone_on_copy` on every `Copy` pyclass.
+// The call is in macro output, not in this crate's code.
+#![allow(clippy::clone_on_copy)]
+
 mod config;
 mod contour_py;
 mod convert;
@@ -129,7 +134,7 @@ fn vision_metrology(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(find_topk, m)?)?;
     m.add_function(wrap_pyfunction!(displacement, m)?)?;
 
-    // scale: estimate-then-verify (roadmap W7)
+    // scale: estimate-then-verify
     m.add_function(wrap_pyfunction!(estimate_scale_moments, m)?)?;
     m.add_function(wrap_pyfunction!(estimate_scale_logpolar, m)?)?;
     m.add_function(wrap_pyfunction!(find_scale_invariant_roi, m)?)?;

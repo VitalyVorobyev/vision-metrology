@@ -5,9 +5,8 @@ use vm_primitives::Pixel;
 
 /// Estimate the coarse stripe centre inside `[lo, hi)` of a scan line.
 ///
-/// One generic entry point (invariant 19): the `u8`/`u16`/`f32` wrappers that
-/// used to sit on top of it were public, allocation-free duplicates with no
-/// caller inside the workspace.
+/// One generic entry point over every pixel type.
+// Invariant 19.
 pub(super) fn coarse_center_in_range<P: Pixel>(
     line: &[P],
     coarse: &CoarseMethod,

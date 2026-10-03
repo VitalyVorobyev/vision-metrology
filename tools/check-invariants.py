@@ -1,45 +1,111 @@
 #!/usr/bin/env python3
-"""Guard the invariant numbering in docs/system-design.md.
+"""Guard the invariant numbering and the documentation boundaries.
 
-The numbered invariants are cited *by number* from source files, doc comments and the
-other persistent-context documents (`invariant 4`, `invariants 2 and 3`, ...). Nothing in
-the compiler checks that a cited number still means what the citer thought it meant, so
-the numbering is append-only by convention — and this script is what turns that
-convention into a gate.
+The numbered invariants in docs/dev/system-design.md are cited *by number* from source
+files, doc comments and the developer documents (`invariant 4`, `invariants 2 and 3`, ...).
+Nothing in the compiler checks that a cited number still exists, so the numbering is
+append-only by convention, and this script turns that convention into a gate. It also
+guards the boundary between user-facing and developer-facing text.
 
-It checks two things:
+Checks, over every file tracked by git:
 
-  1. The numbered list under `## Invariants` in docs/system-design.md is contiguous and
-     starts at 1 (so nobody silently drops one, which would renumber everything after it).
-  2. Every `invariant N` / `invariants N` citation anywhere in the repository resolves to
-     an invariant that exists.
+  1. The numbered list under `## Invariants` in docs/dev/system-design.md is contiguous
+     and starts at 1 (so nobody silently drops one, which would renumber everything after
+     it).
+  2. Every number in an invariant citation resolves: `invariant 4`, `invariants 2 and 3`,
+     `invariants 17, 18`, `invariants 2–4`.
+  3. No dangling plan labels outside CHANGELOG.md and docs/dev/roadmap.md: `roadmap W7`,
+     `roadmap B5`, "the roadmap plan", bare `W7`-style labels in comments and prose,
+     `decision 9g`, `backlog item R3`, `Track 4`, and plan "waves". These name schemes that live only in a past session's
+     plan, so a reader cannot resolve them.
+  4. No mention of the external project the caliper notes once named (matched by the
+     regex in FORBIDDEN_NAME), in any tracked file.
+  5. User-facing text does not link into docs/dev/: the README files, the top-level guides
+     under docs/, CHANGELOG.md, lab/README.md, the Python stubs, and rustdoc (`//!`, `///`)
+     in the crates' library sources.
 
 Retiring an invariant is still allowed — keep its number and mark the entry
 `**(retired)**`, saying what replaced it. That keeps the list contiguous and every old
 citation resolvable.
 
-Exit status 0 on success, 1 on any violation. No dependencies beyond the standard library.
+Exit status 0 on success, 1 on any violation. No dependencies beyond the standard library
+and git.
 """
 
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 REPO = Path(__file__).resolve().parent.parent
-SPEC = REPO / "docs" / "system-design.md"
+SPEC_REL = "docs/dev/system-design.md"
+SPEC = REPO / SPEC_REL
+SELF_REL = "tools/check-invariants.py"
 
-# Where citations may live. Everything else (build outputs, node_modules, target/) is skipped.
-SEARCH_ROOTS = ("crates", "docs", "lab", "tools", ".github")
-SEARCH_FILES = ("README.md", "AGENTS.md", "CLAUDE.md", "CONTRIBUTING.md", "CHANGELOG.md")
-SEARCH_SUFFIXES = {".rs", ".md", ".py", ".toml", ".ts", ".tsx", ".yml", ".yaml"}
-SKIP_DIRS = {"target", "node_modules", ".git", "dist", "build", ".venv", "venv", "__pycache__", "gen"}
+TEXT_SUFFIXES = {".rs", ".md", ".py", ".pyi", ".toml", ".ts", ".tsx", ".js", ".yml", ".yaml"}
+SKIP_PARTS = {"node_modules", ".venv", "venv", "dist", "target", "gen", "__pycache__"}
 
-# "invariant 4", "invariants 2", "Invariant 17" — the form actually used in this repo.
-CITATION = re.compile(r"\binvariants?\s+(\d+)", re.IGNORECASE)
+# "invariant 4", "invariants 2 and 3", "Invariants 17, 18", "invariants 2–4".
+CITATION = re.compile(
+    r"\binvariants?\s+(\d+(?:\s*(?:,|and|or|&|–|-|to)\s*\d+)*)", re.IGNORECASE
+)
 # A top-level numbered item in the invariants list: "12. **Determinism.** ..."
 ITEM = re.compile(r"^(\d+)\.\s+\S")
+
+# Plan labels that only resolve inside a past session's plan.
+LABELS = [
+    (re.compile(r"\broadmap\s+W\d+\b", re.IGNORECASE), "roadmap wave label"),
+    (re.compile(r"\broadmap\s+[A-Z]\d+(?:\.\d+)?\b"), "roadmap item label"),
+    (re.compile(r"\broadmap(?:'s)?\s+(?:plan|decision)s?\b", re.IGNORECASE), "roadmap plan reference"),
+    (re.compile(r"\bdecision\s+\d+[a-z]?\b", re.IGNORECASE), "plan decision label"),
+    (re.compile(r"\bbacklog\s+(?:item\s+)?\*{0,2}R\d+\b", re.IGNORECASE), "backlog item label"),
+    (re.compile(r"\bTrack\s+\d+\b"), "numbered track label"),
+    (re.compile(r"\bwaves?\b", re.IGNORECASE), "plan wave"),
+]
+# Bare wave labels ("W6", "W7"): checked in comments and prose only, never in code.
+BARE_WAVE = re.compile(r"\bW\d{1,2}\b")
+# Physical waves are not plan waves.
+WAVE_OK = re.compile(r"\b(?:sine|cosine|square|triangle|sawtooth|standing|plane)\s+waves?\b", re.IGNORECASE)
+LABEL_EXEMPT = {"CHANGELOG.md", "docs/dev/roadmap.md", SELF_REL}
+
+# Written with a character class so that this file does not itself contain the name.
+FORBIDDEN_NAME = re.compile(r"rt[v]t", re.IGNORECASE)
+
+DEV_LINK = re.compile(r"docs/dev/|\]\((?:\./)?dev/")
+RUSTDOC = re.compile(r"^\s*//[/!]")
+COMMENT = re.compile(r"^\s*(?://|#|\*|/\*|<!--)")
+
+
+def tracked_files() -> list[str]:
+    out = subprocess.run(
+        ["git", "ls-files", "-z"], cwd=REPO, check=True, capture_output=True
+    ).stdout.decode("utf-8")
+    files = []
+    for rel in out.split("\0"):
+        if not rel:
+            continue
+        if SKIP_PARTS.intersection(PurePosixPath(rel).parts):
+            continue
+        files.append(rel)
+    return files
+
+
+def is_user_facing(rel: str) -> bool:
+    p = PurePosixPath(rel)
+    if rel in {"README.md", "CHANGELOG.md", "lab/README.md"}:
+        return True
+    if len(p.parts) == 3 and p.parts[0] == "crates" and p.name == "README.md":
+        return True
+    if len(p.parts) == 2 and p.parts[0] == "docs" and p.suffix == ".md":
+        return True
+    return p.suffix == ".pyi"
+
+
+def is_library_source(rel: str) -> bool:
+    p = PurePosixPath(rel)
+    return len(p.parts) > 3 and p.parts[0] == "crates" and p.parts[2] == "src" and p.suffix == ".rs"
 
 
 def parse_invariants(text: str) -> list[int]:
@@ -47,7 +113,7 @@ def parse_invariants(text: str) -> list[int]:
     lines = text.splitlines()
     start = next((i for i, l in enumerate(lines) if l.strip() == "## Invariants"), None)
     if start is None:
-        sys.exit(f"{SPEC}: no '## Invariants' section found")
+        sys.exit(f"{SPEC_REL}: no '## Invariants' section found")
     numbers = []
     for line in lines[start + 1:]:
         if line.startswith("## "):
@@ -58,68 +124,112 @@ def parse_invariants(text: str) -> list[int]:
     return numbers
 
 
-def files_to_scan():
-    for name in SEARCH_FILES:
-        p = REPO / name
-        if p.is_file():
-            yield p
-    for root in SEARCH_ROOTS:
-        base = REPO / root
-        if not base.is_dir():
-            continue
-        for p in base.rglob("*"):
-            if not p.is_file() or p.suffix not in SEARCH_SUFFIXES:
-                continue
-            if any(part in SKIP_DIRS for part in p.relative_to(REPO).parts):
-                continue
-            yield p
+def cited_numbers(group: str) -> list[int]:
+    """Every invariant number in a citation's number list, with ranges expanded."""
+    numbers: list[int] = []
+    for part in re.split(r"\s*(?:,|and|or|&)\s*", group):
+        rng = re.fullmatch(r"(\d+)\s*(?:–|-|to)\s*(\d+)", part)
+        if rng:
+            lo, hi = int(rng.group(1)), int(rng.group(2))
+            numbers.extend(range(lo, hi + 1) if lo <= hi else [lo, hi])
+        elif part.isdigit():
+            numbers.append(int(part))
+    return numbers
 
 
 def main() -> int:
     if not SPEC.is_file():
-        sys.exit(f"missing {SPEC}")
-    text = SPEC.read_text(encoding="utf-8")
-    numbers = parse_invariants(text)
+        sys.exit(f"missing {SPEC_REL}")
+    numbers = parse_invariants(SPEC.read_text(encoding="utf-8"))
 
-    problems: list[str] = []
+    numbering: list[str] = []
+    citations: list[str] = []
+    labels: list[str] = []
+    names: list[str] = []
+    links: list[str] = []
 
     if not numbers:
-        problems.append("docs/system-design.md: the '## Invariants' section has no numbered items")
+        numbering.append(f"{SPEC_REL}: the '## Invariants' section has no numbered items")
     else:
         expected = list(range(1, len(numbers) + 1))
         if numbers != expected:
-            problems.append(
-                "docs/system-design.md: invariant numbering is not contiguous from 1.\n"
-                f"    found:    {numbers}\n"
-                f"    expected: {expected}\n"
-                "    Numbers are append-only: retire an invariant in place (keep its number,\n"
-                "    mark it **(retired)**) rather than deleting or renumbering."
+            numbering.append(
+                f"{SPEC_REL}: invariant numbering is not contiguous from 1.\n"
+                f"      found:    {numbers}\n"
+                f"      expected: {expected}\n"
+                "      Numbers are append-only: retire an invariant in place (keep its number,\n"
+                "      mark it **(retired)**) rather than deleting or renumbering."
             )
-
     known = set(numbers)
     highest = max(numbers) if numbers else 0
-    for path in files_to_scan():
+
+    for rel in tracked_files():
+        path = REPO / rel
         try:
+            if not path.is_file() or path.is_symlink():
+                continue
             content = path.read_text(encoding="utf-8")
         except (UnicodeDecodeError, OSError):
             continue
-        for lineno, line in enumerate(content.splitlines(), 1):
-            for m in CITATION.finditer(line):
-                n = int(m.group(1))
-                if n not in known:
-                    rel = path.relative_to(REPO)
-                    problems.append(
-                        f"{rel}:{lineno}: cites '{m.group(0)}', but only invariants "
-                        f"1-{highest} exist in docs/system-design.md"
-                    )
 
-    if problems:
-        print("invariant check FAILED:\n", file=sys.stderr)
-        for p in problems:
-            print(f"  - {p}", file=sys.stderr)
+        suffix = PurePosixPath(rel).suffix
+        text_file = suffix in TEXT_SUFFIXES
+        prose = suffix == ".md"
+        user_facing = is_user_facing(rel)
+        library_source = is_library_source(rel)
+        check_labels = text_file and rel not in LABEL_EXEMPT
+
+        for lineno, line in enumerate(content.splitlines(), 1):
+            where = f"{rel}:{lineno}"
+
+            if FORBIDDEN_NAME.search(line):
+                names.append(f"{where}: names the external project (regex {FORBIDDEN_NAME.pattern})")
+
+            if not text_file:
+                continue
+
+            for m in CITATION.finditer(line):
+                for n in cited_numbers(m.group(1)):
+                    if n not in known:
+                        citations.append(
+                            f"{where}: cites '{m.group(0)}', but only invariants "
+                            f"1-{highest} exist in {SPEC_REL}"
+                        )
+
+            commentary = prose or bool(COMMENT.match(line))
+            if check_labels:
+                for pattern, what in LABELS:
+                    for m in pattern.finditer(line):
+                        if what == "plan wave" and (WAVE_OK.search(line) or not commentary):
+                            continue
+                        labels.append(f"{where}: {what} '{m.group(0)}'")
+                if commentary or suffix in {".py", ".pyi"}:
+                    for m in BARE_WAVE.finditer(line):
+                        labels.append(f"{where}: wave label '{m.group(0)}'")
+
+            if DEV_LINK.search(line) and (
+                user_facing or (library_source and RUSTDOC.match(line))
+            ):
+                links.append(f"{where}: user-facing text links into docs/dev/")
+
+    sections = [
+        ("invariant numbering", numbering),
+        ("invariant citations", citations),
+        ("dangling plan labels", labels),
+        ("external project name", names),
+        ("user-facing links into docs/dev/", links),
+    ]
+    failed = [(title, items) for title, items in sections if items]
+    if failed:
+        print("documentation check FAILED:\n", file=sys.stderr)
+        for title, items in failed:
+            print(f"{title} ({len(items)}):", file=sys.stderr)
+            for item in items:
+                print(f"  - {item}", file=sys.stderr)
+            print(file=sys.stderr)
         return 1
 
-    print(f"invariant check OK: {len(numbers)} invariants, all citations resolve")
+    print(f"documentation check OK: {len(numbers)} invariants, all citations resolve")
     return 0
 
 

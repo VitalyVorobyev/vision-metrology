@@ -3,7 +3,7 @@
 //! Two passes over the same calipers, same reasoning as the Python router: (1)
 //! `MetrologyModel::apply` does the real measurement (robust fit, residuals); (2) this
 //! module re-measures each caliper individually, using the *exact same placement*
-//! `apply` used internally (`measure::diagnostics::layout` — the W6 Part A API), only to
+//! `apply` used internally (`measure::diagnostics::layout`), only to
 //! report which caliper was rejected and why, and to expose its raw profile. Both passes
 //! share the same `MeasureConfig`, so they agree on every caliper that succeeds.
 

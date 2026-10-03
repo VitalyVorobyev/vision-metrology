@@ -1,8 +1,7 @@
 ---
-
 name: hotpath-rust
 description: Use this when writing performance-critical inner loops (downsample, convolution, row/col scanning). Keeps changes safe, fast, and benchmarked.
------------------------------------------------------------------------------------------------------------------------------------------------------------
+---
 
 # Hotpath Rust checklist (lightweight)
 

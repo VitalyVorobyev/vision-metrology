@@ -1,8 +1,7 @@
 ---
-
 name: laser-extract
 description: Use this when touching the `vision-metrology::laser` module. Encodes the intended coarse→ROI→DoG→pairing→tracking behavior and defaults.
--------------------------------------------------------------------------------------------------------------------------
+---
 
 # Laser extraction intent (industrial)
 

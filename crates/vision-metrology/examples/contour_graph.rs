@@ -96,8 +96,8 @@ fn main() {
     );
 
     // The outer boundary has circumference ~2*pi*42 = 264 px, so a correctly
-    // traced contour is a couple of hundred points -- not the 15 that the
-    // over-fragmented graph used to yield.
+    // traced contour is a couple of hundred points -- not the ~15 an
+    // over-fragmented graph would yield.
     assert!(
         pts_before >= 200,
         "Expected the longest edge to trace most of a circle, got {pts_before} points"

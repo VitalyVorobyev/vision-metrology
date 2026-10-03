@@ -13,11 +13,10 @@ use crate::types::{FindRequest, FindResponse, MatchOut, SearchTuningIn};
 
 /// Translate the wire request into the library's own search config.
 ///
-/// The lab used to expose four of these fields and leave the rest at their
-/// defaults, which made a slow search look like a slow *library*: with no way
-/// to narrow the angle sweep, cap the match count, or stop the descent early,
-/// the only search anyone could run was the most expensive one. Every knob the
-/// library documents as a speed/recall trade is reachable from here now.
+/// Every knob the library documents as a speed/recall trade is reachable from
+/// here: without a way to narrow the angle sweep, cap the match count, or stop
+/// the descent early, the only search anyone could run would be the most
+/// expensive one, and a slow search would look like a slow *library*.
 pub fn search_config(req: &FindRequest) -> ShapeSearchConfig {
     let d = ShapeSearchConfig::default();
     let tuning = req.tuning.as_ref().map_or_else(

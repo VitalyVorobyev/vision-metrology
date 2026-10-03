@@ -12,7 +12,7 @@ Two consumers replay them:
 2. `lab/frontend/src-tauri/tests/contract_parity.rs` — runs the same operations through
    the Tauri command handlers (native Rust, calling `vision-metrology` directly, no HTTP)
    and asserts the *same* numeric agreement. This is what makes the two backends
-   verifiably equivalent rather than "believed to be" (plan decision 7).
+   verifiably equivalent rather than "believed to be" (docs/dev/adr/0015-the-lab.md).
 
 ## Normalization
 

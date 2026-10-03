@@ -1,8 +1,7 @@
 ---
-
 name: criterion-bench
 description: Use this when adding or modifying hot paths. Adds a small benchmark and keeps results comparable over time.
-------------------------------------------------------------------------------------------------------------------------
+---
 
 # Criterion bench hygiene (minimal)
 

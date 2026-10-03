@@ -5,8 +5,7 @@
 //! an image) needs exactly the geometry [`MetrologyModel::apply`] computes
 //! internally to place each [`Caliper`](super::Caliper) — and needs it to draw a
 //! caliper *before* an image is even available, or for calipers that never found
-//! an edge. Duplicating that placement math at the call site (as the lab's Python
-//! backend used to) risks silently drifting from the actual measurement whenever
+//! an edge. Duplicating that placement math at the call site risks silently drifting from the actual measurement whenever
 //! [`MetrologyModel`]'s own placement changes. [`layout`] is the shared source:
 //! [`MetrologyModel::apply`] and this function both call the same private
 //! placement code (`model::caliper_placements`), so the two can never disagree.

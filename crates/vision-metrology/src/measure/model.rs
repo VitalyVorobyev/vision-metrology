@@ -45,10 +45,8 @@ pub enum MetrologyFit {
 /// What was measured for one object: the fit, and the caliper edges it came
 /// from.
 ///
-/// `hits` used to be a separate `MetrologyModel::hits()` accessor holding the
-/// last call's edges parallel to the results — a second array the caller had to
-/// keep aligned by hand, and one that a second `apply` silently invalidated.
-/// Overlaying the hits on the image is the fastest way to see *why* a fit came
+/// The hits travel with the fit, so they cannot fall out of step with it
+/// across calls. Overlaying the hits on the image is the fastest way to see *why* a fit came
 /// out the way it did (usually one caliper that found the wrong edge), so they
 /// belong to the result that used them.
 #[derive(Debug, Clone, PartialEq)]

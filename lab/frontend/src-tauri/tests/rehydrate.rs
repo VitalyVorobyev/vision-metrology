@@ -1,9 +1,9 @@
 //! Starting up must survive what a previous run left behind.
 //!
 //! `AppState::rehydrate` runs inside Tauri's `setup` hook, which runs *after* the
-//! window exists. An error there used to propagate out of `.expect(...)` and kill
-//! the process — leaving a window that had never been given anything to draw, i.e.
-//! a black rectangle with the reason only in a terminal a bundled `.app` has none
+//! window exists. An error propagated out of `.expect(...)` there would kill the
+//! process — leaving a window that had never been given anything to draw, i.e. a
+//! black rectangle with the reason only in a terminal a bundled `.app` has none
 //! of. One model file this build cannot read is not a reason to refuse to start.
 
 use std::fs;

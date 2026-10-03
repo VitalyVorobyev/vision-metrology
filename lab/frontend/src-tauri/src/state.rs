@@ -134,11 +134,11 @@ fn read_sidecar<T: serde::de::DeserializeOwned>(path: &Path) -> AppResult<T> {
 
 /// One unreadable file must not cost the whole session.
 ///
-/// Rehydration used to be all-or-nothing: a single sidecar this build cannot
-/// parse, or a model written in a format it no longer accepts, propagated out
-/// of `setup` and took the *whole app* down — which, since the window is
-/// already on screen by then, looked like a black window and nothing else. A
-/// missing model is a missing row in a list the user can see; a dead startup
+/// Rehydration is per file: a sidecar this build cannot parse, or a model
+/// written in a format it no longer accepts, is skipped rather than propagated
+/// out of `setup`, where it would take the *whole app* down — and, since the
+/// window is already on screen by then, look like a black window. A missing
+/// model is a missing row in a list the user can see; a dead startup
 /// is not something they can act on at all.
 fn skip(path: &Path, why: impl std::fmt::Display) {
     eprintln!("vm-lab: ignoring {}: {why}", path.display());

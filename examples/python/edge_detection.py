@@ -12,11 +12,11 @@ def main():
 
     # Object API
     det = vm.EdgeDetector(vm.EdgeConfig())
-    edgels_obj = det.detect_u8(img)
+    edgels_obj = det.detect(img)
     print(f"Object API: detected {len(edgels_obj)} edgels")
 
     # Free-function API
-    edgels_fn = vm.detect_edges_u8(img, vm.EdgeConfig())
+    edgels_fn = vm.detect_edges(img, vm.EdgeConfig())
     print(f"Function API: detected {len(edgels_fn)} edgels")
 
     if edgels_fn:

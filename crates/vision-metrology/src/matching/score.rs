@@ -51,9 +51,10 @@ const fn pol_code(p: Polarity) -> u8 {
 /// does exactly the arithmetic and nothing else. At `scale < 1` two model
 /// points that were spatially distinct at their build-time grid resolution
 /// (invariant 4's uniform decimation) can round onto the same integer
-/// offset here, which [`score_pose`]'s own doc discusses (roadmap W7,
-/// decision 9g) — no dedup happens on this path, deliberately, after three
-/// designs that tried it were each measured and rejected.
+/// offset here, which [`score_pose`]'s own doc discusses — no dedup happens
+/// on this path, deliberately, after three designs that tried it were each
+/// measured and rejected.
+// See the scale-invariance ADR under docs/dev/adr/.
 pub(crate) fn rotate_into(points: &[ModelPoint], angle: f32, scale: f32, out: &mut Vec<RotPoint>) {
     let (sn, cs) = angle.sin_cos();
     out.clear();
@@ -380,9 +381,8 @@ fn finish_lane<const POL: u8>(
 /// to the pose actually returned, rather than to the integer grid cell the
 /// search stopped at.
 ///
-/// **Does not dedup offset-collapsed points at `scale < 1`** (roadmap W7,
-/// decision 9g) — three designs were tried and measured, and all three were
-/// rejected: dedup unconditionally in `rotate_into` moved
+/// **Does not dedup offset-collapsed points at `scale < 1`** — three designs
+/// were tried and measured, and all three were rejected: dedup unconditionally in `rotate_into` moved
 /// `examples/inspect_canend`'s rim radius (subpixel refinement dips below
 /// scale 1.0 for its own parabola fit regardless of the search's own
 /// `scale_range`); dedup scoped to the search sweep only cost +35% on
@@ -397,10 +397,11 @@ fn finish_lane<const POL: u8>(
 /// whatever next-best candidate still clears the threshold — measured up to
 /// 0.46 px position error at some swept scales, an order of magnitude worse
 /// than the ≤0.022 px the unfixed inflation itself was ever measured to
-/// cost (see roadmap C1's original scale-sweep row). See
-/// `docs/backlog.md`'s "offset-collapse dedup" entry for what a real fix
-/// would need (search-time consistency between candidate selection and the
-/// reported score, not a fix applied to only one of the two).
+/// cost (the scale-sweep accuracy row). A real fix would need search-time
+/// consistency between candidate selection and the reported score, not a fix
+/// applied to only one of the two.
+// See the scale-invariance ADR under docs/dev/adr/ and the "offset-collapse
+// dedup" entry in docs/dev/backlog.md.
 pub(crate) fn score_pose(
     field: &DirectionField,
     points: &[ModelPoint],
@@ -499,8 +500,8 @@ mod tests {
     /// Two points 0.9 px apart at level-0 scale round onto the *same*
     /// target pixel at `scale = 0.5` — the known, **deliberately unfixed**
     /// offset-collapse the module doc above `rotate_into`/`score_pose`
-    /// documents (roadmap W7, decision 9g: three dedup designs were tried
-    /// and each measured worse than this). Pinned here so the behaviour is
+    /// documents (three dedup designs were tried and each measured worse
+    /// than this). Pinned here so the behaviour is
     /// a documented, intentional property rather than something a future
     /// change silently "fixes" back into the correctness regression that
     /// was measured and reverted.
