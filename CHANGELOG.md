@@ -31,7 +31,10 @@ The workspace was consolidated from twelve crates into three: `vm-primitives`,
   `estimate_scale_logpolar` and `find_scale_invariant`.
 - **1-D edge operators** (`vm-primitives::edge`): `Derivative1D::SmoothThenCentral`
   (Gaussian, then central differences), `SubpixRefine::Gaussian3` (log-parabola peak
-  fit), `Edge1DDetector::response`, and `DoGKernel1D::with_radius`.
+  fit), `Edge1DDetector::{response, smooth_in_ref}`, and `DoGKernel1D::with_radius`.
+- **Level crossings** (`vm-primitives::edge`): `LevelCrossing1D` with `end_levels`
+  (`np.median` of each end), `crossings` (linear interpolation, CaliperBench's equality
+  rules) and `half_contrast` (`HalfContrastConfig`, `LevelEdge`, `LevelOutcome`).
 - **Calipers and metrology models** (`measure`).
   - `Caliper` with `MeasureRect` / `MeasureArc` / `MeasureRadial` placements, a typed
     `RejectReason`, an optional obliquity gate, and `measure_pairs`.
@@ -48,6 +51,11 @@ The workspace was consolidated from twelve crates into three: `vm-primitives`,
     the strongest of its polarity after the previous one, with
     `RejectReason::IncompleteSequence` when a later one is missing. Python:
     `MeasureConfig(select="in_order", sequence=[...])`.
+  - `Locate::MidpointCrossing` (one edge at the mean of the profile's end levels,
+    checked in CaliperBench's order) and `Locate::HalfContrast` (gradient edges moved to
+    their local half-contrast crossing), with `RejectReason::{LowContrast, NoCrossing}`
+    and `Caliper::levels`. Python: `vm.Locate.midpoint_crossing(...)`,
+    `vm.Locate.half_contrast(...)`, `Caliper.levels()`, `vm.LevelEdge`.
   - `MetrologyModel` applies line and circle objects at a fixture pose and fits them.
   - `measure::diagnostics::layout` gives caliper placement without an image.
 - **Robust fitting** (`fit`): `fit_line`, `fit_circle` (Taubin then Gauss–Newton) and

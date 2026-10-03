@@ -142,6 +142,91 @@ is rejected with `RejectReason::OffImage` before edges are searched. The
 default, `OffImage::Fill`, samples the outside with `profile.border` and
 measures anyway. Both apply to every placement, not only strips.
 
+## Locating the edge
+
+`MeasureConfig::locate` decides what "the edge" means on a profile. There are
+three methods:
+
+| Method | The edge is where the smoothed profile… | Edges | Use for |
+|---|---|---|---|
+| `Locate::GradientPeak { refine }` (default) | changes fastest | every one over `threshold` | most measurements, several edges per caliper, pairs |
+| `Locate::MidpointCrossing { endpoint_samples, min_contrast }` | crosses the mean of its two end levels | one, the crossing nearest the middle | a single edge between two flat, clean levels |
+| `Locate::HalfContrast { flank_near_px, flank_far_px, tol_px, max_iter, min_contrast }` | crosses the mean of the levels just either side of it | each gradient edge, refined | asymmetric edges, shaded backgrounds |
+
+On a clean, symmetric edge the three agree. They part when the edge is not
+symmetric: a shadow on one side, a bevel, a long tail. The gradient peak
+follows the steepest point of the transition; the two level methods follow its
+50 % point, which on such an edge is somewhere else. The 50 % point is what a
+drawing usually means by a width or a datum. Both level methods read the
+profile after the Gaussian smoothing of `profile.sigma`.
+
+**`MidpointCrossing`** takes its two levels from the ends of the profile: the
+medians of the first and last `endpoint_samples` samples. It is the simplest
+definition and the most fragile. The scan has to start and end on flat material
+on either side of exactly one edge, and anything that moves the ends moves the
+answer: shading, a second edge, a scratch near the end. Its checks run in a
+fixed order, and each failure names itself:
+
+1. the end levels differ by less than `min_contrast`: `LowContrast`;
+2. their order (rising when the far end is brighter) is not the polarity asked
+   for, by `polarity` or by the first entry of a `StrongestInOrder` sequence:
+   `WrongPolarity`;
+3. the profile never crosses the mean level with that polarity: `NoCrossing`.
+
+`threshold` plays no part, and the edge's `amplitude` is the contrast between
+the two levels.
+
+**`HalfContrast`** starts from the gradient edges (a three-point parabola,
+then `threshold`, `polarity` and `select` as usual) and moves each to the
+crossing of its *local* level. The levels are the medians `flank_near_px` to
+`flank_far_px` before and after the current position, the crossing nearest it
+within `flank_near_px` is the next position, and the flanks are re-centred
+until the position moves by `tol_px` or less. Because the flanks sit around the
+crossing they define, the answer does not depend on where the gradient put the
+seed. Shading along the scan moves both flanks alike, so it does not move the
+edge; a second edge further than `flank_far_px` away does not either. The
+method needs room: an edge closer than `flank_far_px` to the end of the profile
+has no flank there and reports `NoCrossing`, as does one whose crossing ends
+up more than `flank_near_px` from its gradient peak. Two gradient edges that
+converge on one crossing (a staircase read as two steps) report
+`IncompleteSequence`.
+
+```rust
+use std::num::NonZeroUsize;
+use vision_metrology::measure::{Caliper, Locate, MeasureConfig, MeasureStrip};
+use vision_metrology::{Image, Point2f};
+
+// A step at column 16 on a [0, 1] image.
+let data: Vec<f32> = (0..9 * 64).map(|i| if i % 64 >= 16 { 1.0 } else { 0.0 }).collect();
+let img = Image::from_vec(64, 9, data).unwrap();
+let strip = MeasureStrip {
+    start: Point2f::new(0.0, 4.0),
+    end: Point2f::new(63.0, 4.0),
+    half_width: 0.0,
+    samples: NonZeroUsize::new(64),
+    across: NonZeroUsize::new(1),
+};
+let cfg = MeasureConfig {
+    threshold: 0.01,
+    locate: Locate::HalfContrast {
+        flank_near_px: 3.0,
+        flank_far_px: 8.0,
+        tol_px: 0.01,
+        max_iter: NonZeroUsize::new(5).unwrap(),
+        min_contrast: 0.05,
+    },
+    ..MeasureConfig::default()
+};
+let mut cal = Caliper::strip(strip, cfg);
+let t = cal.measure(&img.as_view()).expect("one edge")[0].t;
+let level = cal.levels()[0];
+println!("{t:.2} between {:.2} and {:.2}", level.before, level.after); // 15.50 between 0.00 and 1.00
+```
+
+`Caliper::levels` reports, for the last call, the levels each level-located
+edge sits between, the level crossed and how many iterations it took. Its `x`
+is in profile samples.
+
 ## `MeasureConfig`
 
 ```rust
@@ -172,10 +257,11 @@ pub struct MeasureConfig {
   strongest edge of that polarity strictly after the previous choice (equal
   strength: the earlier one). "After" is along the profile, not along `t`,
   which runs backwards on an arc with a negative extent.
-- **`locate`** — how an edge position is found on the profile.
-  `Locate::GradientPeak { refine }` takes a local extremum of the derivative and
-  refines it with `SubpixRefine::Parabolic3` (the default), `Gaussian3` (a parabola
-  through the logarithms, exact for a Gaussian-shaped peak), `Centroid` or `None`.
+- **`locate`** — how an edge position is found on the profile
+  ([above](#locating-the-edge)). `Locate::GradientPeak { refine }` takes a local
+  extremum of the derivative and refines it with `SubpixRefine::Parabolic3` (the
+  default), `Gaussian3` (a parabola through the logarithms, exact for a
+  Gaussian-shaped peak), `Centroid` or `None`.
 - **`profile.sigma`** — the Gaussian σ of the smoothing, in pixels. Roughly the
   edge blur to expect: too small and noise produces spurious edges, too large and
   neighbouring edges merge.
@@ -213,8 +299,10 @@ short":
 | `NoEdge` | no response reached `threshold` anywhere in the window |
 | `WrongPolarity` | edges were found, but none had the polarity `MeasureConfig::polarity` (or the first entry of an `EdgeSequence`) asked for |
 | `TooOblique` | the best edge crossed at more than `max_obliquity_deg` from the scan direction |
-| `OffImage` | the caliper reached outside the image: always with `OffImage::Reject`, and with `Fill` when the partly filled profile held no edge |
-| `IncompleteSequence` | `StrongestInOrder` found its first edge but no edge of the next polarity after it |
+| `OffImage` | the caliper reached outside the image: always with `OffImage::Reject`, and with `Fill` when the partly filled profile held no edge (in place of `NoEdge`, `LowContrast` or `NoCrossing`) |
+| `IncompleteSequence` | `StrongestInOrder` found its first edge but no edge of the next polarity after it, or `HalfContrast` moved edges out of order |
+| `LowContrast` | the levels a `MidpointCrossing` or `HalfContrast` edge sits between differ by less than `min_contrast` |
+| `NoCrossing` | a level method found no crossing: none of the midpoint level with the expected polarity, or none near a half-contrast edge |
 
 There is deliberately no variant of `measure` that discards this and returns
 an empty slice instead — `Ok(&[])` is unrepresentable, because an extraction

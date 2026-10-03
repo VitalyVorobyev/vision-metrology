@@ -14,7 +14,7 @@ instead, which re-exports this crate alongside the domain algorithms.
 |---|---|
 | `core` | `Image` / `ImageView` / `ImageViewMut` generic over the `Pixel` trait (u8 / u16 / f32), nearest and bilinear sampling, `BorderMode`, nalgebra geometry aliases (`Point2f`, `Vec2f`, `Isometry2f`, `Similarity2f`, `Affine2f`, `Projective2f`), `Rect2f`, `Circle2f`, `Ellipse2f`, and the shared `Error` type |
 | `pyr` | `Pyramid`: 2×2 mean downsample generic over pixel type, drop-odd policy, optional binomial pre-smooth, buffers reused across calls; `level_to_base` / `base_to_level` coordinate mapping |
-| `edge` | `Edge1DDetector` (derivative of Gaussian), `Edge2DDetector` (Scharr, non-maximum suppression, hysteresis) producing subpixel `Edgel`s with unit gradient normals, `DirectionField` (dense gated gradient directions, optionally filled lazily in tiles), and opposite-polarity `EdgePair1D` for laser stripes |
+| `edge` | `Edge1DDetector` (derivative of Gaussian), `Edge2DDetector` (Scharr, non-maximum suppression, hysteresis) producing subpixel `Edgel`s with unit gradient normals, `DirectionField` (dense gated gradient directions, optionally filled lazily in tiles), opposite-polarity `EdgePair1D` for laser stripes, and `LevelCrossing1D` (end levels, interpolated level crossings, local half-contrast edges) |
 | `morph` | Erode / dilate / open / close over a parameterized `StructuringElement`, Borgefors 3-4-5 chamfer distance, Zhang–Suen thinning |
 
 Names are reachable at their module path and at the crate root; `vm_primitives::prelude`

@@ -744,6 +744,69 @@ def test_caliper_in_order_selection_reads_a_bar_and_names_a_missing_edge():
         vm.Caliper.rect((48.0, 48.0), 0.0, 40.0, 8.0, config=cfg)
 
 
+def test_caliper_midpoint_crossing_reads_one_edge_and_names_each_gate():
+    """CaliperBench's midpoint method: the mean of the end levels, crossed nearest
+    the middle; contrast is checked before polarity, polarity before the crossing."""
+    step = np.zeros((9, 64), dtype=np.float32)
+    step[:, 16:] = 1.0
+    cfg = strip_config(1.0)
+    cfg.locate = vm.Locate.midpoint_crossing(endpoint_samples=3, min_contrast=0.05)
+    cal = vm.Caliper.strip((0, 4), (63, 4), samples=64, across=1, config=cfg)
+    edges = cal.measure(step)
+    assert len(edges) == 1 and edges[0].polarity == "rising"
+    assert abs(edges[0].t - 15.5) < 1e-5
+    assert abs(edges[0].amplitude - 1.0) < 1e-6
+    (level,) = cal.levels()
+    assert isinstance(level, vm.LevelEdge)
+    assert abs(level.level - 0.5) < 1e-6 and level.iterations == 1
+    assert level.x == edges[0].t
+
+    def reason(img, polarity="any", min_contrast=0.05):
+        cfg = strip_config(1.0)
+        cfg.polarity = polarity
+        cfg.locate = vm.Locate.midpoint_crossing(min_contrast=min_contrast)
+        with pytest.raises(vm.MeasureRejected) as exc_info:
+            vm.Caliper.strip((0, 4), (63, 4), samples=64, across=1, config=cfg).measure(img)
+        return exc_info.value.args[0]
+
+    assert reason(make_bar_f32()) == "low_contrast"  # the bar returns to its start level
+    assert reason(step, polarity="falling") == "wrong_polarity"
+    assert reason(step, polarity="falling", min_contrast=2.0) == "low_contrast"
+    assert reason(np.full((9, 64), 0.5, np.float32), min_contrast=0.0) == "no_crossing"
+    with pytest.raises(ValueError):
+        vm.Locate.midpoint_crossing(endpoint_samples=0)
+
+
+def test_caliper_half_contrast_refines_gradient_seeds():
+    bar = make_bar_f32()
+    cfg = strip_config(1.0)
+    cfg.locate = vm.Locate.half_contrast(flank_px=(3.0, 8.0), tol_px=0.01, max_iter=5)
+    cal = vm.Caliper.strip((0, 4), (63, 4), samples=64, across=1, config=cfg)
+    edges = cal.measure(bar)
+    assert [e.polarity for e in edges] == ["rising", "falling"]
+    assert abs(edges[0].t - 15.5) < 1e-4 and abs(edges[1].t - 47.5) < 1e-4
+    levels = cal.levels()
+    assert len(levels) == 2
+    assert levels[0].after > levels[0].before and levels[1].after < levels[1].before
+
+    strict = strip_config(1.0)
+    strict.locate = vm.Locate.half_contrast(min_contrast=2.0)
+    with pytest.raises(vm.MeasureRejected) as exc_info:
+        vm.Caliper.strip((0, 4), (63, 4), samples=64, across=1, config=strict).measure(bar)
+    assert exc_info.value.args[0] == "low_contrast"
+
+    loc = vm.Locate.half_contrast()
+    assert (loc.kind, loc.flank_px, loc.max_iter) == ("half_contrast", (3.0, 8.0), 5)
+    assert "half_contrast" in repr(loc)
+    for bad in (dict(max_iter=0), dict(flank_px=(8.0, 3.0))):
+        with pytest.raises(ValueError):
+            vm.Locate.half_contrast(**bad)
+    # A gradient peak leaves no level crossings behind.
+    plain = vm.Caliper.strip((0, 4), (63, 4), samples=64, across=1, config=strip_config(1.0))
+    plain.measure(bar)
+    assert plain.levels() == []
+
+
 def test_fit_line_object_and_function():
     pts = np.array([[float(i), 2.0] for i in range(10)], dtype=np.float32)
     obj = vm.Fitter().fit_line(pts)

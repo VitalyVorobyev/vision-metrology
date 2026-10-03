@@ -5,9 +5,9 @@
 //! `Caliper::measure` returns `Result<&[MeasureEdge], RejectReason>` on the
 //! Rust side — see invariant 21 and the module's own docs on why an empty
 //! result is unrepresentable. The Python mirror raises [`MeasureRejected`],
-//! a plain exception whose single argument is one of the six reason strings
+//! a plain exception whose single argument is one of the eight reason strings
 //! (`"profile_too_short"`, `"no_edge"`, `"wrong_polarity"`, `"too_oblique"`,
-//! `"off_image"`, `"incomplete_sequence"`):
+//! `"off_image"`, `"incomplete_sequence"`, `"low_contrast"`, `"no_crossing"`):
 //! `except vm.MeasureRejected as e: reason = e.args[0]`. This is the ordinary
 //! Python idiom for "this call has a well-defined failure mode", and it composes
 //! with `try`/`except` instead of asking every caller to unwrap a tagged result
@@ -43,7 +43,7 @@ use vm_primitives::{Point2f, Similarity2f, Vec2f, similarity_from_parts, wrap_an
 
 use crate::config::{FitConfig, MeasureConfig};
 use crate::convert::{any_image_from_numpy, with_any_image};
-use crate::types::{Circle, Line, MeasureEdge, MeasurePair};
+use crate::types::{Circle, LevelEdge, Line, MeasureEdge, MeasurePair};
 
 create_exception!(
     vision_metrology,
@@ -75,6 +75,8 @@ fn reject_reason_str(r: NativeRejectReason) -> &'static str {
         NativeRejectReason::TooOblique => "too_oblique",
         NativeRejectReason::OffImage => "off_image",
         NativeRejectReason::IncompleteSequence => "incomplete_sequence",
+        NativeRejectReason::LowContrast => "low_contrast",
+        NativeRejectReason::NoCrossing => "no_crossing",
     }
 }
 
@@ -328,6 +330,18 @@ impl Caliper {
     /// The averaged 1-D profile from the last `measure` call.
     pub fn profile(&self) -> Vec<f32> {
         self.inner.profile().to_vec()
+    }
+
+    /// The level crossings behind the last `measure` call's edges: one for
+    /// `Locate.midpoint_crossing`, one per edge for `Locate.half_contrast`, none for
+    /// `Locate.gradient_peak`. `x` is in profile samples.
+    pub fn levels(&self) -> Vec<LevelEdge> {
+        self.inner
+            .levels()
+            .iter()
+            .copied()
+            .map(LevelEdge::from)
+            .collect()
     }
 }
 

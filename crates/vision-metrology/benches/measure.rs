@@ -4,12 +4,14 @@
 //!
 //! ## Measured numbers (2026-10-03, release, `lto = "thin"`, `codegen-units = 1`)
 //!
-//! | Benchmark                              | Time      |
-//! |-----------------------------------------|-----------|
-//! | `caliper_rect_pos_1280x1024`             | ~1.37 µs  |
-//! | `metrology_model_apply_96_calipers`      | ~208 µs   |
-//! | `caliper_strip_40px_81s_parabolic`       | ~0.51 µs  |
-//! | `caliper_strip_400px_801s_w15_a15`       | ~33.7 µs  |
+//! | Benchmark                                | Time      |
+//! |-------------------------------------------|-----------|
+//! | `caliper_rect_pos_1280x1024`               | ~1.40 µs  |
+//! | `metrology_model_apply_96_calipers`        | ~215 µs   |
+//! | `caliper_strip_40px_81s_parabolic`         | ~0.52 µs  |
+//! | `caliper_strip_40px_81s_midpoint`          | ~0.48 µs  |
+//! | `caliper_strip_40px_81s_half_contrast`     | ~0.79 µs  |
+//! | `caliper_strip_400px_801s_w15_a15`         | ~34.4 µs  |
 //!
 //! The single-caliper number is the cost of one `Caliper::measure` scan on a
 //! 1280×1024 synthetic edge scene — a caliper only touches the pixels under
@@ -22,7 +24,10 @@
 //!
 //! The strip benches use the textbook settings on `f32` bar images: a 40 px strip of
 //! 81 samples on one line, and a 400 px strip of 801 samples averaged over 15 lines
-//! (12 015 `f64` bilinear samples, about 2.8 ns each).
+//! (12 015 `f64` bilinear samples, about 2.8 ns each). The half-contrast bench refines
+//! the parabolic bench's two edges, so the difference is the cost of a smoothing pass
+//! and two flank-and-crossing iterations; the midpoint bench runs the same strip over a
+//! step, since a bar returns to its starting level.
 //!
 //! Re-run and update this table whenever `measure`'s hot path changes.
 
@@ -30,8 +35,8 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 use std::num::NonZeroUsize;
 use vision_metrology::measure::{
-    Caliper, Derivative, MeasureConfig, MeasureRect, MeasureStrip, MetrologyModel, MetrologyObject,
-    MetrologyShape, OffImage, ProfileConfig,
+    Caliper, Derivative, Locate, MeasureConfig, MeasureRect, MeasureStrip, MetrologyModel,
+    MetrologyObject, MetrologyShape, OffImage, ProfileConfig,
 };
 use vision_metrology::{Image, Point2f, Similarity2f, Vec2f};
 
@@ -161,6 +166,44 @@ fn bench_caliper_strip(c: &mut Criterion) {
     c.bench_function("caliper_strip_40px_81s_parabolic", |b| {
         b.iter(|| {
             let edges = cal.measure(black_box(&small_view)).expect("two edges");
+            black_box(edges.len());
+        });
+    });
+
+    // The same strip, each gradient edge then moved to its local half-contrast level.
+    cal.set_config(MeasureConfig {
+        locate: Locate::HalfContrast {
+            flank_near_px: 3.0,
+            flank_far_px: 8.0,
+            tol_px: 0.01,
+            max_iter: NonZeroUsize::new(5).expect("nonzero"),
+            min_contrast: 0.0,
+        },
+        ..strip_config(0.5)
+    });
+    c.bench_function("caliper_strip_40px_81s_half_contrast", |b| {
+        b.iter(|| {
+            let edges = cal.measure(black_box(&small_view)).expect("two edges");
+            black_box(edges.len());
+        });
+    });
+
+    // The midpoint needs different levels at the two ends: the same strip over a step.
+    let step = bar_scene_f32(96, 96, 40, 96);
+    let step_view = step.as_view();
+    let mut cal = Caliper::strip(
+        strip((28.0, 48.3), (68.0, 48.3), 0.0, 81, 1),
+        MeasureConfig {
+            locate: Locate::MidpointCrossing {
+                endpoint_samples: NonZeroUsize::new(3).expect("nonzero"),
+                min_contrast: 0.05,
+            },
+            ..strip_config(0.5)
+        },
+    );
+    c.bench_function("caliper_strip_40px_81s_midpoint", |b| {
+        b.iter(|| {
+            let edges = cal.measure(black_box(&step_view)).expect("one edge");
             black_box(edges.len());
         });
     });

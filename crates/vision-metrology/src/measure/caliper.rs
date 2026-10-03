@@ -3,7 +3,8 @@
 use std::num::NonZeroUsize;
 
 use vm_primitives::{
-    BorderMode, Derivative1D, Edge1DConfig, Edge1DDetector, ImageView, Pixel, Point2f, Vec2f,
+    BorderMode, Derivative1D, Edge1DConfig, Edge1DDetector, EdgePolarity, HalfContrastConfig,
+    ImageView, LevelCrossing1D, LevelEdge, LevelOutcome, Pixel, Point2f, SubpixRefine, Vec2f,
     Vec2fExt, sample_bilinear_at, sample_bilinear_f32,
 };
 
@@ -57,9 +58,14 @@ pub struct Caliper {
     placement: Placement,
     cfg: MeasureConfig,
     det: Edge1DDetector,
+    levels_finder: LevelCrossing1D,
     profile: Vec<f32>,
-    /// Edges that passed threshold and polarity, before `select`.
+    /// Edges that passed threshold, polarity and the obliquity gate, before `select`.
     cands: Vec<Candidate>,
+    /// The candidates `select` kept (refined, for `Locate::HalfContrast`).
+    chosen: Vec<Candidate>,
+    /// The level crossings behind the last call's edges.
+    levels: Vec<LevelEdge>,
     edges: Vec<MeasureEdge>,
     pairs: Vec<MeasurePair>,
 }
@@ -95,9 +101,12 @@ impl Caliper {
         Self {
             placement,
             det: Edge1DDetector::new(cfg.profile.sigma.max(1e-3)),
+            levels_finder: LevelCrossing1D::new(),
             cfg,
             profile: Vec::new(),
             cands: Vec::new(),
+            chosen: Vec::new(),
+            levels: Vec::new(),
             edges: Vec::new(),
             pairs: Vec::new(),
         }
@@ -141,6 +150,17 @@ impl Caliper {
         &self.profile
     }
 
+    /// The level crossings behind the edges of the last [`measure`](Self::measure) call:
+    /// the one crossing of [`Locate::MidpointCrossing`], one per refined edge of
+    /// [`Locate::HalfContrast`], none for [`Locate::GradientPeak`].
+    ///
+    /// Positions are in profile samples, like the [`profile`](Self::profile) index; the
+    /// levels are on the input pixel scale. A rejected call keeps the crossings it found
+    /// before the gate that rejected it.
+    pub fn levels(&self) -> &[LevelEdge] {
+        &self.levels
+    }
+
     /// Extract edges from the image under the current placement.
     ///
     /// `Ok` carries the edges, valid until the next call on this caliper; `Err`
@@ -156,8 +176,7 @@ impl Caliper {
     ) -> Result<&[MeasureEdge], RejectReason> {
         let inside = self.build_profile(img);
         if !inside && self.cfg.profile.off_image == OffImage::Reject {
-            self.cands.clear();
-            self.edges.clear();
+            self.clear_results();
             return Err(RejectReason::OffImage);
         }
         match self.extract(img, !inside) {
@@ -174,6 +193,8 @@ impl Caliper {
     ///
     /// Ignores [`MeasureConfig::select`] and [`MeasureConfig::polarity`] —
     /// pairing needs every edge of both polarities to be visible.
+    /// [`MeasureConfig::locate`] still applies; [`Locate::MidpointCrossing`] finds a
+    /// single edge, so it never forms a pair.
     pub fn measure_pairs<P: Pixel>(&mut self, img: &ImageView<'_, P>) -> &[MeasurePair] {
         let _ = self.build_profile(img);
 
@@ -222,38 +243,97 @@ impl Caliper {
         }
     }
 
-    /// Run the 1-D detector on the profile and map peaks back to image space.
+    fn clear_results(&mut self) {
+        self.cands.clear();
+        self.chosen.clear();
+        self.levels.clear();
+        self.edges.clear();
+    }
+
+    /// Locate edges on the profile, gate and select them, and fill `edges`.
     fn extract<P: Pixel>(
         &mut self,
         img: &ImageView<'_, P>,
         off_image: bool,
     ) -> Option<RejectReason> {
-        self.edges.clear();
-        self.cands.clear();
+        self.clear_results();
         let n = self.profile.len();
         if n < 3 {
             return Some(RejectReason::ProfileTooShort);
         }
+        // `sigma` and the level methods' distances are in pixels, the profile in samples.
+        let spacing = self.placement.spacing(self.cfg.profile.step, n);
+        let found = match self.cfg.locate {
+            Locate::GradientPeak { refine } => self
+                .gradient_candidates(spacing, refine)
+                .and_then(|()| self.gate_and_select(img)),
+            Locate::MidpointCrossing {
+                endpoint_samples,
+                min_contrast,
+            } => self
+                .midpoint_candidate(spacing, endpoint_samples, min_contrast)
+                .and_then(|()| self.gate_and_select(img)),
+            Locate::HalfContrast {
+                flank_near_px,
+                flank_far_px,
+                tol_px,
+                max_iter,
+                min_contrast,
+            } => {
+                let hc = HalfContrastConfig {
+                    flank_near: flank_near_px / spacing,
+                    flank_far: flank_far_px / spacing,
+                    tol: tol_px / spacing,
+                    max_iter,
+                    min_contrast,
+                };
+                self.gradient_candidates(spacing, SubpixRefine::Parabolic3)
+                    .and_then(|()| self.gate_and_select(img))
+                    .and_then(|()| self.refine_half_contrast(spacing, &hc))
+            }
+        };
+        match found {
+            Ok(()) => {
+                self.edges.extend(self.chosen.iter().map(|c| c.edge));
+                None
+            }
+            // A profile partly made of border fill that held nothing reports that.
+            Err(RejectReason::NoEdge | RejectReason::LowContrast | RejectReason::NoCrossing)
+                if off_image =>
+            {
+                Some(RejectReason::OffImage)
+            }
+            Err(reason) => Some(reason),
+        }
+    }
 
+    /// The 1-D detector configuration for a profile sampled every `spacing` pixels.
+    fn detector_config(&self, spacing: f32, refine: SubpixRefine) -> Edge1DConfig {
+        Edge1DConfig {
+            sigma: (self.cfg.profile.sigma / spacing).max(1e-3),
+            derivative: derivative_in_samples(self.cfg.profile.derivative, spacing),
+            border: self.cfg.profile.border,
+            pos_thresh: self.cfg.threshold,
+            neg_thresh: self.cfg.threshold,
+            refine,
+        }
+    }
+
+    /// Fill `cands` with the derivative peaks that pass threshold and polarity, mapped to
+    /// image space.
+    fn gradient_candidates(
+        &mut self,
+        spacing: f32,
+        refine: SubpixRefine,
+    ) -> Result<(), RejectReason> {
         // Detect *both* polarities and filter afterwards. Pushing the polarity
         // into the detector's thresholds would make a wrong-polarity edge
         // indistinguishable from no edge at all, and those two call for
         // opposite fixes.
         let threshold = self.cfg.threshold;
-        // `sigma` is in pixels but the profile is indexed in samples.
-        let step = self.placement.spacing(self.cfg.profile.step, n);
-        let Locate::GradientPeak { refine } = self.cfg.locate;
-        let det_cfg = Edge1DConfig {
-            sigma: (self.cfg.profile.sigma / step).max(1e-3),
-            derivative: derivative_in_samples(self.cfg.profile.derivative, step),
-            border: self.cfg.profile.border,
-            pos_thresh: threshold,
-            neg_thresh: threshold,
-            refine,
-        };
-
+        let det_cfg = self.detector_config(spacing, refine);
         let want = self.cfg.polarity;
-        let denom = (n.saturating_sub(1)).max(1) as f32;
+        let denom = profile_denom(self.profile.len());
         let placement = self.placement;
         let peaks = self.det.detect_in_ref(&self.profile, &det_cfg);
         let mut any_peak = false;
@@ -272,21 +352,84 @@ impl Caliper {
                 });
             }
         }
-
-        if self.cands.is_empty() {
-            return Some(if any_peak {
-                RejectReason::WrongPolarity
-            } else if off_image {
-                RejectReason::OffImage
-            } else {
-                RejectReason::NoEdge
-            });
+        match (self.cands.is_empty(), any_peak) {
+            (false, _) => Ok(()),
+            (true, true) => Err(RejectReason::WrongPolarity),
+            (true, false) => Err(RejectReason::NoEdge),
         }
+    }
 
-        // Obliquity gate: the image gradient at the edge must point along the
-        // scan axis, give or take.
+    /// Put the one midpoint crossing in `cands`, checking contrast, then polarity, then
+    /// that a crossing exists.
+    fn midpoint_candidate(
+        &mut self,
+        spacing: f32,
+        endpoint_samples: NonZeroUsize,
+        min_contrast: f32,
+    ) -> Result<(), RejectReason> {
+        let det_cfg = self.detector_config(spacing, SubpixRefine::Parabolic3);
+        let n = self.profile.len();
+        let smooth = self.det.smooth_in_ref(&self.profile, &det_cfg);
+        let (before, after) = self.levels_finder.end_levels(smooth, endpoint_samples);
+        let contrast = (f64::from(after) - f64::from(before)).abs();
+        if contrast < f64::from(min_contrast) {
+            return Err(RejectReason::LowContrast);
+        }
+        let polarity = if after > before {
+            EdgePolarity::Rising
+        } else {
+            EdgePolarity::Falling
+        };
+        let first_admits = match self.cfg.select {
+            EdgeSelect::StrongestInOrder(seq) => seq.first.admits(polarity),
+            _ => true,
+        };
+        if !(self.cfg.polarity.admits(polarity) && first_admits) {
+            return Err(RejectReason::WrongPolarity);
+        }
+        let level = (0.5 * (f64::from(before) + f64::from(after))) as f32;
+        let middle = (n - 1) as f64 / 2.0;
+        let off_middle = |x: f32| (f64::from(x) - middle).abs();
+        let x = self
+            .levels_finder
+            .crossings(smooth, level, polarity)
+            .iter()
+            .copied()
+            .reduce(|best, x| {
+                if off_middle(x) < off_middle(best) {
+                    x
+                } else {
+                    best
+                }
+            })
+            .ok_or(RejectReason::NoCrossing)?;
+        let (p, t) = self.placement.point_at(x, profile_denom(n));
+        self.cands.push(Candidate {
+            x,
+            edge: MeasureEdge {
+                p,
+                t,
+                amplitude: contrast as f32,
+                polarity,
+            },
+        });
+        self.levels.push(LevelEdge {
+            x,
+            before,
+            after,
+            level,
+            iterations: 1,
+        });
+        Ok(())
+    }
+
+    /// Obliquity gate on `cands`, then `select` into `chosen`.
+    fn gate_and_select<P: Pixel>(&mut self, img: &ImageView<'_, P>) -> Result<(), RejectReason> {
+        // The image gradient at the edge must point along the scan axis, give or take.
         if self.cfg.max_obliquity_deg < 180.0 {
             let cos_max = self.cfg.max_obliquity_deg.to_radians().cos();
+            let denom = profile_denom(self.profile.len());
+            let placement = self.placement;
             self.cands.retain(|c| {
                 let dir = placement.scan_dir(c.x, denom);
                 match local_gradient(img, c.edge.p) {
@@ -295,12 +438,46 @@ impl Caliper {
                 }
             });
             if self.cands.is_empty() {
-                return Some(RejectReason::TooOblique);
+                return Err(RejectReason::TooOblique);
             }
         }
-
-        select_edges(&self.cands, self.cfg.select, &mut self.edges).err()
+        select_edges(&self.cands, self.cfg.select, &mut self.chosen)
     }
+
+    /// Move each chosen edge to its local half-contrast crossing.
+    fn refine_half_contrast(
+        &mut self,
+        spacing: f32,
+        hc: &HalfContrastConfig,
+    ) -> Result<(), RejectReason> {
+        let det_cfg = self.detector_config(spacing, SubpixRefine::Parabolic3);
+        let denom = profile_denom(self.profile.len());
+        let placement = self.placement;
+        let smooth = self.det.smooth_in_ref(&self.profile, &det_cfg);
+        for c in &mut self.chosen {
+            let level = match self.levels_finder.half_contrast(smooth, c.x, hc) {
+                LevelOutcome::Found(level) => level,
+                LevelOutcome::LowContrast { .. } => return Err(RejectReason::LowContrast),
+                LevelOutcome::NoCrossing => return Err(RejectReason::NoCrossing),
+            };
+            let (p, t) = placement.point_at(level.x, denom);
+            c.x = level.x;
+            c.edge.p = p;
+            c.edge.t = t;
+            c.edge.amplitude = (f64::from(level.after) - f64::from(level.before)).abs() as f32;
+            self.levels.push(level);
+        }
+        if self.chosen.windows(2).any(|w| w[0].x >= w[1].x) {
+            return Err(RejectReason::IncompleteSequence);
+        }
+        Ok(())
+    }
+}
+
+/// `(n − 1)` as the divisor that maps a profile index to its fraction of the scan, at
+/// least 1.
+fn profile_denom(n: usize) -> f32 {
+    (n.saturating_sub(1)).max(1) as f32
 }
 
 /// The detector's derivative operator for a profile sampled every `spacing` pixels.
@@ -1120,6 +1297,314 @@ mod tests {
             assert_eq!(
                 cal.measure(&img.as_view()),
                 Err(RejectReason::ProfileTooShort)
+            );
+        }
+    }
+
+    /// The level methods: `Locate::MidpointCrossing` and `Locate::HalfContrast`.
+    mod levels {
+        use std::num::NonZeroUsize;
+
+        use super::super::Caliper;
+        use crate::measure::{
+            Derivative, EdgeSelect, EdgeSequence, Locate, MeasureConfig, MeasureStrip, OffImage,
+            PolaritySelect, ProfileConfig, RejectReason,
+        };
+        use vm_primitives::{EdgePolarity, Image, Point2f};
+
+        fn nz(n: usize) -> NonZeroUsize {
+            NonZeroUsize::new(n).expect("nonzero")
+        }
+
+        /// A 3-row f32 image whose every row is `row`.
+        fn rows(row: &[f32]) -> Image<f32> {
+            let data = (0..3).flat_map(|_| row.iter().copied()).collect();
+            Image::from_vec(row.len(), 3, data).expect("valid image")
+        }
+
+        /// A one-line strip along row 1 sampling every column once.
+        fn along(w: usize) -> MeasureStrip {
+            MeasureStrip {
+                start: Point2f::new(0.0, 1.0),
+                end: Point2f::new((w - 1) as f32, 1.0),
+                half_width: 0.0,
+                samples: NonZeroUsize::new(w),
+                across: NonZeroUsize::new(1),
+            }
+        }
+
+        fn midpoint(min_contrast: f32) -> Locate {
+            Locate::MidpointCrossing {
+                endpoint_samples: nz(3),
+                min_contrast,
+            }
+        }
+
+        fn half_contrast(min_contrast: f32) -> Locate {
+            Locate::HalfContrast {
+                flank_near_px: 3.0,
+                flank_far_px: 8.0,
+                tol_px: 0.01,
+                max_iter: nz(5),
+                min_contrast,
+            }
+        }
+
+        /// CaliperBench's textbook settings (σ of one sample, a radius-3 Gaussian, strict
+        /// bounds) with the given locate method.
+        fn textbook(locate: Locate) -> MeasureConfig {
+            MeasureConfig {
+                threshold: 0.01,
+                locate,
+                profile: ProfileConfig {
+                    derivative: Derivative::SmoothThenCentral { radius_px: 3.0 },
+                    off_image: OffImage::Reject,
+                    ..ProfileConfig::default()
+                },
+                ..MeasureConfig::default()
+            }
+        }
+
+        /// A smoothing σ so small that the Gaussian is `[0, 1, 0]` in `f32`: the level
+        /// methods then read the profile exactly as sampled.
+        fn unsmoothed(locate: Locate) -> MeasureConfig {
+            MeasureConfig {
+                locate,
+                profile: ProfileConfig {
+                    sigma: 1e-3,
+                    off_image: OffImage::Reject,
+                    ..ProfileConfig::default()
+                },
+                ..MeasureConfig::default()
+            }
+        }
+
+        fn measure(
+            row: &[f32],
+            cfg: MeasureConfig,
+        ) -> Result<Vec<(f32, EdgePolarity)>, RejectReason> {
+            Caliper::strip(along(row.len()), cfg)
+                .measure(&rows(row).as_view())
+                .map(|e| e.iter().map(|e| (e.t, e.polarity)).collect())
+        }
+
+        /// A unit step at column 16 (CaliperBench's `test_textbook_method_comparison`):
+        /// the smoothed step is antisymmetric about 15.5, so the mid level crosses there.
+        #[test]
+        fn midpoint_finds_the_middle_of_a_step() {
+            let step: Vec<f32> = (0..64).map(|x| if x >= 16 { 1.0 } else { 0.0 }).collect();
+            let mut cal = Caliper::strip(along(64), textbook(midpoint(0.05)));
+            let edges = cal
+                .measure(&rows(&step).as_view())
+                .expect("one edge")
+                .to_vec();
+            assert_eq!(edges.len(), 1);
+            assert!((edges[0].t - 15.5).abs() < 1e-5, "t = {}", edges[0].t);
+            assert_eq!(edges[0].polarity, EdgePolarity::Rising);
+            assert!((edges[0].amplitude - 1.0).abs() < 1e-6);
+            let levels = cal.levels();
+            assert_eq!(levels.len(), 1);
+            // The normalised kernel sums to 1 within an `f32` ulp.
+            let (l, eps) = (levels[0], 1e-6);
+            assert!(l.before.abs() < eps && (l.after - 1.0).abs() < eps, "{l:?}");
+            assert!((l.level - 0.5).abs() < eps, "{l:?}");
+            assert_eq!(l.x, edges[0].t, "one sample per pixel from x = 0");
+
+            // Two entries in the sequence: the midpoint gives one edge, so the second is
+            // missing.
+            let pair = MeasureConfig {
+                select: EdgeSelect::StrongestInOrder(EdgeSequence {
+                    first: PolaritySelect::Rising,
+                    second: Some(PolaritySelect::Falling),
+                }),
+                ..textbook(midpoint(0.05))
+            };
+            assert_eq!(measure(&step, pair), Err(RejectReason::IncompleteSequence));
+        }
+
+        /// By hand: the end levels are the medians of (0, 0.3, 0.1) and (1, 0.7, 0.9),
+        /// so the level is 0.5, crossed rising only between 0.2 and 0.6, at
+        /// `4 + 0.3 / 0.4 = 4.75`.
+        #[test]
+        fn midpoint_on_a_hand_computed_profile() {
+            let row = [0.0, 0.3, 0.1, 0.1, 0.2, 0.6, 0.9, 1.0, 0.8, 1.0, 0.7, 0.9];
+            let mut cal = Caliper::strip(along(row.len()), unsmoothed(midpoint(0.05)));
+            let edges = cal
+                .measure(&rows(&row).as_view())
+                .expect("one edge")
+                .to_vec();
+            assert_eq!(cal.profile(), &row[..], "the profile is the row itself");
+            assert!((edges[0].t - 4.75).abs() < 1e-6, "t = {}", edges[0].t);
+            assert!((edges[0].amplitude - 0.8).abs() < 1e-6);
+            let l = cal.levels()[0];
+            assert_eq!((l.before, l.after), (0.1, 0.9));
+            assert!((l.level - 0.5).abs() < 1e-7);
+        }
+
+        /// Two rising crossings 11 samples either side of the middle (31.5): the earlier
+        /// one wins the tie. Each crosses `0.5` halfway between 0.25 and 0.75.
+        #[test]
+        fn midpoint_ties_go_to_the_earlier_crossing() {
+            let mut row = vec![0.0f32; 64];
+            row[20] = 0.25;
+            row[21] = 0.75;
+            row[22..=30].fill(1.0);
+            row[42] = 0.25;
+            row[43] = 0.75;
+            row[44..].fill(1.0);
+            let edges = measure(&row, unsmoothed(midpoint(0.05))).expect("one edge");
+            assert_eq!(edges, vec![(20.5, EdgePolarity::Rising)]);
+        }
+
+        /// CaliperBench's order: contrast, then polarity, then the crossing.
+        #[test]
+        fn midpoint_checks_contrast_then_polarity_then_crossing() {
+            let falling: Vec<f32> = (0..32).map(|x| if x < 16 { 0.8 } else { 0.2 }).collect();
+            let rising_only = |locate| MeasureConfig {
+                polarity: PolaritySelect::Rising,
+                ..unsmoothed(locate)
+            };
+            // Too little contrast for 0.7: that is reported before the wrong polarity.
+            assert_eq!(
+                measure(&falling, rising_only(midpoint(0.7))),
+                Err(RejectReason::LowContrast)
+            );
+            assert_eq!(
+                measure(&falling, rising_only(midpoint(0.05))),
+                Err(RejectReason::WrongPolarity)
+            );
+            // The first entry of a sequence filters the polarity too.
+            let sequence = MeasureConfig {
+                select: EdgeSelect::StrongestInOrder(EdgeSequence {
+                    first: PolaritySelect::Rising,
+                    second: None,
+                }),
+                ..unsmoothed(midpoint(0.05))
+            };
+            assert_eq!(
+                measure(&falling, sequence),
+                Err(RejectReason::WrongPolarity)
+            );
+            assert_eq!(
+                measure(&falling, unsmoothed(midpoint(0.05))),
+                Ok(vec![(15.5, EdgePolarity::Falling)])
+            );
+            // Equal end levels pass a zero contrast floor; a flat profile is never crossed.
+            assert_eq!(
+                measure(&[0.5; 32], unsmoothed(midpoint(0.0))),
+                Err(RejectReason::NoCrossing)
+            );
+            // A bar returns to its start level: no contrast between the ends.
+            let mut bar = vec![0.0f32; 64];
+            bar[16..48].fill(1.0);
+            assert_eq!(
+                measure(&bar, textbook(midpoint(0.05))),
+                Err(RejectReason::LowContrast)
+            );
+        }
+
+        /// A pixel-integrated step from `dark` to `bright` at `edge`, blurred by a Gaussian
+        /// of σ = 1.2 px, plus `shade · x`.
+        fn shaded_step(w: usize, edge: f64, dark: f64, bright: f64, shade: f64) -> Vec<f32> {
+            let cover = |x: f64| (x + 0.5 - (x - 0.5).max(edge)).clamp(0.0, 1.0);
+            (0..w)
+                .map(|x| {
+                    let x = x as f64;
+                    let (mut acc, mut sum) = (0.0, 0.0);
+                    for k in -6..=6 {
+                        let wk = (-0.5 * (f64::from(k) / 1.2).powi(2)).exp();
+                        acc += wk * cover(x + f64::from(k));
+                        sum += wk;
+                    }
+                    (dark + (bright - dark) * acc / sum + shade * x) as f32
+                })
+                .collect()
+        }
+
+        /// On a symmetric bar the half-contrast edges are the gradient ones, refined onto
+        /// the mid level of each side.
+        #[test]
+        fn half_contrast_refines_each_selected_edge() {
+            let mut bar = vec![0.0f32; 64];
+            bar[16..48].fill(1.0);
+            let mut cal = Caliper::strip(along(64), textbook(half_contrast(0.0)));
+            let edges = cal
+                .measure(&rows(&bar).as_view())
+                .expect("two edges")
+                .to_vec();
+            assert_eq!(edges.len(), 2);
+            assert!((edges[0].t - 15.5).abs() < 1e-4, "{edges:?}");
+            assert!((edges[1].t - 47.5).abs() < 1e-4, "{edges:?}");
+            assert_eq!(edges[0].polarity, EdgePolarity::Rising);
+            assert_eq!(edges[1].polarity, EdgePolarity::Falling);
+            let levels = cal.levels();
+            assert_eq!(levels.len(), 2);
+            let eps = 1e-6;
+            assert!(levels[0].before.abs() < eps && (levels[0].after - 1.0).abs() < eps);
+            assert!((levels[1].before - 1.0).abs() < eps && levels[1].after.abs() < eps);
+            assert!((edges[0].amplitude - 1.0).abs() < eps);
+
+            // A gradient peak leaves no level crossings behind.
+            cal.set_config(textbook(Locate::default()));
+            let _ = cal.measure(&rows(&bar).as_view());
+            assert!(cal.levels().is_empty());
+        }
+
+        /// Shading along the scan moves the end levels but not the local ones: the
+        /// half-contrast edge stays on the step, the midpoint does not.
+        #[test]
+        fn half_contrast_reads_local_levels_where_the_midpoint_reads_the_ends() {
+            let edge = 37.3;
+            let row = shaded_step(100, edge, 0.1, 0.8, 0.004);
+            let found = |locate| measure(&row, textbook(locate)).expect("an edge")[0].0;
+            let local = found(half_contrast(0.05));
+            let ends = found(midpoint(0.05));
+            assert!(
+                (f64::from(local) - edge).abs() < 0.03,
+                "half contrast at {local}"
+            );
+            assert!((f64::from(ends) - edge).abs() > 0.1, "midpoint at {ends}");
+        }
+
+        /// A staircase 0 → ½ → 1 with steps 4 px apart has two gradient peaks but one
+        /// half-contrast edge: both seeds converge onto the crossing between the steps,
+        /// so the refined edges are no longer in increasing order.
+        #[test]
+        fn half_contrast_merging_two_seeds_is_an_incomplete_sequence() {
+            let row: Vec<f32> = (0..64)
+                .map(|x| match x {
+                    ..30 => 0.0,
+                    30..34 => 0.5,
+                    _ => 1.0,
+                })
+                .collect();
+            let gradient = measure(&row, textbook(Locate::default())).expect("two peaks");
+            assert_eq!(gradient.len(), 2, "{gradient:?}");
+            assert_eq!(
+                measure(&row, textbook(half_contrast(0.0))),
+                Err(RejectReason::IncompleteSequence)
+            );
+            // One seed alone refines onto the middle of the staircase.
+            let strongest = MeasureConfig {
+                select: EdgeSelect::First,
+                ..textbook(half_contrast(0.0))
+            };
+            let one = measure(&row, strongest).expect("one edge");
+            assert!((one[0].0 - 31.5).abs() < 0.05, "{one:?}");
+        }
+
+        #[test]
+        fn half_contrast_names_low_contrast_and_a_missing_crossing() {
+            let row = shaded_step(64, 30.0, 0.2, 0.5, 0.0);
+            assert_eq!(
+                measure(&row, textbook(half_contrast(0.5))),
+                Err(RejectReason::LowContrast)
+            );
+            // The step 2 px from the start: the flank 3–8 px before it is off the profile.
+            let near_start = shaded_step(64, 2.0, 0.2, 0.8, 0.0);
+            assert_eq!(
+                measure(&near_start, textbook(half_contrast(0.0))),
+                Err(RejectReason::NoCrossing)
             );
         }
     }

@@ -155,7 +155,8 @@ pub struct MeasureEdge {
     /// the signed distance from the centre for rect and radial calipers, the arc
     /// length from `angle_start` for an arc.
     pub t: f32,
-    /// `|DoG response|` at the edge — the local contrast.
+    /// The local contrast: `|derivative response|` at a gradient peak, or
+    /// `|after - before|` between the levels of a level crossing.
     pub amplitude: f32,
     /// `"rising"` (dark-to-bright) or `"falling"` (bright-to-dark) along the
     /// scan direction.
@@ -183,6 +184,44 @@ impl MeasureEdge {
         format!(
             "MeasureEdge(x={:.3}, y={:.3}, t={:.3}, amplitude={:.3}, polarity='{}')",
             self.x, self.y, self.t, self.amplitude, self.polarity
+        )
+    }
+}
+
+/// An edge located as a level crossing — mirrors `vm_primitives::LevelEdge`.
+#[pyclass(get_all, skip_from_py_object)]
+#[derive(Debug, Clone, Copy)]
+pub struct LevelEdge {
+    /// Subpixel position of the crossing, in profile samples.
+    pub x: f32,
+    /// The level on the lower-index side of the edge.
+    pub before: f32,
+    /// The level on the higher-index side of the edge.
+    pub after: f32,
+    /// The level crossed: the mean of `before` and `after`.
+    pub level: f32,
+    /// How many level-and-crossing evaluations produced the position.
+    pub iterations: usize,
+}
+
+impl From<vm_primitives::LevelEdge> for LevelEdge {
+    fn from(e: vm_primitives::LevelEdge) -> Self {
+        Self {
+            x: e.x,
+            before: e.before,
+            after: e.after,
+            level: e.level,
+            iterations: e.iterations,
+        }
+    }
+}
+
+#[pymethods]
+impl LevelEdge {
+    fn __repr__(&self) -> String {
+        format!(
+            "LevelEdge(x={:.3}, before={:.4}, after={:.4}, level={:.4}, iterations={})",
+            self.x, self.before, self.after, self.level, self.iterations
         )
     }
 }

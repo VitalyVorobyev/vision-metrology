@@ -80,7 +80,8 @@ deleted here.
   one spelling, and make the setters validate.
 - **`ShapeMatch.matrix()` convention** needs a worked pixel → pose → pixel example in the
   vm-python README.
-- **No `Edge1DDetector` binding.** 1-D detection is reachable only through `Caliper`.
+- **No `Edge1DDetector` or `LevelCrossing1D` binding.** 1-D detection is reachable only
+  through `Caliper`.
 - **Windows wheel smoke test** in `python-wheels.yml`. Wheels are built on Windows but
   imported only on Linux.
 

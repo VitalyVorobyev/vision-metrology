@@ -53,7 +53,8 @@ use scale_py::{
 use segment::Segmenter;
 use shape::{Fitter, LsdDetector};
 use types::{
-    Circle, ComponentStats, Edgel, Ellipse, Line, LineSegment, MeasureEdge, MeasurePair, ShapeMatch,
+    Circle, ComponentStats, Edgel, Ellipse, LevelEdge, Line, LineSegment, MeasureEdge, MeasurePair,
+    ShapeMatch,
 };
 use warp_py::Map;
 
@@ -109,6 +110,7 @@ fn vision_metrology(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ShapeMatch>()?;
     m.add_class::<ComponentStats>()?;
     m.add_class::<MeasureEdge>()?;
+    m.add_class::<LevelEdge>()?;
     m.add_class::<MeasurePair>()?;
     m.add_class::<MetrologyShape>()?;
     m.add_class::<MetrologyObject>()?;
