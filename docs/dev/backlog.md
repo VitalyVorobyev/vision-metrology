@@ -95,7 +95,6 @@ deleted here.
   - `contour/build.rs` 802
   - `matching/build.rs` 800
   - `lsd/detect.rs` 676
-  - `measure/caliper.rs` 659 (split in Track M1)
   - `matching/matcher.rs` 649
 
   Split them when a change touches them.

@@ -4,7 +4,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use vision_metrology::measure::{
     EdgeSelect as NativeEdgeSelect, MeasureConfig as NativeMeasureConfig,
-    PolaritySelect as NativePolaritySelect,
+    PolaritySelect as NativePolaritySelect, ProfileConfig as NativeProfileConfig,
 };
 use vm_primitives::BorderMode;
 
@@ -104,11 +104,11 @@ impl Default for MeasureConfig {
     fn default() -> Self {
         let n = NativeMeasureConfig::default();
         Self {
-            sigma: n.sigma,
+            sigma: n.profile.sigma,
             threshold: n.threshold,
             polarity: "any".to_string(),
             select: "all".to_string(),
-            step: n.step,
+            step: n.profile.step,
             max_obliquity_deg: n.max_obliquity_deg,
             border_mode: "clamp".to_string(),
             border_constant: 0.0,
@@ -119,7 +119,6 @@ impl Default for MeasureConfig {
 impl MeasureConfig {
     pub fn to_native(&self) -> NativeMeasureConfig {
         NativeMeasureConfig {
-            sigma: self.sigma,
             threshold: self.threshold,
             polarity: match self.polarity.as_str() {
                 "rising" => NativePolaritySelect::Rising,
@@ -132,12 +131,15 @@ impl MeasureConfig {
                 "strongest" => NativeEdgeSelect::Strongest,
                 _ => NativeEdgeSelect::All,
             },
-            step: self.step,
             max_obliquity_deg: self.max_obliquity_deg,
-            border: match self.border_mode.as_str() {
-                "reflect101" => BorderMode::Reflect101,
-                "constant" => BorderMode::Constant(self.border_constant),
-                _ => BorderMode::Clamp,
+            profile: NativeProfileConfig {
+                sigma: self.sigma,
+                step: self.step,
+                border: match self.border_mode.as_str() {
+                    "reflect101" => BorderMode::Reflect101,
+                    "constant" => BorderMode::Constant(self.border_constant),
+                    _ => BorderMode::Clamp,
+                },
             },
         }
     }

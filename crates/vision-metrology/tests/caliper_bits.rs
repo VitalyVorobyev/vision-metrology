@@ -9,7 +9,8 @@
 
 use vision_metrology::measure::{
     Caliper, EdgeSelect, MeasureArc, MeasureConfig, MeasureEdge, MeasureRadial, MeasureRect,
-    MetrologyFit, MetrologyModel, MetrologyObject, MetrologyShape, PolaritySelect, RejectReason,
+    MetrologyFit, MetrologyModel, MetrologyObject, MetrologyShape, PolaritySelect, ProfileConfig,
+    RejectReason,
 };
 use vision_metrology::{BorderMode, EdgePolarity, Image, Point2f, Similarity2f};
 
@@ -137,8 +138,11 @@ fn cases() -> Vec<(String, u64)> {
                         for (sname, select) in selects {
                             for (pname, polarity) in polarities {
                                 let cfg = MeasureConfig {
-                                    sigma,
-                                    step,
+                                    profile: ProfileConfig {
+                                        sigma,
+                                        step,
+                                        ..ProfileConfig::default()
+                                    },
                                     select,
                                     polarity,
                                     threshold: 4.0,
@@ -169,8 +173,11 @@ fn cases() -> Vec<(String, u64)> {
                                 half_width,
                             },
                             MeasureConfig {
-                                sigma,
-                                step,
+                                profile: ProfileConfig {
+                                    sigma,
+                                    step,
+                                    ..ProfileConfig::default()
+                                },
                                 threshold: 4.0,
                                 ..MeasureConfig::default()
                             },
@@ -260,7 +267,17 @@ fn cases() -> Vec<(String, u64)> {
         out.push((
             format!("border/{bname}"),
             hash_result(
-                Caliper::rect(over, MeasureConfig { border, ..base }).measure(&img8.as_view()),
+                Caliper::rect(
+                    over,
+                    MeasureConfig {
+                        profile: ProfileConfig {
+                            border,
+                            ..ProfileConfig::default()
+                        },
+                        ..base
+                    },
+                )
+                .measure(&img8.as_view()),
             ),
         ));
     }
@@ -314,7 +331,13 @@ fn cases() -> Vec<(String, u64)> {
             angle_extent: extent.to_radians(),
             half_width: hw,
         };
-        let cfg = MeasureConfig { step, ..base };
+        let cfg = MeasureConfig {
+            profile: ProfileConfig {
+                step,
+                ..ProfileConfig::default()
+            },
+            ..base
+        };
         out.push((
             format!("arc/{extent}/{hw}/{step}"),
             hash_result(Caliper::arc(arc, cfg).measure(&wedge_img.as_view())),
@@ -330,7 +353,13 @@ fn cases() -> Vec<(String, u64)> {
                 half_len: 8.0,
                 half_width: hw,
             };
-            let cfg = MeasureConfig { step, ..base };
+            let cfg = MeasureConfig {
+                profile: ProfileConfig {
+                    step,
+                    ..ProfileConfig::default()
+                },
+                ..base
+            };
             out.push((
                 format!("radial/{angle}/{hw}/{step}"),
                 hash_result(Caliper::radial(radial, cfg).measure(&disc_img.as_view())),

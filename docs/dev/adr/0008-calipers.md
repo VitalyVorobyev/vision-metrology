@@ -30,6 +30,10 @@ whether the result is unbiased:
   scan. A glancing crossing reports a position along the scan rather than along the edge
   normal, and the two differ by `1/cos θ`.
 - **A rejection is typed** (`RejectReason`, ADR-0006).
+- **The config separates what is looked for from how the profile is built.**
+  `MeasureConfig` holds threshold, polarity, selection and the obliquity gate;
+  `MeasureConfig::profile` (`ProfileConfig`) holds smoothing, sampling step and
+  border handling.
 - **Placement is computed once.** `MetrologyModel::apply` and `measure::diagnostics::layout`
   call the same placement code, so a drawn caliper is the one that measures. `layout` needs
   no image. `MeasureRadial::center` is the circle's centre, not the caliper's boundary point.

@@ -92,19 +92,14 @@ rather than *is* the circle.
 
 ```rust
 pub struct MeasureConfig {
-    pub sigma: f32,
     pub threshold: f32,
     pub polarity: PolaritySelect,
     pub select: EdgeSelect,
-    pub step: f32,
     pub max_obliquity_deg: f32,
-    pub border: BorderMode<f32>,
+    pub profile: ProfileConfig, // sigma, step, border
 }
 ```
 
-- **`sigma`** — the Gaussian σ of the 1-D derivative-of-Gaussian kernel, in
-  pixels. Roughly the edge blur to expect: too small and noise produces
-  spurious edges, too large and neighbouring edges merge.
 - **`threshold`** — the minimum `|DoG response|` to report an edge, on the
   input pixel scale like every other threshold in this workspace (re-tune for
   `u16`/`f32`).
@@ -117,10 +112,14 @@ pub struct MeasureConfig {
   `Strongest` is the sane default once a model's geometry is already
   approximately right (`MetrologyObject::new` picks it) — a caliper on a
   nominal edge should report *that* edge, not every edge it happens to cross.
-- **`step`** — profile sampling step along the scan axis. `1.0` is one entry
-  per pixel; oversampling (`0.5`) buys resolution on a sharp edge at
-  proportional cost, and `sigma` is in the same units, so halving `step`
-  means doubling `sigma` for equivalent smoothing.
+- **`profile.sigma`** — the Gaussian σ of the 1-D derivative-of-Gaussian
+  kernel, in pixels. Roughly the edge blur to expect: too small and noise
+  produces spurious edges, too large and neighbouring edges merge.
+- **`profile.step`** — profile sampling step along the scan axis, in pixels.
+  `1.0` is one entry per pixel; oversampling (`0.5`) buys resolution on a
+  sharp edge at proportional cost. `sigma` stays in pixels, so the same
+  `sigma` smooths the same distance at any step.
+- **`profile.border`** — sampling behaviour when the caliper overhangs the image.
 - **`max_obliquity_deg`** — the obliquity gate. A caliper that crosses an edge
   at a glancing angle reports a position along its own scan axis rather than
   the edge's true normal, and the two differ by `1/cos θ`; at a corner there
@@ -128,7 +127,6 @@ pub struct MeasureConfig {
   against the scan direction and rejecting beyond this angle is what keeps a
   bad caliper *out* of a fit rather than merely down-weighted. `180.0`
   disables the check.
-- **`border`** — sampling behaviour when the caliper overhangs the image.
 
 ## `RejectReason`
 

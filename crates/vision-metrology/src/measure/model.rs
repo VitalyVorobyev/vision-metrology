@@ -4,7 +4,7 @@ use vm_primitives::{Circle2f, Error, ImageView, Line2f, Pixel, Point2f, Similari
 
 use crate::fit::{Fit, FitConfig, fit_circle, fit_line};
 
-use super::caliper::{Caliper, EdgeSelect, MeasureConfig, MeasureEdge, MeasureRadial, MeasureRect};
+use super::{Caliper, EdgeSelect, MeasureConfig, MeasureEdge, MeasureRadial, MeasureRect};
 
 /// A nominal primitive to measure.
 ///
