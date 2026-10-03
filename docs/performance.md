@@ -42,10 +42,12 @@ Other operators:
 
 ## Accuracy envelopes
 
-Each row sweeps a synthetic fixture with known subpixel ground truth (anti-aliased edges
-from an analytic Gaussian-CDF profile, seeded uniform noise of up to 5 LSB quantized to
-`u8`). It reports the worst bias and standard deviation found anywhere in the sweep. The
-envelope is what `tests/accuracy.rs` enforces, at about 1.5× the measured value.
+Each row sweeps a synthetic fixture with known subpixel ground truth. It reports the worst
+bias and standard deviation found anywhere in the sweep. The envelope is what
+`tests/accuracy.rs` enforces, at about 1.5× the measured value.
+
+The first table's fixtures are anti-aliased edges from an analytic Gaussian-CDF profile,
+with seeded uniform noise of up to 5 LSB, quantized to `u8`.
 
 | Operator | Unit | Worst \|bias\| | Worst σ | Envelope (bias / σ) |
 |---|---|---:|---:|---|
@@ -68,6 +70,48 @@ How to read the hard rows:
 - **`fit_circle`.** The worst cell is a 30° arc (nearly a chord) with 10% gross outliers.
   At arcs of 90° or more it is well inside 0.05 px.
 - **Scale rows.** Every scale in the sweep found every rotation.
+
+### Strips and calipers on CaliperBench's image model
+
+These rows use the image model of CaliperBench's synthetic tiles:
+
+- straight edges blurred by a Gaussian PSF of σ 0, 0.6, 1.2 or 2.5 px and integrated
+  exactly over each pixel;
+- edges at 0, 10, 30 and 45° to the pixel grid, at subpixel phases 0, ¼, ½ and ¾;
+- seeded Gaussian noise of 0, 2 or 5 DN on a 160 DN step, quantized to 8 bits.
+
+Strips are 40 px long with 81 samples and use CaliperBench's textbook settings: σ of one
+sample, a radius-3 Gaussian then central differences, `threshold` 0.01 on a `[0, 1]`
+image. The rect, arc and radial calipers use the default `MeasureConfig`.
+
+| Operator | Unit | Worst \|bias\| | Worst σ | Envelope (bias / σ) |
+|---|---|---:|---:|---|
+| strip step, `GradientPeak` (parabola) | px | 0.176 | 0.805 | 0.27 / 1.2 |
+| strip step, `GradientPeak` (log-parabola) | px | 0.176 | 0.805 | 0.27 / 1.2 |
+| strip step, `MidpointCrossing` | px | 0.032 | 0.175 | 0.05 / 0.27 |
+| strip step, `HalfContrast` | px | 0.045 | 0.170 | 0.07 / 0.26 |
+| strip bar centre, widths 2–10 px | px | 0.191 | 0.735 | 0.29 / 1.1 |
+| strip bar width, 10 px, noise-free | px | 0.071 | 0.120 | 0.11 / 0.18 |
+| strip bar width, 2 and 3 px, noise-free | px | 3.379 | 0.224 | 5.1 / 0.34 |
+| strip 15° off the edge normal, 3 px wide | px | 0.083 | 0.659 | 0.13 / 1.0 |
+| strip 30° off the edge normal, 3 px wide | px | 0.168 | 0.801 | 0.26 / 1.2 |
+| `Caliper` (rect), pixel-integrated step | px | 0.067 | 0.304 | 0.10 / 0.46 |
+| `Caliper` (radial and arc), radii 20 and 40 px | px | 0.074 | 0.229 | 0.11 / 0.35 |
+
+How to read them:
+- **The worst cell is PSF σ 2.5 px with 5 DN noise, in every row.**
+  - The textbook smoothing, one 0.5 px sample, leaves the broad gradient peak of such an
+    edge to the noise. That is where the gradient rows' σ of 0.8 px comes from.
+  - The level methods read the smoothed profile itself and stay under 0.18 px.
+  - Without noise, every step row is within 0.06 px of bias and 0.07 px of σ.
+- **Narrow bars read wide.**
+  - A bar of 2 or 3 px under a 2.5 px PSF reads up to 3.4 px too wide. The two edges'
+    responses overlap and push their peaks apart.
+  - At 10 px the width is within 0.07 px.
+  - The bar's centre is unbiased by symmetry, and its rows include noise.
+- **Radial and arc calipers.** `MeasureRadial` reads the disc's radius with at most 0.022
+  px of bias at any caliper width, which is the reason it averages along the arc.
+  `MeasureArc` reads a spoke's position along the arc to 0.074 px.
 
 ## Real data: shape matching
 

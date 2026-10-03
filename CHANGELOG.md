@@ -94,7 +94,9 @@ The workspace was consolidated from twelve crates into three: `vm-primitives`,
   CaliperBench's baselines (a golden cross-check pins it).
 - **Docs:** guides for shape matching and measurement, and a performance and accuracy page.
 - An accuracy regression suite with pinned envelopes, and benches for matching, measure,
-  warp, corr, morph and edge1d.
+  warp, corr, morph and edge1d. Its strip and caliper rows run on CaliperBench's
+  pixel-integrated image model: each `Locate` method on steps, bar centre and width,
+  oblique strips, and rect, arc and radial calipers.
 
 ### Changed
 

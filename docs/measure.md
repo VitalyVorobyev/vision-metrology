@@ -227,6 +227,12 @@ println!("{t:.2} between {:.2} and {:.2}", level.before, level.after); // 15.50 
 edge sits between, the level crossed and how many iterations it took. Its `x`
 is in profile samples.
 
+Under noise the level methods are also the steadier ones when the smoothing is
+light. A blurred edge's gradient peak is broad, and noise moves its top. A level
+crossing reads the profile itself, where noise only shifts the crossing by
+its own amplitude over the edge's slope. The [accuracy table](performance.md#strips-and-calipers-on-caliperbenchs-image-model)
+has both on the same fixtures.
+
 ## `MeasureConfig`
 
 ```rust

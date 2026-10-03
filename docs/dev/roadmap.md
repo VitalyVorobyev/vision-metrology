@@ -40,13 +40,12 @@ a strip (`start`, `end`, `width`, `samples`, `across`) plus an ordered polarity 
 the answer is edge distances from `start`. External methods run through a JSONL protocol.
 
 The strip, the textbook operators, the level methods and the protocol runner
-(`examples/caliperbench_run.rs`) are in place, and the runner reproduces CaliperBench's
-three baselines row for row ([ADR-0008](adr/0008-calipers.md)). What is left measures
-them and puts them in the lab.
+(`examples/caliperbench_run.rs`) are in place. The runner reproduces CaliperBench's three
+baselines row for row ([ADR-0008](adr/0008-calipers.md)), and the accuracy suite pins
+them on CaliperBench's image model. What is left puts them in the lab.
 
 | Step | Content | Accept |
 |---|---|---|
-| M8 | Accuracy rows on pixel-integrated steps and bars (PSF σ 0–2.5, oblique strips, 8-bit noise) | envelopes pinned and published in `docs/performance.md` |
 | M9 | `diagnostics::explain_model`: per-caliper traces plus the fit in one pass | lab backend and Tauri drop their second measurement pass |
 
 Each step ships Python parity and updates `docs/measure.md`.
@@ -66,14 +65,14 @@ cost is measured constant in radius.
 
 ## C1: accuracy coverage, `in progress`
 
-The suite (`tests/accuracy.rs`) covers edges, the rect caliper, circle fitting, shape
-matching (translation, rotation, scale), rectified crops and displacement. Open rows:
+The suite (`tests/accuracy.rs`) covers edges, the strip, rect, arc and radial calipers,
+circle fitting, shape matching (translation, rotation, scale), rectified crops and
+displacement. Open rows:
 
 | Operator | Sweep | Report |
 |---|---|---|
 | `fit_ellipse` | point count, arc extent, noise, outlier fraction | axis bias, centre σ |
 | `LaserExtractor` | stripe width, saturation, tilt | centre bias, σ |
-| `Caliper` arc / radial | radius, caliper width, blur, noise | radial bias, σ |
 
 **Accept:** each row has an envelope pinned at about 1.5× the measured value and appears in
 `docs/performance.md`.
