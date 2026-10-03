@@ -32,6 +32,7 @@ landed, with which numbers" record lives. Background and rationale live in
 | Track B7 — mosaic: bird's-eye composite of N calibrated cameras | #35 |
 | Track C4 + B2.1 — Tauri desktop shell, contract fixtures, `measure::diagnostics::layout` | #36 |
 | Track B8 — `scale`: estimate-then-verify scale invariance | #37 |
+| Lab canvas rewrite (`ImageStage`), the contour workbench, and a frame switcher | #40 |
 
 ## Where this is going
 
@@ -137,10 +138,24 @@ open a capture, see what a model learned, correct it, and run it over the whole 
 - **Workspace-based frontend IA** — routes under Library / Recognize (teach, find, verify) /
   Gauge (measure, align) / Camera (motion, mosaic), shared state in `LabProvider`, frame in
   `AppShell`, replacing the single tab-switching `App.tsx`.
+- **The canvas and the Teach workbench** (done, #40) — `@vitavision/lab-ui@0.2.1`'s
+  `ImageStage` replaces `ZoomPanCanvas`, so every layer shares one transform and registration
+  is structural rather than a caller's responsibility; standard zoom controls over the image;
+  a draggable, resizable region; a contour inventory that can be sorted, filtered, stepped
+  through and curated; and a frame switcher in the header on every screen. See
+  [`lab/README.md`](../lab/README.md#the-canvas).
 
 **Accept:** contract-fixture parity still green on both shells; the desktop build opens a
 folder of real frames, teaches a masked model from picked contours, and batch-finds across
 the set without blocking the window.
+
+### E1 — the same treatment for Find and Verify — `planned`
+
+Teach is now a workbench; Find and Verify are still result dumps. Find wants a match
+inventory with the inventory behaviour contours just got — hover-linked to the canvas,
+selectable, steppable, framable — and Verify the same per caliper. Both inherit the canvas,
+the toolbar, the layer toggles and the compact inspector already, so this is panel work
+rather than infrastructure.
 
 ---
 

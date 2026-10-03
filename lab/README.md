@@ -34,8 +34,10 @@ lab/contract/   openapi.json — the committed wire contract, dumped from the Fa
                 operations, the anti-drift gate between the browser and desktop shells
                 (see "Desktop (Tauri)" and fixtures/README below it in this file).
 lab/frontend/   Vite + React 19 + TypeScript strict + Tailwind v4, built on the shared
-                @vitavision/lab-ui design system (ZoomPanCanvas, MeasureOverlay,
-                LineProfile, SchemaForm, ...). `src/api/generated.ts` (openapi-typescript
+                @vitavision/lab-ui design system (ImageStage, MeasureOverlay,
+                LineProfile, SchemaForm, ...). `src/canvas/` is the image workbench —
+                one transform over every layer, see "The canvas" below.
+                `src/api/generated.ts` (openapi-typescript
                 output, also committed) supplies every request/response type; `backend.ts`
                 is the one `LabBackend` interface every tab/component calls through —
                 `httpBackend` (browser, over `openapi-fetch`) or `tauriBackend` (desktop,
@@ -66,6 +68,70 @@ Cargo workspace; they contain no Rust and depend on `vision_metrology`, the PyO3
 published from `crates/vm-python`, as an editable local dependency.
 `lab/frontend/src-tauri/` **is** Rust, but is its own standalone Cargo workspace,
 detached from the repo root's (see "Desktop (Tauri)").
+
+## The canvas
+
+Every workspace draws into **one** `CanvasStage` (`src/canvas/`), mounted once by `AppShell`
+so stepping Teach → Find → Verify keeps the image on screen at the same zoom.
+
+It is built on `@vitavision/lab-ui`'s `ImageStage`, whose stage element is laid out at
+**exactly the source image's pixel size** and carries the whole `translate(t) scale(s)`
+transform. Two consequences are the reason it was rewritten:
+
+- a layer is a child `<svg viewBox="0 0 W H">` at `inset-0` and is registered with the
+  photograph at every viewport size, with no aspect ratio for a caller to remember to set.
+  The predecessor (`ZoomPanCanvas`, now deprecated) scaled layers by the *frame's* size, and
+  this app did not lay the frame out at the source aspect ratio — so it drew a letterboxed
+  photograph under overlays stretched to the full frame, and the two moved differently on
+  every window resize;
+- panning is the default reading of a press and a layer opts out by claiming it, so
+  interactive layers live **inside** the transform. They used to be mounted outside it,
+  because the old canvas captured every `pointerdown`, which meant contours, ROI and datum
+  stayed pinned at fit scale while the image zoomed away underneath them.
+
+Stacking order is load-bearing — the interaction surface is the only full-frame pointer
+target, and the layers above it carry their own small ones:
+
+```
+ImageLayer            the photograph, natural size, `pixelated` past 4x
+MeasureOverlay        results in source-image coordinates, pointer-events: none
+[interaction surface] the one full-frame target -- useCanvasInteraction
+ContourLayer          candidate contours; fat transparent hit strokes
+RoiLayer              the region's outline and its eight handles
+DatumLayer            the model origin and its 0 deg arm
+```
+
+`useCanvasInteraction` is where "what does this press mean" is decided, once: grab the
+region's inside, draw a box, sweep-select, or decline — and a declined press bubbles to the
+stage and pans. Handles and hit strokes are sized through `stage.imageLength`, so they are a
+constant number of *screen* pixels at any zoom.
+
+**Gestures.** Wheel zooms about the cursor; drag pans; double-click toggles fit against the
+view you were just at; `+` `-` `0` (fit) `1` (100%); space or middle-drag pans from any tool;
+`[` / `]` step frames. Click a contour to select it, ⌘/Ctrl-click to add or remove one, and
+**shift-drag to sweep** — shift always means sweep on the canvas, including when the press
+lands on a contour, because on a frame that is mostly contours it otherwise could not start.
+Range-select lives in the inspector's list, where a range over rows is something a reader can
+see. On Teach, `↑`/`↓` step the inventory, `Space` toggles keep, `Delete` drops, `Enter` keeps
+only the selection, `F` frames it, `Esc` clears it.
+
+**Image coordinates name pixel centres**, the same convention the library states in
+`AGENTS.md` (`i` means coordinate `i as f32`). CSS and SVG name a pixel's *leading edge*, so
+every layer drawn in image coordinates uses `imageViewBox(stage.image)` rather than
+`0 0 W H`, and `stage.toImage` / `stage.toScreen` carry the same half pixel. It is 0.4 screen
+pixels at fit and four at 8x — invisible where overlays are glanced at, and wrong exactly
+where someone zooms in to check whether one lands on the edge it claims to mark.
+
+**Colours** are one vocabulary, stated in the canvas's own layer menu: kept contours
+`signal` solid, dropped `muted` dashed, selected `warn`, hovered white, datum `normal`,
+model points `signal-strong`.
+
+**Contour ids are positional.** `teach_preview` numbers contours by their index in the
+extraction and `models_create` re-runs that extraction rather than caching it, so a
+`keep_contours` list is only meaningful for the exact `(image, roi, min_contrast)` it came
+from. The Teach panel keeps the preview's own inputs beside it, marks the preview stale when
+they diverge and blocks the build until it is re-extracted; while nothing has been curated it
+re-extracts on its own instead.
 
 ## API
 
@@ -344,11 +410,14 @@ cargo run --release --example find_probe   # where find time actually goes, as a
   matcher was never the problem — the shell was.
 - **UX left open**: no explicit-fixture entry in the Measure tab (auto-find only in the
   MVP UI, though the backend request schema supports an explicit `fixture`); no way to
-  edit/delete a taught model; the ROI-drag layer assumes `full`/`preview` tiers share the
-  same aspect ratio as `thumb` (true today, since all tiers letterbox to the same source
-  aspect ratio, but worth a comment if that ever changes); line-object fitted-segment
-  extent in the overlay is derived from measured hit points, not from the true inlier set
-  the Rust fit actually used (cosmetic only — no metrology numbers depend on it).
+  edit/delete a taught model; Find and Verify are still result dumps rather than the
+  inventory Teach now has (roadmap E1); line-object fitted-segment extent in the overlay is
+  derived from measured hit points, not from the true inlier set the Rust fit actually used
+  (cosmetic only — no metrology numbers depend on it).
+  The old caveat that the ROI layer assumed every tier shared one aspect ratio is gone with
+  the cause: the stage is laid out at the source image's own pixel size and a tier is just a
+  smaller file drawn into it, so a tier that letterboxed differently would be a wrong
+  *picture*, not a wrong coordinate.
 - **Align's crop cache is in-memory and single-slot per `(image_id, model_id)`**: each
   `POST /rectify` overwrites the previous crops cached for that pair, so a `GET` against a
   stale `index` from an older call — or against a `crop` spec that changed between calls —

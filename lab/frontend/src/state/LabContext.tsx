@@ -15,10 +15,11 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
-import type { MeasurePrimitive } from "@vitavision/lab-ui";
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
-import type { ReactNode } from "react";
+import type { MeasurePrimitive, StageView } from "@vitavision/lab-ui";
+import { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
+import type { ReactNode, RefObject } from "react";
 
+import type { ContourStat, SelectMode } from "../canvas/contourSelection";
 import { getBackend } from "../api/backend";
 import type {
   CalibrationOut,
@@ -30,13 +31,56 @@ import type {
   Roi,
 } from "../api/backend";
 
-/** The interactive contour layer the Teach step puts on the canvas. */
+/**
+ * The interactive contour layer the Teach step puts on the canvas.
+ *
+ * `kept` and `selected` are deliberately separate. `kept` is what the model will be built
+ * from; `selected` is the working set the keep actions operate on. Conflating them — which
+ * is what the first version did, where a click *was* a drop — leaves no way to look at a
+ * contour without changing the model, and no way to act on several at once.
+ */
 export interface ContourSelection {
   contours: ContourOut[];
+  /** Per-contour facts, derived once by the panel and shared with the canvas. */
+  stats: ContourStat[];
   /** Ids currently kept. Everything else is drawn as excluded. */
   kept: ReadonlySet<number>;
-  onToggle: (id: number) => void;
+  /** Ids in the working set. */
+  selected: ReadonlySet<number>;
+  /** The one under the pointer, wherever the pointer is — canvas or list. */
+  hovered: number | null;
+  /**
+   * Ids in the inspector's current sort order. The canvas needs it so a shift-click range
+   * means the same rows the list would have ranged over; ordering by id instead would
+   * select something else entirely whenever the list is sorted by length or strength.
+   */
+  order: number[];
+  onHover: (id: number | null) => void;
+  onSelect: (ids: number[], mode: SelectMode) => void;
+  onKeep: (ids: number[], keep: boolean) => void;
 }
+
+/** What a drag on the canvas means. Handles and contours stay live in every mode. */
+export type CanvasTool = "pan" | "box" | "marquee";
+
+/** What is drawn over the image. Every layer is answerable for its own pixels. */
+export interface LayerVisibility {
+  roi: boolean;
+  kept: boolean;
+  dropped: boolean;
+  vertices: boolean;
+  datum: boolean;
+  model: boolean;
+}
+
+export const DEFAULT_LAYERS: LayerVisibility = {
+  roi: true,
+  kept: true,
+  dropped: true,
+  vertices: true,
+  datum: true,
+  model: true,
+};
 
 /** A draggable handle on the canvas — the model origin and its 0° direction. */
 export interface FrameHandles {
@@ -89,6 +133,37 @@ interface LabState {
   /** Draw an ROI rectangle and report drags into it. */
   roiMode: boolean;
   setRoiMode: (on: boolean) => void;
+
+  /**
+   * The canvas transform, held here rather than inside the canvas so a panel can command
+   * it — "frame this contour" is an inspector action with a canvas effect. `null` until the
+   * viewport has been measured, which is what lets the stage choose the opening view.
+   */
+  view: StageView | null;
+  setView: (view: StageView | null) => void;
+
+  layers: LayerVisibility;
+  setLayer: (key: keyof LayerVisibility, on: boolean) => void;
+
+  tool: CanvasTool;
+  setTool: (tool: CanvasTool) => void;
+
+  /**
+   * What a panel may ask the canvas to do, published by the canvas while it is mounted.
+   *
+   * A ref rather than state because it is a set of imperative handles, not a value to
+   * render: putting them in the context value would re-render every consumer whenever the
+   * canvas remounted, to hand back functions nothing displays. `null` when no canvas is up
+   * (the Library workspace replaces it), which callers must treat as "not now" rather than
+   * as an error.
+   */
+  canvas: RefObject<CanvasCommands | null>;
+}
+
+export interface CanvasCommands {
+  /** Put a rect (image coordinates) on screen with a margin. */
+  frame: (rect: { x: number; y: number; width: number; height: number }, pad?: number) => void;
+  fit: () => void;
 }
 
 const Ctx = createContext<LabState | null>(null);
@@ -116,6 +191,15 @@ export function LabProvider({ children }: { children: ReactNode }) {
   const [contourSelection, setContourSelection] = useState<ContourSelection | null>(null);
   const [frameHandles, setFrameHandles] = useState<FrameHandles | null>(null);
   const [roiMode, setRoiMode] = useState(false);
+  const [view, setView] = useState<StageView | null>(null);
+  const [layers, setLayers] = useState<LayerVisibility>(DEFAULT_LAYERS);
+  const [tool, setTool] = useState<CanvasTool>("pan");
+
+  const canvas = useRef<CanvasCommands | null>(null);
+
+  const setLayer = useCallback((key: keyof LayerVisibility, on: boolean) => {
+    setLayers((current) => ({ ...current, [key]: on }));
+  }, []);
 
   const images = useMemo(() => imagesQuery.data ?? [], [imagesQuery.data]);
   const models = useMemo(() => modelsQuery.data ?? [], [modelsQuery.data]);
@@ -133,6 +217,9 @@ export function LabProvider({ children }: { children: ReactNode }) {
     setHighlightedMatch(null);
     setContourSelection(null);
     setFrameHandles(null);
+    // A different frame is a different size and a different subject; keeping a pan offset
+    // across it would open the new one scrolled to a corner of the old one.
+    setView(null);
   }, []);
 
   const value = useMemo<LabState>(
@@ -160,6 +247,13 @@ export function LabProvider({ children }: { children: ReactNode }) {
       setFrameHandles,
       roiMode,
       setRoiMode,
+      view,
+      setView,
+      layers,
+      setLayer,
+      tool,
+      setTool,
+      canvas,
     }),
     [
       images,
@@ -178,6 +272,10 @@ export function LabProvider({ children }: { children: ReactNode }) {
       contourSelection,
       frameHandles,
       roiMode,
+      view,
+      layers,
+      setLayer,
+      tool,
     ],
   );
 

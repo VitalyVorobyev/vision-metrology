@@ -221,6 +221,29 @@ agent) can pick it up cold. When an item is scheduled it moves into
   new design) but real work: grid auto-fit from camera footprints, the per-pixel
   nearest-camera-centre priority pass, PNG encoding of both the composite and the
   source_id palette map.
+- **The contour inventory renders every row.** 166 contours is comfortable; a busier frame
+  at a low `min_contrast` can produce thousands, and the list has no windowing. Add it — or a
+  hard cap with a visible "showing N of M" — if a real frame makes the panel stutter. The
+  canvas has the same shape of limit: `ContourLayer` draws two `<path>`s per contour, which
+  is fine into the low thousands and would want a `<canvas>` hit-testing path beyond that.
+- **`ContourOut` could carry more for free.** `contours_in_roi` already sets
+  `record_strengths: true` and throws the per-point strengths away, and `GraphEdge`'s
+  endpoint node ids are dropped too — so per-contour min/max/percentile contrast and junction
+  topology are available server-side at no extra detection cost. A bounding box and
+  `point_count` would also save the client a pass. None of it is needed by the inventory as
+  built (arc `length` and `mean_strength` carry it), so this is an "if a question comes up
+  that these answer" item, not debt.
+- **`teach_preview` has no browser counterpart and no contract fixture.** The FastAPI side
+  cannot offer curated teaching (no native picker, no readable path), so the browser build
+  teaches from the rectangle alone and `lab/contract/fixtures/teach.json` pins only that.
+  `ContourOut` is therefore covered by `api/tauriBackend.test.ts`'s field-by-field transport
+  test and the Rust unit tests, not by the anti-drift gate. If the browser shell ever grows
+  an upload-then-curate path, the fixture should grow `keep_contours` with it.
+- **`visual-anomaly-lab` is still on `ZoomPanCanvas`.** It pins `@vitavision/lab-ui@^0.1.0`,
+  so it is unaffected by the 0.2 line and will keep working; but the component is deprecated,
+  and its three consumers there (`routes/{ExperimentSample,Sample,compare/CompareSample}Route`)
+  carry the same latent aspect-ratio contract this repo got wrong. Migrating them to
+  `ImageStage` is the thing that lets `ZoomPanCanvas` be deleted.
 - **No packaged single-binary distribution verified — only a local, unsigned `.app`/
   `.dmg`.** `bunx tauri build` produced both without a fallback to `--no-bundle` (no
   code-signing identity was configured, and the build did not need one to succeed
