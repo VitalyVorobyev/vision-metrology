@@ -584,6 +584,26 @@ def test_caliper_radial_and_measure_pairs():
     assert abs(pairs[0].width - 30.0) < 0.05
 
 
+def test_caliper_derivative_and_refinement_options_find_the_same_step():
+    """Every operator and refinement must put an ideal step between the two pixels."""
+    img = np.zeros((64, 64), dtype=np.uint8)
+    img[:, 30:] = 200
+    for derivative in ("dog", "smooth_central"):
+        for refine in ("parabolic", "gaussian"):
+            cfg = vm.MeasureConfig(
+                derivative=derivative,
+                kernel_radius_px=3.0,
+                locate=vm.Locate.gradient_peak(refine=refine),
+            )
+            edges = vm.Caliper.rect((32.0, 32.0), 0.0, 20.0, 4.0, config=cfg).measure(img)
+            assert len(edges) == 1, (derivative, refine)
+            assert abs(edges[0].x - 29.5) < 0.05, (derivative, refine, edges[0].x)
+    with pytest.raises(ValueError):
+        vm.Locate.gradient_peak(refine="cubic")
+    with pytest.raises(ValueError):
+        vm.MeasureConfig(derivative="sobel")
+
+
 def test_caliper_dtype_dispatch_agrees_on_a_synthetic_edge():
     """u8, u16 and f32 views of the same edge must agree to the bit."""
     img8 = np.zeros((64, 64), dtype=np.uint8)

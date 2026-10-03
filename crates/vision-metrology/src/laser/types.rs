@@ -164,6 +164,7 @@ impl Default for LaserExtractTuning {
                 pos_thresh: 0.0,
                 neg_thresh: 0.0,
                 refine: SubpixRefine::Parabolic3,
+                ..Edge1DConfig::default()
             },
             smoothing: CenterSmoothing::None,
         }

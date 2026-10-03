@@ -29,9 +29,16 @@ The workspace was consolidated from twelve crates into three: `vm-primitives`,
   load.
 - **Scale invariance** (`scale`): `ShapeModel::resample_at`, `estimate_scale_moments`,
   `estimate_scale_logpolar` and `find_scale_invariant`.
+- **1-D edge operators** (`vm-primitives::edge`): `Derivative1D::SmoothThenCentral`
+  (Gaussian, then central differences), `SubpixRefine::Gaussian3` (log-parabola peak
+  fit), `Edge1DDetector::response`, and `DoGKernel1D::with_radius`.
 - **Calipers and metrology models** (`measure`).
   - `Caliper` with `MeasureRect` / `MeasureArc` / `MeasureRadial` placements, a typed
     `RejectReason`, an optional obliquity gate, and `measure_pairs`.
+  - `MeasureConfig::locate` (`Locate::GradientPeak { refine }`) and
+    `ProfileConfig::derivative` (`Derivative`) select the subpixel refinement and the
+    derivative operator; Python: `vm.Locate.gradient_peak(refine=...)`,
+    `MeasureConfig(derivative=..., kernel_radius_px=...)`.
   - `MetrologyModel` applies line and circle objects at a fixture pose and fits them.
   - `measure::diagnostics::layout` gives caliper placement without an image.
 - **Robust fitting** (`fit`): `fit_line`, `fit_circle` (Taubin then Gauss–Newton) and
@@ -73,6 +80,8 @@ The workspace was consolidated from twelve crates into three: `vm-primitives`,
   - `ShapeSearchConfig` and `LaserExtractConfig` move their effort fields into a nested
     `tuning`.
   - `min_contrast` is a `Contrast::{Raw, FractionOfRange}`.
+- **Breaking:** `Edge1DConfig` gained a `derivative` field; the parabolic peak offset
+  is clamped to ±0.5 samples (the most a strict local maximum can produce).
 - **Breaking:** `MeasureConfig`'s `sigma`, `step` and `border` moved into
   `MeasureConfig::profile` (`ProfileConfig`). Python's `MeasureConfig` keyword
   arguments are unchanged.

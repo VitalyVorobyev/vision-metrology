@@ -35,9 +35,10 @@ pub use core::{
     similarity_parts, to_f32, to_f32_u16, transform_point, transform_vec, wrap_angle,
 };
 pub use edge::{
-    DirectionField, DoGKernel1D, Edge1DConfig, Edge1DDetector, Edge2DConfig, Edge2DDetector,
-    EdgePair1D, EdgePairConfig, EdgePeak, EdgePolarity, Edgel, GradientBuffers, Hysteresis,
-    SmoothKind, Subpix2D, SubpixRefine, TiledField, best_edge_pair, best_edge_pair_in_row_u8,
+    Derivative1D, DirectionField, DoGKernel1D, Edge1DConfig, Edge1DDetector, Edge2DConfig,
+    Edge2DDetector, EdgePair1D, EdgePairConfig, EdgePeak, EdgePolarity, Edgel, GradientBuffers,
+    Hysteresis, SmoothKind, Subpix2D, SubpixRefine, TiledField, best_edge_pair,
+    best_edge_pair_in_row_u8,
 };
 pub use morph::{
     StructuringElement, chamfer_distance_u8, close_binary_u8, close3x3_binary_u8, dilate_binary_u8,

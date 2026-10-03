@@ -21,7 +21,9 @@ mod kernels1d;
 mod laser1d;
 
 pub use conv1d::convolve_f32;
-pub use edge1d::{Edge1DConfig, Edge1DDetector, EdgePeak, EdgePolarity, SubpixRefine};
+pub use edge1d::{
+    Derivative1D, Edge1DConfig, Edge1DDetector, EdgePeak, EdgePolarity, SubpixRefine,
+};
 pub use edge2d::{
     Edge2DConfig, Edge2DDetector, Edgel, GradientBuffers, Hysteresis, SmoothKind, Subpix2D,
 };

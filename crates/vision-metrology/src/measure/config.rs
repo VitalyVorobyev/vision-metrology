@@ -1,6 +1,6 @@
 //! What a caliper looks for, and how it builds the profile it looks in.
 
-use vm_primitives::BorderMode;
+use vm_primitives::{BorderMode, SubpixRefine};
 
 /// Which edges to keep from a profile.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -28,14 +28,51 @@ pub enum PolaritySelect {
     Falling,
 }
 
+/// How the profile is differentiated.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum Derivative {
+    /// Convolve with the analytic derivative of a Gaussian of σ
+    /// [`ProfileConfig::sigma`], radius `ceil(3σ)`.
+    #[default]
+    DerivativeOfGaussian,
+    /// Smooth with a normalised Gaussian of σ [`ProfileConfig::sigma`] and half-width
+    /// `radius_px`, then take central differences (one-sided at the two ends) — the
+    /// textbook "Gaussian, then finite differences" operator.
+    SmoothThenCentral {
+        /// Half-width of the smoothing kernel, in pixels; rounded to whole samples
+        /// (at least one).
+        radius_px: f32,
+    },
+}
+
+/// How an edge position is located on the profile.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Locate {
+    /// A local extremum of the derivative, refined to subpixel position.
+    GradientPeak {
+        /// Subpixel refinement of the extremum.
+        refine: SubpixRefine,
+    },
+}
+
+impl Default for Locate {
+    fn default() -> Self {
+        Self::GradientPeak {
+            refine: SubpixRefine::Parabolic3,
+        }
+    }
+}
+
 /// How a caliper turns the image under its placement into a 1-D profile and smooths it.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ProfileConfig {
-    /// Gaussian σ of the 1-D derivative-of-Gaussian kernel, in pixels.
+    /// Gaussian σ of the smoothing, in pixels.
     ///
     /// Roughly the edge blur to expect. Too small and noise produces edges;
     /// too large and neighbouring edges merge.
     pub sigma: f32,
+    /// How the profile is differentiated.
+    pub derivative: Derivative,
     /// Profile sampling step along the scan axis, in pixels.
     ///
     /// `1.0` samples one profile entry per pixel. Oversampling (`0.5`) buys
@@ -50,6 +87,7 @@ impl Default for ProfileConfig {
     fn default() -> Self {
         Self {
             sigma: 1.0,
+            derivative: Derivative::default(),
             step: 1.0,
             border: BorderMode::Clamp,
         }
@@ -68,6 +106,8 @@ pub struct MeasureConfig {
     pub polarity: PolaritySelect,
     /// Which of the surviving edges to return.
     pub select: EdgeSelect,
+    /// How each edge position is located on the profile.
+    pub locate: Locate,
     /// Maximum angle, in degrees, between the scan direction and the image
     /// gradient at the found edge. `180.0` disables the check.
     ///
@@ -88,6 +128,7 @@ impl Default for MeasureConfig {
             threshold: 5.0,
             polarity: PolaritySelect::default(),
             select: EdgeSelect::default(),
+            locate: Locate::default(),
             max_obliquity_deg: 180.0,
             profile: ProfileConfig::default(),
         }

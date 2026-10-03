@@ -23,9 +23,14 @@ whether the result is unbiased:
   circle of radius 40, a sample 5 px to the side sits at radius 40.31, on the wrong side of
   the edge. A 32-caliper fit reads 39.88 px; `MeasureRadial` reads 39.990 px, and its bias
   no longer grows with width.
-- **Edges along the profile** come from `Edge1DDetector` (derivative of Gaussian, parabolic
-  subpixel refinement), filtered by threshold and `PolaritySelect`, and narrowed by
-  `EdgeSelect`.
+- **Edges along the profile** come from `Edge1DDetector`, filtered by threshold and
+  `PolaritySelect`, and narrowed by `EdgeSelect`. The derivative operator and the
+  subpixel refinement are configurable (`ProfileConfig::derivative`,
+  `Locate::GradientPeak { refine }`). The defaults, derivative of Gaussian and a
+  three-point parabola, are what the accuracy envelopes and the can-end baseline
+  are pinned to. The textbook alternatives (Gaussian then central differences, a
+  log-parabola) exist so results can be compared with reference implementations
+  operator for operator.
 - **An optional obliquity gate** rejects an edge whose image gradient is too oblique to the
   scan. A glancing crossing reports a position along the scan rather than along the edge
   normal, and the two differ by `1/cos θ`.

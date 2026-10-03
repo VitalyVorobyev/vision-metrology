@@ -95,8 +95,9 @@ pub struct MeasureConfig {
     pub threshold: f32,
     pub polarity: PolaritySelect,
     pub select: EdgeSelect,
+    pub locate: Locate,
     pub max_obliquity_deg: f32,
-    pub profile: ProfileConfig, // sigma, step, border
+    pub profile: ProfileConfig, // sigma, derivative, step, border
 }
 ```
 
@@ -112,9 +113,17 @@ pub struct MeasureConfig {
   `Strongest` is the sane default once a model's geometry is already
   approximately right (`MetrologyObject::new` picks it) — a caliper on a
   nominal edge should report *that* edge, not every edge it happens to cross.
-- **`profile.sigma`** — the Gaussian σ of the 1-D derivative-of-Gaussian
-  kernel, in pixels. Roughly the edge blur to expect: too small and noise
-  produces spurious edges, too large and neighbouring edges merge.
+- **`locate`** — how an edge position is found on the profile.
+  `Locate::GradientPeak { refine }` takes a local extremum of the derivative and
+  refines it with `SubpixRefine::Parabolic3` (the default), `Gaussian3` (a parabola
+  through the logarithms, exact for a Gaussian-shaped peak), `Centroid` or `None`.
+- **`profile.sigma`** — the Gaussian σ of the smoothing, in pixels. Roughly the
+  edge blur to expect: too small and noise produces spurious edges, too large and
+  neighbouring edges merge.
+- **`profile.derivative`** — `Derivative::DerivativeOfGaussian` (the default)
+  convolves with the analytic derivative of a Gaussian of radius `⌈3σ⌉`;
+  `Derivative::SmoothThenCentral { radius_px }` smooths with a Gaussian of the given
+  half-width and takes central differences, the textbook operator.
 - **`profile.step`** — profile sampling step along the scan axis, in pixels.
   `1.0` is one entry per pixel; oversampling (`0.5`) buys resolution on a
   sharp edge at proportional cost. `sigma` stays in pixels, so the same
