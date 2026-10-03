@@ -13,7 +13,7 @@ use vision_metrology::fit::{FitConfig, RobustLoss};
 use vision_metrology::measure::diagnostics::{CaliperShape, layout};
 use vision_metrology::measure::{
     Caliper, EdgeSelect, MeasureConfig as NativeMeasureConfig, MetrologyFit, MetrologyModel,
-    MetrologyObject, MetrologyShape, PolaritySelect, RejectReason,
+    MetrologyObject, MetrologyShape, PolaritySelect, ProfileConfig, RejectReason,
 };
 use vision_metrology::metric::{CameraModel, Plane3, Pose3, pixel_to_plane};
 use vm_primitives::{Point2f, Similarity2f, Vec2f, similarity_from_parts, wrap_angle};
@@ -69,7 +69,6 @@ fn measure_config_from(m: Option<&crate::types::MeasureConfigIn>) -> NativeMeasu
         ..NativeMeasureConfig::default()
     };
     NativeMeasureConfig {
-        sigma: m.and_then(|c| c.sigma).unwrap_or(base.sigma),
         threshold: m.and_then(|c| c.threshold).unwrap_or(base.threshold),
         polarity: m
             .and_then(|c| c.polarity.as_deref())
@@ -78,6 +77,10 @@ fn measure_config_from(m: Option<&crate::types::MeasureConfigIn>) -> NativeMeasu
         max_obliquity_deg: m
             .and_then(|c| c.max_obliquity_deg)
             .unwrap_or(base.max_obliquity_deg),
+        profile: ProfileConfig {
+            sigma: m.and_then(|c| c.sigma).unwrap_or(base.profile.sigma),
+            ..base.profile
+        },
         ..base
     }
 }
@@ -210,7 +213,7 @@ fn measure_calipers(
 ) -> (Vec<CaliperResultOut>, Vec<OverlayPrimitiveOut>) {
     let mut results = Vec::with_capacity(shapes.len());
     let mut overlay = Vec::new();
-    let step_px = config.step;
+    let step_px = config.profile.step;
 
     for (i, shape) in shapes.iter().enumerate() {
         let mut cal = caliper_for(shape, config);

@@ -78,7 +78,6 @@ No obliquity gate or other non-textbook logic is used by the runner. The design 
 
 | Step | Content | Accept |
 |---|---|---|
-| M1 | Split `measure/caliper.rs` (`config`, `placement`, `select`); `MeasureConfig.profile: ProfileConfig`; remove the per-call allocation | bit-identity pin of rect/arc/radial edges; tests unchanged; benches within 2% |
 | M2 | `Derivative1D::{DerivativeOfGaussian, SmoothThenCentral}`, `SubpixRefine::Gaussian3`, `detect_with_response`, ±0.5 parabolic clamp | exact-value tests; DoG bit-identical |
 | M3 | `MeasureStrip{start, end, half_width, samples, across}`, `OffImage::Reject`, `t` measured from the start | strip tests ported from CaliperBench's baseline tests |
 | M4 | `EdgeSelect::StrongestInOrder` + `RejectReason::IncompleteSequence` | tie and strict-order tests |

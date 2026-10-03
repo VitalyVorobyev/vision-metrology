@@ -73,6 +73,9 @@ The workspace was consolidated from twelve crates into three: `vm-primitives`,
   - `ShapeSearchConfig` and `LaserExtractConfig` move their effort fields into a nested
     `tuning`.
   - `min_contrast` is a `Contrast::{Raw, FractionOfRange}`.
+- **Breaking:** `MeasureConfig`'s `sigma`, `step` and `border` moved into
+  `MeasureConfig::profile` (`ProfileConfig`). Python's `MeasureConfig` keyword
+  arguments are unchanged.
 - **Breaking:** `Caliper::measure` returns `Result<&[MeasureEdge], RejectReason>`.
   `MetrologyModel::apply` returns one `Result` per object, in object order.
 - **Breaking:** `Point2f` / `Vec2f` are nalgebra aliases; `Vec2fExt` adds `perp`, `cross`

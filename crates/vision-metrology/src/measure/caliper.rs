@@ -1,217 +1,13 @@
-//! Caliper measurement: a placed geometry, a 1-D profile, subpixel edges.
+//! The reusable caliper: a placed geometry, a 1-D profile, subpixel edges.
 
 use vm_primitives::{
     BorderMode, Edge1DConfig, Edge1DDetector, EdgePolarity, ImageView, Pixel, Point2f,
     SubpixRefine, Vec2f, Vec2fExt, sample_bilinear_at, sample_bilinear_f32,
 };
 
-/// A rectangular measurement region.
-///
-/// The caliper scans **along** its own x-axis (the direction `angle` points in)
-/// and averages **across** it. Averaging is what buys the sub-pixel repeatability:
-/// each profile sample is the mean of `2·half_width + 1` interpolated pixels, so
-/// noise falls as `1/√n` while a straight edge perpendicular to the scan stays
-/// exactly as sharp.
-///
-/// That last part is the constraint worth remembering: `half_width` may only be
-/// increased while the edge stays parallel to the averaging direction. On a
-/// curved edge a wide caliper smears the very transition it is measuring.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct MeasureRect {
-    /// Centre of the rectangle, in image coordinates.
-    pub center: Point2f,
-    /// Direction of the scan axis, in radians.
-    pub angle: f32,
-    /// Half-length along the scan axis, in pixels. The profile is
-    /// `2·half_len + 1` samples long.
-    pub half_len: f32,
-    /// Half-width across the scan axis, in pixels. `0.0` samples a single line.
-    pub half_width: f32,
-}
-
-/// An annular measurement region: scans **along** a circular arc, averaging
-/// **radially**.
-///
-/// Use this to find features that cross a circular path — gear teeth, slots
-/// around a bore, the tab on a can end. To measure the circle *itself*, place
-/// radial [`MeasureRect`]s instead; that is what
-/// [`MetrologyShape::Circle`](super::MetrologyShape::Circle) does.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct MeasureArc {
-    /// Centre of the arc.
-    pub center: Point2f,
-    /// Radius of the scan path, in pixels.
-    pub radius: f32,
-    /// Start angle, in radians.
-    pub angle_start: f32,
-    /// Signed angular extent, in radians. Negative sweeps clockwise.
-    pub angle_extent: f32,
-    /// Half-width of the radial averaging band, in pixels.
-    pub half_width: f32,
-}
-
-/// Which edges to keep from a profile.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum EdgeSelect {
-    /// Every edge that passes the threshold, in profile order.
-    #[default]
-    All,
-    /// The first along the scan direction.
-    First,
-    /// The last along the scan direction.
-    Last,
-    /// The one with the largest amplitude.
-    Strongest,
-}
-
-/// Which transitions count as edges.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum PolaritySelect {
-    /// Both dark→bright and bright→dark.
-    #[default]
-    Any,
-    /// Dark→bright along the scan direction only.
-    Rising,
-    /// Bright→dark along the scan direction only.
-    Falling,
-}
-
-/// How a caliper extracts edges from its profile.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct MeasureConfig {
-    /// Gaussian σ of the 1-D derivative-of-Gaussian kernel, in pixels.
-    ///
-    /// Roughly the edge blur to expect. Too small and noise produces edges;
-    /// too large and neighbouring edges merge.
-    pub sigma: f32,
-    /// Minimum `|DoG response|` for an edge to be reported.
-    ///
-    /// On the input pixel scale, like every other threshold in this workspace:
-    /// re-tune for `u16` and `f32` images.
-    pub threshold: f32,
-    /// Which transitions count.
-    pub polarity: PolaritySelect,
-    /// Which of the surviving edges to return.
-    pub select: EdgeSelect,
-    /// Profile sampling step along the scan axis, in pixels.
-    ///
-    /// `1.0` samples one profile entry per pixel. Oversampling (`0.5`) buys
-    /// resolution on a sharp edge at proportional cost; `sigma` is in the same
-    /// units, so halving the step means doubling `sigma` for the same
-    /// smoothing.
-    pub step: f32,
-    /// Maximum angle, in degrees, between the scan direction and the image
-    /// gradient at the found edge. `180.0` disables the check.
-    ///
-    /// A caliper that crosses an edge obliquely reports a position along its
-    /// own axis, not the edge's normal, and the two differ by `1/cos θ`. At a
-    /// corner or a cap there is no meaningful crossing at all. Rejecting those
-    /// is what keeps a bad caliper out of the fit instead of merely
-    /// down-weighted — the same gate rejects field-of-view cuts and bead
-    /// end-caps.
-    pub max_obliquity_deg: f32,
-    /// Border behaviour when the caliper overhangs the image.
-    pub border: BorderMode<f32>,
-}
-
-impl Default for MeasureConfig {
-    fn default() -> Self {
-        Self {
-            sigma: 1.0,
-            threshold: 5.0,
-            polarity: PolaritySelect::default(),
-            select: EdgeSelect::default(),
-            step: 1.0,
-            max_obliquity_deg: 180.0,
-            border: BorderMode::Clamp,
-        }
-    }
-}
-
-/// Why a caliper returned nothing.
-///
-/// A caliper that finds no edge is not an error — it is a measurement result,
-/// and *which gate* rejected it is the difference between "the part is missing"
-/// and "the search window was too short". Tallied across a scan, the dominant
-/// reason is the fastest route to a misconfigured recipe.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RejectReason {
-    /// The profile was shorter than the detector needs (3 samples).
-    ProfileTooShort,
-    /// No response reached [`MeasureConfig::threshold`]. Either there is no
-    /// edge in the window, or the window does not reach it.
-    NoEdge,
-    /// Edges were found, but none had the polarity
-    /// [`MeasureConfig::polarity`] asked for.
-    WrongPolarity,
-    /// The best edge crossed at more than
-    /// [`MeasureConfig::max_obliquity_deg`] from the scan direction — a corner,
-    /// a cap, or a badly placed caliper.
-    TooOblique,
-    /// The caliper reached outside the image, so the profile is partly border
-    /// fill rather than data.
-    OffImage,
-}
-
-/// One edge found by a caliper.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct MeasureEdge {
-    /// Subpixel position in **image** coordinates.
-    pub p: Point2f,
-    /// Signed distance from the caliper centre along the scan axis, in pixels.
-    pub t: f32,
-    /// `|DoG response|` at the edge — the local contrast.
-    pub amplitude: f32,
-    /// Direction of the intensity transition along the scan axis.
-    pub polarity: EdgePolarity,
-}
-
-/// A pair of opposite-polarity edges, i.e. one bar or gap.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct MeasurePair {
-    /// The earlier edge along the scan axis.
-    pub first: MeasureEdge,
-    /// The later edge.
-    pub second: MeasureEdge,
-    /// Midpoint in image coordinates.
-    pub center: Point2f,
-    /// Distance between the two edges along the scan axis, in pixels.
-    pub width: f32,
-}
-
-/// A caliper that scans **radially** and averages **along the arc**.
-///
-/// This is the geometry to measure a circular edge with, and it exists because
-/// a [`MeasureRect`] cannot do it without bias. A rect averages along a
-/// *chord*: on a circle of radius 40, samples 5 px to either side of the
-/// caliper sit at radius 40.31, outside the edge, so the averaged profile is
-/// contaminated by the wrong side of the transition and the measured radius
-/// comes out low. Measured on a synthetic disc: **−0.12 px** at
-/// `half_width = 5`, growing with width and shrinking with radius.
-///
-/// Averaging along the arc puts every averaged sample at the *same* radius, so
-/// a circular edge stays perfectly sharp however wide the caliper is.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct MeasureRadial {
-    /// Centre of the circle being measured.
-    pub center: Point2f,
-    /// Nominal radius the caliper is centred on, in pixels.
-    pub radius: f32,
-    /// Angular position of the caliper on the circle, in radians.
-    pub angle: f32,
-    /// Half-length of the radial search, in pixels.
-    pub half_len: f32,
-    /// Half-width of the arc-following average, in pixels of **arc length**.
-    pub half_width: f32,
-}
-
-/// The geometry a [`Caliper`] is currently placed on.
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum Placement {
-    Rect(MeasureRect),
-    Arc(MeasureArc),
-    Radial(MeasureRadial),
-}
+use super::config::{EdgeSelect, MeasureConfig, PolaritySelect, RejectReason};
+use super::placement::{MeasureArc, MeasureRadial, MeasureRect, Placement};
+use super::select::{MeasureEdge, MeasurePair, pair_edges, select_edges};
 
 /// A reusable caliper: place it, then measure frame after frame.
 ///
@@ -256,6 +52,8 @@ pub struct Caliper {
     cfg: MeasureConfig,
     det: Edge1DDetector,
     profile: Vec<f32>,
+    /// Edges that passed threshold and polarity, before `select`.
+    cands: Vec<MeasureEdge>,
     edges: Vec<MeasureEdge>,
     pairs: Vec<MeasurePair>,
 }
@@ -282,9 +80,10 @@ impl Caliper {
     fn new(placement: Placement, cfg: MeasureConfig) -> Self {
         Self {
             placement,
-            det: Edge1DDetector::new(cfg.sigma.max(1e-3)),
+            det: Edge1DDetector::new(cfg.profile.sigma.max(1e-3)),
             cfg,
             profile: Vec::new(),
+            cands: Vec::new(),
             edges: Vec::new(),
             pairs: Vec::new(),
         }
@@ -360,41 +159,8 @@ impl Caliper {
         let _ = self.extract(img, false);
         (self.cfg.select, self.cfg.polarity) = saved;
 
-        self.pairs.clear();
-        let mut i = 0;
-        while i + 1 < self.edges.len() {
-            let a = self.edges[i];
-            if let Some(off) = self.edges[i + 1..]
-                .iter()
-                .position(|e| e.polarity != a.polarity)
-            {
-                let b = self.edges[i + 1 + off];
-                self.pairs.push(MeasurePair {
-                    first: a,
-                    second: b,
-                    center: Point2f::new(0.5 * (a.p.x + b.p.x), 0.5 * (a.p.y + b.p.y)),
-                    width: b.t - a.t,
-                });
-                i += off + 2;
-            } else {
-                break;
-            }
-        }
+        pair_edges(&self.edges, &mut self.pairs);
         &self.pairs
-    }
-
-    /// Number of profile samples the current placement produces.
-    fn profile_len(&self) -> usize {
-        let step = self.cfg.step.max(1e-3);
-        let span = match self.placement {
-            Placement::Rect(r) => 2.0 * r.half_len,
-            Placement::Radial(r) => 2.0 * r.half_len,
-            // One sample per pixel of arc length keeps the profile's units
-            // comparable to a rect's, so `sigma` and `threshold` mean the same
-            // thing for both.
-            Placement::Arc(a) => a.angle_extent.abs() * a.radius,
-        };
-        (span.max(0.0) / step) as usize + 1
     }
 
     /// Fill `profile` with the cross-averaged intensity along the scan axis.
@@ -403,21 +169,18 @@ impl Caliper {
     /// can report [`RejectReason::OffImage`] rather than silently measuring
     /// border fill.
     fn build_profile<P: Pixel>(&mut self, img: &ImageView<'_, P>) -> bool {
-        let n = self.profile_len();
+        let n = self.placement.profile_len(self.cfg.profile.step);
         self.profile.clear();
         self.profile.resize(n, 0.0);
         if n == 0 || img.width() == 0 || img.height() == 0 {
             return false;
         }
 
-        let half_width = match self.placement {
-            Placement::Rect(r) => r.half_width,
-            Placement::Arc(a) => a.half_width,
-            Placement::Radial(r) => r.half_width,
-        };
+        let half_width = self.placement.half_width();
         let across = (2.0 * half_width).max(0.0) as usize + 1;
         let across_denom = (across.saturating_sub(1)).max(1) as f32;
         let (w, h) = (img.width() as f32, img.height() as f32);
+        let border = self.cfg.profile.border;
         let mut inside = true;
 
         for i in 0..n {
@@ -428,67 +191,15 @@ impl Caliper {
                 } else {
                     -half_width + 2.0 * half_width * j as f32 / across_denom
                 };
-                let q = self.sample_point(i, n, s);
+                let q = self.placement.sample_point(i, n, s);
                 if q.x < 0.0 || q.y < 0.0 || q.x > w - 1.0 || q.y > h - 1.0 {
                     inside = false;
                 }
-                acc += sample_bilinear_at(img, q, self.cfg.border);
+                acc += sample_bilinear_at(img, q, border);
             }
             self.profile[i] = acc / across as f32;
         }
         inside
-    }
-
-    /// Absolute position of profile sample `i`, offset `s` across the scan.
-    ///
-    /// For [`Placement::Radial`] the cross-offset is applied **along the arc**
-    /// at the sample's own radius rather than along a straight chord — that is
-    /// the whole reason the variant exists.
-    fn sample_point(&self, i: usize, n: usize, s: f32) -> Point2f {
-        let denom = (n.saturating_sub(1)).max(1) as f32;
-        match self.placement {
-            Placement::Rect(r) => {
-                let (sa, ca) = r.angle.sin_cos();
-                let u = Vec2f::new(ca, sa);
-                let t = -r.half_len + 2.0 * r.half_len * i as f32 / denom;
-                r.center + u * t + u.perp() * s
-            }
-            Placement::Arc(a) => {
-                let phi = a.angle_start + a.angle_extent * i as f32 / denom;
-                let (sp, cp) = phi.sin_cos();
-                let radial = Vec2f::new(cp, sp);
-                a.center + radial * (a.radius + s)
-            }
-            Placement::Radial(r) => {
-                let rad = r.radius - r.half_len + 2.0 * r.half_len * i as f32 / denom;
-                // Arc length `s` at radius `rad` is an angle of `s / rad`.
-                let dphi = if rad.abs() > 1e-3 { s / rad } else { 0.0 };
-                let (sp, cp) = (r.angle + dphi).sin_cos();
-                r.center + Vec2f::new(cp, sp) * rad
-            }
-        }
-    }
-
-    /// Unit scan direction at profile position `x` — the direction the edge
-    /// position is measured along, used for the obliquity check.
-    fn scan_dir(&self, x: f32, denom: f32) -> Vec2f {
-        match self.placement {
-            Placement::Rect(r) => {
-                let (sa, ca) = r.angle.sin_cos();
-                Vec2f::new(ca, sa)
-            }
-            Placement::Radial(r) => {
-                let (sa, ca) = r.angle.sin_cos();
-                Vec2f::new(ca, sa)
-            }
-            Placement::Arc(a) => {
-                // Tangent to the arc at this position.
-                let phi = a.angle_start + a.angle_extent * x / denom;
-                let (sp, cp) = phi.sin_cos();
-                let t = Vec2f::new(-sp, cp);
-                if a.angle_extent < 0.0 { -t } else { t }
-            }
-        }
     }
 
     /// Run the 1-D detector on the profile and map peaks back to image space.
@@ -498,6 +209,7 @@ impl Caliper {
         off_image: bool,
     ) -> Option<RejectReason> {
         self.edges.clear();
+        self.cands.clear();
         let n = self.profile.len();
         if n < 3 {
             return Some(RejectReason::ProfileTooShort);
@@ -507,50 +219,41 @@ impl Caliper {
         // into the detector's thresholds would make a wrong-polarity edge
         // indistinguishable from no edge at all, and those two call for
         // opposite fixes.
-        let (pos_thresh, neg_thresh) = (self.cfg.threshold, self.cfg.threshold);
+        let threshold = self.cfg.threshold;
         // `sigma` is in pixels but the profile is indexed in steps.
-        let step = self.cfg.step.max(1e-3);
-        let cfg = Edge1DConfig {
-            sigma: (self.cfg.sigma / step).max(1e-3),
-            border: self.cfg.border,
-            pos_thresh,
-            neg_thresh,
+        let step = self.cfg.profile.step.max(1e-3);
+        let det_cfg = Edge1DConfig {
+            sigma: (self.cfg.profile.sigma / step).max(1e-3),
+            border: self.cfg.profile.border,
+            pos_thresh: threshold,
+            neg_thresh: threshold,
             refine: SubpixRefine::Parabolic3,
         };
 
-        let Self {
-            det,
-            profile,
-            cfg: c,
-            placement,
-            ..
-        } = self;
-        let threshold = c.threshold;
-        let want = c.polarity;
+        let want = self.cfg.polarity;
         let denom = (n.saturating_sub(1)).max(1) as f32;
-        let placement = *placement;
-        let peaks = det.detect_in_ref(profile, &cfg);
-        let any_peak = peaks.iter().any(|pk| pk.strength >= threshold);
-        let mut found: Vec<MeasureEdge> = peaks
-            .iter()
-            .filter(|pk| pk.strength >= threshold)
-            .filter(|pk| match want {
+        let placement = self.placement;
+        let peaks = self.det.detect_in_ref(&self.profile, &det_cfg);
+        let mut any_peak = false;
+        for pk in peaks.iter().filter(|pk| pk.strength >= threshold) {
+            any_peak = true;
+            let keep = match want {
                 PolaritySelect::Any => true,
                 PolaritySelect::Rising => pk.polarity == EdgePolarity::Rising,
                 PolaritySelect::Falling => pk.polarity == EdgePolarity::Falling,
-            })
-            .map(|pk| {
-                let (p, t) = point_at_profile(&placement, pk.x, denom);
-                MeasureEdge {
+            };
+            if keep {
+                let (p, t) = placement.point_at(pk.x, denom);
+                self.cands.push(MeasureEdge {
                     p,
                     t,
                     amplitude: pk.strength,
                     polarity: pk.polarity,
-                }
-            })
-            .collect();
+                });
+            }
+        }
 
-        if found.is_empty() {
+        if self.cands.is_empty() {
             return Some(if any_peak {
                 RejectReason::WrongPolarity
             } else if off_image {
@@ -564,37 +267,20 @@ impl Caliper {
         // scan axis, give or take.
         if self.cfg.max_obliquity_deg < 180.0 {
             let cos_max = self.cfg.max_obliquity_deg.to_radians().cos();
-            let before = found.len();
-            found.retain(|e| {
-                let x = profile_index_of(&placement, e, denom);
-                let dir = self.scan_dir(x, denom);
+            self.cands.retain(|e| {
+                let x = placement.index_of(e.t, denom);
+                let dir = placement.scan_dir(x, denom);
                 match local_gradient(img, e.p) {
                     Some(g) => g.dot(&dir).abs() >= cos_max,
                     None => false,
                 }
             });
-            if found.is_empty() {
-                return Some(if before > 0 {
-                    RejectReason::TooOblique
-                } else {
-                    RejectReason::NoEdge
-                });
+            if self.cands.is_empty() {
+                return Some(RejectReason::TooOblique);
             }
         }
 
-        match self.cfg.select {
-            EdgeSelect::All => self.edges.extend(found),
-            EdgeSelect::First => self.edges.extend(found.into_iter().next()),
-            EdgeSelect::Last => self.edges.extend(found.pop()),
-            EdgeSelect::Strongest => {
-                if let Some(best) = found
-                    .into_iter()
-                    .max_by(|a, b| a.amplitude.total_cmp(&b.amplitude))
-                {
-                    self.edges.push(best);
-                }
-            }
-        }
+        select_edges(&self.cands, self.cfg.select, &mut self.edges);
         None
     }
 }
@@ -609,59 +295,12 @@ fn local_gradient<P: Pixel>(img: &ImageView<'_, P>, p: Point2f) -> Option<Vec2f>
     (g.norm() > 1e-6).then(|| g.normalized_or_zero())
 }
 
-/// Recover a profile index from an edge's along-axis coordinate.
-fn profile_index_of(placement: &Placement, e: &MeasureEdge, denom: f32) -> f32 {
-    // `t` is a signed distance from the caliper centre along the scan axis, so
-    // the index is a plain affine map back — the same for rect and radial.
-    let linear = |half_len: f32| {
-        if half_len.abs() < 1e-6 {
-            0.0
-        } else {
-            (e.t + half_len) * denom / (2.0 * half_len)
-        }
-    };
-    match *placement {
-        Placement::Rect(r) => linear(r.half_len),
-        Placement::Radial(r) => linear(r.half_len),
-        Placement::Arc(a) => {
-            if a.radius.abs() < 1e-6 {
-                0.0
-            } else {
-                e.t / a.radius / a.angle_extent * denom
-            }
-        }
-    }
-}
-
-/// Map a subpixel profile index back to image coordinates.
-fn point_at_profile(placement: &Placement, x: f32, denom: f32) -> (Point2f, f32) {
-    match *placement {
-        Placement::Rect(r) => {
-            let (s, c) = r.angle.sin_cos();
-            let t = -r.half_len + 2.0 * r.half_len * x / denom;
-            (r.center + Vec2f::new(c, s) * t, t)
-        }
-        Placement::Arc(a) => {
-            let phi = a.angle_start + a.angle_extent * x / denom;
-            let (s, c) = phi.sin_cos();
-            (
-                a.center + Vec2f::new(c, s) * a.radius,
-                (phi - a.angle_start) * a.radius,
-            )
-        }
-        Placement::Radial(r) => {
-            let (s, c) = r.angle.sin_cos();
-            let t = -r.half_len + 2.0 * r.half_len * x / denom;
-            (r.center + Vec2f::new(c, s) * (r.radius + t), t)
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{
-        Caliper, EdgeSelect, MeasureArc, MeasureConfig, MeasureRadial, MeasureRect, PolaritySelect,
-        RejectReason,
+    use super::Caliper;
+    use crate::measure::{
+        EdgeSelect, MeasureArc, MeasureConfig, MeasureRadial, MeasureRect, PolaritySelect,
+        ProfileConfig, RejectReason,
     };
     use vm_primitives::{EdgePolarity, Image, Point2f};
 
@@ -1004,7 +643,10 @@ mod tests {
             let mut cal = Caliper::rect(
                 rect(48.0, 48.0, 0.0, 24.0, 6.0),
                 MeasureConfig {
-                    step,
+                    profile: ProfileConfig {
+                        step,
+                        ..ProfileConfig::default()
+                    },
                     ..MeasureConfig::default()
                 },
             );

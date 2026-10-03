@@ -27,7 +27,9 @@ use vision_metrology::matching::{
     CropSpec, Refinement, ShapeMatcher, ShapeModel, ShapeModelBuilder, ShapeModelConfig,
     ShapeSearchConfig,
 };
-use vision_metrology::measure::{Caliper, MeasureConfig, MeasureRect, PolaritySelect};
+use vision_metrology::measure::{
+    Caliper, MeasureConfig, MeasureRect, PolaritySelect, ProfileConfig,
+};
 use vision_metrology::scale::{
     BlobPolarity, MomentScaleConfig, ScaleHint, ScaleInvariantConfig, find_scale_invariant,
 };
@@ -306,8 +308,11 @@ fn caliper_sweep() -> Measured {
                                 half_width,
                             };
                             let cfg = MeasureConfig {
-                                sigma,
                                 polarity: PolaritySelect::Rising,
+                                profile: ProfileConfig {
+                                    sigma,
+                                    ..ProfileConfig::default()
+                                },
                                 ..MeasureConfig::default()
                             };
                             let mut cal = Caliper::rect(rect, cfg);

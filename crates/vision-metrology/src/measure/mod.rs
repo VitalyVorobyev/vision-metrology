@@ -34,11 +34,14 @@
 // Invariant 21: residuals are always reported.
 
 mod caliper;
+mod config;
 pub mod diagnostics;
 mod model;
+mod placement;
+mod select;
 
-pub use caliper::{
-    Caliper, EdgeSelect, MeasureArc, MeasureConfig, MeasureEdge, MeasurePair, MeasureRadial,
-    MeasureRect, PolaritySelect, RejectReason,
-};
+pub use caliper::Caliper;
+pub use config::{EdgeSelect, MeasureConfig, PolaritySelect, ProfileConfig, RejectReason};
 pub use model::{MetrologyFit, MetrologyModel, MetrologyObject, MetrologyResult, MetrologyShape};
+pub use placement::{MeasureArc, MeasureRadial, MeasureRect};
+pub use select::{MeasureEdge, MeasurePair};
