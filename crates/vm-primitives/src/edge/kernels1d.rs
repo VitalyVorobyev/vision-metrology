@@ -1,7 +1,7 @@
 /// 1D Gaussian and first-derivative-of-Gaussian kernels.
 ///
 /// Conventions:
-/// - `radius = ceil(3*sigma)`, minimum 1.
+/// - `radius = ceil(3*sigma)`, minimum 1, unless built with [`DoGKernel1D::with_radius`].
 /// - `g` is normalized such that `sum(g) ~= 1`.
 /// - `dg[i] = -(x/sigma^2) * g[i]` (using normalized `g`).
 /// - `dg` is not normalized to unit sum; numerically `sum(dg) ~= 0`.
@@ -9,7 +9,7 @@
 pub struct DoGKernel1D {
     /// Standard deviation of the Gaussian in pixels.
     pub sigma: f32,
-    /// Half-width of both kernels: `ceil(3 * sigma)`, minimum 1.
+    /// Half-width of both kernels: `ceil(3 * sigma)` (minimum 1) or the explicit radius.
     pub radius: usize,
     /// Gaussian kernel coefficients, length `2 * radius + 1`, normalised to sum ≈ 1.
     pub g: Vec<f32>,
@@ -27,8 +27,20 @@ impl DoGKernel1D {
             sigma.is_finite() && sigma > 0.0,
             "sigma must be > 0 and finite"
         );
+        Self::with_radius(sigma, ((3.0 * sigma).ceil() as usize).max(1))
+    }
 
-        let radius = ((3.0 * sigma).ceil() as usize).max(1);
+    /// Construct a kernel pair with an explicit half-width `radius` (in samples)
+    /// instead of `ceil(3·sigma)`.
+    ///
+    /// # Panics
+    /// Panics when `sigma <= 0`, `sigma` is not finite, or `radius == 0`.
+    pub fn with_radius(sigma: f32, radius: usize) -> Self {
+        assert!(
+            sigma.is_finite() && sigma > 0.0,
+            "sigma must be > 0 and finite"
+        );
+        assert!(radius > 0, "radius must be at least 1");
         let len = 2 * radius + 1;
 
         let sigma2 = sigma * sigma;

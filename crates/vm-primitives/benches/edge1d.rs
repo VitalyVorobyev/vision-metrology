@@ -1,6 +1,8 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
-use vm_primitives::{BorderMode, Edge1DConfig, Edge1DDetector, SubpixRefine};
+use std::num::NonZeroUsize;
+
+use vm_primitives::{BorderMode, Derivative1D, Edge1DConfig, Edge1DDetector, SubpixRefine};
 
 /// A row of Gaussian-blurred stripes, the signal shape the laser path feeds
 /// this detector per scan line.
@@ -25,12 +27,37 @@ fn bench_edge1d(c: &mut Criterion) {
         pos_thresh: 1.0,
         neg_thresh: 1.0,
         refine: SubpixRefine::Parabolic3,
+        ..Edge1DConfig::default()
     };
     let mut det = Edge1DDetector::new(cfg.sigma);
 
     c.bench_function("edge1d_detect_u8_row1280", |b| {
         b.iter(|| {
             let peaks = det.detect_in_ref(black_box(&row), black_box(&cfg));
+            black_box(peaks.len());
+        });
+    });
+
+    let central = Edge1DConfig {
+        derivative: Derivative1D::SmoothThenCentral {
+            radius: NonZeroUsize::new(3).expect("nonzero"),
+        },
+        ..cfg.clone()
+    };
+    c.bench_function("edge1d_detect_smooth_central_u8_row1280", |b| {
+        b.iter(|| {
+            let peaks = det.detect_in_ref(black_box(&row), black_box(&central));
+            black_box(peaks.len());
+        });
+    });
+
+    let gaussian = Edge1DConfig {
+        refine: SubpixRefine::Gaussian3,
+        ..cfg.clone()
+    };
+    c.bench_function("edge1d_detect_gaussian3_u8_row1280", |b| {
+        b.iter(|| {
+            let peaks = det.detect_in_ref(black_box(&row), black_box(&gaussian));
             black_box(peaks.len());
         });
     });

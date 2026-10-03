@@ -31,9 +31,9 @@ use pyo3::wrap_pyfunction;
 
 use config::{
     Contrast, CorrConfig, CorrSearchTuning, CorrTemplateConfig, CorrTemplateTuning,
-    DisplacementConfig, EdgeConfig, FitConfig, LogPolarScaleConfig, LsdConfig, MeasureConfig,
-    MomentScaleConfig, Refine, ScaleInvariantConfig, ShapeModelConfig, ShapeSearchConfig,
-    ShapeSearchTuning,
+    DisplacementConfig, EdgeConfig, FitConfig, Locate, LogPolarScaleConfig, LsdConfig,
+    MeasureConfig, MomentScaleConfig, Refine, ScaleInvariantConfig, ShapeModelConfig,
+    ShapeSearchConfig, ShapeSearchTuning,
 };
 use corr_py::{CorrMatch, CorrTemplate, Displacement, displacement, find, find_topk};
 use detector::EdgeDetector;
@@ -69,6 +69,7 @@ fn vision_metrology(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ShapeSearchTuning>()?;
     m.add_class::<ShapeSearchConfig>()?;
     m.add_class::<MeasureConfig>()?;
+    m.add_class::<Locate>()?;
     m.add_class::<CropSpec>()?;
     m.add_class::<CorrTemplateTuning>()?;
     m.add_class::<CorrTemplateConfig>()?;

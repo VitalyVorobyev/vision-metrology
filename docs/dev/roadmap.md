@@ -78,7 +78,6 @@ No obliquity gate or other non-textbook logic is used by the runner. The design 
 
 | Step | Content | Accept |
 |---|---|---|
-| M2 | `Derivative1D::{DerivativeOfGaussian, SmoothThenCentral}`, `SubpixRefine::Gaussian3`, `detect_with_response`, ±0.5 parabolic clamp | exact-value tests; DoG bit-identical |
 | M3 | `MeasureStrip{start, end, half_width, samples, across}`, `OffImage::Reject`, `t` measured from the start | strip tests ported from CaliperBench's baseline tests |
 | M4 | `EdgeSelect::StrongestInOrder` + `RejectReason::IncompleteSequence` | tie and strict-order tests |
 | M5 | `level1d.rs` (`LevelCrossing1D`) + `Locate::{MidpointCrossing, HalfContrast}` | analytic tests; checks run in CaliperBench's order |

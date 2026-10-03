@@ -1,11 +1,13 @@
 //! The reusable caliper: a placed geometry, a 1-D profile, subpixel edges.
 
+use std::num::NonZeroUsize;
+
 use vm_primitives::{
-    BorderMode, Edge1DConfig, Edge1DDetector, EdgePolarity, ImageView, Pixel, Point2f,
-    SubpixRefine, Vec2f, Vec2fExt, sample_bilinear_at, sample_bilinear_f32,
+    BorderMode, Derivative1D, Edge1DConfig, Edge1DDetector, EdgePolarity, ImageView, Pixel,
+    Point2f, Vec2f, Vec2fExt, sample_bilinear_at, sample_bilinear_f32,
 };
 
-use super::config::{EdgeSelect, MeasureConfig, PolaritySelect, RejectReason};
+use super::config::{Derivative, EdgeSelect, Locate, MeasureConfig, PolaritySelect, RejectReason};
 use super::placement::{MeasureArc, MeasureRadial, MeasureRect, Placement};
 use super::select::{MeasureEdge, MeasurePair, pair_edges, select_edges};
 
@@ -222,12 +224,14 @@ impl Caliper {
         let threshold = self.cfg.threshold;
         // `sigma` is in pixels but the profile is indexed in steps.
         let step = self.cfg.profile.step.max(1e-3);
+        let Locate::GradientPeak { refine } = self.cfg.locate;
         let det_cfg = Edge1DConfig {
             sigma: (self.cfg.profile.sigma / step).max(1e-3),
+            derivative: derivative_in_samples(self.cfg.profile.derivative, step),
             border: self.cfg.profile.border,
             pos_thresh: threshold,
             neg_thresh: threshold,
-            refine: SubpixRefine::Parabolic3,
+            refine,
         };
 
         let want = self.cfg.polarity;
@@ -282,6 +286,17 @@ impl Caliper {
 
         select_edges(&self.cands, self.cfg.select, &mut self.edges);
         None
+    }
+}
+
+/// The detector's derivative operator for a profile sampled every `spacing` pixels.
+fn derivative_in_samples(d: Derivative, spacing: f32) -> Derivative1D {
+    match d {
+        Derivative::DerivativeOfGaussian => Derivative1D::DerivativeOfGaussian,
+        Derivative::SmoothThenCentral { radius_px } => Derivative1D::SmoothThenCentral {
+            radius: NonZeroUsize::new((radius_px / spacing).round().max(1.0) as usize)
+                .unwrap_or(NonZeroUsize::MIN),
+        },
     }
 }
 
@@ -627,6 +642,38 @@ mod tests {
                 (40.0 - r_chord) > (40.0 - r_arc),
                 "half_width={hw}: arc ({r_arc}) should beat chord ({r_chord})"
             );
+        }
+    }
+
+    /// The textbook operator and the log-parabola refinement find the same ideal step.
+    #[test]
+    fn every_derivative_and_refinement_finds_the_step() {
+        use crate::measure::{Derivative, Locate};
+        use vm_primitives::SubpixRefine;
+        let img = step_image(96, 96, 40);
+        for derivative in [
+            Derivative::DerivativeOfGaussian,
+            Derivative::SmoothThenCentral { radius_px: 3.0 },
+        ] {
+            for refine in [SubpixRefine::Parabolic3, SubpixRefine::Gaussian3] {
+                let cfg = MeasureConfig {
+                    locate: Locate::GradientPeak { refine },
+                    profile: ProfileConfig {
+                        derivative,
+                        step: 0.5,
+                        ..ProfileConfig::default()
+                    },
+                    ..MeasureConfig::default()
+                };
+                let mut cal = Caliper::rect(rect(48.0, 48.0, 0.0, 24.0, 4.0), cfg);
+                let e = cal.measure(&img.as_view()).expect("an edge");
+                assert_eq!(e.len(), 1, "{derivative:?} {refine:?}");
+                assert!(
+                    (e[0].p.x - 39.5).abs() < 0.02,
+                    "{derivative:?} {refine:?}: x = {}",
+                    e[0].p.x
+                );
+            }
         }
     }
 

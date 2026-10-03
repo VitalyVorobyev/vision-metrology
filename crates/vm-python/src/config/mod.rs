@@ -40,5 +40,5 @@ pub use edge::EdgeConfig;
 pub use fit::FitConfig;
 pub use lsd::LsdConfig;
 pub use matching::{Contrast, ShapeModelConfig, ShapeSearchConfig, ShapeSearchTuning};
-pub use measure::MeasureConfig;
+pub use measure::{Locate, MeasureConfig};
 pub use scale::{LogPolarScaleConfig, MomentScaleConfig, ScaleInvariantConfig};

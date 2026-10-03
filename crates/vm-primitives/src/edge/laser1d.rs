@@ -159,6 +159,7 @@ mod tests {
             pos_thresh: 0.01,
             neg_thresh: 0.01,
             refine: SubpixRefine::Parabolic3,
+            ..Edge1DConfig::default()
         };
         let pair_cfg = EdgePairConfig {
             min_width: 4.0,
@@ -197,6 +198,7 @@ mod tests {
             pos_thresh: 1.0,
             neg_thresh: 1.0,
             refine: SubpixRefine::Parabolic3,
+            ..Edge1DConfig::default()
         };
         let pair_cfg = EdgePairConfig::default();
 

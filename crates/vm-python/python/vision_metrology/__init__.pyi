@@ -296,6 +296,19 @@ class ScaleInvariantConfig:
         search: Optional[ShapeSearchConfig] = ...,
     ) -> None: ...
 
+class Locate:
+    """How a caliper locates an edge on its profile. Construct with
+    `Locate.gradient_peak(refine=...)`."""
+
+    kind: str
+    refine: str
+    centroid_radius: int
+    @staticmethod
+    def gradient_peak(refine: str = ..., centroid_radius: int = ...) -> Locate:
+        """A local extremum of the derivative. `refine` is "none", "parabolic"
+        (default), "gaussian" (log-parabola) or "centroid"."""
+        ...
+
 class MeasureConfig:
     sigma: float
     threshold: float
@@ -305,6 +318,9 @@ class MeasureConfig:
     max_obliquity_deg: float
     border_mode: str
     border_constant: float
+    derivative: str
+    kernel_radius_px: float
+    locate: Locate
     def __init__(
         self,
         sigma: Optional[float] = ...,
@@ -315,7 +331,14 @@ class MeasureConfig:
         max_obliquity_deg: Optional[float] = ...,
         border_mode: Optional[str] = ...,
         border_constant: Optional[float] = ...,
-    ) -> None: ...
+        derivative: Optional[str] = ...,
+        kernel_radius_px: Optional[float] = ...,
+        locate: Optional[Locate] = ...,
+    ) -> None:
+        """`derivative` is "dog" (derivative of Gaussian, default) or
+        "smooth_central" (Gaussian of half-width `kernel_radius_px`, then central
+        differences)."""
+        ...
 
 # ---------------------------------------------------------------------------
 # Result types

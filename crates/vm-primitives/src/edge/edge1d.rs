@@ -1,15 +1,25 @@
+use std::num::NonZeroUsize;
+
 use crate::core::{BorderMode, Pixel};
 
 use super::conv1d::convolve_f32;
 use super::kernels1d::DoGKernel1D;
 
-/// Subpixel refinement method applied to raw DoG peak positions.
+/// Subpixel refinement method applied to raw derivative peak positions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SubpixRefine {
     /// No subpixel refinement; the reported position is the integer peak index.
     None,
     /// Fit a parabola to the three samples around the peak and use its vertex.
+    ///
+    /// At a strict local maximum the vertex always lies within ±0.5 samples.
     Parabolic3,
+    /// Fit a parabola to the logarithm of the three samples around the peak (a
+    /// Gaussian fit), which is exact for a Gaussian-shaped derivative peak.
+    ///
+    /// Falls back to [`Parabolic3`](Self::Parabolic3) when a neighbour of the peak
+    /// is not strictly positive in the peak's own polarity.
+    Gaussian3,
     /// Intensity-weighted centroid over `±radius` samples around the peak.
     Centroid {
         /// Half-width of the centroid window in samples.
@@ -17,16 +27,35 @@ pub enum SubpixRefine {
     },
 }
 
-/// Configuration for the 1-D DoG edge detector.
+/// How the 1-D derivative is computed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Derivative1D {
+    /// Convolve with the analytic first derivative of a Gaussian, radius `ceil(3σ)`.
+    #[default]
+    DerivativeOfGaussian,
+    /// Smooth with a normalised Gaussian of the given half-width (in samples), then
+    /// take central differences `½(s[i+1] − s[i−1])`, one-sided at the two ends.
+    ///
+    /// This is the textbook "Gaussian, then finite differences" operator (numpy's
+    /// `np.gradient` of a smoothed profile).
+    SmoothThenCentral {
+        /// Half-width of the smoothing kernel, in samples.
+        radius: NonZeroUsize,
+    },
+}
+
+/// Configuration for the 1-D edge detector.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Edge1DConfig {
-    /// Standard deviation of the Gaussian smoothing kernel in pixels.
+    /// Standard deviation of the Gaussian smoothing kernel in samples.
     pub sigma: f32,
+    /// How the derivative is computed.
+    pub derivative: Derivative1D,
     /// Border extension mode applied during convolution. Default: `Clamp`.
     pub border: BorderMode<f32>,
-    /// Minimum positive DoG response to report a rising edge peak.
+    /// Minimum positive derivative response to report a rising edge peak.
     pub pos_thresh: f32,
-    /// Minimum absolute negative DoG response to report a falling edge peak.
+    /// Minimum absolute negative derivative response to report a falling edge peak.
     pub neg_thresh: f32,
     /// Subpixel refinement method.
     pub refine: SubpixRefine,
@@ -36,6 +65,7 @@ impl Default for Edge1DConfig {
     fn default() -> Self {
         Self {
             sigma: 1.2,
+            derivative: Derivative1D::default(),
             border: BorderMode::Clamp,
             pos_thresh: 0.0,
             neg_thresh: 0.0,
@@ -56,35 +86,37 @@ pub enum EdgePolarity {
 /// A detected 1-D edge peak with subpixel position and strength.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EdgePeak {
-    /// Subpixel position in pixels along the scanned signal.
+    /// Subpixel position in samples along the scanned signal.
     pub x: f32,
-    /// Integer sample index of the peak in the DoG response buffer.
+    /// Integer sample index of the peak in the derivative response buffer.
     pub idx: usize,
-    /// DoG response value at the peak (signed; positive for rising edges).
+    /// Derivative response at the peak (signed; positive for rising edges).
     pub value: f32,
-    /// Absolute DoG response strength (`|value|`).
+    /// Absolute derivative response strength (`|value|`).
     pub strength: f32,
     /// Whether this is a rising or falling intensity transition.
     pub polarity: EdgePolarity,
 }
 
-/// Reusable 1-D edge detector based on first-derivative-of-Gaussian (DoG) convolution.
+/// Reusable 1-D edge detector: smooth and differentiate, then find extrema.
 ///
 /// Scratch buffers are owned and reused across `detect_*` calls to avoid per-call allocation.
 #[derive(Debug, Clone)]
 pub struct Edge1DDetector {
     kernel: DoGKernel1D,
     tmp: Vec<f32>,
+    smooth: Vec<f32>,
     resp: Vec<f32>,
     peaks: Vec<EdgePeak>,
 }
 
 impl Edge1DDetector {
-    /// Create a new detector with a DoG kernel of the given Gaussian sigma.
+    /// Create a new detector with a kernel of the given Gaussian sigma (in samples).
     pub fn new(sigma: f32) -> Self {
         Self {
             kernel: DoGKernel1D::new(sigma),
             tmp: Vec::new(),
+            smooth: Vec::new(),
             resp: Vec::new(),
             peaks: Vec::new(),
         }
@@ -92,9 +124,25 @@ impl Edge1DDetector {
 
     /// Update the Gaussian sigma. Rebuilds the kernel only if `sigma` changed.
     pub fn set_sigma(&mut self, sigma: f32) {
-        if (sigma - self.kernel.sigma).abs() > f32::EPSILON {
-            self.kernel = DoGKernel1D::new(sigma);
+        self.ensure_kernel(sigma, None);
+    }
+
+    /// Build the kernel for `sigma` and, if given, an explicit radius; reuse the
+    /// cached one when both already match.
+    fn ensure_kernel(&mut self, sigma: f32, radius: Option<usize>) {
+        let default_radius = || ((3.0 * sigma).ceil() as usize).max(1);
+        let want_radius = radius.unwrap_or_else(default_radius);
+        if (sigma - self.kernel.sigma).abs() > f32::EPSILON || want_radius != self.kernel.radius {
+            self.kernel = match radius {
+                Some(r) => DoGKernel1D::with_radius(sigma, r),
+                None => DoGKernel1D::new(sigma),
+            };
         }
+    }
+
+    /// The derivative response from the last `detect_*` call, one value per sample.
+    pub fn response(&self) -> &[f32] {
+        &self.resp
     }
 
     /// Detect edges in a 1-D signal of any [`Pixel`] type; owned result.
@@ -109,7 +157,7 @@ impl Edge1DDetector {
     /// internal peak buffer.
     ///
     /// The returned slice is valid until the next `detect_in*` call. An `f32`
-    /// signal is convolved in place; `u8`/`u16` are widened into scratch first.
+    /// signal is read in place; `u8`/`u16` are widened into scratch first.
     pub fn detect_in_ref<'a, P: Pixel>(
         &'a mut self,
         signal: &[P],
@@ -117,53 +165,49 @@ impl Edge1DDetector {
     ) -> &'a [EdgePeak] {
         // `f32` needs no widening, and a laser scan calls this once per row.
         if let Some(direct) = P::as_f32_slice(signal) {
-            return self.detect_f32_slice(direct, cfg);
+            self.respond(direct, cfg);
+        } else {
+            let mut tmp = std::mem::take(&mut self.tmp);
+            tmp.clear();
+            tmp.extend(signal.iter().map(|v| v.to_f32()));
+            self.respond(&tmp, cfg);
+            self.tmp = tmp;
         }
-        self.tmp.resize(signal.len(), 0.0);
-        for (dst, src) in self.tmp.iter_mut().zip(signal) {
-            *dst = src.to_f32();
-        }
-        self.detect_tmp(cfg)
+        self.find_local_extrema(cfg)
     }
 
-    fn detect_f32_slice<'a>(&'a mut self, signal: &[f32], cfg: &Edge1DConfig) -> &'a [EdgePeak] {
-        self.set_sigma(cfg.sigma);
-
+    /// Fill `resp` with the derivative of `signal` under `cfg`.
+    fn respond(&mut self, signal: &[f32], cfg: &Edge1DConfig) {
+        self.resp.clear();
         self.resp.resize(signal.len(), 0.0);
         if signal.is_empty() {
-            self.peaks.clear();
-            return &self.peaks;
+            return;
         }
-
-        convolve_f32(
-            signal,
-            &self.kernel.dg,
-            self.kernel.radius,
-            cfg.border,
-            &mut self.resp,
-        );
-
-        self.find_local_extrema(cfg)
-    }
-
-    fn detect_tmp(&mut self, cfg: &Edge1DConfig) -> &[EdgePeak] {
-        self.set_sigma(cfg.sigma);
-
-        self.resp.resize(self.tmp.len(), 0.0);
-        if self.tmp.is_empty() {
-            self.peaks.clear();
-            return &self.peaks;
+        match cfg.derivative {
+            Derivative1D::DerivativeOfGaussian => {
+                self.ensure_kernel(cfg.sigma, None);
+                convolve_f32(
+                    signal,
+                    &self.kernel.dg,
+                    self.kernel.radius,
+                    cfg.border,
+                    &mut self.resp,
+                );
+            }
+            Derivative1D::SmoothThenCentral { radius } => {
+                self.ensure_kernel(cfg.sigma, Some(radius.get()));
+                self.smooth.clear();
+                self.smooth.resize(signal.len(), 0.0);
+                convolve_f32(
+                    signal,
+                    &self.kernel.g,
+                    self.kernel.radius,
+                    cfg.border,
+                    &mut self.smooth,
+                );
+                central_difference(&self.smooth, &mut self.resp);
+            }
         }
-
-        convolve_f32(
-            &self.tmp,
-            &self.kernel.dg,
-            self.kernel.radius,
-            cfg.border,
-            &mut self.resp,
-        );
-
-        self.find_local_extrema(cfg)
     }
 
     fn find_local_extrema(&mut self, cfg: &Edge1DConfig) -> &[EdgePeak] {
@@ -179,7 +223,7 @@ impl Edge1DDetector {
             let c = self.resp[i + 1];
 
             if b >= a && b > c && b > cfg.pos_thresh {
-                let x = refine_x(&self.resp, i, cfg.refine);
+                let x = refine_x(&self.resp, i, 1.0, cfg.refine);
                 self.peaks.push(EdgePeak {
                     x,
                     idx: i,
@@ -190,7 +234,7 @@ impl Edge1DDetector {
             }
 
             if b <= a && b < c && -b > cfg.neg_thresh {
-                let x = refine_x(&self.resp, i, cfg.refine);
+                let x = refine_x(&self.resp, i, -1.0, cfg.refine);
                 self.peaks.push(EdgePeak {
                     x,
                     idx: i,
@@ -205,19 +249,48 @@ impl Edge1DDetector {
     }
 }
 
-fn refine_x(resp: &[f32], idx: usize, method: SubpixRefine) -> f32 {
+/// `out[i] = ½(s[i+1] − s[i−1])` inside, `s[1] − s[0]` and `s[n−1] − s[n−2]` at the
+/// ends (zero for a single sample).
+fn central_difference(s: &[f32], out: &mut [f32]) {
+    let n = s.len();
+    match n {
+        0 => {}
+        1 => out[0] = 0.0,
+        _ => {
+            out[0] = s[1] - s[0];
+            out[n - 1] = s[n - 1] - s[n - 2];
+            for i in 1..n - 1 {
+                out[i] = 0.5 * (s[i + 1] - s[i - 1]);
+            }
+        }
+    }
+}
+
+/// Vertex offset of the parabola through `(−1, a)`, `(0, b)`, `(1, c)`, clamped to
+/// ±0.5 (which a strict local maximum never exceeds).
+fn parabola_offset(a: f32, b: f32, c: f32) -> f32 {
+    let denom = a - 2.0 * b + c;
+    if denom.abs() < 1e-12 {
+        0.0
+    } else {
+        (0.5 * (a - c) / denom).clamp(-0.5, 0.5)
+    }
+}
+
+/// Subpixel position of the peak at `idx`; `sign` is +1 for a rising (maximum) and
+/// −1 for a falling (minimum) peak.
+fn refine_x(resp: &[f32], idx: usize, sign: f32, method: SubpixRefine) -> f32 {
     match method {
         SubpixRefine::None => idx as f32,
         SubpixRefine::Parabolic3 => {
-            let ym1 = resp[idx - 1];
-            let y0 = resp[idx];
-            let yp1 = resp[idx + 1];
-            let denom = ym1 - 2.0 * y0 + yp1;
-            if denom.abs() < 1e-12 {
-                idx as f32
+            idx as f32 + parabola_offset(resp[idx - 1], resp[idx], resp[idx + 1])
+        }
+        SubpixRefine::Gaussian3 => {
+            let (a, b, c) = (sign * resp[idx - 1], sign * resp[idx], sign * resp[idx + 1]);
+            if a > 0.0 && b > 0.0 && c > 0.0 {
+                idx as f32 + parabola_offset(a.ln(), b.ln(), c.ln())
             } else {
-                let delta = (0.5 * (ym1 - yp1) / denom).clamp(-1.0, 1.0);
-                idx as f32 + delta
+                idx as f32 + parabola_offset(resp[idx - 1], resp[idx], resp[idx + 1])
             }
         }
         SubpixRefine::Centroid { radius } => {
@@ -243,7 +316,12 @@ fn refine_x(resp: &[f32], idx: usize, method: SubpixRefine) -> f32 {
 mod tests {
     use crate::core::BorderMode;
 
-    use super::{Edge1DConfig, Edge1DDetector, EdgePolarity, SubpixRefine};
+    use std::num::NonZeroUsize;
+
+    use super::{
+        Derivative1D, Edge1DConfig, Edge1DDetector, EdgePolarity, SubpixRefine, central_difference,
+        parabola_offset, refine_x,
+    };
     use crate::DoGKernel1D;
     use crate::edge::conv1d::convolve_f32;
 
@@ -293,6 +371,7 @@ mod tests {
             pos_thresh: 0.01,
             neg_thresh: 0.01,
             refine: SubpixRefine::None,
+            ..Edge1DConfig::default()
         };
 
         let peaks = det.detect_in(&sig, &cfg);
@@ -327,6 +406,7 @@ mod tests {
             pos_thresh: 0.01,
             neg_thresh: 0.01,
             refine: SubpixRefine::Centroid { radius: 2 },
+            ..Edge1DConfig::default()
         };
 
         let peaks = det.detect_in(&sig, &cfg);
@@ -356,6 +436,7 @@ mod tests {
             pos_thresh: 0.01,
             neg_thresh: 0.01,
             refine: SubpixRefine::Parabolic3,
+            ..Edge1DConfig::default()
         };
         // Scale-invariant thresholds: keep them below the weakest response in
         // every scaling.
@@ -400,6 +481,7 @@ mod tests {
             pos_thresh: 0.0,
             neg_thresh: 0.0,
             refine: SubpixRefine::Parabolic3,
+            ..Edge1DConfig::default()
         };
         let all = det.detect_in(&sig, &permissive);
         let strong_rise = all
@@ -460,6 +542,7 @@ mod tests {
                 pos_thresh: 0.005,
                 neg_thresh: 0.005,
                 refine: SubpixRefine::Parabolic3,
+                ..Edge1DConfig::default()
             };
 
             let mut reused = Edge1DDetector::new(0.8);
@@ -470,5 +553,126 @@ mod tests {
             let b = nearest_peak_x(&fresh.detect_in(&sig, &cfg), EdgePolarity::Rising, x_l);
             assert_eq!(a, b, "sigma {sigma}");
         }
+    }
+
+    /// numpy's `np.gradient`: central inside, one-sided first-order at the ends.
+    #[test]
+    fn central_difference_matches_np_gradient_on_a_ramp() {
+        let s: Vec<f32> = (0..6).map(|i| 2.0 * i as f32 + 1.0).collect();
+        let mut out = vec![0.0f32; 6];
+        central_difference(&s, &mut out);
+        assert_eq!(
+            out,
+            vec![2.0; 6],
+            "a ramp of slope 2 everywhere, ends included"
+        );
+
+        let s = [0.0f32, 1.0, 4.0, 9.0];
+        let mut out = vec![0.0f32; 4];
+        central_difference(&s, &mut out);
+        assert_eq!(out, vec![1.0, 2.0, 4.0, 5.0], "np.gradient([0,1,4,9])");
+
+        let mut one = vec![7.0f32];
+        central_difference(&[3.0], &mut one);
+        assert_eq!(one, vec![0.0]);
+    }
+
+    /// Gaussian (radius 1, σ = 1, edge padding), then `np.gradient`, on a unit step:
+    /// `g = [e^-½, 1, e^-½] / (1 + 2e^-½)`, so the smoothed step is
+    /// `[0, 0, g0, 1 − g0, 1, 1]` and its gradient
+    /// `[0, g0/2, (1 − g0)/2, (1 − g0)/2, g0/2, 0]` with `g0 = 0.274068…`.
+    #[test]
+    fn smooth_then_central_is_the_textbook_operator() {
+        let mut det = Edge1DDetector::new(1.0);
+        let cfg = Edge1DConfig {
+            sigma: 1.0,
+            derivative: Derivative1D::SmoothThenCentral {
+                radius: NonZeroUsize::new(1).expect("nonzero"),
+            },
+            pos_thresh: 0.01,
+            neg_thresh: 0.01,
+            ..Edge1DConfig::default()
+        };
+        let peaks = det.detect_in(&[0.0f32, 0.0, 0.0, 1.0, 1.0, 1.0], &cfg);
+        let g0 = (-0.5f64).exp() / (1.0 + 2.0 * (-0.5f64).exp());
+        let expected = [
+            0.0,
+            0.5 * g0,
+            0.5 * (1.0 - g0),
+            0.5 * (1.0 - g0),
+            0.5 * g0,
+            0.0,
+        ];
+        for (i, (&r, &e)) in det.response().iter().zip(&expected).enumerate() {
+            assert!(
+                (f64::from(r) - e).abs() < 1e-6,
+                "response[{i}] = {r}, expected {e}"
+            );
+        }
+        // The plateau [2, 3] peaks at its second sample; the parabola puts the edge
+        // exactly between them.
+        assert_eq!(peaks.len(), 1, "{peaks:?}");
+        assert_eq!(peaks[0].idx, 3);
+        assert!((peaks[0].x - 2.5).abs() < 1e-6, "x = {}", peaks[0].x);
+    }
+
+    /// At a strict local maximum (`b ≥ a`, `b > c`) the parabola vertex never leaves
+    /// ±0.5, in value space or log space.
+    #[test]
+    fn subpixel_offsets_stay_within_half_a_sample() {
+        let mut state = 0x9e37_79b9_7f4a_7c15u64;
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            ((state >> 40) as f32) / (1u64 << 24) as f32
+        };
+        for _ in 0..20_000 {
+            let b = 0.05 + next();
+            let a = b * next();
+            let c = b * next() * 0.999_999;
+            for d in [
+                parabola_offset(a, b, c),
+                parabola_offset(a.ln(), b.ln(), c.ln()),
+            ] {
+                assert!(d.abs() <= 0.5, "a={a} b={b} c={c} -> {d}");
+            }
+            assert!(parabola_offset(b, b, c) <= 0.0 && parabola_offset(b, b, c) >= -0.5);
+        }
+    }
+
+    /// A sampled Gaussian peak is recovered exactly by the log-parabola, not by the
+    /// plain parabola.
+    #[test]
+    fn gaussian3_recovers_a_sampled_gaussian_peak() {
+        for &x0 in &[10.0f32, 10.13, 10.37, 9.71] {
+            let resp: Vec<f32> = (0..21)
+                .map(|i| (-((i as f32 - x0).powi(2)) / (2.0 * 1.3 * 1.3)).exp())
+                .collect();
+            let idx = x0.round() as usize;
+            let g = refine_x(&resp, idx, 1.0, SubpixRefine::Gaussian3);
+            let p = refine_x(&resp, idx, 1.0, SubpixRefine::Parabolic3);
+            assert!((g - x0).abs() < 1e-4, "gaussian3 {g} vs {x0}");
+            if (x0 - x0.round()).abs() > 0.1 {
+                assert!(
+                    (p - x0).abs() > 1e-3,
+                    "parabolic3 is biased here: {p} vs {x0}"
+                );
+            }
+            // A falling peak is the same fit on the negated response.
+            let neg: Vec<f32> = resp.iter().map(|v| -v).collect();
+            assert_eq!(refine_x(&neg, idx, -1.0, SubpixRefine::Gaussian3), g);
+        }
+    }
+
+    /// With a non-positive neighbour the logarithm is undefined; Gaussian3 falls back to
+    /// the plain parabola.
+    #[test]
+    fn gaussian3_falls_back_to_the_parabola() {
+        let resp = [0.0f32, 2.0, 1.0];
+        assert_eq!(
+            refine_x(&resp, 1, 1.0, SubpixRefine::Gaussian3),
+            refine_x(&resp, 1, 1.0, SubpixRefine::Parabolic3)
+        );
     }
 }
