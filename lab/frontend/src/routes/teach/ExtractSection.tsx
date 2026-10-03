@@ -10,7 +10,6 @@
  */
 
 import { Button, Callout, ErrorBox, Field, NumberInput, Panel, Slider } from "@vitavision/ui";
-import { QuantityInput } from "../../components/QuantityInput";
 
 export function ExtractSection({
   minContrast,
@@ -61,7 +60,7 @@ export function ExtractSection({
               onValueChange={onMinContrast}
               className="flex-1"
             />
-            <QuantityInput
+            <NumberInput
               min={0.01}
               max={0.6}
               step={0.01}
