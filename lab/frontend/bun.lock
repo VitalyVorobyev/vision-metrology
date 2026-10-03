@@ -5,12 +5,13 @@
     "": {
       "name": "vm-lab-frontend",
       "dependencies": {
-        "@fontsource-variable/ibm-plex-sans": "^5.3.0",
-        "@fontsource/ibm-plex-mono": "^5.3.0",
         "@tanstack/react-query": "^5.101.4",
         "@tauri-apps/api": "~2.11.1",
         "@tauri-apps/plugin-dialog": "~2.7.2",
-        "@vitavision/lab-ui": "^0.3.0",
+        "@vitavision/charts": "^0.6.3",
+        "@vitavision/stage2d": "^0.7.1",
+        "@vitavision/ui": "^0.9.0",
+        "@vitavision/workbench": "^0.1.1",
         "lucide-react": "^1.51.0",
         "openapi-fetch": "^0.17.0",
         "react": "^19.3.0",
@@ -112,10 +113,6 @@
     "@floating-ui/react-dom": ["@floating-ui/react-dom@2.1.9", "", { "dependencies": { "@floating-ui/dom": "^1.8.0" }, "peerDependencies": { "react": ">=16.8.0", "react-dom": ">=16.8.0" } }, "sha512-JDjEFGCpImxDCA7JJKviA0M9+RtmJdj0m/NVU5IMgBK+AmZouAQQ7/+2GLH0GXXY0YMw9oXPB8hKdbPYg5QLYg=="],
 
     "@floating-ui/utils": ["@floating-ui/utils@0.2.12", "", {}, "sha512-HpCo8tmWzLVad5s2d19EhAz5zqrrQ6s69qd6moPMQvkOuSwDT1YgRfWSVuc4ennqrgv3OHppiOGMQ7oC13yIww=="],
-
-    "@fontsource-variable/ibm-plex-sans": ["@fontsource-variable/ibm-plex-sans@5.3.0", "", {}, "sha512-agG8tXFEo0hD9+J7npa4vbbWult52eMLVaQ6WQRlhs/iCAojrMAoejru85W9HTVXHfyUj96KM7gp/KGAS87XaQ=="],
-
-    "@fontsource/ibm-plex-mono": ["@fontsource/ibm-plex-mono@5.3.0", "", {}, "sha512-eTgnZjZEGk1QtD3ZstF+Vclo2HLAni8YMy34/DxllwZvyz1lR/1RF/xTiAquOBO7MvqBx8D2Ig2WCPMVfdZu7Q=="],
 
     "@humanfs/core": ["@humanfs/core@0.19.2", "", { "dependencies": { "@humanfs/types": "^0.15.0" } }, "sha512-UhXNm+CFMWcbChXywFwkmhqjs3PRCmcSa/hfBgLIb7oQ5HNb1wS0icWsGtSAUNgefHeI+eBrA8I1fxmbHsGdvA=="],
 
@@ -353,11 +350,17 @@
 
     "@typescript-eslint/visitor-keys": ["@typescript-eslint/visitor-keys@8.71.0", "", { "dependencies": { "@typescript-eslint/types": "8.71.0", "eslint-visitor-keys": "^5.0.0" } }, "sha512-8eQ9R218XORK+KLosnf4bu/QsUXvUyVwTbArg7/0NMB1Pu87OJKvj4nhFblkYE8gQV73mW1dx1ptlPCkwRGa7A=="],
 
+    "@vitavision/charts": ["@vitavision/charts@0.6.3", "", { "dependencies": { "@vitavision/ui": "^0.9.0" }, "peerDependencies": { "react": "^19.2.0", "react-dom": "^19.2.0" } }, "sha512-N2nbUA5AspN5go0m4QoP1txMOEC2s9zkE3nYeBk5MGB4xvfZvOYBNdbY3epg5/4OUOWpXAdnHTA9EGKMizGROQ=="],
+
     "@vitavision/config-eslint": ["@vitavision/config-eslint@0.1.0", "", { "dependencies": { "@eslint-react/eslint-plugin": "^5.20.8", "eslint-plugin-react-hooks": "^7.1.1", "eslint-plugin-storybook": "^10.6.0", "typescript-eslint": "^8.70.1" }, "peerDependencies": { "eslint": "^10.11.0", "typescript": "^6.0.3" } }, "sha512-pDoahF2AErSqt0JVbR8PhrS/93RLy//fEVZbJld0IUFXYmRkBsuRTXWcpp6/fa99hGJTCUPevv5Y2cWNaYFXuA=="],
 
     "@vitavision/config-ts": ["@vitavision/config-ts@0.1.0", "", { "peerDependencies": { "tsdown": "0.23.0", "typescript": "^6.0.3" }, "optionalPeers": ["tsdown"] }, "sha512-2I0BYpc0kt2co9ZGZVSqS3OnFM1jYufKLl5Ww4+KVT67PfohwCWt8Q37gatLgIAG4yKns5jKsXx9KUu99yZIzw=="],
 
-    "@vitavision/lab-ui": ["@vitavision/lab-ui@0.3.0", "", { "dependencies": { "@radix-ui/react-checkbox": "^1.3.11", "@radix-ui/react-dialog": "^1.1.23", "@radix-ui/react-select": "^2.3.7", "@radix-ui/react-slider": "^1.4.7", "@radix-ui/react-switch": "^1.3.7", "@radix-ui/react-tooltip": "^1.2.16", "clsx": "^2.1.1", "lucide-react": "^1.30.0", "tailwind-merge": "^3.6.0" }, "peerDependencies": { "react": "^19.2.8", "react-dom": "^19.2.8", "react-router": "^8.3.0" } }, "sha512-cnbhLi5dneiHRKLyqBNxUar9LueTLOGez9DAfY05TvpjBe+H/7Glb9sKT6FEIG+PLxoIlRDSYTGWMRUqXY0R+w=="],
+    "@vitavision/stage2d": ["@vitavision/stage2d@0.7.1", "", { "dependencies": { "@vitavision/ui": "^0.9.0", "lucide-react": "^1.48.0" }, "peerDependencies": { "react": "^19.2.0", "react-dom": "^19.2.0" } }, "sha512-BwUWSIjkeyeWiQkZwcr6aNc4tiMo/juCRxjh+KeaViqFOlw7e6e9HtZ3yMHXYA5Bw1T87i6B041yTTZKcvPMPg=="],
+
+    "@vitavision/ui": ["@vitavision/ui@0.9.0", "", { "dependencies": { "@radix-ui/react-checkbox": "^1.3.11", "@radix-ui/react-dialog": "^1.1.23", "@radix-ui/react-select": "^2.3.7", "@radix-ui/react-slider": "^1.4.7", "@radix-ui/react-slot": "^1.3.3", "@radix-ui/react-switch": "^1.3.7", "@radix-ui/react-tooltip": "^1.2.16", "clsx": "^2.1.1", "lucide-react": "^1.48.0", "tailwind-merge": "^3.6.0" }, "peerDependencies": { "react": "^19.2.0", "react-dom": "^19.2.0", "tailwindcss": "^4.3.0" } }, "sha512-Rg071d293G6qapiSKtjiVEtubkJsbP0A0EVkBbZtNCpR+ocgrfv3Dv+7ReflbAVHib2rwMQGoN96FkjsMhdifg=="],
+
+    "@vitavision/workbench": ["@vitavision/workbench@0.1.1", "", { "dependencies": { "@vitavision/ui": "^0.9.0", "lucide-react": "^1.48.0" }, "peerDependencies": { "react": "^19.2.0", "react-dom": "^19.2.0" } }, "sha512-zu6VAXi5nC/z9dBDkYfqFblsuH6PMi5ksuQ/7plSGsiPGlYY7+ccpXaDKsQx1mpjdYVPz1NleelZhW0olZ9l7Q=="],
 
     "@vitejs/plugin-react": ["@vitejs/plugin-react@6.1.1", "", { "dependencies": { "@rolldown/pluginutils": "^1.0.1" }, "peerDependencies": { "@rolldown/plugin-babel": "^0.1.7 || ^0.2.0", "babel-plugin-react-compiler": "^1.0.0", "oxc-transform-react": "^0.145.0", "vite": "^8.0.0" }, "optionalPeers": ["@rolldown/plugin-babel", "babel-plugin-react-compiler", "oxc-transform-react"] }, "sha512-yxLaQV9gkhS8ezJqCM6+ndU7mDY6gqAg75NQ+0IjwEI8IYOmQCgkRwHKVSfWXW076DsqMo0Dk+0FK1U+M5RgFw=="],
 
@@ -663,7 +666,7 @@
 
     "supports-color": ["supports-color@10.2.2", "", {}, "sha512-SS+jx45GF1QjgEXQx4NJZV9ImqmO2NPz5FNsIHrsDjh2YsHnawpan7SNQ1o8NuhrbHZy9AZhIoCUiCeaW/C80g=="],
 
-    "tailwind-merge": ["tailwind-merge@3.6.0", "", {}, "sha512-uxL7qAVQriqRQPAyK3pj66VqskWqoZ37PW94jwOTwNfq/z9oyu1V+eqrZqtR2+fCiXdYOZe/Modt8GtvqNzu+w=="],
+    "tailwind-merge": ["tailwind-merge@3.7.0", "", {}, "sha512-XPPUyAc+cvspz3lHTcR/QgPfW2A0lv/xQNIjX3HGhLR+Nq2lHaLq5MtTesHn8GUr3W3DguT2KT5x3NVgRtYwmA=="],
 
     "tailwindcss": ["tailwindcss@4.3.3", "", {}, "sha512-gOhV3P7ufE62QDGg1zVaTgCR+EtPv92k2nIhVcVKcLmxT1sUBsQGhnZj175j+MqRt4zLF7ic+sCYjfhxMxj7YQ=="],
 
@@ -758,8 +761,6 @@
     "@tailwindcss/oxide-wasm32-wasi/tslib": ["tslib@2.8.1", "", { "bundled": true }, "sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w=="],
 
     "@typescript-eslint/eslint-plugin/ignore": ["ignore@7.0.12", "", {}, "sha512-/8UvqAPU9DGTI9k4mxtf49U37Isfwr8Uts96+SBHIkFxPJnHS0Ew4f00sM4Scd8V8EjM0jUNtVDdv1kPdt35lg=="],
-
-    "@vitavision/lab-ui/lucide-react": ["lucide-react@1.33.0", "", { "peerDependencies": { "react": "^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0" } }, "sha512-MTRwMy0ZlL8Ur/vOAiJ9XGHE+kFPC7brq6MxAm0GiGXEBj0qy0jA/pG4N675oSzciO/UCdX8T+5yUQdmDeTLxg=="],
 
     "qified/hookified": ["hookified@2.2.0", "", {}, "sha512-p/LgFzRN5FeoD3DLS6bkUapeye6E4SI6yJs6KetENd18S+FBthqYq2amJUWpt5z0EQwwHemidjY5OqJGEKm5uA=="],
 

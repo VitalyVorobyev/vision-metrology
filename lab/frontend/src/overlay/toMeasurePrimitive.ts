@@ -1,16 +1,16 @@
 /**
  * Backend overlay primitives → `MeasurePrimitive`.
  *
- * `OverlayPrimitiveOut` mirrors lab-ui's `MeasurePrimitive` union exactly —
+ * `OverlayPrimitiveOut` mirrors stage2d's `MeasurePrimitive` union exactly —
  * same field names, same units, angles in radians — so the geometry never has
  * to be recomputed on this side (see `lab/contract/openapi.json`'s own note on
  * that schema). The only difference is that JSON round-tripping turns absent
- * fields into `null`, which the lab-ui union does not carry, and that the
+ * fields into `null`, which the stage2d union does not carry, and that the
  * generated type widens `kind` across the whole union instead of discriminating
  * on it.
  */
 
-import type { MeasurePrimitive } from "@vitavision/lab-ui";
+import type { MeasurePrimitive } from "@vitavision/stage2d";
 
 import type { OverlayPrimitiveOut } from "../api/backend";
 

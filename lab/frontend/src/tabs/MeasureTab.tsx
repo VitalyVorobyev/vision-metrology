@@ -1,16 +1,15 @@
+import { LineProfile } from "@vitavision/charts";
 import {
   Badge,
   Button,
   ErrorBox,
   Field,
-  LineProfile,
-  NumberInput,
   Panel,
   SegmentedControl,
   Section,
   Select,
   Table,
-} from "@vitavision/lab-ui";
+} from "@vitavision/ui";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 
@@ -25,6 +24,7 @@ import type {
   OverlayPrimitiveOut,
 } from "../api/backend";
 import { caliperToProfile, formatMeasurement, type MeasureUnit } from "../api/transforms";
+import { QuantityInput } from "../components/QuantityInput";
 
 type Kind = "circle" | "line";
 
@@ -102,7 +102,7 @@ export function MeasureTab({
             />
           </Field>
           <Field label="Auto-find min score" annotation="fixture comes from the top find match">
-            <NumberInput min={0} max={1} step={0.05} value={minScore} onChange={(e) => setMinScore(Number(e.target.value))} />
+            <QuantityInput min={0} max={1} step={0.05} value={minScore} onValueChange={setMinScore} />
           </Field>
 
           <Field
@@ -145,12 +145,7 @@ export function MeasureTab({
           </Field>
           {calibrationId && (
             <Field label="Camera index">
-              <NumberInput
-                min={0}
-                step={1}
-                value={cameraIndex}
-                onChange={(e) => setCameraIndex(Number(e.target.value))}
-              />
+              <QuantityInput min={0} step={1} value={cameraIndex} onValueChange={setCameraIndex} />
             </Field>
           )}
 
@@ -343,7 +338,7 @@ function NumberField({
 }) {
   return (
     <Field label={label} className="gap-1">
-      <NumberInput value={value ?? 0} onChange={(e) => onChange(Number(e.target.value))} />
+      <QuantityInput value={value ?? 0} onValueChange={onChange} />
     </Field>
   );
 }

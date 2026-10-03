@@ -68,9 +68,8 @@ React UI ── LabBackend ─┬─ httpBackend  ── openapi-fetch ──►
 
 ## The canvas
 
-`src/canvas/CanvasStage.tsx` mounts one `ImageStage` (stage2d's, consumed today through
-`@vitavision/lab-ui`) for
-every workspace, so switching screens keeps the view. The stage element is laid out at
+`src/canvas/CanvasStage.tsx` mounts one `ImageStage` (`@vitavision/stage2d`) for every
+workspace, so switching screens keeps the view. The stage element is laid out at
 the source image's pixel size and carries the whole transform, so every layer is a child
 `<svg>` in image coordinates and stays registered at any viewport size.
 

@@ -6,7 +6,7 @@
  * screen while you are.
  */
 
-import { Empty } from "@vitavision/lab-ui";
+import { Empty } from "@vitavision/ui";
 import { useEffect } from "react";
 
 import { BirdsEyeTab } from "../tabs/BirdsEyeTab";

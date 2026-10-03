@@ -12,7 +12,7 @@
  * fetched for the outer panels, so the middle one costs nothing but a draw.
  */
 
-import { SegmentedControl, Skeleton } from "@vitavision/lab-ui";
+import { SegmentedControl, Skeleton } from "@vitavision/ui";
 import { useEffect, useRef, useState } from "react";
 
 export type BlendMode = "checker" | "wipe" | "difference";

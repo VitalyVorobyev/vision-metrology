@@ -1,9 +1,11 @@
 @import "tailwindcss";
-@import "@vitavision/lab-ui/styles.css";
-
-/* See @vitavision/lab-ui's README "Consumer wiring" #1: Tailwind's @source only scans
-   literal source text, and dist/index.js is where the package's own class names live. */
-@source "../node_modules/@vitavision/lab-ui/dist";
+/* Each @vitavision stylesheet declares its own @source, so the packages' class names are
+   found without one here. fonts.css serves IBM Plex Sans and Mono from the ui package. */
+@import "@vitavision/ui/fonts.css";
+@import "@vitavision/ui/styles.css";
+@import "@vitavision/stage2d/styles.css";
+@import "@vitavision/charts/styles.css";
+@import "@vitavision/workbench/styles.css";
 
 html,
 body,

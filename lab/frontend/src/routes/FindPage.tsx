@@ -18,7 +18,7 @@ import {
   Select,
   Slider,
   Table,
-} from "@vitavision/lab-ui";
+} from "@vitavision/ui";
 import { useMutation } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";

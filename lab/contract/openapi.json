@@ -1467,7 +1467,7 @@
         "type": "object"
       },
       "OverlayPrimitiveOut": {
-        "description": "Mirrors `@vitavision/lab-ui`'s `MeasurePrimitive` union exactly (field names and\nunits \u2014 angles in radians) so the frontend can pass this straight through.",
+        "description": "Mirrors `@vitavision/stage2d`'s `MeasurePrimitive` union exactly (field names and\nunits \u2014 angles in radians) so the frontend can pass this straight through.",
         "properties": {
           "angle": {
             "anyOf": [

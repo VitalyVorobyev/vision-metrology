@@ -10,7 +10,8 @@
  * sensor's own samples are the thing worth looking at.
  */
 
-import { Skeleton, useStage } from "@vitavision/lab-ui";
+import { useStage } from "@vitavision/stage2d";
+import { Skeleton } from "@vitavision/ui";
 
 import type { ImageOut } from "../api/backend";
 import { useImageUrl } from "../hooks/useImageUrl";

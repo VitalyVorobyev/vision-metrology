@@ -28,7 +28,7 @@ export default [
     files: ["**/*.test.{ts,tsx}"],
     rules: { "@typescript-eslint/require-await": "off" },
   },
-  // Gate G5.1 (lab-ui visual language): in src/, colour comes from the @vitavision/ui design
+  // Gate G5.1 (the @vitavision visual language): in src/, colour comes from the @vitavision/ui design
   // tokens — no raw Tailwind palette classes, no hex literals (tests are exempt by the rule).
   tokensOnly(["src/**"]),
   {

@@ -7,7 +7,7 @@
  * loading state ends up rendering nothing forever.
  */
 
-import { cn } from "@vitavision/lab-ui";
+import { cn } from "@vitavision/ui";
 
 import { useImageUrl } from "../hooks/useImageUrl";
 

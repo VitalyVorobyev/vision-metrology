@@ -1,27 +1,31 @@
 /**
- * The frame every workspace lives in: rail, header, canvas, inspector, status.
+ * The frame every workspace lives in: header, rail, canvas, inspector, status.
  *
- * The canvas is mounted **here**, once, and every route draws into it through
- * `LabContext`. That is what lets stepping from Teach to Find keep the image on
- * screen at the same zoom instead of unmounting and re-fetching it.
+ * Built on `@vitavision/workbench`'s `AppShell`, which owns the viewport-filling layout, the
+ * landmarks and the resizable, remembered inspector. This component decides what goes in
+ * each slot.
  *
- * Layout is deliberately three fixed columns and one focal area: navigation is
- * as narrow as it can be and still be readable, the inspector is a fixed
- * column so controls do not move when their content changes, and everything
- * left over is image. On a workbench the picture is the subject; the chrome is
- * there to be aimed, not admired.
+ * The canvas is mounted **here**, once, and every route draws into it through `LabContext`.
+ * That is what lets stepping from Teach to Find keep the image on screen at the same zoom
+ * instead of unmounting and re-fetching it.
+ *
+ * The workspace rail sits inside the main surface rather than in workbench's `left` slot:
+ * that slot is a resizable panel, and the rail is a fixed-width column of icons.
  */
 
-import { Empty, Skeleton, ThemeToggle } from "@vitavision/lab-ui";
+import { DensityProvider, Empty, Skeleton, ThemeToggle } from "@vitavision/ui";
+import { AppShell as WorkbenchShell } from "@vitavision/workbench";
 import type { ReactNode } from "react";
 
 import { CanvasStage } from "../canvas/CanvasStage";
-import { LAB_THEME_STORAGE_KEY } from "./theme";
-import { FrameSwitcher } from "./FrameSwitcher";
-import { InspectorColumn } from "./InspectorColumn";
 import { useLab } from "../state/LabContext";
+import { FrameSwitcher } from "./FrameSwitcher";
 import { StatusBar } from "./StatusBar";
+import { LAB_THEME_STORAGE_KEY } from "./theme";
 import { WorkspaceRail } from "./WorkspaceRail";
+
+/** Where the inspector's width is remembered (`<key>:right`). */
+const SHELL_STORAGE_KEY = "metrology-lab-shell";
 
 export function AppShell({
   steps,
@@ -37,24 +41,25 @@ export function AppShell({
   const { selectedImage, imagesLoading } = useLab();
 
   return (
-    <div className="flex h-full flex-col">
-      {/* `relative` because the frame switcher's dropdown is positioned against this bar. */}
-      <div className="relative flex items-center gap-3 border-b border-line bg-surface px-3 py-1.5">
-        <h1 className="shrink-0 text-sm font-semibold tracking-tight text-fg">Visual Metrology Lab</h1>
-        <FrameSwitcher />
-        <div className="ml-auto">
-          <ThemeToggle storageKey={LAB_THEME_STORAGE_KEY} />
+    <WorkbenchShell
+      className="h-full"
+      storageKey={SHELL_STORAGE_KEY}
+      header={
+        // `relative` because the frame switcher's dropdown is positioned against this bar.
+        <div className="relative flex items-center gap-3 border-b border-line bg-surface px-3 py-1.5">
+          <h1 className="shrink-0 text-sm font-semibold tracking-tight text-fg">Visual Metrology Lab</h1>
+          <FrameSwitcher />
+          <div className="ml-auto">
+            <ThemeToggle storageKey={LAB_THEME_STORAGE_KEY} />
+          </div>
         </div>
-      </div>
-
-      <div className="flex min-h-0 flex-1">
-        <WorkspaceRail />
-
-        <div className="flex min-w-0 flex-1 flex-col">
-          {steps && <div className="border-b border-line bg-surface">{steps}</div>}
-
-          <div className="flex min-h-0 flex-1">
-            <main className="min-w-0 flex-1 p-2">
+      }
+      main={
+        <div className="flex h-full min-h-0">
+          <WorkspaceRail />
+          <div className="flex min-w-0 flex-1 flex-col">
+            {steps && <div className="border-b border-line bg-surface">{steps}</div>}
+            <div className="min-h-0 flex-1 p-2">
               {fullBleed ??
                 (imagesLoading ? (
                   <Skeleton className="h-full w-full" />
@@ -63,14 +68,17 @@ export function AppShell({
                 ) : (
                   <CanvasStage image={selectedImage} />
                 ))}
-            </main>
-
-            <InspectorColumn>{inspector}</InspectorColumn>
+            </div>
           </div>
         </div>
-      </div>
-
-      <StatusBar />
-    </div>
+      }
+      right={
+        <div className="p-2">
+          <DensityProvider value="compact">{inspector}</DensityProvider>
+        </div>
+      }
+      rightSize={{ defaultSize: 384, minSize: 288, maxSize: 640 }}
+      bottom={<StatusBar />}
+    />
   );
 }

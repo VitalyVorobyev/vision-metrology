@@ -7,7 +7,7 @@
  * them; this panel is the numbers beside that comparison.
  */
 
-import { Button, Panel } from "@vitavision/lab-ui";
+import { Button, Panel } from "@vitavision/ui";
 import { ArrowRight } from "lucide-react";
 
 import type { ModelOut } from "../../api/backend";

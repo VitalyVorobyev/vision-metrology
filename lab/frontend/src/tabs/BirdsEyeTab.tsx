@@ -1,25 +1,23 @@
+import { ImageStage, StageToolbar, type StageView } from "@vitavision/stage2d";
 import {
   Button,
   Dialog,
   ErrorBox,
   Field,
-  NumberInput,
   Panel,
   ReadoutStrip,
-  RESET_VIEW,
   Section,
   SegmentedControl,
   Select,
   Switch,
   Table,
-  ZoomPanCanvas,
-  type View,
-} from "@vitavision/lab-ui";
+} from "@vitavision/ui";
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { getBackend } from "../api/backend";
 import type { CalibrationOut, ImageOut, MosaicCameraCoverageOut, MosaicRequest } from "../api/backend";
+import { QuantityInput } from "../components/QuantityInput";
 
 type OverlayMode = "none" | "source_id" | "feather";
 
@@ -67,7 +65,8 @@ export function BirdsEyeTab({
   const [gridHeight, setGridHeight] = useState(600);
   const [overlay, setOverlay] = useState<OverlayMode>("none");
   const [zoomOpen, setZoomOpen] = useState(false);
-  const [zoomView, setZoomView] = useState<View>(RESET_VIEW);
+  // `null` opens the stage at its own sensible view (1:1 if the mosaic fits, else fit).
+  const [zoomView, setZoomView] = useState<StageView | null>(null);
 
   const calibration = calibrations.find((c) => c.id === calibrationId) ?? null;
 
@@ -110,7 +109,7 @@ export function BirdsEyeTab({
   };
 
   const openZoom = () => {
-    setZoomView(RESET_VIEW);
+    setZoomView(null);
     setZoomOpen(true);
   };
 
@@ -157,25 +156,20 @@ export function BirdsEyeTab({
             <Switch checked={autoGrid} onCheckedChange={setAutoGrid} label="Auto-fit" />
             {!autoGrid && (
               <div className="mt-3 grid grid-cols-2 gap-3">
-                <Field label="Origin x" annotation="mm">
-                  <NumberInput value={originX} onChange={(e) => setOriginX(Number(e.target.value))} />
+                <Field label="Origin x">
+                  <QuantityInput unit="mm" value={originX} onValueChange={setOriginX} />
                 </Field>
-                <Field label="Origin y" annotation="mm">
-                  <NumberInput value={originY} onChange={(e) => setOriginY(Number(e.target.value))} />
+                <Field label="Origin y">
+                  <QuantityInput unit="mm" value={originY} onValueChange={setOriginY} />
                 </Field>
-                <Field label="mm / px">
-                  <NumberInput
-                    min={0.001}
-                    step={0.01}
-                    value={mmPerPx}
-                    onChange={(e) => setMmPerPx(Number(e.target.value))}
-                  />
+                <Field label="Scale">
+                  <QuantityInput unit="mm/px" min={0.001} step={0.01} value={mmPerPx} onValueChange={setMmPerPx} />
                 </Field>
-                <Field label="Width" annotation="px">
-                  <NumberInput min={1} value={gridWidth} onChange={(e) => setGridWidth(Number(e.target.value))} />
+                <Field label="Width">
+                  <QuantityInput unit="px" min={1} value={gridWidth} onValueChange={setGridWidth} />
                 </Field>
-                <Field label="Height" annotation="px">
-                  <NumberInput min={1} value={gridHeight} onChange={(e) => setGridHeight(Number(e.target.value))} />
+                <Field label="Height">
+                  <QuantityInput unit="px" min={1} value={gridHeight} onValueChange={setGridHeight} />
                 </Field>
               </div>
             )}
@@ -248,20 +242,21 @@ export function BirdsEyeTab({
 
       <Dialog open={zoomOpen} onOpenChange={setZoomOpen} title="Bird's-eye mosaic">
         {zoomOpen && mutation.data && (
-          <ZoomPanCanvas
+          <ImageStage
+            image={{ width: mutation.data.width, height: mutation.data.height }}
             view={zoomView}
             onView={setZoomView}
-            nativeWidth={mutation.data.width}
+            toolbar={<StageToolbar />}
             className="h-96 w-full"
-            fitLabel={null}
+            label="Bird's-eye mosaic"
           >
             <img
               src={overlayUrl(mutation.data.id)}
               alt="bird's-eye mosaic, zoomed"
-              className="h-full w-full object-contain"
+              className="h-full w-full"
               draggable={false}
             />
-          </ZoomPanCanvas>
+          </ImageStage>
         )}
       </Dialog>
     </div>

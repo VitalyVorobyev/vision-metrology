@@ -14,7 +14,7 @@
  * see. At a distance the ticks read as a contour anyway.
  */
 
-import type { MeasurePrimitive } from "@vitavision/lab-ui";
+import type { MeasurePrimitive } from "@vitavision/stage2d";
 
 import type { MatchOut, ModelGeometryOut } from "../api/backend";
 

@@ -6,7 +6,7 @@
  * express that.
  */
 
-import { Button, NumberInput, Panel } from "@vitavision/lab-ui";
+import { Button, Panel, VectorInput } from "@vitavision/ui";
 
 import type { Roi } from "../../api/backend";
 import { clampRoi } from "../../canvas/roiEdit";
@@ -24,16 +24,6 @@ export function RoiSection({
   onRedraw: () => void;
   drawing: boolean;
 }) {
-  // An empty field is a field being retyped, not a zero: `Number("")` is `0`, which would
-  // snap the box to the image's corner between two keystrokes.
-  const set = (index: 0 | 1 | 2 | 3, raw: string) => {
-    const value = Number(raw);
-    if (!roi || raw.trim() === "" || !Number.isFinite(value)) return;
-    const next: Roi = [...roi];
-    next[index] = value;
-    onRoi(clampRoi(next, image));
-  };
-
   return (
     <Panel
       title="Region"
@@ -53,20 +43,15 @@ export function RoiSection({
         </p>
       ) : (
         <div className="flex flex-col gap-2">
-          <div className="grid grid-cols-4 gap-1.5">
-            {(["x", "y", "w", "h"] as const).map((name, index) => (
-              <label key={name} className="flex flex-col gap-0.5">
-                <span className="font-mono text-[10px] text-fg-subtle">{name}</span>
-                <NumberInput
-                  value={round(roi[index as 0 | 1 | 2 | 3])}
-                  step={1}
-                  onChange={(event) => set(index as 0 | 1 | 2 | 3, event.target.value)}
-                  className="px-1.5 text-[11px]"
-                  aria-label={`ROI ${name}`}
-                />
-              </label>
-            ))}
-          </div>
+          <VectorInput
+            value={roi}
+            onValueChange={(v) => onRoi(clampRoi([v[0] ?? 0, v[1] ?? 0, v[2] ?? 0, v[3] ?? 0], image))}
+            labels={["x", "y", "w", "h"]}
+            unit="px"
+            step={1}
+            precision={1}
+            aria-label="ROI"
+          />
           <div className="flex items-center gap-2 font-mono text-[10px] text-fg-subtle tabular-nums">
             <span>
               {Math.round(roi[2] * roi[3]).toLocaleString()} px² ·{" "}
@@ -84,8 +69,4 @@ export function RoiSection({
       )}
     </Panel>
   );
-}
-
-function round(value: number): string {
-  return Number.isFinite(value) ? String(Math.round(value * 10) / 10) : "";
 }

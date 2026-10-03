@@ -13,7 +13,7 @@ import { MeasureTab } from "../tabs/MeasureTab";
 import { AppShell } from "../shell/AppShell";
 import { Stepper } from "../shell/Stepper";
 import { useLab } from "../state/LabContext";
-import { Empty } from "@vitavision/lab-ui";
+import { Empty } from "@vitavision/ui";
 
 function GaugeShell({ children }: { children: React.ReactNode }) {
   const { selectedImage, models } = useLab();

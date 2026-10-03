@@ -10,7 +10,7 @@
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { TooltipProvider } from "@vitavision/lab-ui";
+import { TooltipProvider } from "@vitavision/ui";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useEffect } from "react";
 import { MemoryRouter } from "react-router";
@@ -118,6 +118,11 @@ function rowIds(): string[] {
   return rows.map((row) => within(row).getAllByRole("cell")[0]!.textContent.trim());
 }
 
+/** One field of the region's `VectorInput`, named by its axis label inside the "ROI" group. */
+function roiField(axis: "x" | "y" | "w" | "h"): HTMLElement {
+  return within(screen.getByRole("group", { name: "ROI" })).getByLabelText(axis);
+}
+
 describe("TeachPage", () => {
   beforeEach(() => {
     teachPreview.mockReset().mockResolvedValue({ contours: CONTOURS, total_points: 9 });
@@ -213,7 +218,7 @@ describe("TeachPage", () => {
     // Curate, so the auto re-extract deliberately does not fire.
     fireEvent.click(screen.getByLabelText("Keep contour 1"));
 
-    fireEvent.change(screen.getByLabelText("ROI x"), { target: { value: "600" } });
+    fireEvent.change(roiField("x"), { target: { value: "600" } });
 
     expect(await screen.findByText(/no longer names the same edges/i)).toBeTruthy();
     expect(screen.getByRole("button", { name: /build model/i }).hasAttribute("disabled")).toBe(true);
@@ -224,7 +229,7 @@ describe("TeachPage", () => {
     await extractContours();
     expect(teachPreview).toHaveBeenCalledTimes(1);
 
-    fireEvent.change(screen.getByLabelText("ROI x"), { target: { value: "600" } });
+    fireEvent.change(roiField("x"), { target: { value: "600" } });
 
     await waitFor(() => expect(teachPreview).toHaveBeenCalledTimes(2), { timeout: 2000 });
     expect(screen.queryByText(/no longer names the same edges/i)).toBeNull();

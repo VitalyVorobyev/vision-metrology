@@ -1,3 +1,4 @@
+import { ImageStage, StageToolbar, type StageView } from "@vitavision/stage2d";
 import {
   Badge,
   Button,
@@ -6,20 +7,19 @@ import {
   Field,
   NumberInput,
   Panel,
-  RESET_VIEW,
   Select,
   Switch,
-  ZoomPanCanvas,
-  type View,
-} from "@vitavision/lab-ui";
+  VectorInput,
+} from "@vitavision/ui";
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { getBackend } from "../api/backend";
 import { CropImage } from "../components/CropImage";
 import type { ImageOut, ModelOut, Roi } from "../api/backend";
+import { QuantityInput } from "../components/QuantityInput";
 
-const RECT_LABELS: readonly ["x", "y", "w", "h"] = ["x", "y", "w", "h"];
+const RECT_LABELS = ["x", "y", "w", "h"] as const;
 
 /** Badge tone for a crop's validity fraction — normal above 90%, a caveat down to 50%,
  * a defect below that (mostly border-fill, not real image content). Exported and pure so
@@ -51,7 +51,8 @@ export function AlignTab({ image, models }: { image: ImageOut; models: ModelOut[
   const [minScore, setMinScore] = useState(0.7);
   const [maxMatches, setMaxMatches] = useState<string>("");
   const [zoomIndex, setZoomIndex] = useState<number | null>(null);
-  const [zoomView, setZoomView] = useState<View>(RESET_VIEW);
+  // `null` opens the stage at its own sensible view (1:1 if the crop fits, else fit).
+  const [zoomView, setZoomView] = useState<StageView | null>(null);
 
   // Picking a model reseeds the crop rect from its own ROI — a sensible default the
   // reader can then adjust, rather than a stale rect left over from a different model.
@@ -59,14 +60,6 @@ export function AlignTab({ image, models }: { image: ImageOut; models: ModelOut[
     setModelId(id);
     const m = models.find((mm) => mm.id === id);
     if (m) setRect(m.roi);
-  };
-
-  const setRectField = (i: number, v: number) => {
-    setRect((prev) => {
-      const next = [...prev] as Roi;
-      next[i] = v;
-      return next;
-    });
   };
 
   const mutation = useMutation({
@@ -83,7 +76,7 @@ export function AlignTab({ image, models }: { image: ImageOut; models: ModelOut[
 
   const openZoom = (index: number) => {
     setZoomIndex(index);
-    setZoomView(RESET_VIEW);
+    setZoomView(null);
   };
 
   const [, , rw, rh] = rect;
@@ -103,25 +96,17 @@ export function AlignTab({ image, models }: { image: ImageOut; models: ModelOut[
           </Field>
 
           <Field label="Crop rect" annotation="model-frame coordinates">
-            <div className="grid grid-cols-4 gap-2">
-              {RECT_LABELS.map((label, i) => (
-                <NumberInput
-                  key={label}
-                  aria-label={label}
-                  value={rect[i]}
-                  onChange={(e) => setRectField(i, Number(e.target.value))}
-                />
-              ))}
-            </div>
+            <VectorInput
+              value={rect}
+              onValueChange={(v) => setRect([v[0] ?? 0, v[1] ?? 0, v[2] ?? 0, v[3] ?? 0])}
+              labels={RECT_LABELS}
+              precision={1}
+              aria-label="Crop rect"
+            />
           </Field>
 
           <Field label="Pixels per model unit">
-            <NumberInput
-              min={0.1}
-              step={0.1}
-              value={pxPerUnit}
-              onChange={(e) => setPxPerUnit(Number(e.target.value))}
-            />
+            <QuantityInput min={0.1} step={0.1} value={pxPerUnit} onValueChange={setPxPerUnit} />
           </Field>
 
           <Switch
@@ -133,13 +118,7 @@ export function AlignTab({ image, models }: { image: ImageOut; models: ModelOut[
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="Min score" annotation="0–1">
-              <NumberInput
-                min={0}
-                max={1}
-                step={0.05}
-                value={minScore}
-                onChange={(e) => setMinScore(Number(e.target.value))}
-              />
+              <QuantityInput min={0} max={1} step={0.05} value={minScore} onValueChange={setMinScore} />
             </Field>
             <Field label="Max matches" annotation="optional">
               <NumberInput
@@ -199,21 +178,22 @@ export function AlignTab({ image, models }: { image: ImageOut; models: ModelOut[
         title={zoomIndex !== null ? `Match ${zoomIndex}` : "Crop"}
       >
         {zoomIndex !== null && mutation.data && (
-          <ZoomPanCanvas
+          <ImageStage
+            image={{ width: mutation.data.width, height: mutation.data.height }}
             view={zoomView}
             onView={setZoomView}
-            nativeWidth={mutation.data.width}
+            toolbar={<StageToolbar />}
             className="h-80 w-full"
-            fitLabel={null}
+            label={`Rectified crop, match ${zoomIndex}`}
           >
             <CropImage
               imageId={image.id}
               modelId={modelId}
               index={zoomIndex}
               alt={`rectified crop, match ${zoomIndex}, zoomed`}
-              className="h-full w-full object-contain"
+              className="h-full w-full"
             />
-          </ZoomPanCanvas>
+          </ImageStage>
         )}
       </Dialog>
     </div>

@@ -6,14 +6,12 @@
     <meta name="color-scheme" content="dark light" />
     <title>visual-metrology-lab</title>
     <script>
-      // Duplicated from @vitavision/lab-ui's theme.ts on purpose — must stay in agreement
+      // Duplicated from @vitavision/ui's theme.ts on purpose — must stay in agreement
       // with it. The class has to be on <html> before first paint, before any module has
       // loaded, or there is a flash of the wrong palette on every load.
       //
       // The key must match `shell/theme.ts`'s LAB_THEME_STORAGE_KEY, which is what the
-      // ThemeToggle writes. It did not: this read "vitavision-theme" while the toggle wrote
-      // "metrology-lab-theme", so a dark-mode user got a light flash on every start and a
-      // reload could come back in the palette they had just changed away from.
+      // ThemeToggle writes; otherwise a dark-mode user gets a light flash on every start.
       (function () {
         try {
           var stored = localStorage.getItem("metrology-lab-theme");

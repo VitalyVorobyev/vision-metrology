@@ -18,22 +18,9 @@ The measurement chain runs end to end on real data: rectify → locate → fixtu
 
 ## Track L: the lab on `@vitavision/*` packages, `in progress`
 
-The lab still depends on the deprecated `@vitavision/lab-ui` compatibility package and is
-its last consumer, which blocks lab-ui's removal ticket (L9-1 in lab-ui's plan). The target
-is `@vitavision/ui`, `stage2d`, `charts` and `workbench` ([ADR-0015](adr/0015-the-lab.md)).
-
-### L2: move to the split packages, `planned`
-- Replace `@vitavision/lab-ui` with `ui ^0.8`, `stage2d ^0.7`, `charts ^0.6.2` and
-  `workbench ^0.1`, with per-package CSS.
-- Port the Align and Bird's-eye views off the deprecated `ZoomPanCanvas` onto `ImageStage`.
-- Adopt `workbench`'s `AppShell` for the shell and the resizable inspector.
-- Use `VectorInput` and `NumberInput unit` for ROI, datum and measurement fields. This fixes
-  the remaining fields that read a cleared input as 0.
-
-**Accept:**
-- `bun.lock` has no `@vitavision/lab-ui`.
-- Contract parity passes on both shells.
-- Every workspace is driven in a browser at three viewport sizes, in both themes.
+The lab is built on `@vitavision/ui`, `stage2d`, `charts` and `workbench`
+([ADR-0015](adr/0015-the-lab.md)). What remains is moving its lab-specific canvas layers and
+shell pieces upstream where a second app needs them, then using the released components.
 
 ### L3: upstream components in lab-ui, `planned`
 These go into lab-ui as one ticket per PR. Each has two consumers (this lab and
