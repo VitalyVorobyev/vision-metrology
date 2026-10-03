@@ -149,6 +149,53 @@ fn convolve_reflect101(signal: &[f32], kernel: &[f32], radius: usize, out: &mut 
     }
 }
 
+/// Convolve a 1-D `f32` signal with a symmetric `f64` kernel, accumulating in `f64`.
+///
+/// The precise counterpart of [`convolve_f32`], for operators whose output is
+/// differenced before it is rounded. `out` is resized to the signal length.
+pub(crate) fn convolve_f64(
+    signal: &[f32],
+    kernel: &[f64],
+    radius: usize,
+    border: BorderMode<f32>,
+    out: &mut Vec<f64>,
+) {
+    debug_assert_eq!(
+        kernel.len(),
+        2 * radius + 1,
+        "kernel len must be 2*radius+1"
+    );
+    let n = signal.len();
+    out.clear();
+    out.resize(n, 0.0);
+    let at = |idx: isize| -> f64 {
+        if (0..n as isize).contains(&idx) {
+            return f64::from(signal[idx as usize]);
+        }
+        match (map_index(idx, n, &border), border) {
+            (Some(j), _) => f64::from(signal[j]),
+            (None, BorderMode::Constant(c)) => f64::from(c),
+            (None, _) => 0.0,
+        }
+    };
+    for (i, out_i) in out.iter_mut().enumerate() {
+        *out_i = if i >= radius && i + radius < n {
+            // The whole footprint is inside: no border lookups.
+            signal[i - radius..=i + radius]
+                .iter()
+                .zip(kernel.iter().rev())
+                .map(|(&v, &k)| f64::from(v) * k)
+                .sum()
+        } else {
+            kernel
+                .iter()
+                .enumerate()
+                .map(|(k, &kv)| at(i as isize + radius as isize - k as isize) * kv)
+                .sum()
+        };
+    }
+}
+
 #[inline]
 fn clamp_index(i: isize, len: usize) -> usize {
     if i < 0 { 0 } else { (i as usize).min(len - 1) }
@@ -158,7 +205,7 @@ fn clamp_index(i: isize, len: usize) -> usize {
 mod tests {
     use crate::core::BorderMode;
 
-    use super::convolve_f32;
+    use super::{convolve_f32, convolve_f64};
 
     #[test]
     fn convolve_matches_expected_identity() {
@@ -167,6 +214,33 @@ mod tests {
         let mut out = vec![0.0f32; signal.len()];
         convolve_f32(&signal, &kernel, 0, BorderMode::Clamp, &mut out);
         assert_eq!(&out, &signal);
+    }
+
+    /// The `f64` convolution is the `f32` one, unrounded: every border mode, signals
+    /// shorter and longer than the kernel.
+    #[test]
+    fn convolve_f64_matches_convolve_f32() {
+        let kernel = [0.1f32, 0.2, 0.4, 0.2, 0.1];
+        let kernel64: Vec<f64> = kernel.iter().map(|&k| f64::from(k)).collect();
+        for n in [1usize, 3, 4, 9] {
+            let signal: Vec<f32> = (0..n).map(|i| (i * i) as f32 * 0.5 + 1.0).collect();
+            for border in [
+                BorderMode::Clamp,
+                BorderMode::Constant(7.0),
+                BorderMode::Reflect101,
+            ] {
+                let mut want = vec![0.0f32; n];
+                convolve_f32(&signal, &kernel, 2, border, &mut want);
+                let mut got = Vec::new();
+                convolve_f64(&signal, &kernel64, 2, border, &mut got);
+                for (g, w) in got.iter().zip(&want) {
+                    assert!(
+                        (g - f64::from(*w)).abs() < 1e-5,
+                        "n={n} {border:?}: {got:?} vs {want:?}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]

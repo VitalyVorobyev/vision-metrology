@@ -38,20 +38,14 @@ them; package gaps the lab runs into are filed as lab-ui issues.
 paired edges (width and centre) and end caps on real and synthetic strips. Its contract is
 a strip (`start`, `end`, `width`, `samples`, `across`) plus an ordered polarity list, and
 the answer is edge distances from `start`. External methods run through a JSONL protocol.
-This track gives vision-metrology:
 
-- textbook methods that reproduce CaliperBench's own baselines (`gradient_parabolic`,
-  `gradient_integer`, `midpoint_crossing`) to within 1e-4 px;
-- a half-contrast method matching its reference edge definition;
-- a Gaussian peak refinement;
-- a runner that speaks the protocol.
-
-No obliquity gate or other non-textbook logic is used by the runner. The design extends
-[ADR-0008](adr/0008-calipers.md).
+The strip, the textbook operators, the level methods and the protocol runner
+(`examples/caliperbench_run.rs`) are in place, and the runner reproduces CaliperBench's
+three baselines row for row ([ADR-0008](adr/0008-calipers.md)). What is left measures
+them and puts them in the lab.
 
 | Step | Content | Accept |
 |---|---|---|
-| M7 | `examples/caliperbench_run.rs` + golden cross-check fixture | ≥ 99.9% identical rows against `caliperbench run` on synth-v1, with every mismatch a listed exact tie |
 | M8 | Accuracy rows on pixel-integrated steps and bars (PSF σ 0–2.5, oblique strips, 8-bit noise) | envelopes pinned and published in `docs/performance.md` |
 | M9 | `diagnostics::explain_model`: per-caliper traces plus the fit in one pass | lab backend and Tauri drop their second measurement pass |
 

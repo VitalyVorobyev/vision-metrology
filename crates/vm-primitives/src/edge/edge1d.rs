@@ -2,7 +2,7 @@ use std::num::NonZeroUsize;
 
 use crate::core::{BorderMode, Pixel};
 
-use super::conv1d::convolve_f32;
+use super::conv1d::{convolve_f32, convolve_f64};
 use super::kernels1d::DoGKernel1D;
 
 /// Subpixel refinement method applied to raw derivative peak positions.
@@ -37,7 +37,9 @@ pub enum Derivative1D {
     /// take central differences `½(s[i+1] − s[i−1])`, one-sided at the two ends.
     ///
     /// This is the textbook "Gaussian, then finite differences" operator (numpy's
-    /// `np.gradient` of a smoothed profile).
+    /// `np.gradient` of a smoothed profile). It smooths and differences in `f64` and
+    /// rounds only the results, so it agrees with a `float64` reference: a broad
+    /// derivative peak divides `f32` rounding by its small curvature.
     SmoothThenCentral {
         /// Half-width of the smoothing kernel, in samples.
         radius: NonZeroUsize,
@@ -105,8 +107,13 @@ pub struct EdgePeak {
 #[derive(Debug, Clone)]
 pub struct Edge1DDetector {
     kernel: DoGKernel1D,
+    /// The `SmoothThenCentral` Gaussian in `f64`, and the `(σ bits, radius)` it was built for.
+    g64: Vec<f64>,
+    g64_key: Option<(u32, usize)>,
     tmp: Vec<f32>,
     smooth: Vec<f32>,
+    /// `SmoothThenCentral`'s smoothed signal before it is rounded to `smooth`.
+    smooth64: Vec<f64>,
     resp: Vec<f32>,
     peaks: Vec<EdgePeak>,
 }
@@ -116,8 +123,11 @@ impl Edge1DDetector {
     pub fn new(sigma: f32) -> Self {
         Self {
             kernel: DoGKernel1D::new(sigma),
+            g64: Vec::new(),
+            g64_key: None,
             tmp: Vec::new(),
             smooth: Vec::new(),
+            smooth64: Vec::new(),
             resp: Vec::new(),
             peaks: Vec::new(),
         }
@@ -184,8 +194,8 @@ impl Edge1DDetector {
     /// the half-width `cfg.derivative` gives (`ceil(3σ)` for
     /// [`DerivativeOfGaussian`](Derivative1D::DerivativeOfGaussian), the explicit radius
     /// for [`SmoothThenCentral`](Derivative1D::SmoothThenCentral)), extended with
-    /// `cfg.border`. For `SmoothThenCentral` this is exactly the signal the central
-    /// differences are taken of. The slice is valid until the next call; it leaves
+    /// `cfg.border`. For `SmoothThenCentral` this is the signal the central differences
+    /// are taken of, rounded to `f32`. The slice is valid until the next call; it leaves
     /// [`response`](Self::response) as it was.
     pub fn smooth_in_ref<'a, P: Pixel>(
         &'a mut self,
@@ -204,22 +214,47 @@ impl Edge1DDetector {
         &self.smooth
     }
 
-    /// Fill `smooth` with `signal` convolved with the Gaussian of `cfg`.
+    /// Fill `smooth` with `signal` convolved with the Gaussian of `cfg`; for
+    /// `SmoothThenCentral`, also `smooth64`, from which `smooth` is rounded.
     fn smooth_into(&mut self, signal: &[f32], cfg: &Edge1DConfig) {
-        let radius = match cfg.derivative {
-            Derivative1D::DerivativeOfGaussian => None,
-            Derivative1D::SmoothThenCentral { radius } => Some(radius.get()),
-        };
-        self.ensure_kernel(cfg.sigma, radius);
-        self.smooth.clear();
-        self.smooth.resize(signal.len(), 0.0);
-        convolve_f32(
-            signal,
-            &self.kernel.g,
-            self.kernel.radius,
-            cfg.border,
-            &mut self.smooth,
-        );
+        match cfg.derivative {
+            Derivative1D::DerivativeOfGaussian => {
+                self.ensure_kernel(cfg.sigma, None);
+                self.smooth.clear();
+                self.smooth.resize(signal.len(), 0.0);
+                convolve_f32(
+                    signal,
+                    &self.kernel.g,
+                    self.kernel.radius,
+                    cfg.border,
+                    &mut self.smooth,
+                );
+            }
+            Derivative1D::SmoothThenCentral { radius } => {
+                let radius = radius.get();
+                self.ensure_gaussian64(cfg.sigma, radius);
+                convolve_f64(signal, &self.g64, radius, cfg.border, &mut self.smooth64);
+                self.smooth.clear();
+                self.smooth.extend(self.smooth64.iter().map(|&v| v as f32));
+            }
+        }
+    }
+
+    /// Build the normalised `f64` Gaussian of `sigma` and `radius` unless it is cached:
+    /// `exp(−½ (x/σ)²)` over `x = −radius..=radius`, divided by its sum.
+    fn ensure_gaussian64(&mut self, sigma: f32, radius: usize) {
+        let key = (sigma.to_bits(), radius);
+        if self.g64_key == Some(key) {
+            return;
+        }
+        let sigma = f64::from(sigma);
+        let r = radius as isize;
+        self.g64.clear();
+        self.g64
+            .extend((-r..=r).map(|x| (-0.5 * (x as f64 / sigma).powi(2)).exp()));
+        let sum: f64 = self.g64.iter().sum();
+        self.g64.iter_mut().for_each(|g| *g /= sum);
+        self.g64_key = Some(key);
     }
 
     /// Fill `resp` with the derivative of `signal` under `cfg`.
@@ -242,7 +277,7 @@ impl Edge1DDetector {
             }
             Derivative1D::SmoothThenCentral { .. } => {
                 self.smooth_into(signal, cfg);
-                central_difference(&self.smooth, &mut self.resp);
+                central_difference_f64(&self.smooth64, &mut self.resp);
             }
         }
     }
@@ -287,17 +322,17 @@ impl Edge1DDetector {
 }
 
 /// `out[i] = ½(s[i+1] − s[i−1])` inside, `s[1] − s[0]` and `s[n−1] − s[n−2]` at the
-/// ends (zero for a single sample).
-fn central_difference(s: &[f32], out: &mut [f32]) {
+/// ends (zero for a single sample), differenced in `f64` and rounded to `f32`.
+fn central_difference_f64(s: &[f64], out: &mut [f32]) {
     let n = s.len();
     match n {
         0 => {}
         1 => out[0] = 0.0,
         _ => {
-            out[0] = s[1] - s[0];
-            out[n - 1] = s[n - 1] - s[n - 2];
+            out[0] = (s[1] - s[0]) as f32;
+            out[n - 1] = (s[n - 1] - s[n - 2]) as f32;
             for i in 1..n - 1 {
-                out[i] = 0.5 * (s[i + 1] - s[i - 1]);
+                out[i] = (0.5 * (s[i + 1] - s[i - 1])) as f32;
             }
         }
     }
@@ -356,8 +391,8 @@ mod tests {
     use std::num::NonZeroUsize;
 
     use super::{
-        Derivative1D, Edge1DConfig, Edge1DDetector, EdgePolarity, SubpixRefine, central_difference,
-        parabola_offset, refine_x,
+        Derivative1D, Edge1DConfig, Edge1DDetector, EdgePolarity, SubpixRefine,
+        central_difference_f64, parabola_offset, refine_x,
     };
     use crate::DoGKernel1D;
     use crate::edge::conv1d::convolve_f32;
@@ -595,22 +630,22 @@ mod tests {
     /// numpy's `np.gradient`: central inside, one-sided first-order at the ends.
     #[test]
     fn central_difference_matches_np_gradient_on_a_ramp() {
-        let s: Vec<f32> = (0..6).map(|i| 2.0 * i as f32 + 1.0).collect();
+        let s: Vec<f64> = (0..6).map(|i| 2.0 * f64::from(i) + 1.0).collect();
         let mut out = vec![0.0f32; 6];
-        central_difference(&s, &mut out);
+        central_difference_f64(&s, &mut out);
         assert_eq!(
             out,
             vec![2.0; 6],
             "a ramp of slope 2 everywhere, ends included"
         );
 
-        let s = [0.0f32, 1.0, 4.0, 9.0];
+        let s = [0.0f64, 1.0, 4.0, 9.0];
         let mut out = vec![0.0f32; 4];
-        central_difference(&s, &mut out);
+        central_difference_f64(&s, &mut out);
         assert_eq!(out, vec![1.0, 2.0, 4.0, 5.0], "np.gradient([0,1,4,9])");
 
         let mut one = vec![7.0f32];
-        central_difference(&[3.0], &mut one);
+        central_difference_f64(&[3.0], &mut one);
         assert_eq!(one, vec![0.0]);
     }
 
@@ -653,6 +688,61 @@ mod tests {
         assert!((peaks[0].x - 2.5).abs() < 1e-6, "x = {}", peaks[0].x);
     }
 
+    /// On a broad, low-contrast step the derivative peak is nearly flat, so the parabola
+    /// divides any rounding of the response by a tiny curvature. Smoothing and
+    /// differencing in `f64` keeps the peak within 2e-6 samples of a `float64` reference;
+    /// the same operator in `f32` is 8e-5 off.
+    #[test]
+    fn smooth_then_central_matches_a_float64_reference_on_a_broad_peak() {
+        let sig: Vec<f32> = (0..41)
+            .map(|i| 0.43 + 0.047 / (1.0 + (-(0.5 * f64::from(i) - 6.3) / 2.2).exp()))
+            .map(|v| v as f32)
+            .collect();
+        let (sigma, r) = (1.0f64, 3usize);
+        // The reference: numpy's edge padding, a normalised Gaussian, np.gradient.
+        let k: Vec<f64> = (-3..=3)
+            .map(|x| (-0.5 * (f64::from(x) / sigma).powi(2)).exp())
+            .collect();
+        let ksum: f64 = k.iter().sum();
+        let n = sig.len();
+        let at = |i: isize| f64::from(sig[i.clamp(0, n as isize - 1) as usize]);
+        let smooth: Vec<f64> = (0..n as isize)
+            .map(|i| {
+                (0..=2 * r)
+                    .map(|j| k[j] / ksum * at(i + j as isize - 3))
+                    .sum()
+            })
+            .collect();
+        let g: Vec<f64> = (0..n)
+            .map(|i| match i {
+                0 => smooth[1] - smooth[0],
+                _ if i == n - 1 => smooth[n - 1] - smooth[n - 2],
+                _ => 0.5 * (smooth[i + 1] - smooth[i - 1]),
+            })
+            .collect();
+        let i = (1..n - 1)
+            .max_by(|&a, &b| g[a].total_cmp(&g[b]))
+            .expect("a peak");
+        let want = i as f64 + 0.5 * (g[i - 1] - g[i + 1]) / (g[i - 1] - 2.0 * g[i] + g[i + 1]);
+
+        let cfg = Edge1DConfig {
+            sigma: 1.0,
+            derivative: Derivative1D::SmoothThenCentral {
+                radius: NonZeroUsize::new(r).expect("nonzero"),
+            },
+            pos_thresh: 1e-4,
+            neg_thresh: 1e-4,
+            ..Edge1DConfig::default()
+        };
+        let peaks = Edge1DDetector::new(1.0).detect_in(&sig, &cfg);
+        assert_eq!(peaks.len(), 1, "{peaks:?}");
+        let got = f64::from(peaks[0].x);
+        assert!(
+            (got - want).abs() < 1e-5,
+            "peak at {got}, the float64 reference at {want}"
+        );
+    }
+
     /// `smooth_in_ref` is the signal `SmoothThenCentral` differentiates, and for the
     /// derivative of Gaussian it uses the same `ceil(3σ)` kernel.
     #[test]
@@ -666,14 +756,25 @@ mod tests {
             ..Edge1DConfig::default()
         };
         let mut det = Edge1DDetector::new(1.0);
-        let smooth = det.smooth_in_ref(&sig, &central).to_vec();
+        let smooth: Vec<f64> = det
+            .smooth_in_ref(&sig, &central)
+            .iter()
+            .map(|&v| f64::from(v))
+            .collect();
         let mut diff = vec![0.0f32; sig.len()];
-        central_difference(&smooth, &mut diff);
+        central_difference_f64(&smooth, &mut diff);
         let _ = det.detect_in_ref(&sig, &central);
-        assert_eq!(det.response(), &diff[..]);
+        let response = det.response().to_vec();
+        // The detector differences the unrounded smoothing: within an `f32` ulp of it.
+        for (i, (&r, &d)) in response.iter().zip(&diff).enumerate() {
+            assert!(
+                (r - d).abs() <= 1e-7,
+                "response[{i}] = {r}, rounded smoothing gives {d}"
+            );
+        }
         // Smoothing does not disturb the response of the last detection.
         let _ = det.smooth_in_ref(&sig, &Edge1DConfig::default());
-        assert_eq!(det.response(), &diff[..]);
+        assert_eq!(det.response(), &response[..]);
 
         let k = DoGKernel1D::new(1.2);
         let mut want = vec![0.0f32; sig.len()];
