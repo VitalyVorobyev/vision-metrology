@@ -155,6 +155,12 @@ The workspace was consolidated from twelve crates into three: `vm-primitives`,
 
 ### Lab
 
+- Find lists its matches in an inventory linked to the canvas: score, position, angle,
+  scale and support, sortable by column. Hovering a row or a match highlights both, a
+  click selects on either side, `↑` / `↓` step, `F` frames the match and `Esc` clears it.
+  The selection is the instance Verify compares. On the desktop, Find runs the same search
+  across every frame; each frame then shows its own matches, and the frame strip and menu
+  mark the frames where the model was not found.
 - Contours on the canvas are `@vitavision/stage2d`'s `PolylineSet`: drawn batched and picked
   through a spatial index, with hover shared with the inventory. Sweeps start from bare
   image, the region or a contour through stage2d's `StageSurface` and `useStageDrag`, and a

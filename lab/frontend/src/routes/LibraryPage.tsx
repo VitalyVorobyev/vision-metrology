@@ -266,7 +266,7 @@ function BatchPanel({
   onPickModel: (id: string) => void;
 }) {
   const backend = getBackend();
-  const { images } = useLab();
+  const { images, setBatch } = useLab();
   const [modelId, setModelId] = useState(models[0] ?? "");
   const [minScore, setMinScore] = useState(0.5);
   const [progress, setProgress] = useState<BatchProgress | null>(null);
@@ -284,7 +284,14 @@ function BatchPanel({
         min_score: minScore,
         max_matches: 1,
       }),
-    onSuccess: () => setProgress(null),
+    onSuccess: (res) => {
+      setProgress(null);
+      // Shared, so Find lists each frame's match and the frame strip marks the misses.
+      setBatch({
+        request: { model_id: modelId, min_score: minScore, max_matches: 1, roi: null, angle_range: null },
+        items: new Map(res.items.map((item) => [item.image_id, item])),
+      });
+    },
   });
 
   const rows = useMemo(() => {

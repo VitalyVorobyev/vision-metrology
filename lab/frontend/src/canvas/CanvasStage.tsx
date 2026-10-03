@@ -48,7 +48,7 @@ import type {
   StagePress,
 } from "@vitavision/stage2d";
 import { Skeleton } from "@vitavision/ui";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 
 import type { ImageOut } from "../api/backend";
@@ -70,6 +70,12 @@ const VERTEX_SCALE = 3;
 /** The most vertices drawn at once; past this the dots are noise and a cost. */
 const MAX_VERTICES = 5000;
 
+/**
+ * How far outside a result's box the pointer still picks it, in screen pixels: enough to
+ * hit a caliper a few pixels wide without hunting for it.
+ */
+const PICK_SLOP = 4;
+
 /** The `preview` tier's long edge (see the backend's media tiers). */
 const PREVIEW_LONG_EDGE = 1024;
 /**
@@ -79,17 +85,38 @@ const PREVIEW_LONG_EDGE = 1024;
 const PIXELATED_ABOVE = 4;
 
 export function CanvasStage({ image }: { image: ImageOut }) {
-  const { view, setView, tool, setTool, layers, setLayer, contourSelection, canvas } = useLab();
-  const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
+  const { view, setView, tool, setTool, layers, setLayer, contourSelection, overlayPicker, canvas } =
+    useLab();
+  const [cursor, setCursor] = useState<Point | null>(null);
+  /** Where the pointer last was over the image: a click on it is a click there. */
+  const pointerRef = useRef<Point | null>(null);
 
   const size = useMemo(
     () => ({ width: image.width, height: image.height }),
     [image.width, image.height],
   );
 
-  const clearSelection = useCallback(() => {
+  /* The results overlay draws without pointer events, so the route's list resolves the
+   * pointer (see `OverlayPicker`); hidden results are not pickable. */
+  const picker = layers.model ? overlayPicker : null;
+  const slop = PICK_SLOP / (view?.scale ?? 1);
+
+  const onHover = useCallback(
+    (point: Point | null) => {
+      setCursor(point);
+      pointerRef.current = point;
+      picker?.onHover(point === null ? null : picker.pick(point, slop));
+    },
+    [picker, slop],
+  );
+
+  /* A click on the image (not a pan) clears the contour selection, and selects the result
+   * under it, or clears that selection on bare image. */
+  const onBackgroundClick = useCallback(() => {
     contourSelection?.onSelect([], "replace");
-  }, [contourSelection]);
+    const point = pointerRef.current;
+    picker?.onSelect(point === null ? null : picker.pick(point, slop));
+  }, [contourSelection, picker, slop]);
 
   return (
     <ImageStage
@@ -101,8 +128,8 @@ export function CanvasStage({ image }: { image: ImageOut }) {
       // A frame opens whole, however small: the first question about a frame is what is on
       // it, not what its pixels look like at 1:1.
       initialView="fit"
-      onHover={setCursor}
-      onBackgroundClick={clearSelection}
+      onHover={onHover}
+      onBackgroundClick={onBackgroundClick}
       // The arrows step the contour inventory in this app (see `routes/teach`), which is a
       // better use of them than a pan that dragging already does.
       panKeys={false}
@@ -128,7 +155,8 @@ export function CanvasStage({ image }: { image: ImageOut }) {
  */
 function Layers({ image }: { image: ImageOut }) {
   const stage = useStage();
-  const { overlay, roi, setRoi, roiMode, contourSelection, frameHandles, layers, tool } = useLab();
+  const { overlay, roi, setRoi, roiMode, contourSelection, overlayPicker, frameHandles, layers, tool } =
+    useLab();
 
   const contours = useContourItems(contourSelection, layers);
   const selected = contourSelection?.selected;
@@ -184,7 +212,11 @@ function Layers({ image }: { image: ImageOut }) {
 
       {/* The bare-image target. It declines any press it has no use for, and a declined
           press reaches the stage, which pans. */}
-      <StageSurface onPress={sweep.onPress} cursor={sweep.cursor} />
+      <StageSurface
+        onPress={sweep.onPress}
+        // A result under the pointer is clickable, and says so.
+        cursor={sweep.cursor ?? (layers.model && overlayPicker?.hovered != null ? "pointer" : undefined)}
+      />
 
       <div className="pointer-events-none absolute inset-0" onPointerDownCapture={offerSweep}>
         {/* Hidden with its layer, except while a box is being drawn: "Redraw" with the layer

@@ -89,6 +89,8 @@ const hoverSpy = vi.fn<(id: number | null) => void>();
 const originSpy = vi.fn<(p: [number, number]) => void>();
 const angleSpy = vi.fn<(radians: number) => void>();
 const roiSpy = vi.fn();
+const pickHoverSpy = vi.fn<(id: string | null) => void>();
+const pickSelectSpy = vi.fn<(id: string | null) => void>();
 /** Hears the lab's handle on the stage, as a panel holds it. */
 const handleSpy = vi.fn<(handle: RefObject<StageHandle | null>) => void>();
 
@@ -100,9 +102,19 @@ interface SeedOptions {
   hovered?: number | null;
   tool?: CanvasTool;
   datum?: boolean;
+  /** A route's results picker: one result, `match-0`, covering x > 600. */
+  picker?: boolean;
 }
 
-function Seed({ contours = false, kept = [0, 1], selected = [], hovered = null, tool = "pan", datum = false }: SeedOptions) {
+function Seed({
+  contours = false,
+  kept = [0, 1],
+  selected = [],
+  hovered = null,
+  tool = "pan",
+  datum = false,
+  picker = false,
+}: SeedOptions) {
   const {
     images,
     selectedImage,
@@ -112,6 +124,7 @@ function Seed({ contours = false, kept = [0, 1], selected = [], hovered = null, 
     setRoiMode,
     setContourSelection,
     setFrameHandles,
+    setOverlayPicker,
     setTool,
     canvas,
   } = useLab();
@@ -145,7 +158,28 @@ function Seed({ contours = false, kept = [0, 1], selected = [], hovered = null, 
       });
     }
     if (datum) setFrameHandles({ origin: [640, 512], angle: 0, onOrigin: originSpy, onAngle: angleSpy });
-  }, [selectedImage, setRoi, setRoiMode, setContourSelection, setFrameHandles, contours, keptKey, selectedKey, hovered, datum]);
+    if (picker) {
+      setOverlayPicker({
+        pick: (point) => (point.x > 600 ? "match-0" : null),
+        hovered: null,
+        onHover: pickHoverSpy,
+        onSelect: pickSelectSpy,
+      });
+    }
+  }, [
+    selectedImage,
+    setRoi,
+    setRoiMode,
+    setContourSelection,
+    setFrameHandles,
+    setOverlayPicker,
+    contours,
+    keptKey,
+    selectedKey,
+    hovered,
+    datum,
+    picker,
+  ]);
   return null;
 }
 
@@ -178,6 +212,8 @@ describe("CanvasStage", () => {
     originSpy.mockReset();
     angleSpy.mockReset();
     roiSpy.mockReset();
+    pickHoverSpy.mockReset();
+    pickSelectSpy.mockReset();
     frames = [IMAGE];
   });
 
@@ -411,6 +447,30 @@ describe("CanvasStage", () => {
     drag(surface, client(1000, 900), { ...client(100, 100) });
     expect(selectSpy).not.toHaveBeenCalled();
     expect(container.querySelector("[data-sweep]")).toBeNull();
+  });
+
+  it("asks the route's picker what result is under the pointer, and selects it on a click", async () => {
+    withViewport({ width: 1200, height: 500 });
+    const { container } = renderCanvas({ picker: true });
+    const viewport = await screen.findByRole("application");
+
+    fireEvent.pointerMove(viewport, { pointerId: 1, ...client(900, 500) });
+    expect(pickHoverSpy).toHaveBeenLastCalledWith("match-0");
+    fireEvent.pointerMove(viewport, { pointerId: 1, ...client(100, 500) });
+    expect(pickHoverSpy).toHaveBeenLastCalledWith(null);
+
+    // A click (a press that does not travel) on bare image selects what is under it…
+    const surface = container.querySelector("[data-stage] [data-stage-surface]")!;
+    fireEvent.pointerMove(viewport, { pointerId: 1, ...client(900, 500) });
+    fireEvent.pointerDown(surface, { button: 0, pointerId: 1, ...client(900, 500) });
+    fireEvent.pointerUp(surface, { button: 0, pointerId: 1, ...client(900, 500) });
+    expect(pickSelectSpy).toHaveBeenLastCalledWith("match-0");
+
+    // …and clears the selection where there is nothing.
+    fireEvent.pointerMove(viewport, { pointerId: 1, ...client(100, 500) });
+    fireEvent.pointerDown(surface, { button: 0, pointerId: 1, ...client(100, 500) });
+    fireEvent.pointerUp(surface, { button: 0, pointerId: 1, ...client(100, 500) });
+    expect(pickSelectSpy).toHaveBeenLastCalledWith(null);
   });
 
   it("drags the datum origin with the pointer, wherever it goes", async () => {

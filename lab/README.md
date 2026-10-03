@@ -38,7 +38,7 @@ platform's app-data directory.
 |---|---|---|
 | Library | — | Open or drop images, or open a whole folder (desktop); browse thumbnails, pick the current frame |
 | Recognize | Teach | Draw a region, inspect the extracted contours, keep or drop them, set the datum (origin and 0° direction), build a shape model |
-| | Find | Search the current frame (or, on desktop, every frame) for the model |
+| | Find | Search the current frame (or, on desktop, every frame) for the model, and work through the matches: score, position, angle, scale and support, sortable and linked to the canvas |
 | | Verify | Compare the model with a found instance, both rectified into the same frame (checker, wipe, difference) |
 | Gauge | Measure | Calipers and fits at the found pose: per-caliper hits, rejection reasons and profiles, in pixels or, with a calibration loaded, millimetres |
 | | Align | Rectify each found part into a fixed-size, canonically oriented crop |
@@ -46,7 +46,9 @@ platform's app-data directory.
 | | Mosaic | Composite calibrated cameras onto their shared plane (browser only for now) |
 
 The header shows the frames as a strip of thumbnails on every screen: click one, or step
-with `[` / `]`. The menu beside it lists every frame by name.
+with `[` / `]`. The menu beside it lists every frame by name. After a search across every
+frame, both mark the frames where the model was not found, and stepping to a frame shows
+its own matches.
 
 **Opening files.** Drop images anywhere on the Library, or use Open files…. The desktop app
 opens them where they are; the browser build uploads a copy.
@@ -67,6 +69,11 @@ opens them where they are; the browser build uploads a copy.
   and selected ones show their points.
 - **Inventory keys (Teach).** `↑` / `↓` step through the inventory, `Space` toggles keep,
   `Delete` drops, `Enter` keeps only the selection, `F` frames it, `Esc` clears it.
+- **Matches (Find).** Hovering a match on the image highlights its row in the list, and the
+  other way round. A click selects one, on the image or in the list; a click on bare image
+  clears it. `↑` / `↓` step through the list in its current order, `F` frames the selected
+  match and `Esc` clears it. Click a column header to sort by it. The selected match is the
+  instance Verify compares.
 - **Coordinates.** Image coordinates name pixel centres, as everywhere in the library.
 
 **Contour picks belong to one extraction.** Contours are numbered by their position in an

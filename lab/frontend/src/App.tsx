@@ -11,7 +11,7 @@
 import { Navigate, Route, Routes } from "react-router";
 
 import { AlignPage, MeasurePage } from "./routes/GaugePage";
-import { FindPage } from "./routes/FindPage";
+import { FindPage } from "./routes/find/FindPage";
 import { LibraryPage } from "./routes/LibraryPage";
 import { MosaicPage, MotionPage } from "./routes/CameraPage";
 import { TeachPage } from "./routes/teach/TeachPage";

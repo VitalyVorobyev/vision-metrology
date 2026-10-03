@@ -35,6 +35,7 @@ import {
   type SortKey,
 } from "../../state/contourInventory";
 import { sameRoi } from "../../canvas/roi";
+import { isTypingTarget } from "../../state/keyboard";
 import { modelOverlay } from "../../overlay/modelOverlay";
 import { RecognizeShell } from "../RecognizeShell";
 import { useLab } from "../../state/LabContext";
@@ -410,10 +411,4 @@ export function TeachPage() {
       </div>
     </RecognizeShell>
   );
-}
-
-function isTypingTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  const tag = target.tagName;
-  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable;
 }
