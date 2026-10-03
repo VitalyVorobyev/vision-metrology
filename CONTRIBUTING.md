@@ -78,6 +78,18 @@ pytest tests/
 - **The accuracy suite pins envelopes** at about 1.5× the measured worst case. A new
   operator adds a row, and its numbers go into
   [`docs/performance.md`](docs/performance.md).
+- **The CaliperBench golden fixture** (`tests/fixtures/caliperbench_golden.json`) holds
+  what CaliperBench's own baselines return on small inline images, and
+  `tests/caliperbench_protocol.rs` checks `examples/caliperbench_run.rs` against it. It is
+  generated, not edited. Regenerate it when CaliperBench's baselines change, with
+  CaliperBench's environment:
+
+  ```bash
+  uv run --directory /path/to/caliperbench python "$PWD/tools/gen_caliperbench_golden.py"
+  ```
+
+  The script refuses a case whose outcome hangs on a near-tie, because `f32` and
+  `float64` could decide it differently.
 - **Doctests are API smoke tests.** The two crate READMEs are the crate-level rustdoc
   (`#![doc = include_str!("../README.md")]`), so their examples compile and run.
 - **Private datasets.** Tests that need one skip with a message when it is absent. The

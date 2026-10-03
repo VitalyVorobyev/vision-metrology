@@ -122,6 +122,7 @@ Runnable programs are in
 | `align_crops` | Teach → find → rectify into canonical model-frame crops |
 | `pose_audit` | Independent ZNCC cross-check of recovered poses, diagnostic overlays |
 | `birdseye_mosaic` | Bird's-eye composite of two calibrated cameras |
+| `caliperbench_run` | Strip calipers over a CaliperBench requests file (its JSONL protocol) |
 
 ```bash
 cargo run -p vision-metrology --example measure_circles

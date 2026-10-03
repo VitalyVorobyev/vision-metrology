@@ -30,8 +30,9 @@ The workspace was consolidated from twelve crates into three: `vm-primitives`,
 - **Scale invariance** (`scale`): `ShapeModel::resample_at`, `estimate_scale_moments`,
   `estimate_scale_logpolar` and `find_scale_invariant`.
 - **1-D edge operators** (`vm-primitives::edge`): `Derivative1D::SmoothThenCentral`
-  (Gaussian, then central differences), `SubpixRefine::Gaussian3` (log-parabola peak
-  fit), `Edge1DDetector::{response, smooth_in_ref}`, and `DoGKernel1D::with_radius`.
+  (Gaussian, then central differences, both in `f64`), `SubpixRefine::Gaussian3`
+  (log-parabola peak fit), `Edge1DDetector::{response, smooth_in_ref}`, and
+  `DoGKernel1D::with_radius`.
 - **Level crossings** (`vm-primitives::edge`): `LevelCrossing1D` with `end_levels`
   (`np.median` of each end), `crossings` (linear interpolation, CaliperBench's equality
   rules) and `half_contrast` (`HalfContrastConfig`, `LevelEdge`, `LevelOutcome`).
@@ -87,7 +88,10 @@ The workspace was consolidated from twelve crates into three: `vm-primitives`,
 - **Python bindings** for every module above except `laser`, plus `uint8`/`uint16`/`float32`
   dispatch, `.pyi` stubs and `py.typed`.
 - **Examples:** `shape_matching`, `inspect_canend`, `measure_circles`, `align_crops`,
-  `pose_audit`, `birdseye_mosaic`.
+  `pose_audit`, `birdseye_mosaic`, and `caliperbench_run`, which runs strip calipers over
+  a CaliperBench requests file through its JSONL protocol. Its `gradient_parabolic`,
+  `gradient_integer` and `midpoint_crossing` methods return the same rows as
+  CaliperBench's baselines (a golden cross-check pins it).
 - **Docs:** guides for shape matching and measurement, and a performance and accuracy page.
 - An accuracy regression suite with pinned envelopes, and benches for matching, measure,
   warp, corr, morph and edge1d.
