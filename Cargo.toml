@@ -26,7 +26,7 @@ todo = "deny"
 
 # Detection runs inside a ~30 ms budget for a whole multi-stage frame analysis,
 # so release builds are tuned for run time rather than compile time. Measured on
-# the match_shape benches before adopting; see docs/system-design.md.
+# the match_shape benches before adopting; see docs/dev/adr/.
 [profile.release]
 lto = "thin"
 codegen-units = 1

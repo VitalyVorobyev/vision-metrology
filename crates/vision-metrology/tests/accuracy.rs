@@ -1,10 +1,10 @@
-//! C1 — accuracy regression suite (`docs/roadmap.md`).
+//! C1 — accuracy regression suite (`docs/dev/roadmap.md`).
 //!
 //! Performance has benches; accuracy did not have a comparable harness before
 //! this file. Each row below sweeps a synthetic fixture with a known
 //! subpixel/geometric ground truth — antialiased via an analytic Gaussian-CDF
 //! edge profile, per the `tests-synthetic-fixtures` skill — across the
-//! sweep in `docs/roadmap.md`'s C1 table, and reports the *worst* bias and
+//! sweep in each row's fixture, and reports the *worst* bias and
 //! standard deviation found anywhere in the grid. Envelopes were measured
 //! once (2026-08-20, with `-- --nocapture` added to the usual `cargo test`
 //! invocation to see each row's numbers) and pinned at roughly 1.5x that
@@ -570,12 +570,11 @@ fn shape_matcher_rotation_sweep() -> Measured {
     Measured { bias, sigma }
 }
 
-// ── ShapeMatcher: scale sweep (roadmap C1 / warp-wave decision 9) ─────────
+// ── ShapeMatcher: scale sweep ──────────────────────────────────────────────
 //
-// The matcher's scale search is a discrete scan (roadmap plan, decision 9):
-// the plan's working hypothesis was that it degrades well before the edges
-// of a wide `scale_range`, and this sweep exists to measure that honestly
-// rather than assume it. It deliberately does not touch any matching code —
+// The matcher's scale search is a discrete scan. The working hypothesis is
+// that it degrades well before the edges of a wide `scale_range`, and this
+// sweep exists to measure that honestly rather than assume it. It deliberately does not touch any matching code —
 // only measures it.
 //
 // The model is taught at scale 1.0 with `scale_range = (0.45, 2.1)`; scenes
@@ -591,7 +590,7 @@ fn shape_matcher_rotation_sweep() -> Measured {
 // match what is searched. Scale bias stays under 0.15% and position bias
 // under 0.03 px across the whole 0.5-2.0x range; see the full per-scale
 // table in `BASELINE_FOUND_RATE`'s and the two envelope rows' comments. This
-// does not contradict the plan's field data (canend, which is noisy and
+// does not contradict the canend field data (which is noisy and
 // cluttered) or its degradation hypothesis for a model taught at the
 // *default* `scale_range = (1.0, 1.0)` — it isolates one variable: given a
 // correctly-configured model, the discrete scan itself is not the bottleneck
@@ -663,16 +662,16 @@ const SCALE_ROTATIONS_DEG: [f32; 3] = [0.0, 120.0, 240.0];
 /// | 2.0000 | 3/3   |  0.0006    | 0.0003       | 0.0131          | 0.0003            |
 ///
 /// Found every trial at every scale — see the module-level comment above
-/// for why that does not contradict the plan's field-data hypothesis. The
+/// for why that does not contradict the field-data hypothesis. The
 /// offset-collapse at `scale < 1` this table's own worst cells hint at
 /// (`0.5000`'s pos sigma is the row's largest) was investigated as a fix
-/// (roadmap W7, decision 9g) and **deliberately left unfixed**: every dedup
+/// and **deliberately left unfixed**: every dedup
 /// design tried was measured either too expensive (+35% on
 /// `shape_find_1280x1024_scale_0p8_1p25`) or, once cheap enough, a real
 /// correctness regression worse than the inflation it aimed to fix (up to
 /// 0.46 px position error from a search/report scoring mismatch) — see
-/// `matching::score::score_pose`'s own doc and `docs/system-design.md`'s W7
-/// entry for the full account of what was tried and why each was rejected.
+/// `matching::score::score_pose`'s own doc and the scale-invariance ADR in
+/// `docs/dev/adr/` for the full account of what was tried and why each was rejected.
 const BASELINE_FOUND_RATE: [f32; N_SCALES] = [1.0; N_SCALES];
 
 struct ScaleCell {
@@ -773,12 +772,12 @@ fn shape_matcher_scale_position_sweep() -> Measured {
     )
 }
 
-// ── estimate-then-verify (roadmap W7, `vision_metrology::scale`) ──────────
+// ── estimate-then-verify (`vision_metrology::scale`) ──────────────────────
 //
 // The scan rows above measure a *wide* discrete scale scan against a model
 // deliberately taught with a wide `scale_range = (0.45, 2.1)` — necessary
-// for that scan to find anything at all away from 1.0. The wave's actual
-// point is the other half of the plan's motivation: (a) search *cost*
+// for that scan to find anything at all away from 1.0. Estimate-then-verify
+// addresses the other half of the problem: (a) search *cost*
 // across a wide range is linear in how wide it is, and (b) a model taught
 // with the *default*, narrow `scale_range = (1, 1)` cannot be found by a
 // scan at all away from 1.0, however wide the search config asks for — the
@@ -786,7 +785,7 @@ fn shape_matcher_scale_position_sweep() -> Measured {
 // `find_scale_invariant` (moments hint) is run over the identical 12-scale
 // x 3-rotation grid, on a model taught with the *default* `scale_range`,
 // so this is an apples-to-apples comparison against `BASELINE_FOUND_RATE`
-// with the harder starting point the plan's motivation (b) describes.
+// with the harder starting point (b) describes.
 
 fn estimate_verify_roi() -> Rect2f {
     // Generous relative to `l_shape_roi()`: must bound the object at every
@@ -818,9 +817,8 @@ fn estimate_verify_cfg() -> ScaleInvariantConfig {
 /// *default* `scale_range = (1, 1)` (motivation (b) above) and every scale
 /// is recovered via `find_scale_invariant`'s moments hint rather than a
 /// scan. Asserts the found-rate regression guard exactly like
-/// `scale_sweep_cells` — same [`BASELINE_FOUND_RATE`] array, per the wave's
-/// own acceptance criterion ("found-rate must be >= existing scan
-/// found-rate").
+/// `scale_sweep_cells` — same [`BASELINE_FOUND_RATE`] array: the found-rate
+/// must be >= the existing scan's.
 fn estimate_verify_sweep_cells() -> Vec<ScaleCell> {
     let model = build_l_shape_model(); // default scale_range (1.0, 1.0)
     let cfg = estimate_verify_cfg();
@@ -872,8 +870,8 @@ fn estimate_verify_sweep_cells() -> Vec<ScaleCell> {
             assert!(
                 found_rate + 1e-6 >= BASELINE_FOUND_RATE[i],
                 "estimate-then-verify regression at scale idx {i} (s={s:.4}): found_rate \
-                 {found_rate:.2} dropped below the scan baseline {:.2} — the wave's own accept \
-                 criterion is found-rate >= the existing scan row",
+                 {found_rate:.2} dropped below the scan baseline {:.2} — the found-rate must \
+                 stay >= the existing scan row",
                 BASELINE_FOUND_RATE[i]
             );
             ScaleCell {
@@ -892,18 +890,18 @@ fn estimate_verify_position_sweep() -> Measured {
     Measured::worst_of(estimate_verify_sweep_cells().iter().map(|c| c.pos_stat))
 }
 
-/// Cost comparison (roadmap W7 accept criterion): the wide discrete scan
+/// Cost comparison: the wide discrete scan
 /// (baseline model, `scale_range` unrestricted — the full model range is
 /// searched) vs. estimate-then-verify (default-taught model,
 /// `find_scale_invariant`), timed on the identical scene. Not a strict
 /// gate on absolute numbers (wall-clock varies by machine) — the assertion
-/// is the qualitative claim the whole wave rests on: estimate+verify is not
+/// is the qualitative claim estimate-then-verify rests on: it is not
 /// slower than a wide scan, and doesn't scale up with how wide a range
 /// *would* have needed to be scanned. Numbers are recorded regardless, same
 /// discipline as every other row in this suite. Measured 2026-08-20 (M4
 /// Pro, one scene at true scale 1.6, 5 trials each): wide scan 1622 ms,
 /// estimate+verify 745 ms — **2.18x**. The gap is a lower bound on the
-/// wave's real saving: the scan's cost is roughly linear in the number of
+/// real saving: the scan's cost is roughly linear in the number of
 /// scale steps swept (`scale_range` width / `scale_step`), so a wider
 /// `scale_range` widens the scan further while estimate+verify's cost stays
 /// fixed (one estimate + one narrow-band search, regardless of how far the
@@ -969,7 +967,7 @@ fn scale_estimate_vs_scan_cost() {
     );
 }
 
-// ── ShapeMatch::model_frame_map repeatability (roadmap C1 / rectify wave) ──
+// ── ShapeMatch::model_frame_map repeatability ─────────────────────────────
 //
 // The number that decides anomaly-pipeline viability: rectify the same
 // object, found independently at K slightly different subpixel poses, and
@@ -1094,7 +1092,7 @@ fn rectify_repeatability_sweep() -> Measured {
     }
 }
 
-// ── corr::displacement (corr wave, C1: quadratic-only vs +Lucas-Kanade) ───
+// ── corr::displacement (quadratic-only vs +Lucas-Kanade) ──────────────────
 //
 // `corr::displacement` is two-stage: corrmatch's own ZNCC search with its
 // quadratic-peak subpixel refinement (`Refine::None`), optionally followed
@@ -1102,8 +1100,8 @@ fn rectify_repeatability_sweep() -> Measured {
 // implemented in this crate (`Refine::LucasKanade`). A quadratic fit to a
 // discrete correlation surface is known to bias toward integer pixel
 // positions ("pixel-locking"); this sweep quantifies that bias directly by
-// comparing the two rows below, and is the headline number for the corr
-// wave. The fixture is a value-noise texture evaluated *continuously*, not
+// comparing the two rows below, and is the headline number for `corr`.
+// The fixture is a value-noise texture evaluated *continuously*, not
 // rendered once and shifted (which would itself alias), so
 // `curr(x, y) = texture(x - dx, y - dy)` makes every fractional-pixel
 // ground truth exact.
@@ -1169,8 +1167,8 @@ fn corr_frame(dx: f32, dy: f32, lsb: f32, trial: u64) -> Image<u8> {
     Image::from_vec(CORR_IMG, CORR_IMG, data).expect("valid image")
 }
 
-/// Sweeps a 10x10 grid of `(dx, dy)` in `0.0..=0.9` px (both axes, roadmap
-/// C1 spec) at two noise levels, `refine` fixed, and returns the worst
+/// Sweeps a 10x10 grid of `(dx, dy)` in `0.0..=0.9` px (both axes) at two
+/// noise levels, `refine` fixed, and returns the worst
 /// cell's bias/sigma — `x` and `y` errors pooled into the same cell, same
 /// treatment `edge2d_sweep` gives its edgel errors.
 fn displacement_sweep(refine: Refine) -> Measured {
@@ -1249,15 +1247,14 @@ struct Row {
 /// | displacement_quadratic (px)          | 0.0239              | 0.0164           | 0.04            | 0.025             |
 /// | displacement_lk (px)                 | 0.0204              | 0.0141           | 0.035           | 0.022             |
 ///
-/// Rows 5-6 are the C1 scale sweep (roadmap Track C1 / warp-wave decision
-/// 9): 12 true scales geometrically spaced 0.5..2.0x, 3 rotations each,
+/// Rows 5-6 are the C1 scale sweep: 12 true scales geometrically spaced 0.5..2.0x, 3 rotations each,
 /// model taught at scale 1.0 with `scale_range = (0.45, 2.1)`. Every scale
 /// found every rotation (100% found-rate — see `BASELINE_FOUND_RATE`'s full
 /// per-scale table, which is also the found-rate regression guard), so
 /// unlike every other row here the envelope covers the *entire* swept range,
 /// not just a well-behaved sub-range.
 ///
-/// The last row is the rectify-wave C1 addition: `ShapeMatch::model_frame_map`
+/// The next row is `ShapeMatch::model_frame_map`
 /// repeatability, in 8-bit grayscale intensity units (not pixels — see the
 /// module comment above `RECTIFY_K`). This is the number that decides
 /// anomaly-pipeline viability — under 1% of full 8-bit range (bias 0.88/255,
@@ -1265,7 +1262,7 @@ struct Row {
 /// downstream anomaly model's own noise floor should dominate over
 /// rectification noise.
 ///
-/// The last two rows are the corr wave's headline: `corr::displacement` on
+/// The last two rows are `corr`'s headline: `corr::displacement` on
 /// the same `(dx, dy)` grid, `Refine::None` vs `Refine::LucasKanade`. Both
 /// rows report the *worst* of 200 cells (10x10 sub-pixel offsets x 2 noise
 /// levels), so the gap between them understates the pixel-locking effect at
@@ -1333,7 +1330,7 @@ const ROWS: &[Row] = &[
         // scales found every trial — see `BASELINE_FOUND_RATE`'s table):
         // |bias| 0.0014, sigma 0.0003. The offset-collapse at scale < 1
         // this row's own worst cells reflect was investigated as a fix
-        // (roadmap W7, decision 9g) and deliberately left unfixed after
+        // and deliberately left unfixed after
         // every design tried measured worse than the status quo — see
         // `BASELINE_FOUND_RATE`'s doc comment and `score_pose`'s own.
         // ~2x the measurement, rounded.
@@ -1350,7 +1347,7 @@ const ROWS: &[Row] = &[
         sigma_envelope: 0.01,
     },
     Row {
-        // Roadmap W7: estimate-then-verify on a model taught with the
+        // Estimate-then-verify on a model taught with the
         // *default* scale_range (motivation (b) — see the module comment
         // above `estimate_verify_sweep_cells`). Measured: |bias| 0.0014,
         // sigma 0.0003 — identical to the scan row above at every one of
@@ -1371,7 +1368,7 @@ const ROWS: &[Row] = &[
         sigma_envelope: 0.01,
     },
     Row {
-        // Rectify wave, roadmap C1: intensity units (8-bit grayscale), see
+        // Intensity units (8-bit grayscale), see
         // the module comment above `RECTIFY_K` for what bias/sigma mean here
         // and why. Measured 2026-08-20: bias 0.8775, sigma 1.6883. ~1.5x,
         // rounded.
@@ -1381,7 +1378,7 @@ const ROWS: &[Row] = &[
         sigma_envelope: 2.5,
     },
     Row {
-        // corr wave headline number (see the doc comment above
+        // `corr` headline number (see the doc comment above
         // `displacement_sweep`): measured worst cell bias 0.0239, sigma
         // 0.0164. ~1.5x that measurement, rounded.
         name: "displacement_quadratic",

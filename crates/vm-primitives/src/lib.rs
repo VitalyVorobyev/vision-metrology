@@ -1,27 +1,4 @@
-//! Low-level building blocks for vision metrology.
-//!
-//! `vm-primitives` bundles four foundational layers:
-//!
-//! | Module  | Content |
-//! |---------|---------|
-//! | [`core`]  | Image views, sampling, border modes, geometry + nalgebra type aliases |
-//! | [`pyr`]   | 2×2 mean image pyramid, generic over pixel type, optional anti-alias pre-smooth |
-//! | [`edge`]  | 1-D/2-D subpixel edge (DoG / Scharr) detection, edgels, edge-pairs, dense direction fields |
-//! | [`morph`] | Binary morphology, chamfer distance transform, Zhang-Suen thinning |
-//!
-//! ## Coordinate convention
-//! Integer coordinates refer to **pixel centers**: pixel at index `i` is
-//! located at position `i` (not `i + 0.5`).
-//!
-//! ## Quick start
-//! ```no_run
-//! use vm_primitives::{Image, Edge2DConfig, Edge2DDetector};
-//!
-//! let img: Image<u8> = Image::from_vec(640, 480, vec![0u8; 640 * 480]).unwrap();
-//! let mut det = Edge2DDetector::new();
-//! let edgels = det.detect(&img.as_view(), &Edge2DConfig::default());
-//! println!("{} edgels found", edgels.len());
-//! ```
+#![doc = include_str!("../README.md")]
 
 pub mod core;
 pub mod edge;

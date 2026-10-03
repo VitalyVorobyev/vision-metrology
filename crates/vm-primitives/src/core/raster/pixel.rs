@@ -1,10 +1,9 @@
 //! The scalar pixel types this library reads.
 //!
-//! Every detector used to expose one entry point per pixel type — `detect_u8`,
-//! `detect_u16`, `detect_f32` — which triplicated the public surface, the docs
-//! and the tests, and still did not extend to a fourth type. [`Pixel`] collapses
-//! those into a single generic entry point per algorithm. Monomorphisation emits
-//! the same specialised code the hand-written triplets did.
+//! [`Pixel`] gives each algorithm a single generic entry point instead of one
+//! per pixel type (`detect_u8`, `detect_u16`, `detect_f32`), which would
+//! triplicate the public surface, the docs and the tests. Monomorphisation emits
+//! a specialised copy per type.
 //!
 //! The trait is **sealed**: only `u8`, `u16` and `f32` implement it, and only
 //! this crate can add more. That keeps adding a pixel type a non-breaking
@@ -84,7 +83,8 @@ pub trait Pixel: sealed::Sealed + Copy + Default + PartialOrd + core::fmt::Debug
     ///
     /// Integer types round half-up (`(sum + 2) / 4`); `f32` scales by `0.25`.
     /// This is the 2×2 box-mean kernel the pyramid is built from, so its exact
-    /// arithmetic is load-bearing — see system-design invariants 2 and 3.
+    /// arithmetic is load-bearing.
+    // Invariants 2 and 3.
     fn acc_mean4(a: Self::Acc) -> Self;
 }
 

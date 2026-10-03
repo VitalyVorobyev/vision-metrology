@@ -115,12 +115,12 @@ impl ShapeModelBuilder {
         }
     }
 
+    // Invariant 3.
     /// Build a model from a reference image of any [`Pixel`] type and a
     /// rectangular ROI.
     ///
-    /// The ROI's own pyramid is what the model points are detected on — see
-    /// system-design invariant 3: model and scene must suffer identical
-    /// box-downsample aliasing.
+    /// The ROI's own pyramid is what the model points are detected on: model
+    /// and scene must suffer identical box-downsample aliasing.
     ///
     /// # Errors
     /// - [`Error::InvalidConfig`] for a non-positive ROI, a reversed or

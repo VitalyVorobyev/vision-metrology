@@ -855,7 +855,7 @@ fn a_persisted_model_matches_identically() {
     assert!(ShapeModel::from_bytes(b"not a model at all").is_err());
 }
 
-/// Format 4 (roadmap W7) added `teach_points` — the pre-decimation level-0
+/// Format 4 added `teach_points` — the pre-decimation level-0
 /// edge set `resample_at` needs. A format-3 document (no such field) must
 /// still load, bit-identically for everything `resample_at` does not touch,
 /// with `resample_at` itself reporting a clear error rather than resampling

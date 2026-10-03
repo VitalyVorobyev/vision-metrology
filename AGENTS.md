@@ -1,106 +1,42 @@
 # AGENTS.md
 
-Guidance for coding agents working in `vision-metrology`. This repo implements high-precision, high-performance image processing for industrial metrology:
+Guidance for coding agents in `vision-metrology`, a Rust library (with Python bindings and
+a lab app) for high-precision industrial metrology.
 
-**Before changing anything, read the three persistent-context documents:**
-[`docs/system-design.md`](docs/system-design.md) (architecture, invariants, decisions and
-why), [`docs/roadmap.md`](docs/roadmap.md) (current tracks and acceptance criteria), and
-[`docs/backlog.md`](docs/backlog.md) (known debt). They are the project's long-term memory
-across sessions — trust them over reconstructing state from git history.
+## Read first
 
-- Morphology
-- 1D/2D subpixel edges
-- Laser stripe extraction (edge-pair method)
-- Subpixel contours with junctions (T/Y)
+1. [`docs/dev/system-design.md`](docs/dev/system-design.md): layering, the numbered
+   invariants, and the ADR index ([`docs/dev/adr/`](docs/dev/adr)).
+2. [`docs/dev/roadmap.md`](docs/dev/roadmap.md): the open tracks and their acceptance
+   criteria.
+3. [`docs/dev/backlog.md`](docs/dev/backlog.md): known debt.
+4. [`CONTRIBUTING.md`](CONTRIBUTING.md): the gates, tests, benchmarks, Python workflow and
+   documentation rules.
 
-## Project layout
+Trust these over reconstructing state from git history.
 
-Three publishable crates, strict one-way dependencies:
+## Rules
 
-```
-vm-primitives  ──►  vision-metrology  ──►  vm-python
-(low-level)         (domain algorithms)    (PyO3 bindings)
-```
+- **Run the CONTRIBUTING gates before every commit.** If a hot path changed, also run the
+  affected benches.
+- **Invariants are design constraints.** Breaking one needs an ADR change first.
+- **Parity in the same PR.** New public Rust API ships its vm-python binding, `.pyi` stub
+  and a Python test together (invariant 15). Lab-facing API changes also update the Tauri
+  command and the contract fixtures.
+- **Docs move with the code.** A change to scope or decisions updates `docs/dev/` in the
+  same PR, rewriting the affected entry rather than appending. Finished roadmap items move
+  to `CHANGELOG.md` `[Unreleased]`.
+- **Keep the audiences apart.** User-facing docs and rustdoc carry no plan labels, PR
+  numbers or history.
+- **Scoped commits; never revert unrelated changes.**
+- **Shared UI goes upstream.** It lives in the `@vitavision/*` packages (the `lab-ui`
+  repository). A component that a second app needs goes there, not into `lab/`.
 
-**The module table in [`docs/system-design.md`](docs/system-design.md#layering) is the
-canonical map** — what each module contains, and which crate it lives in. It is kept in one
-place on purpose: four separate copies of it drifted, and each still named a `shape` module
-two waves after it was renamed to `lsd`. Read it there rather than trusting a summary here.
+## Skills
 
-## Invariants and conventions
-- Pixel coordinate convention: **pixel centers** (`i` means coordinate `i as f32`).
-- Rust-native only; no OpenCV/FFI.
-- Keep hot paths allocation-free per scan/row when possible.
-- Unsafe is allowed only for small, justified performance-critical blocks.
-- Default border behavior in core/edge is `Clamp` unless explicitly configured otherwise.
-
-## Performance expectations
-- Rows scanning should be the fastest path.
-- Column scanning should use reusable gather buffers (or transposed mode if provided).
-- Reuse detector/extractor scratch buffers across calls.
-
-## Style (minimal)
-
-- Keep public APIs small and explicit.
-- Document coordinate conventions and border/ROI rules in crate docs.
-- Prefer deterministic tests (synthetic fixtures) over “random noise” unless seeded.
-
-## Typical tasks
-
-### 1) Add/modify APIs
-- Update crate-level docs.
-- Add unit tests for behavior and edge cases.
-- Keep umbrella re-exports (`crates/vision-metrology`) up to date.
-
-### 2) Add fast path
-- Implement safe fallback first.
-- Add narrow unsafe path with clear safety comments.
-- Validate equivalent output with tests.
-
-### 3) Tracking/extraction changes
-- Preserve bright-on-dark edge-pair selection unless explicitly changed.
-- Keep continuity/gap logic deterministic.
-- Ensure invalid samples are still emitted in `LaserLine.samples`.
-
-## Required quality checks before commit
-
-The gate commands, the CI job table, and the MSRV rationale live in
-[`CONTRIBUTING.md`](CONTRIBUTING.md#quality-gates) — one copy, so they cannot disagree. The
-short version, run from the workspace root:
-
-```bash
-cargo fmt --all
-cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo test --workspace --all-features
-RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps
-python3 tools/check-invariants.py
-```
-
-If performance-sensitive code changed, also run the affected bench crate(s)
-(`cargo bench -p vm-primitives`, `cargo bench -p vision-metrology`); see CONTRIBUTING for the
-per-bench list.
-
-## Commit checklist
-- Keep commits scoped and descriptive.
-- Do not revert unrelated user changes.
-- Update `README.md` when crate scope, commands, or benchmark reporting changes.
-- If behavior changes, include/adjust tests in the same commit.
-- If the change alters scope, decisions, or invariants, update `docs/roadmap.md`,
-  `docs/backlog.md`, and/or `docs/system-design.md` in the same commit — **rewriting** the
-  affected entry, not appending a second one that contradicts it.
-- Completed work moves out of `docs/roadmap.md` into `CHANGELOG.md`'s `[Unreleased]`
-  section. The roadmap describes what is *ahead*.
-- Invariant numbers in `docs/system-design.md` are append-only and are cited by number from
-  source files; `tools/check-invariants.py` enforces that.
-- If the change adds public Rust API, update `vm-python` bindings and a Python test in
-  the same PR.
-
-## Quick command reference
-```bash
-cargo test -p vm-primitives
-cargo test -p vision-metrology
-cargo bench -p vision-metrology --bench match_shape
-python3 tools/check-invariants.py
-```
-
-The full bench list is in [`CONTRIBUTING.md`](CONTRIBUTING.md#benchmarks).
+Task-specific guidance is in `.claude/skills/`. `.agents/skills` links to it.
+- `metrology-invariants`: coordinate and subpixel conventions.
+- `tests-synthetic-fixtures`: fixtures with known ground truth.
+- `hotpath-rust` and `criterion-bench`: performance work.
+- `api-shaping`: public API changes.
+- `laser-extract`: the `laser` module.

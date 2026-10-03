@@ -1,8 +1,7 @@
 ---
-
 name: api-shaping
 description: Use this when designing or refactoring public APIs across the workspace crates. Keeps APIs small, explicit, and stable while allowing fast internals.
----------------------------------------------------------------------------------------------------------------------------------------------------------
+---
 
 # API shaping (lightweight)
 

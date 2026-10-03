@@ -1,4 +1,4 @@
-//! Rectify-first 3-D acceptance (roadmap B5, plan decision 10).
+//! Rectify-first 3-D acceptance (the `metric` module).
 //!
 //! A planar, distinctively-shaped target is imaged through a **calibrated,
 //! tilted** camera (pinhole + Brown-Conrady, tilt `0..=40°`), using the
@@ -13,8 +13,7 @@
 //! Each tilted raw image is then **rectified** back to the plane grid with
 //! [`plane_grid_map`] + [`Map::apply_with_mask`]. A [`ShapeModel`] taught on
 //! the 0° rectified image is searched for in every tilt's rectified image.
-//! If rectify-first genuinely closes the planar 3-D case (roadmap decision
-//! 10), the model must be found at every tilt, at (near enough) the same
+//! If rectify-first genuinely closes the planar 3-D case, the model must be found at every tilt, at (near enough) the same
 //! grid position — proving that a fronto-parallel rectification turns an
 //! out-of-plane pose into an in-plane 2-D similarity problem, which is what
 //! the rest of this crate already solves well.
@@ -38,8 +37,8 @@
 //! anything rectify-specific. This is the number that answers "does
 //! rectify-first close the planar 3-D case": yes, to well under a hundredth
 //! of a pixel, for a target imaged up to 40° off fronto-parallel. It also
-//! quantifies how little is left for homography refinement (roadmap
-//! decision 10, next session) to buy on a genuinely planar target — its
+//! quantifies how little is left for homography refinement to buy on a
+//! genuinely planar target — its
 //! value is for the *non*-planar case this test does not (and cannot)
 //! exercise.
 

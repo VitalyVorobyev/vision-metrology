@@ -1,55 +1,4 @@
-//! Industrial machine-vision metrology library.
-//!
-//! `vision-metrology` provides a complete pipeline for high-precision image
-//! analysis in industrial settings. It builds on [`vm_primitives`], which it
-//! re-exports in full, so this is the only dependency you need.
-//!
-//! ## Modules
-//!
-//! | Module        | Content |
-//! |---------------|---------|
-//! | [`contour`]   | Junction-aware contour graph extraction from 2D edgels |
-//! | [`corr`]      | Cross-correlation matching (corrmatch) and inter-frame subpixel displacement |
-//! | [`fit`]       | Robust line / circle / ellipse fitting with reported residuals |
-//! | [`laser`]     | Laser stripe extraction using opposite-polarity edge pairs |
-//! | [`lsd`]       | LSD line-segment detection |
-//! | [`matching`]  | Shape-based object detection: gradient-orientation model matching |
-//! | [`measure`]   | Calipers and metrology models — measuring a located part |
-//! | [`metric`]    | The calibration bridge: pixel ↔ millimetre via a mirrored camera model |
-//! | [`scale`]     | Scale estimation for `matching`: estimate once, resample, verify narrow |
-//! | [`segment`]   | Otsu / adaptive threshold, CCL, watershed, region growing |
-//! | [`warp`]      | Image warping: build a `dst → src` map once, apply per frame |
-//!
-//! ## Features
-//!
-//! Every domain module is opt-in, so a build compiles only what it uses. All
-//! are on by default:
-//!
-//! ```toml
-//! vision-metrology = { version = "0.2", default-features = false,
-//!                      features = ["matching", "lsd"] }
-//! ```
-//!
-//! | Feature | Module | Implies |
-//! |---|---|---|
-//! | `contour` | [`contour`] | — |
-//! | `corr` | [`corr`] | — |
-//! | `fit` | [`fit`] | — |
-//! | `laser` | [`laser`] | — |
-//! | `lsd` | [`lsd`] | — |
-//! | `matching` | [`matching`] | `warp` (`ShapeMatch` rectifies into a canonical crop) |
-//! | `measure` | [`measure`] | `fit` (measured points are fitted) |
-//! | `metric` | [`metric`] | `warp` (`plane_grid_map`/`undistort_map` build a `warp::Map`) |
-//! | `scale` | [`scale`] | `corr`, `matching`, `segment`, `warp` |
-//! | `segment` | [`segment`] | `contour` (region growing consumes a `ContourGraph`) |
-//! | `warp` | [`warp`] | — |
-//! | `serde` | `ShapeModel` persistence | `matching` |
-//!
-//! ## Importing
-//!
-//! `use vision_metrology::prelude::*;` brings in the working set, including
-//! `vm_primitives`' own prelude — one dependency is enough. The full lower
-//! crate is reachable as [`vm_primitives`] for anything outside that set.
+#![doc = include_str!("../README.md")]
 
 #[cfg(feature = "contour")]
 pub mod contour;
@@ -84,7 +33,8 @@ pub use vm_primitives;
 ///
 /// Each group follows its module's feature gate, so the prelude shrinks with
 /// the build rather than failing it. Everything here is also reachable at its
-/// module path — the prelude is a convenience, not a second API (invariant 17).
+/// module path — the prelude is a convenience, not a second API.
+// Invariant 17.
 pub mod prelude {
     pub use vm_primitives::prelude::*;
 

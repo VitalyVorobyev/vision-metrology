@@ -5,15 +5,15 @@
 //!        teach the nozzle          locate it per frame        canonical dst -> src map      the rectified crop
 //! ```
 //!
-//! This is the seam `matching` (decision 3, roadmap rectify wave) exists for:
+//! This is the seam `matching::crop` exists for:
 //! a found pose is only useful downstream — a caliper, a variation model, an
 //! anomaly detector — once it has been turned into pixels that line up frame
 //! to frame. `CropSpec` fixes the output tensor shape once, at teach time, so
 //! every frame's rectified crop is directly comparable pixel-for-pixel.
 //!
 //! The dataset (`data/42781`) has no calibration and three cameras glued
-//! vertically into one 320x291 frame (~97 rows per strip, roadmap plan's
-//! recon note) — this example picks one strip and teaches the glue nozzle's
+//! vertically into one 320x291 frame (~97 rows per strip) — this example
+//! picks one strip and teaches the glue nozzle's
 //! dome, which has real edges and moves frame to frame as the rig runs.
 //!
 //! Self-asserting: exits non-zero if the found-rate or mean crop validity

@@ -22,8 +22,8 @@
 //!   --roi 420,350,420,320 --rim-radius 367 --tolerance 1.5
 //! ```
 //!
-//! Units are **pixels**. Millimetres arrive with the `metric` module
-//! (roadmap B5), which converts a fitted primitive through a calibration.
+//! Units are **pixels**. The `metric` module converts a fitted primitive to
+//! millimetres through a calibration.
 
 use std::num::NonZeroUsize;
 

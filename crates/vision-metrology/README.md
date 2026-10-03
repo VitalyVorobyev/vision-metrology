@@ -1,12 +1,16 @@
 # vision-metrology
 
-High-level algorithms for industrial machine-vision metrology: shape-based object
-detection, calipers and robust primitive fitting, contour topology, laser stripe
-extraction, segmentation, image warping, and the pixel → millimetre calibration
-bridge. Pure Rust — no OpenCV, no FFI.
+Algorithms for industrial machine-vision metrology:
+- shape-based object detection;
+- calipers and robust primitive fitting;
+- the pixel → millimetre calibration bridge;
+- image warping, cross-correlation and displacement;
+- contour topology, laser stripe extraction, segmentation and line segments.
 
-This crate re-exports [`vm-primitives`](../vm-primitives) in full, so it is the only
-dependency you need.
+Pure Rust: no OpenCV, no FFI.
+
+The crate re-exports [`vm-primitives`](https://github.com/VitalyVorobyev/vision-metrology/tree/main/crates/vm-primitives),
+so it is the only dependency you need.
 
 ```toml
 [dependencies]
@@ -17,27 +21,48 @@ vision-metrology = "0.1"
 
 | Module | Content |
 |---|---|
-| `contour` | `ContourGraph` — junction-aware topology (T/Y junctions, loops) built from edgels, with per-edge tangent, curvature, arc-length parameterization, and Gaussian polyline smoothing |
-| `corr` | Cross-correlation matching over `corrmatch` (`CorrTemplate`, `find`, `find_topk`) plus inter-frame `displacement` with optional Lucas-Kanade refinement |
-| `fit` | `fit_line` / `fit_circle` / `fit_ellipse` — algebraic-init then geometric refine, optional `RobustLoss` (Huber/Tukey) and `RansacConfig`, every `Fit<M>` reports `rms` / `max_dev` / `n_used` |
-| `laser` | `LaserExtractor` — laser stripe centerlines from opposite-polarity 1-D edge pairs, scanning rows or columns, with ROI and prior tracking |
-| `lsd` | `LsdDetector` — line-segment detection with NFA validation |
-| `matching` | `ShapeModel` + `ShapeMatcher` — gradient-orientation similarity, coarse-to-fine search over translation / rotation / uniform scale, occlusion-proportional scoring, subpixel pose refinement, masked teaching, and canonical-pose crops (`matching::crop`) |
-| `measure` | `Caliper` (rect / arc / radial placements) + `MetrologyModel` — measure a located part and fit the result, typed `RejectReason` on a caliper that finds nothing, `diagnostics::layout` for caliper placement |
-| `metric` | The calibration bridge: `CameraModel` / `Pose3` / `Plane3` / `PlaneGrid`, exact `pixel_to_plane`, runtime `plane_grid_map` / `undistort_map`, importers for calibration-rs and `table_calibration` JSON |
-| `scale` | Scale estimation for `matching` (moments / log-polar) and `find_scale_invariant` — estimate once, resample the model, verify in a narrow band |
+| `contour` | `ContourGraph`: junction-aware topology (T/Y junctions, loops) built from edgels, with per-edge tangent, curvature, arc-length parameterization, and Gaussian polyline smoothing |
+| `corr` | Cross-correlation matching over `corrmatch` (`CorrTemplate`, `find`, `find_topk`) plus inter-frame `displacement` with optional Lucas–Kanade refinement |
+| `fit` | `fit_line` / `fit_circle` / `fit_ellipse`: algebraic start then geometric refinement, optional `RobustLoss` (Huber/Tukey) and `RansacConfig`; every `Fit<M>` reports `rms` / `max_dev` / `n_used` |
+| `laser` | `LaserExtractor`: laser stripe centrelines from opposite-polarity 1-D edge pairs, scanning rows or columns, with ROI and prior tracking |
+| `lsd` | `LsdDetector`: line-segment detection with NFA validation |
+| `matching` | `ShapeModel` + `ShapeMatcher`: gradient-orientation similarity, coarse-to-fine search over translation / rotation / uniform scale, subpixel pose refinement, masked teaching, and canonical-pose crops (`matching::crop`) |
+| `measure` | `Caliper` (rect / arc / radial placements) and `MetrologyModel`: measure a located part and fit the result, with a typed `RejectReason` when a caliper finds nothing and `diagnostics::layout` for caliper placement |
+| `metric` | `CameraModel` / `Pose3` / `Plane3` / `PlaneGrid`, exact `pixel_to_plane`, `plane_grid_map` / `undistort_map` for whole images, importers for calibration-rs and `table_calibration` JSON |
+| `scale` | Scale estimation for `matching` (moments / log-polar) and `find_scale_invariant`: estimate once, resample the model, verify in a narrow band |
 | `segment` | Otsu and adaptive thresholding, connected-component labeling with per-component stats, watershed, edgel region growing |
-| `warp` | `Map` — a precomputed `dst → src` coordinate table (affine / projective / polar / log-polar / `from_fn`) with `apply` / `apply_with_mask` and a first-class validity mask |
+| `warp` | `Map`: a precomputed `dst → src` coordinate table (affine / projective / polar / log-polar / `from_fn`) with `apply` / `apply_with_mask` and a validity mask |
 
-Every module is a default-on Cargo feature. The full architectural map, including
-`vm-primitives`, is [`docs/system-design.md`](../../docs/system-design.md#layering).
+## Features
 
-The `vm_primitives` crate most callers need by name — `Image`, `Edge2DDetector`,
-`Pyramid`, morphology, geometry — is re-exported at this crate's root as an
-explicit curated list; the full lower crate is always reachable as
-`vision_metrology::vm_primitives`. Every other name lives at its module path
-only (`vision_metrology::contour::ContourGraph`, not a second flattened path) —
-`use vision_metrology::prelude::*;` is the convenience for the common set.
+Each module is a Cargo feature, and all are on by default. Build only what you use:
+
+```toml
+vision-metrology = { version = "0.1", default-features = false, features = ["matching", "measure"] }
+```
+
+| Feature | Enables | Implies |
+|---|---|---|
+| `contour` | `contour` | — |
+| `corr` | `corr` | — |
+| `fit` | `fit` | — |
+| `laser` | `laser` | — |
+| `lsd` | `lsd` | — |
+| `matching` | `matching` | `warp` (rectified crops build a `warp::Map`) |
+| `measure` | `measure` | `fit` (measured points are fitted) |
+| `metric` | `metric` | `warp` (whole-image maps are `warp::Map`s); pulls in `serde_json` for the importers |
+| `scale` | `scale` | `corr`, `matching`, `segment`, `warp` |
+| `segment` | `segment` | `contour` (region growing consumes a `ContourGraph`) |
+| `warp` | `warp` | — |
+| `serde` | `ShapeModel` save/load | `matching` |
+
+## Importing
+
+`use vision_metrology::prelude::*;` brings in the working set, including `vm-primitives`'
+own prelude. Every name also lives at its module path, for example
+`vision_metrology::contour::ContourGraph`. The most-used `vm-primitives` names (`Image`,
+`Edge2DDetector`, `Pyramid`, geometry) are re-exported at this crate's root. The whole lower
+crate is reachable as `vision_metrology::vm_primitives`.
 
 ## Example
 
@@ -63,7 +88,9 @@ let mask: Vec<u8> = img.data().iter().map(|&v| if v > t { 255 } else { 0 }).coll
 let mask = Image::from_vec(128, 128, mask).expect("valid image");
 
 let labels = label_connected_components_u8(&mask.as_view(), Connectivity::C8);
-for c in component_stats(&labels, 16) {
+let stats = component_stats(&labels, 16);
+assert_eq!(stats.len(), 2);
+for c in stats {
     println!("component {}: {} px, centroid ({:.1}, {:.1})",
              c.label, c.pixel_count, c.centroid.x, c.centroid.y);
 }
@@ -71,9 +98,14 @@ for c in component_stats(&labels, 16) {
 // component 2: 1024 px, centroid (95.5, 87.5)
 ```
 
-## Examples
+## Guides and examples
 
-Runnable end-to-end programs in [`examples/`](examples):
+- [Shape-based object detection](https://github.com/VitalyVorobyev/vision-metrology/blob/main/docs/shape-matching.md)
+- [Measuring a located part](https://github.com/VitalyVorobyev/vision-metrology/blob/main/docs/measure.md)
+- [Performance and accuracy](https://github.com/VitalyVorobyev/vision-metrology/blob/main/docs/performance.md)
+
+Runnable programs are in
+[`examples/`](https://github.com/VitalyVorobyev/vision-metrology/tree/main/crates/vision-metrology/examples):
 
 | Example | Shows |
 |---|---|
@@ -82,15 +114,14 @@ Runnable end-to-end programs in [`examples/`](examples):
 | `contour_graph` | Contour topology, junctions, curvature |
 | `morphology` | Erode / dilate / open / close, chamfer distance |
 | `line_segments` | LSD line-segment detection |
-| `inspect_canend` | Locate → fixture → measure → pass/fail on real frames (needs a dataset) |
-| `measure_circles` | End-to-end circle metrology: calipers, robust circle fit, `rms` / `max_dev` gating |
 | `segmentation` | Thresholding, labeling, component statistics |
 | `shape_matching` | Building a shape model and locating it, rotated, in a scene |
-| `laserline` | Laser stripe extraction from a multi-snap image (takes `--input`) |
-| `align_crops` | Teach → find → rectify into canonical model-frame crops (needs a dataset) |
-| `birdseye_mosaic` | Bird's-eye composite of two calibrated cameras (needs a dataset) |
+| `measure_circles` | Circle metrology: calipers, robust circle fit, `rms` / `max_dev` gating |
+| `laserline` | Laser stripe extraction from a multi-snap image (`--input`) |
+| `inspect_canend` | Locate → fixture → measure → pass/fail on a directory of frames |
+| `align_crops` | Teach → find → rectify into canonical model-frame crops |
 | `pose_audit` | Independent ZNCC cross-check of recovered poses, diagnostic overlays |
-| `gen_illustrations` | Regenerates the deterministic PNGs under `docs/assets/` |
+| `birdseye_mosaic` | Bird's-eye composite of two calibrated cameras |
 
 ```bash
 cargo run -p vision-metrology --example measure_circles
@@ -99,5 +130,4 @@ cargo run -p vision-metrology --example laserline -- --help
 
 ## License
 
-Licensed under either of [Apache License, Version 2.0](../../LICENSE-APACHE) or
-[MIT license](../../LICENSE-MIT) at your option.
+Licensed under either of Apache License, Version 2.0 or MIT license at your option.

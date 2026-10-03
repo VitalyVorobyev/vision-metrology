@@ -129,7 +129,7 @@ fn vision_metrology(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(find_topk, m)?)?;
     m.add_function(wrap_pyfunction!(displacement, m)?)?;
 
-    // scale: estimate-then-verify (roadmap W7)
+    // scale: estimate-then-verify
     m.add_function(wrap_pyfunction!(estimate_scale_moments, m)?)?;
     m.add_function(wrap_pyfunction!(estimate_scale_logpolar, m)?)?;
     m.add_function(wrap_pyfunction!(find_scale_invariant_roi, m)?)?;

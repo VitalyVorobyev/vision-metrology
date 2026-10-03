@@ -71,9 +71,8 @@ pub enum CoarseMethod {
 /// Smoothing applied to the extracted centre positions.
 ///
 /// Post-processing, not detection: it runs over the finished samples and can
-/// only move a centre that was already found. It used to be an
-/// `enable_smoothing: bool` with the window hard-coded at 5, which meant the
-/// only way to learn the strength of the filter was to read the source.
+/// only move a centre that was already found. The window is part of the
+/// variant, so the strength of the filter is visible at the call site.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CenterSmoothing {
     /// Report the centres exactly as detected.

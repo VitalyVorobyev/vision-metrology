@@ -1,5 +1,5 @@
 //! Scale estimation for [`crate::matching`] — "estimate, then verify", not a
-//! wider scan (roadmap W7).
+//! wider scan.
 //!
 //! # Why estimate instead of scanning wider
 //!
@@ -23,13 +23,14 @@
 //!   `crate::segment`) and compares its spatial spread to the taught
 //!   model's own. Needs a part that segments cleanly against its
 //!   background; cheap (`O(roi area)`); works on **any**
-//!   [`ShapeModel`](crate::matching::ShapeModel) (format 3 or 4 — it reads
-//!   `level(0).points()`, which every model has).
+//!   [`ShapeModel`](crate::matching::ShapeModel) — it reads
+//!   `level(0).points()`, which every model has.
 //! * [`estimate_scale_logpolar`] — no segmentation required, but needs an
-//!   approximate center and format-4 teach data
+//!   approximate center and stored teach data
 //!   ([`ShapeModel::teach_point_count`](crate::matching::ShapeModel::teach_point_count)
-//!   `> 0`). Builds a synthetic edge-density raster from the model's own
-//!   teach points, log-polar-unwraps it and the scene around the hint
+//!   `> 0`), which every model built by this crate carries; a model loaded
+//!   from a format-3 document has none. Builds a synthetic edge-density
+//!   raster from the model's own teach points, log-polar-unwraps it and the scene around the hint
 //!   center ([`crate::warp::Map::log_polar`]), and finds the scale (and,
 //!   within a bounded margin, the rotation) as a translation via
 //!   [`crate::corr`] ZNCC — the classic Fourier-Mellin trick, without an
@@ -43,8 +44,8 @@
 //!
 //! Both estimators take `ImageView<'_, u8>`, matching this workspace's
 //! established convention (`corr`, `segment::otsu_threshold_u8`) rather than
-//! adding a third `Pixel`-generic threshold/correlation implementation for
-//! this wave. `find_scale_invariant` is `u8`-only for the same reason, even
+//! adding a third `Pixel`-generic threshold/correlation implementation.
+//! `find_scale_invariant` is `u8`-only for the same reason, even
 //! though the `ShapeMatcher::find` verify step it ends with is generic —
 //! call `resample_at` and `ShapeMatcher::find` directly for a `u16`/`f32`
 //! scene.

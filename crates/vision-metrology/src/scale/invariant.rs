@@ -13,7 +13,7 @@ use super::moments::{MomentScaleConfig, estimate_scale_moments};
 /// [`ScaleHint::Roi`] uses [`estimate_scale_moments`] (needs a part that
 /// segments cleanly against its background inside `roi`);
 /// [`ScaleHint::Center`] uses [`estimate_scale_logpolar`] (needs only an
-/// approximate center, but needs format-4 teach data — see that function's
+/// approximate center, but needs stored teach data — see that function's
 /// docs).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ScaleHint {

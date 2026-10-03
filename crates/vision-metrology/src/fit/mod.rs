@@ -146,7 +146,8 @@ pub struct RansacConfig {
     /// Reject the fit unless at least this many points agree.
     pub min_inliers: usize,
     /// Seed for the internal LCG. The same seed always gives the same answer —
-    /// library code carries no ambient randomness (invariant 12).
+    /// library code carries no ambient randomness.
+    // Invariant 12.
     pub seed: u64,
 }
 

@@ -1,11 +1,11 @@
-//! Bird's-eye mosaic on real calibrated data (roadmap mosaic wave, plan decision 6).
+//! Bird's-eye mosaic on real calibrated data.
 //!
 //! Composes two calibrated cameras' rectified views of a shared plane into one grid, with
 //! the same **no-blending, nearest-camera-centre priority** rule `tests/mosaic.rs` verifies
 //! on a synthetic 3-camera fixture (see that file's doc comment for the exact rule and why
-//! it is deliberately duplicated here rather than factored into a library module — the plan's
-//! decision is that mosaicking is *not* a library module, so this composition helper is
-//! intentionally re-derived per consumer, not shared code).
+//! it is deliberately duplicated here rather than factored into a library module —
+//! mosaicking is *not* a library module, so this composition helper is re-derived per
+//! consumer, not shared code).
 //!
 //! ## Dataset: `~/vision/data/25_09_17_Table_Calibration/`
 //! `calibration.json` (the `table_calibration` format `metric::io::import_table_calibration`
@@ -249,8 +249,8 @@ const RANSAC_THRESH_PX: f32 = 4.0;
 const MIN_INLIERS: usize = 15;
 /// Registration gate on the composited overlap (see this file's doc comment
 /// on why ZNCC and not `max − min` intensity). The measured value on this
-/// dataset is **0.9927**; the pure-translation plane this example used to
-/// assume scores **0.0656** on the very same two frames. The gate sits far
+/// dataset is **0.9927**; a pure-translation plane scores **0.0656** on the
+/// very same two frames. The gate sits far
 /// below the good value and far above the bad one, so it cannot be tripped by
 /// ordinary resampling noise but catches any regression that loses the plane.
 const MIN_OVERLAP_ZNCC: f32 = 0.75;

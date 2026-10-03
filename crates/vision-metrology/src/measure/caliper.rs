@@ -107,8 +107,8 @@ pub struct MeasureConfig {
     /// own axis, not the edge's normal, and the two differ by `1/cos θ`. At a
     /// corner or a cap there is no meaningful crossing at all. Rejecting those
     /// is what keeps a bad caliper out of the fit instead of merely
-    /// down-weighted. Borrowed from the caliper in `rtvt-pano`, which uses the
-    /// same gate to reject FOV cuts and bead end-caps.
+    /// down-weighted — the same gate rejects field-of-view cuts and bead
+    /// end-caps.
     pub max_obliquity_deg: f32,
     /// Border behaviour when the caliper overhangs the image.
     pub border: BorderMode<f32>,
@@ -132,9 +132,8 @@ impl Default for MeasureConfig {
 ///
 /// A caliper that finds no edge is not an error — it is a measurement result,
 /// and *which gate* rejected it is the difference between "the part is missing"
-/// and "the search window was too short". Modelled on the reject tally in the
-/// `rtvt-pano` caliper, where the dominant reason across a scan is the fastest
-/// route to a misconfigured recipe.
+/// and "the search window was too short". Tallied across a scan, the dominant
+/// reason is the fastest route to a misconfigured recipe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RejectReason {
     /// The profile was shorter than the detector needs (3 samples).

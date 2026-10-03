@@ -81,8 +81,7 @@ score near zero — a failure that looks like a bug. Build contour models with
 The single most effective knob is `ShapeModelConfig::min_contrast`, the gradient
 floor a reference-image edge must clear to enter the model. It is a
 `Contrast`, not a bare `f32`: `Contrast::Raw(v)` is `v` Scharr response units
-on the input pixel scale — the historical behaviour, and the default —
-while `Contrast::FractionOfRange(f)` resolves to `f · 16 · (max − min)` of the
+on the input pixel scale (the default), while `Contrast::FractionOfRange(f)` resolves to `f · 16 · (max − min)` of the
 image being processed, so the same `f` transfers between `u8`, `u16` and `f32`
 input unchanged. `ShapeSearchConfig::min_contrast`, which gates the *scene*
 instead of the model, is the same type and needs the same tuning.
@@ -100,12 +99,11 @@ them. Measured on 1280×1024 can-end frames, with everything else at its default
 | `Contrast::Raw(400.0)` | 50 / 50 | **0.998** |
 
 `Contrast::Raw(400.0)` is roughly `Contrast::FractionOfRange(0.098)` on this
-dataset — but that equivalence is dataset-specific (it assumes an unsmoothed,
-near-ideal step) and has not been swept across other contrast profiles, so
-prefer `Raw` with a value re-tuned per pixel type until that calibration
-exists (see `backlog.md`).
+dataset, but that equivalence is dataset-specific: it assumes an unsmoothed,
+near-ideal step, and it has not been calibrated on other contrast profiles.
+Prefer `Raw`, re-tuned per pixel type.
 
-Two further model knobs:
+Three further model knobs:
 
 - **`max_points`** (default 512 per level) caps the model size. Decimation is
   always spatially uniform; keeping the strongest `n` points instead would
@@ -142,21 +140,15 @@ miss a match whose first-evaluated points are the occluded ones — which is why
 model points are stored in a spatially stratified order, so that any prefix
 samples the whole contour rather than one arc.
 
-### Where the time actually goes
+### Where the time goes
 
-On a 1280×1024 scene with an 800-point model (M4 Pro, single thread):
-
-| | Time |
-|---|---|
-| full 360° `find`, clean scene | 3.5 ms |
-| full 360° `find`, heavily cluttered scene | 6.6 ms |
-| tracked mode (±60 px ROI + ±10° prior from the previous frame) | 1.5 ms |
-| same clean call at `greediness = 0.0` | 5.5 ms |
-| model creation | 0.49 ms |
+A full 360° `find` on a 1280×1024 scene takes a few milliseconds; tracked mode
+(a small ROI plus an angle prior from the previous frame) is faster still. The
+measured numbers are in [performance and accuracy](performance.md#speed).
 
 Below the top pyramid level the gradient field is built **lazily, tile by
 tile**, only where surviving candidates actually look — a full-frame fine-level
-field (which alone costs ~4.6 ms) is never computed during a find. Tile
+field, the most expensive single step, is never computed during a find. Tile
 contents are bit-identical to a full build, so results do not depend on which
 tiles happen to be materialised.
 
@@ -184,12 +176,11 @@ let model = ShapeModel::from_bytes(&bytes)?;
 
 The encoding is deliberately **not** documented: it is a private channel
 between this crate's writer and its reader, and the only promise it makes is
-that a document it cannot read is an error rather than a mis-read model. A
-document written by an incompatible format is refused, not mis-read; a
-document one format version older (currently: format 3, predating
-`ShapeModel::resample_at`'s stored teach data) still loads, with
-`model.teach_point_count() == 0` and `resample_at`/`estimate_scale_logpolar`
-reporting a clear error rather than resampling from already-decimated points.
+that a document it cannot read is an error rather than a mis-read model.
+Models saved by older releases still load (format 3 and later; the current
+format is 5). A format-3 model stores no teach points, so it reports
+`model.teach_point_count() == 0`, and `resample_at`/`estimate_scale_logpolar`
+return an error rather than resampling from already-decimated points.
 
 Python mirrors this as `model.save(path)` / `ShapeModel.load(path)`.
 
@@ -217,16 +208,16 @@ let matches = find_scale_invariant(
 
 `ScaleHint::Roi` estimates via `scale::estimate_scale_moments`
 (segments the ROI, compares the blob's own outer radius to the model's — works on any
-model, format 3 or 4). `ScaleHint::Center` estimates via
+model). `ScaleHint::Center` estimates via
 `scale::estimate_scale_logpolar` (log-polar ZNCC
-correlation around an approximate centre; needs format-4 teach data). Either estimate
+correlation around an approximate centre; needs a model with stored teach points,
+i.e. one built or saved by a release using format 4 or later). Either estimate
 feeds `ShapeModel::resample_at`, which rebuilds
 the model at that scale and pins its own `scale_range` to a narrow `(0.95, 1.05)` band — the
 search that follows costs the same regardless of how far the true scale turned out to be
-from 1.0. A synthetic measurement (`tests/accuracy.rs`'s `scale_estimate_vs_scan_cost`)
-found this ~2.2–2.4x faster than the wide-scan alternative on the identical scene, with
-identical found-rate and accuracy to the scan (see `docs/system-design.md`'s W7 entry for
-the full numbers).
+from 1.0. On a synthetic scene this is about 2.2–2.4× faster than a wide scan,
+with identical found-rate and accuracy
+([performance and accuracy](performance.md#accuracy-envelopes)).
 
 Call `estimate_scale_moments`/`estimate_scale_logpolar` and
 `ShapeModel::resample_at`/`ShapeMatcher::find` directly instead of `find_scale_invariant`
@@ -275,34 +266,13 @@ unrefined pose if even that fails.
 
 ## Real-data results
 
-`examples/pose_audit` runs a model over a whole directory and audits every
-recovered pose with an **independent second opinion**: corrmatch's masked ZNCC
-of the pose-warped reference against the scene — a different algorithm over
-different data (raw intensities instead of gradient directions). Measured on
-1280×1024 beverage can ends (model built from the first frame of each folder,
-full 360° search, single core, M4 Pro), with the per-folder `min_contrast`
-from the table above:
-
-| Folder | Found | Median score | Median ZNCC | Min ZNCC | Angle coverage | Median time |
-|---|---|---|---|---|---|---|
-| dome illumination | 50 / 50 | 0.998 | 0.961 | 0.916 | 321° | 5.6 ms |
-| bright field | 50 / 50 | 0.997 | 0.915 | 0.850 | 322° | 6.6 ms |
-| dark field | 50 / 50 | 0.962 | 0.953 | 0.847 | 321° | 8.3 ms |
-| second product, dome | 48 / 48 | 0.997 | 0.939 | 0.907 | 336° | 26.0 ms |
-| third product, bright field | 19 / 19 | 0.998 | 0.929 | 0.821 | 231° | 11.2 ms |
-| production line, bright field | 39 / 39 | 0.978 | 0.921 | 0.823 | 46° | 9.5 ms |
-
-Angle coverage is 360° minus the largest gap between recovered angles — how
-much of the circle the parts actually visited. The worst independent ZNCC over
-all 256 found frames is 0.82, while a deliberately wrong angle or a 25 px
-offset collapses it by 0.3 or more (pinned by `tests/corrmatch_bridge.rs`).
-
-The `xcheck` subcommand goes further: corrmatch's own rotation-enabled search
-runs next to `ShapeMatcher` on the same frames, and the two independently
-recovered poses are compared. Over 20 frames on each set1 folder the
-disagreement is |Δpos| p95 0.87–1.31 px, |Δangle| p95 0.35–0.66° — and those
-numbers sum *both* matchers' errors, including corrmatch's rotation-grid
-quantization.
+`examples/pose_audit` runs a model over a directory of frames and audits every
+recovered pose with an independent second opinion: corrmatch's masked ZNCC of
+the pose-warped reference against the scene, a different algorithm over
+different data. On 256 frames of beverage can ends across six folders, every
+frame was found and the worst independent ZNCC was 0.82. A wrong angle or a
+25 px offset drops it by 0.3 or more. The per-folder table is in
+[performance and accuracy](performance.md#real-data-shape-matching).
 
 A model built under dome illumination and searched against the *dark-field*
 images of the same parts — fully inverted contrast — is found in all 50 frames

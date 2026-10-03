@@ -59,10 +59,9 @@ pub enum SmoothKind {
 
 /// How the two hysteresis thresholds are chosen.
 ///
-/// This used to be two `f32` fields where `0.0`/`0.0` meant "derive them" — a
-/// sentinel that made the *only* documented way to say "no threshold at all"
-/// indistinguishable from "choose for me", and that silently changed meaning
-/// if a caller set one field and left the other.
+/// An enum rather than two `f32` fields with a `0.0` "derive them" sentinel,
+/// which would make "no threshold at all" indistinguishable from "choose for
+/// me" and silently change meaning if a caller set one field and not the other.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum Hysteresis {
     /// Derive both from the frame's peak NMS response:

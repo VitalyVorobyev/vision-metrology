@@ -361,8 +361,8 @@ mod persist {
     /// |---|---|
     /// | 1 | Initial format. `Point2f` / `Vec2f` as `{"x": …, "y": …}`. |
     /// | 2 | `Point2f` / `Vec2f` became nalgebra aliases, which serialize as flat `[x, y]` arrays. |
-    /// | 3 | The v0.3 API reset, batched: the document is an opaque byte string rather than documented JSON, `ModelPoint` / `ShapeModelLevel` fields became read-only, and the model carries the pyramid `PreSmooth` it was built with (invariant 3). |
-    /// | 4 | The scale-invariance wave (roadmap W7): the model additionally carries its level-0 `teach_points` (pre-decimation edge points), which [`ShapeModel::resample_at`] needs. A format-3 document still loads — `teach_points` defaults to `None` on a document that predates the field — but [`resample_at`](ShapeModel::resample_at) on the result returns [`Error::InvalidConfig`]. |
+    /// | 3 | The document is an opaque byte string rather than documented JSON, `ModelPoint` / `ShapeModelLevel` fields are read-only, and the model carries the pyramid `PreSmooth` it was built with (invariant 3). |
+    /// | 4 | The model additionally carries its level-0 `teach_points` (pre-decimation edge points), which [`ShapeModel::resample_at`] needs. A format-3 document still loads — `teach_points` defaults to `None` on a document that predates the field — but [`resample_at`](ShapeModel::resample_at) on the result returns [`Error::InvalidConfig`]. |
     /// | 5 | The model carries its [`reference_angle`](ShapeModel::reference_angle) — the canonical orientation its frame is rotated onto. A format-4 document still loads and reads `0.0`, which is exactly what it meant: model frame and reference image coincide. |
     pub(crate) const FORMAT_VERSION: u32 = 5;
 

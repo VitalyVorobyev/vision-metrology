@@ -282,9 +282,9 @@ fn laser_stripe_illustration() {
 
 // ── (d) robust circle fit ───────────────────────────────────────────────────
 
+// Invariant 12: no ambient randomness in what these fixtures produce.
 /// A tiny seeded LCG — deterministic noise without an external RNG
-/// dependency (invariant 12: no ambient randomness in what these fixtures
-/// produce).
+/// dependency.
 struct Lcg(u64);
 
 impl Lcg {

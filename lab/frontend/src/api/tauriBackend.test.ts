@@ -176,7 +176,7 @@ describe("createTauriBackend", () => {
     });
   });
 
-  it("mosaic()/mosaicImageUrl()/mosaicSourceIdUrl() are deliberately unsupported this wave", async () => {
+  it("mosaic()/mosaicImageUrl()/mosaicSourceIdUrl() are unsupported in the desktop build", async () => {
     const backend = createTauriBackend();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await expect(backend.mosaic({} as any)).rejects.toThrow(/desktop build/);

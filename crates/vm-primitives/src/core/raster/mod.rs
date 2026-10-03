@@ -3,11 +3,10 @@
 //! Everything here describes how image memory is laid out and read, and
 //! nothing here knows what a point or a transform is. That is a deliberate
 //! boundary rather than an accident of file placement: this workspace is not
-//! the only consumer of an `ImageView` — the ecosystem around it already
-//! carries five near-duplicates, one of which (`rtvt-image`) exists purely
-//! because it is pinned to a different nalgebra major version. A raster layer
-//! that mentions no linear-algebra type at all is the piece that could be
-//! shared across those version boundaries.
+//! the only consumer of an `ImageView` — other crates carry near-duplicate
+//! image views, some pinned to a different nalgebra major version. A raster
+//! layer that mentions no linear-algebra type at all is the piece that could
+//! be shared across those version boundaries.
 //!
 //! The boundary is enforced by reading, not by the compiler: if a signature
 //! here grows a `Point2f`, the layer stops being extractable. Coordinates

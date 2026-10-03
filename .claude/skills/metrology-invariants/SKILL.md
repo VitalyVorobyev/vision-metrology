@@ -1,8 +1,7 @@
 ---
-
 name: metrology-invariants
 description: Use this when implementing or reviewing anything subpixel (edges, laser, contours). Prevents silent coordinate and convention bugs.
-------------------------------------------------------------------------------------------------------------------------------------------------
+---
 
 # Metrology invariants (pixel-center world)
 
@@ -17,7 +16,8 @@ description: Use this when implementing or reviewing anything subpixel (edges, l
 * Provide tolerances in tests:
 
   * quick unit tests: ~0.1 px is fine
-  * precision tests (later): push toward 0.05 px on higher-fidelity fixtures
+  * precision: the accuracy suite (`crates/vision-metrology/tests/accuracy.rs`) pins each
+    detector's worst bias/sigma as an envelope — add a row for a new subpixel path
 
 ## Robustness
 

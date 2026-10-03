@@ -1,7 +1,7 @@
 //! [`ShapeModel::resample_at`] — rebuild a model's pyramid levels at an
 //! arbitrary uniform scale, from its own stored teach-time edge points.
 //!
-//! # Why this exists (roadmap W7, "estimate-then-verify")
+//! # Why this exists ("estimate-then-verify")
 //!
 //! A discrete `scale_range` scan is one search per scale step, which is
 //! linear in how wide a range is searched — expensive for a genuinely wide
@@ -22,8 +22,8 @@
 //! 0.4 or 2.5. So the model additionally stores the *pre*-decimation level-0
 //! set (`TeachPoint`, format 4) — the same data
 //! [`ShapeModelBuilder::build`]/`from_edgels`/`from_directed_points`/
-//! `from_polylines` already compute internally before their own one-time
-//! assembly, just not previously kept around afterward. A model loaded from
+//! `from_polylines` compute internally before their own one-time assembly.
+//! A model loaded from
 //! a format-3 document predates this field and returns
 //! [`Error::InvalidConfig`] here rather than resampling from decimated (and
 //! therefore already-scale-1.0-shaped) points, which would silently bias
@@ -56,6 +56,7 @@ use super::model::ShapeModel;
 const VERIFY_SCALE_RANGE: (f32, f32) = (0.95, 1.05);
 
 impl ShapeModel {
+    // Invariants 3 and 12.
     /// Rebuild this model with every point resampled at scale `s`.
     ///
     /// The result's own [`scale_range`](ShapeModel::scale_range) is a narrow
@@ -66,10 +67,10 @@ impl ShapeModel {
     /// `polarity` carry over unchanged (rotation and photometric polarity
     /// are not affected by a uniform rescale); `pre_smooth`/`smooth` carry
     /// over too, so the resampled model stays compatible with a scene
-    /// decimated the same way as the original (invariant 3).
+    /// decimated the same way as the original.
     ///
     /// Deterministic: two calls with the same `s` produce identical models
-    /// (no RNG anywhere in the pipeline, per invariant 12).
+    /// (no RNG anywhere in the pipeline).
     ///
     /// # Errors
     /// - [`Error::InvalidConfig`] if `s` is not finite and positive, or if

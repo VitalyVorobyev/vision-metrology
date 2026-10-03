@@ -1,7 +1,7 @@
 """Replays `lab/contract/fixtures/*.json` against a fresh FastAPI backend and asserts
 the response matches the committed golden within a float tolerance.
 
-This is the browser-path half of the W6 anti-drift gate (plan decision 7) — the Tauri
+This is the browser-path half of the anti-drift gate (docs/dev/adr/0015-the-lab.md) — the Tauri
 side is `lab/frontend/src-tauri/tests/contract_parity.rs`, replaying the same fixtures
 through the native command handlers. Both exist so a change to `vm_lab`'s response
 shape *or* to the Rust command layer is caught here rather than discovered as a UI bug

@@ -1,13 +1,12 @@
 //! `teach_preview` — the candidate contours a caller curates *before* a model
 //! is built, and the mask that turns that curation into a model.
 //!
-//! Teaching used to be one shot: drag a rectangle, get a model, and read a
-//! point count. Nothing showed what had been learned, so nothing could be
-//! corrected — and on a round or L-shaped part a rectangle always learns some
-//! background, whose points then dilute every score (the model's own point
-//! count is the score's denominator).
+//! A rectangle alone always learns some background on a round or L-shaped
+//! part, and those points dilute every score (the model's own point count is
+//! the score's denominator). Teaching is therefore two steps, so the caller can
+//! see what would be learned and correct it.
 //!
-//! This module splits it in two. `teach_preview` runs exactly the edge
+//! This module provides both. `teach_preview` runs exactly the edge
 //! extraction `ShapeModelBuilder` runs and links the result into contours the
 //! caller can see and pick from; `mask_for_contours` turns a chosen subset
 //! back into the inclusion mask `ShapeModelBuilder::build_with_mask` takes.

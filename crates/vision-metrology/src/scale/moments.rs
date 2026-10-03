@@ -54,8 +54,8 @@ impl Default for MomentScaleConfig {
 /// filled disc's radius of gyration is `R/√2`; its boundary ring's is `R`),
 /// and area/`R²` compounds that bias further. An outer-radius comparison
 /// is one consistent notion of "how big is the object" on both sides
-/// instead. This estimator works on **any** `ShapeModel` — format 3 or
-/// 4 — since `level(0).radius()` needs no stored teach data, unlike
+/// instead. This estimator works on **any** `ShapeModel`, whatever format it
+/// was loaded from, since `level(0).radius()` needs no stored teach data, unlike
 /// [`resample_at`](crate::matching::ShapeModel::resample_at) or
 /// [`estimate_scale_logpolar`](super::estimate_scale_logpolar).
 ///

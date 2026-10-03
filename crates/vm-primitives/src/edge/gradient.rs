@@ -344,9 +344,9 @@ impl DirectionField {
     ///
     /// The returned [`TiledField`] borrows both the field and `img`, so the
     /// two cannot drift apart: every `ensure_rect` afterwards necessarily
-    /// refers to the image tiled mode was entered with. That used to be a
-    /// runtime `assert!` on a second `&Image` argument, and the ordering
-    /// requirement — begin, then ensure, then read — was documentation only.
+    /// refers to the image tiled mode was entered with, and the ordering —
+    /// begin, then ensure, then read — is enforced by the type rather than
+    /// by documentation.
     ///
     /// The field's buffers are current only where
     /// [`TiledField::ensure_rect`] has been called with a covering rectangle;
@@ -534,9 +534,9 @@ impl DirectionField {
 /// Returned by [`DirectionField::begin_tiled_f32`]. It holds both halves of
 /// the protocol together: the field whose tiles are being filled and the image
 /// they are filled from. Nothing else can call `ensure_rect`, and `ensure_rect`
-/// cannot be handed the wrong image, so the two ways this protocol used to be
-/// misusable are gone — no runtime dimension assert, and no way to read a
-/// field that was never put into tiled mode at all.
+/// cannot be handed the wrong image, so the protocol cannot be misused: no
+/// runtime dimension assert is needed, and there is no way to read a field
+/// that was never put into tiled mode at all.
 ///
 /// The session derefs to the field, so scoring code reads through it unchanged.
 /// Pixels in tiles that were never ensured read as zero, which the score treats

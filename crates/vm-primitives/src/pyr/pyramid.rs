@@ -6,7 +6,7 @@ use super::downsample::{downsample2x2_mean_to_f32_into, dst_dims};
 ///
 /// A plain 2×2 box mean has no stop-band: content finer than the new Nyquist
 /// aliases instead of vanishing, which is how a fine-toothed contour can die at
-/// pyramid level 3–4 (backlog item **R3**). A symmetric 3-tap binomial run
+/// pyramid level 3–4. A symmetric 3-tap binomial run
 /// before each decimation suppresses that.
 ///
 /// The filter is symmetric about the pixel centre, so it does **not** move the
@@ -138,14 +138,15 @@ impl Pyramid {
     }
 }
 
+// Invariant 2.
 /// Map a level-`level` coordinate to level-0 (base) coordinates.
 ///
 /// `base = v · 2^level + (2^level − 1) / 2`
 ///
 /// The half-pixel term is the centre of the `2^level × 2^level` block that a
 /// level-`level` pixel summarises, under the drop-odd 2×2 box mean and the
-/// pixel-centre convention. This is **system-design invariant 2** and this is
-/// its single implementation — do not re-derive it at call sites.
+/// pixel-centre convention. This is its single implementation — do not
+/// re-derive it at call sites.
 ///
 /// # Example
 /// ```

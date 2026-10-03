@@ -12,13 +12,15 @@
 //!
 //! ## Coordinates
 //! [`level_to_base`] and [`base_to_level`] are the single implementation of the
-//! level↔level-0 mapping (system-design invariant 2). Never re-derive it inline.
+//! level↔level-0 mapping. Never re-derive it inline.
 //!
 //! ## Aliasing
 //! A box mean has no stop-band. [`PreSmooth::Binomial121`] adds a symmetric
 //! 3-tap pre-filter for content that would otherwise alias at coarse levels.
 //! It is **off by default**: a stored shape model and the scene it is searched
-//! in must share the same kernel (invariant 3).
+//! in must share the same kernel.
+
+// Invariants 2 (one coordinate mapping) and 3 (same aliasing on both sides).
 
 mod downsample;
 mod pyramid;

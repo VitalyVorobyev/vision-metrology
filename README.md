@@ -4,104 +4,42 @@
 
 # vision-metrology
 
-High-precision, high-performance image processing for industrial machine-vision
-metrology, in pure Rust. Subpixel edges, laser stripe extraction, contour topology,
-shape fitting, segmentation, and shape-based object detection — with Python bindings.
+High-precision image processing for industrial machine-vision metrology, in pure Rust with
+Python bindings. Locate a part, measure it with subpixel calipers, fit primitives robustly,
+and report the result in millimetres through a camera calibration.
 
-No OpenCV, no FFI. All coordinates follow the **pixel-center** convention: integer
-`i` means coordinate `i as f32`.
+No OpenCV, no FFI. Coordinates follow the **pixel-centre** convention: integer `i` means
+coordinate `i as f32`.
 
 <table>
 <tr>
-<td width="33%"><img src="docs/assets/shape-matching.png" alt="Shape matching"><br>Shape-based matching: model contour found at two poses, scored</td>
-<td width="33%"><img src="docs/assets/caliper-anatomy.png" alt="Caliper anatomy"><br>A caliper: the placed box and its cross-averaged 1-D profile</td>
-<td width="33%"><img src="docs/assets/laser-stripe.png" alt="Laser stripe extraction"><br>Laser stripe extraction: subpixel centerline over the stripe</td>
+<td width="33%"><img src="docs/assets/shape-matching.png" alt="Shape matching"><br>Shape-based matching: a model contour found at two poses</td>
+<td width="33%"><img src="docs/assets/caliper-anatomy.png" alt="Caliper anatomy"><br>A caliper and its cross-averaged 1-D profile</td>
+<td width="33%"><img src="docs/assets/laser-stripe.png" alt="Laser stripe extraction"><br>Laser stripe extraction: subpixel centreline</td>
 </tr>
 <tr>
-<td width="33%"><img src="docs/assets/circle-fit.png" alt="Robust circle fit"><br>Robust circle fit: noisy points, outliers rejected, residual whiskers</td>
-<td width="33%"><img src="docs/assets/contour-graph.png" alt="Contour graph"><br>Contour graph: a T-junction traced into three colored edges</td>
-<td width="33%"><img src="docs/assets/pyramid-levels.png" alt="Pyramid levels"><br>A 5-level image pyramid, coarse-to-fine</td>
-</tr>
-<tr>
-<td width="33%"><img src="docs/assets/birdseye-mosaic.png" alt="Bird's-eye mosaic"><br>Bird's-eye mosaic: two calibrated cameras rectified onto their measured shared target plane and composited, tinted by source camera</td>
+<td width="33%"><img src="docs/assets/circle-fit.png" alt="Robust circle fit"><br>Robust circle fit with outliers rejected</td>
+<td width="33%"><img src="docs/assets/contour-graph.png" alt="Contour graph"><br>Contour graph: a T-junction traced into three edges</td>
+<td width="33%"><img src="docs/assets/birdseye-mosaic.png" alt="Bird's-eye mosaic"><br>Two calibrated cameras composited onto their shared plane</td>
 </tr>
 </table>
 
-Most of the gallery is rendered deterministically from synthetic fixtures by
-[`gen_illustrations`](crates/vision-metrology/examples/gen_illustrations.rs) — see
-[CONTRIBUTING.md](CONTRIBUTING.md#documentation-illustrations) to regenerate. The bird's-eye
-mosaic is the one exception: it comes from
-[`birdseye_mosaic`](crates/vision-metrology/examples/birdseye_mosaic.rs) run against a real
-2-camera table calibration (`WRITE_ASSETS=1 cargo run --release -p vision-metrology --example
-birdseye_mosaic`) — deterministic for a fixed dataset, but the dataset itself is not
-committed to this repo (same policy as the canend/glue-rig private datasets referenced
-elsewhere in these docs). That calibration records no target pose, so the example measures
-the shared plane from the two frames themselves and then refuses to write the asset unless
-the two rectified views agree (overlap ZNCC 0.9927 against a 0.75 gate).
-
-## Crates
-
-| Crate | Description |
-|---|---|
-| [`vm-primitives`](crates/vm-primitives) | Low-level building blocks: image views and sampling, geometry types, image pyramid, subpixel 1-D/2-D edge detection, binary morphology |
-| [`vision-metrology`](crates/vision-metrology) | High-level algorithms built on `vm-primitives`, which it re-exports in full — one dependency is enough |
-| [`vm-python`](crates/vm-python) | PyO3 bindings; distributed as `vision-metrology`, imported as `vision_metrology` |
-
-### `vm-primitives` modules
-
-| Module | Content |
-|---|---|
-| `core` | `Image` / `ImageView` / `ImageViewMut`, sampling and interpolation, border modes, geometry primitives and nalgebra type aliases, the shared `Error` type |
-| `pyr` | 2×2 mean image pyramid, generic over pixel type, with optional anti-alias pre-smoothing |
-| `edge` | Subpixel 1-D/2-D edge detection (DoG, Scharr), edgels with gradient normals, opposite-polarity edge pairs, dense gradient direction fields |
-| `morph` | Binary morphology with parameterized structuring elements, chamfer distance transform, Zhang–Suen thinning |
-
-### `vision-metrology` modules
-
-| Module | Content |
-|---|---|
-| `contour` | Junction-aware contour graph (T/Y junctions, loops), per-edge tangent and curvature, polyline smoothing |
-| `fit` | Robust line / circle / ellipse fitting, algebraic-init then geometric refine, every fit reports `rms` / `max_dev` / `n_used` |
-| `laser` | Laser stripe extraction using opposite-polarity edge pairs, with ROI and prior tracking |
-| `matching` | Shape-based object detection: gradient-orientation model, coarse-to-fine search over translation / rotation / scale, subpixel pose refinement — see the [guide](docs/shape-matching.md) |
-| `measure` | Calipers (rect / arc / radial) and metrology models: measure a located part and fit the result — see the [guide](docs/measure.md) |
-| `segment` | Otsu and adaptive thresholding, connected-component labeling, watershed, edgel region growing |
-| `lsd` | LSD line-segment detection |
-| `warp` | Image warping: build a `dst → src` `Map` once (affine / projective / polar / log-polar / arbitrary `from_fn`), apply it per frame with a first-class validity mask |
-| `metric` | The calibration bridge: pixel ↔ millimetre via a mirrored pinhole + Brown-Conrady camera model |
-| `corr` | Cross-correlation matching and inter-frame subpixel `displacement` over `corrmatch` |
-| `scale` | Scale estimation for `matching` (moments / log-polar) + `find_scale_invariant`: estimate once, resample, verify narrow |
-
-## Pipeline
+## What it does
 
 ```
-Image
-  │
-  ▼
-pyr           2×2 mean pyramid — coarse-to-fine levels
-  │
-  ▼
-edge          subpixel 1-D/2-D edge detection, gradient buffers
-  │
-  ▼
-contour       topology graph — T/Y junctions, loops, polyline smoothing
-  │
-  ├─────►  lsd        LSD line segments
-  │
-  ├─────►  segment    thresholding, CCL, watershed, per-component stats
-  │
-  ├─────►  fit        robust line / circle / ellipse fitting, residuals
-  │
-  └─────►  matching   shape model, coarse-to-fine search, pose refinement
-                 │
-                 ▼
-            measure    calipers at the found pose, fit primitives, pass/fail
+undistort / rectify → locate the part → use its pose as a fixture → calipers
+                    → robust fit with residuals → millimetres → pass / fail
 ```
 
-`laser` consumes `edge` directly — it scans rows or columns for opposite-polarity
-1-D edge pairs rather than going through the 2-D pipeline. `fit` also runs
-directly off `edge`/`contour` output; `measure` is the module that closes the
-loop, applying calipers at a `matching` pose and fitting the result with `fit`.
+Alongside that chain: 1-D/2-D subpixel edges, junction-aware contour graphs, laser stripe
+extraction, LSD line segments, thresholding and connected components, cross-correlation
+and inter-frame displacement, image warping, and binary morphology.
+
+| Crate | What it is |
+|---|---|
+| [`vision-metrology`](crates/vision-metrology) | The domain algorithms. It re-exports `vm-primitives`, so it is the only dependency you need. Module and feature tables are in its README. |
+| [`vm-primitives`](crates/vm-primitives) | Building blocks: images and sampling, geometry, pyramids, edges, morphology. |
+| [`vm-python`](crates/vm-python) | Python bindings, installed as `vision-metrology` and imported as `vision_metrology`. |
 
 ## Quick start
 
@@ -120,73 +58,57 @@ let mut det = Edge2DDetector::new();
 let edgels = det.detect(&img.as_view(), &Edge2DConfig::default());
 ```
 
-Runnable examples live in [`crates/vision-metrology/examples/`](crates/vision-metrology/examples):
+Runnable programs are in [`crates/vision-metrology/examples/`](crates/vision-metrology/examples):
 
 ```bash
 cargo run -p vision-metrology --example measure_circles
-cargo run -p vision-metrology --example contour_graph
-cargo run -p vision-metrology --example shape_matching
-cargo run -p vision-metrology --example laserline -- --help
+cargo run -p vision-metrology --example shape_matching -- --help
 ```
 
-## Guides
+### Python
 
-- [Shape-based object detection](docs/shape-matching.md) — building a shape
-  model, choosing a polarity, tuning contrast, reading the score.
-- [Measuring a located part](docs/measure.md) — calipers, rect vs. arc vs.
-  radial placement, the metrology model, reading `RejectReason`.
-
-Project direction and internals: [system design](docs/system-design.md),
-[roadmap](docs/roadmap.md), [backlog](docs/backlog.md).
-
-## Python
-
-Build and install the extension (requires [maturin](https://www.maturin.rs/)):
+Build and install the extension with [maturin](https://www.maturin.rs/) (Python 3.10+):
 
 ```bash
-cd crates/vm-python
-maturin develop   # editable install into the active Python environment
+cd crates/vm-python && maturin develop --release
 ```
 
 ```python
 import numpy as np
 import vision_metrology as vm
 
-det = vm.EdgeDetector(vm.EdgeConfig())
 img = np.zeros((64, 64), dtype=np.uint8)
 img[:, 32:] = 200
-edgels_obj = det.detect_u8(img)
-edgels_fn = vm.detect_edges_u8(img, vm.EdgeConfig())
-print(edgels_obj[0], edgels_fn[0])
+
+edgels = vm.EdgeDetector(vm.EdgeConfig()).detect(img)
+print(len(edgels), edgels[0])
 ```
 
-- distribution: `vision-metrology`
-- import: `vision_metrology`
-- wheels are ABI3 (`abi3-py310`) and require Python `>= 3.10`
+More scripts are in [`examples/python/`](examples/python), and the API overview is in the
+[vm-python README](crates/vm-python/README.md).
 
-See [`examples/python/`](examples/python) for runnable end-to-end scripts.
+## Guides
+
+- [Shape-based object detection](docs/shape-matching.md): building a model, polarity,
+  contrast tuning, reading the score, scale invariance, saving models.
+- [Measuring a located part](docs/measure.md): calipers, rect vs. arc vs. radial
+  placement, the metrology model, reading `RejectReason`.
+- [Performance and accuracy](docs/performance.md): speed, accuracy envelopes on
+  synthetic ground truth, and real-data results.
+- API reference: `cargo doc --open`, or the
+  [published rustdoc](https://vitalyvorobyev.github.io/vision-metrology/).
 
 ## Lab
 
-[`lab/`](lab/README.md) is a local interactive workbench over the `vision_metrology`
-package — upload an image, drag a box to teach a shape model, find it elsewhere in the
-frame, measure circles and lines against the found pose, and see the per-caliper
-hit/reject reasons and intensity profiles behind the fit. It is the library's own teach →
-find → measure → judge chain, made visible; pixels only, no persistence beyond disk. One
-frontend, two shells: a browser build over FastAPI (Python bindings), and a Tauri desktop
-build that calls `vision-metrology` directly in Rust over native commands/events, no
-HTTP. See `lab/README.md` for the API, the desktop build, and what is deliberately out of
-scope.
-
-```bash
-cd lab/backend && uv sync && uv run uvicorn vm_lab.app:app --reload   # :8000
-cd lab/frontend && bun install && bun run dev                         # :5174, browser build
-cd lab/frontend && bun run tauri dev                                  # desktop build, no backend needed
-```
+[`lab/`](lab/README.md) is an interactive workbench over the library. You can open
+captures, teach a shape model from picked contours, find it across a set, rectify, measure
+with calipers in pixels or millimetres, and see every caliper's hit or rejection reason.
+It runs in a browser (over the Python bindings) or as a desktop app (calling the Rust
+library directly).
 
 ## Contributing
 
-Build, test, lint, and benchmark instructions are in [CONTRIBUTING.md](CONTRIBUTING.md).
+Build, test, benchmark and documentation rules are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

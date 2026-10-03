@@ -490,7 +490,7 @@ mod tests {
         assert!(fit.n_used <= 45, "should drop the decoy: {}", fit.n_used);
     }
 
-    /// Determinism is a contract (invariant 12), not an accident.
+    // Determinism is a contract (invariant 12), not an accident.
     #[test]
     fn ransac_is_reproducible() {
         let truth = Circle2f {

@@ -2,7 +2,7 @@
 //! `commands::*` plain functions over `&AppState` — no GUI, see `lib.rs`'s module docs)
 //! and asserts numeric agreement with the golden captured from the FastAPI backend.
 //!
-//! This is the desktop-path half of the W6 anti-drift gate (plan decision 7); the
+//! This is the desktop-path half of the contract anti-drift gate; the
 //! browser-path half is `lab/backend/tests/test_contract_fixtures.py`. See
 //! `lab/contract/README.md` for what "agreement" means here: field-by-field numeric
 //! comparison, not a byte-identical JSON shape — the two backends' response *types*

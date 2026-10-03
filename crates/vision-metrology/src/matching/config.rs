@@ -50,13 +50,11 @@ pub enum Refinement {
 
 /// A gradient-magnitude floor, and the unit it is expressed in.
 ///
-/// Both `min_contrast` fields used to be a bare `f32` in **Scharr response
-/// units on the input pixel scale** — a number that silently changes meaning
-/// with the pixel type. A threshold of 10 sits just above 8-bit sensor noise
-/// and admits essentially everything in a `u16` frame, where the same physical
-/// contrast produces a response 257× larger. Every `u16` or `f32` user had to
-/// re-derive a value that the `u8` user got for free, and nothing in the type
-/// said so.
+/// A bare `f32` in **Scharr response units on the input pixel scale** would
+/// silently change meaning with the pixel type: a threshold of 10 sits just
+/// above 8-bit sensor noise and admits essentially everything in a `u16`
+/// frame, where the same physical contrast produces a response 257× larger.
+/// The enum makes the unit part of the value.
 ///
 /// [`FractionOfRange`](Self::FractionOfRange) states the threshold relative to
 /// the image itself and therefore transfers across pixel types unchanged.
@@ -152,10 +150,11 @@ pub struct ShapeModelConfig {
     pub num_levels: Option<NonZeroUsize>,
     /// Edge detector configuration used at every pyramid level.
     pub edge: Edge2DConfig,
+    // Invariant 3.
     /// Pre-filter applied before each pyramid decimation.
     ///
     /// Stored in the finished model, and the search reads it from there —
-    /// invariant 3 requires model and scene to share the downsample kernel.
+    /// model and scene must share the downsample kernel.
     /// [`PreSmooth::Binomial121`] is what keeps a fine-toothed contour alive at
     /// levels 3–4, where a plain box mean aliases it away.
     pub pre_smooth: PreSmooth,

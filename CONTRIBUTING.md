@@ -1,27 +1,11 @@
 # Contributing
 
-Development workflow for the `vision-metrology` workspace. User-facing documentation
-lives in [README.md](README.md) and the per-crate READMEs; this file is for people
-working *on* the library.
-
-## Layout
-
-Three publishable crates, two layers:
-
-```
-vm-primitives    low-level building blocks
-vision-metrology domain algorithms (depends on vm-primitives)
-vm-python        PyO3 bindings (depends on both)
-```
-
-The per-module breakdown — what lives in each, in both library crates — is the table in
-[`docs/system-design.md`](docs/system-design.md#layering), which is the single place it is
-maintained.
-
-`vision-metrology` re-exports the curated set of `vm_primitives` names most callers need at
-its own crate root, plus the `vm_primitives` crate itself and a `prelude`. Every other name —
-including everything inside `vision-metrology`'s own domain modules — lives at its module path
-only; there is no flat re-export block (invariant 17 in `docs/system-design.md`).
+Development workflow for the `vision-metrology` workspace. User documentation is in
+[README.md](README.md), the crate READMEs and [`docs/`](docs). Design context for
+contributors is in [`docs/dev/`](docs/dev):
+- [system design](docs/dev/system-design.md): layering, invariants, the ADR index;
+- [roadmap](docs/dev/roadmap.md);
+- [backlog](docs/dev/backlog.md).
 
 ## Quality gates
 
@@ -35,157 +19,137 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps
 python3 tools/check-invariants.py
 ```
 
-CI runs all five, and additionally:
+CI runs these and more:
 
-| Job | Command |
-|-----|---------|
+| Job | What it runs |
+|---|---|
+| Rust quality | fmt, clippy, test, doc |
+| Feature matrix | `cargo hack clippy` over each `vision-metrology` feature and the `vm-primitives` feature powerset |
 | MSRV | `cargo +1.91.0 check --workspace --all-targets --all-features` |
 | Invariant numbering | `python3 tools/check-invariants.py` |
-| Examples | every self-asserting example under `crates/vision-metrology/examples/` |
-| Python bindings | `pip install crates/vm-python` then `pytest crates/vm-python/tests` |
+| Examples | every self-asserting example in `crates/vision-metrology/examples/` |
+| Python bindings | `pip install crates/vm-python`, then `pytest crates/vm-python/tests` |
 | Cross-platform | build and test on Windows and macOS |
+| Lab | frontend typecheck, test and build; desktop crate fmt, clippy and test |
 
-The weekly security workflow additionally runs `cargo audit` and
-`cargo deny check` (licences, duplicate versions, source registries). Both are
-expected to pass with no ignores; if a new dependency introduces a licence that
-is not in `deny.toml`'s allow-list, that is a deliberate review, not a config
-oversight.
+The lab backend's pytest is not in CI yet; run it locally when touching `lab/backend`.
 
-### MSRV
+The weekly security workflow runs `cargo audit` and `cargo deny check`, with no ignores. A
+licence missing from `deny.toml`'s allow-list is a deliberate review, not a config fix.
 
-The workspace declares `rust-version = "1.91"` in the root `Cargo.toml`. **Why 1.91 and not
-1.89** is recorded once, in [`docs/system-design.md`](docs/system-design.md) ("MSRV 1.89 →
-1.91"). Operationally: `cargo clippy` enforces the floor through `incompatible_msrv`, so a
-`std` item stabilised later than 1.91 fails the lint rather than surfacing as a user's build
-error. `rust-toolchain.toml` pins day-to-day work to stable; the MSRV job overrides it with
-`cargo +1.91.0`, which takes precedence over the file.
+**MSRV.** It is set in the root `Cargo.toml` and explained in
+[ADR-0002](docs/dev/adr/0002-dependency-and-toolchain-policy.md). Clippy's
+`incompatible_msrv` lint catches `std` items newer than the floor. `rust-toolchain.toml`
+pins day-to-day work to stable, and the MSRV job overrides it.
 
-### Python bindings
-
-The extension module is built by maturin and imported as `vision_metrology`.
-Note that the Rust lib target is deliberately named `vm_python` instead: naming
-it `vision_metrology` collides with the `vision-metrology` crate's own lib
-target. The Python-visible name comes from the `#[pymodule]` function name and
-from `module-name` in `pyproject.toml`.
+## Python bindings
 
 ```bash
-pip install crates/vm-python
-pytest crates/vm-python/tests
+cd crates/vm-python
+python -m venv .venv && . .venv/bin/activate
+pip install maturin pytest numpy
+maturin develop --release
+pytest tests/
 ```
 
-## Conventions
-
-- **Pixel-center coordinates.** Integer `i` means coordinate `i as f32`.
-- **Rust-native only.** No OpenCV, no FFI.
-- **Config struct + reusable detector.** Public algorithms take an `XConfig`
-  (`Debug + Clone + PartialEq + Default`) and live on an `XDetector` that owns
-  reusable scratch across calls.
-- **Error type.** `vm_primitives::Error` throughout, with `&'static str` payloads
-  only — no owned strings, no `format!`. Most APIs are infallible and return
-  `Vec`/`Option`; `Result` is for constructors and validation.
-- **Lifetime-free public output types**, for PyO3 compatibility.
-- **Default border mode is `Clamp`** unless explicitly configured otherwise.
-- **No per-scan allocations** in extraction loops; reuse detector scratch buffers.
-- `unsafe` is allowed only for small, performance-critical blocks, and every block
-  carries a `// SAFETY:` comment stating the invariant it relies on.
+- **Names.** The Rust lib target is named `vm_python`, not `vision_metrology`, so it
+  cannot collide with the `vision-metrology` crate's lib target. The importable name
+  `vision_metrology` comes from the `#[pymodule]` function and from `module-name` in
+  `pyproject.toml`. The crate sets `doctest = false`, because its examples are Python.
+- **Stubs.** `python/vision_metrology/__init__.pyi` is maintained by hand. Update it in the
+  same change as the `#[pymodule]` registration list. A test checks that every stubbed name
+  exists at runtime.
+- **Parity.** New public Rust API ships its binding, stub and Python test in the same PR
+  (invariant 15). Deliberate exclusions are listed in the vm-python README.
 
 ## Tests
 
-Every test is an inline `#[cfg(test)] mod tests` in the file it tests. Fixtures are
-deterministic synthetic images with known geometry — no unseeded RNG. Assertions carry
-a message stating the expected geometry and the tolerance:
+- **Placement.** Unit tests are inline (`#[cfg(test)] mod tests`). Integration tests live
+  in `crates/*/tests/`, including the accuracy suite (`tests/accuracy.rs`) and the
+  cross-algorithm checks.
+- **Fixtures are deterministic synthetic images with known geometry**, anti-aliased when
+  subpixel accuracy is asserted. There is no unseeded RNG.
+- **Assertions state the expected geometry and the tolerance:**
 
-```rust
-assert!(err < 0.01, "sub-pixel residual expected, got err={err}");
-```
+  ```rust
+  assert!(err < 0.01, "sub-pixel residual expected, got err={err}");
+  ```
 
-Doctests double as API smoke tests. `crates/vm-python` sets `doctest = false` because
-its lib name deliberately collides with the `vision-metrology` package.
-
-Python binding tests:
-
-```bash
-cd crates/vm-python && maturin develop && pytest tests/
-```
+- **The accuracy suite pins envelopes** at about 1.5× the measured worst case. A new
+  operator adds a row, and its numbers go into
+  [`docs/performance.md`](docs/performance.md).
+- **Doctests are API smoke tests.** The two crate READMEs are the crate-level rustdoc
+  (`#![doc = include_str!("../README.md")]`), so their examples compile and run.
+- **Private datasets.** Tests that need one skip with a message when it is absent. The
+  datasets are not distributed:
+  - the can-end frames used by `inspect_canend`, `pose_audit` and the lab's folder test;
+  - the glue-rig sequence.
 
 ## Benchmarks
 
-Criterion, `harness = false`, one `[[bench]]` stanza per file. Benchmark IDs follow
-`operation_size`; the representative image size is 1280×1024.
+Criterion, `harness = false`, one `[[bench]]` per file. IDs follow `operation_size`, and
+the representative image size is 1280×1024.
 
 ```bash
-cargo bench --workspace
-
-# vm-primitives
-cargo bench -p vm-primitives --bench downsample
-cargo bench -p vm-primitives --bench edge1d
-cargo bench -p vm-primitives --bench edge2d
-cargo bench -p vm-primitives --bench morph
-
-# vision-metrology
-cargo bench -p vision-metrology --bench build_graph
-cargo bench -p vision-metrology --bench detect_shape
-cargo bench -p vision-metrology --bench extract
+cargo bench -p vm-primitives --bench downsample   # also: edge1d, edge2d, morph
 cargo bench -p vision-metrology --bench match_shape
-cargo bench -p vision-metrology --bench segment
-
-# a single benchmark function
+# also: build_graph, detect_shape, extract, segment, measure, warp, corr
 cargo bench -p vm-primitives --bench downsample -- downsample2x2_mean_u8_to_f32_1280x1024
 ```
 
-Add a benchmark whenever you add or change a hot path. Benchmark numbers are
-machine-specific; record them in the PR description rather than in tracked files.
+Add a benchmark when you add or change a hot path, and put before/after numbers in the PR
+description. Published numbers live in [`docs/performance.md`](docs/performance.md);
+update it when a change moves them.
 
-## Documentation illustrations
+## Documentation
 
-The PNGs under `docs/assets/` (embedded in the README and the `docs/*.md` guides)
-are rendered deterministically from synthetic fixtures by one example — never
-committed from a private dataset frame:
+- **Audience decides location.**
+  - User-facing: `README.md`, crate READMEs, rustdoc (`//!`, `///`), `docs/*.md`,
+    `CHANGELOG.md`, `lab/README.md`.
+  - Contributor-facing: this file, `AGENTS.md`, `docs/dev/`, `lab/ARCHITECTURE.md`, and
+    plain `//` comments.
+
+  User-facing text never links into `docs/dev/` and never mentions plan labels, PR numbers
+  or history. Invariant citations go in `//` comments.
+- **State what is true now.** History belongs in `CHANGELOG.md` and nowhere else.
+- **Say it once.** Each fact has one home, and other places link to it:
+  - module tables: the crate READMEs;
+  - invariants: `docs/dev/system-design.md`;
+  - numbers: `docs/performance.md`.
+- **Decisions are ADRs** in `docs/dev/adr/`. When a decision changes, rewrite its ADR; do
+  not append a contradicting one.
+- **Completed roadmap items leave `docs/dev/roadmap.md`** for the changelog.
+- **Invariant numbers are append-only**, because source files cite them.
+  `tools/check-invariants.py` checks that every citation resolves. It also rejects dangling
+  plan labels, and links into `docs/dev/` from user-facing files.
+
+### Illustrations
+
+The PNGs in `docs/assets/` are rendered deterministically from synthetic fixtures:
 
 ```bash
 cargo run --release --example gen_illustrations --all-features
 ```
 
-Re-run it and commit the results whenever a change alters what one of the six
-illustrations shows (shape matching, caliper anatomy, laser stripe extraction,
-robust circle fit, contour graph, pyramid levels). The renderer asserts its own
-fixtures (found match count, junction count, fit radius, …), so a silent behavior
-change there fails the run instead of quietly changing the picture.
+Re-run it and commit the results when a change alters what an illustration shows. The
+renderer asserts its own fixtures, so a behaviour change fails the run instead of quietly
+changing a picture.
 
-`docs/assets/birdseye-mosaic.png` is the one exception: it comes from a **real**
-2-camera table calibration (`examples/birdseye_mosaic.rs`), not `gen_illustrations`'
-synthetic fixtures — the dataset itself lives outside this repo (same private-data policy
-as canend/glue-rig), so only the derived PNG is committed:
+`docs/assets/birdseye-mosaic.png` comes from a real two-camera calibration, which is not
+distributed:
 
 ```bash
 WRITE_ASSETS=1 cargo run --release -p vision-metrology --example birdseye_mosaic
 ```
 
-That run estimates the shared target plane from the two frames (the calibration records no
-target pose) and **fails instead of writing the asset** if the two rectified views do not
-agree — overlap ZNCC below 0.75. So it self-checks the way `gen_illustrations` does; a
-regression that loses the plane cannot quietly republish a broken picture.
+It estimates the target plane from the two frames and refuses to write the asset unless
+the rectified views agree (overlap ZNCC at least 0.75).
 
-## Persistent-context documents
+## Commits and pull requests
 
-`docs/system-design.md`, `docs/roadmap.md` and `docs/backlog.md` are the project's long-term
-memory. Three rules keep them from silting up:
-
-- **Rewrite, don't append.** A superseded decision gets its entry rewritten (saying what
-  replaced it), never a second entry contradicting the first.
-- **Finished work leaves the roadmap** for `CHANGELOG.md`'s `[Unreleased]` section. The
-  roadmap describes what is ahead; the changelog records what landed, with its numbers.
-- **Say a thing once.** If a number, rule or decision is already written down somewhere,
-  link there. `docs/system-design.md`'s module table, invariant list, and performance table
-  are each the single authority for their content.
-
-Invariant numbers are cited by number from source files and are therefore **append-only**;
-`tools/check-invariants.py` (also a CI job) verifies contiguity and that every citation
-resolves.
-
-## Commits and PRs
-
-- Keep commits scoped and descriptive.
-- If behavior changes, adjust tests in the same commit.
-- Update the affected README when crate scope or public API changes.
+- Keep commits scoped and descriptive. Adjust tests in the same commit as a behaviour
+  change.
 - Do not revert unrelated changes.
+- A change to scope, decisions or invariants updates `docs/dev/` in the same PR
+  (invariant 16).
+- User-visible changes get a line in `CHANGELOG.md` under `[Unreleased]`.

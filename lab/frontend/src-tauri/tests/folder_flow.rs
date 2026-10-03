@@ -2,7 +2,7 @@
 //!
 //! `contract_parity.rs` proves the shared operations still agree with the
 //! browser shell's golden numbers. This proves the things that have no browser
-//! counterpart and were the point of the wave: open a folder without decoding
+//! counterpart: open a folder without decoding
 //! it, render tiers once and cache them as files, preview and curate contours,
 //! build a model from the curated subset, read its geometry back, and run it
 //! across the set.
