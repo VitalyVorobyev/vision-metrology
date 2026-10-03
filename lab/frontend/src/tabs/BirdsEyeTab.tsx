@@ -184,7 +184,7 @@ export function BirdsEyeTab({
           <Button variant="primary" disabled={!canRun} loading={mutation.isPending} onClick={() => mutation.mutate()}>
             Build mosaic
           </Button>
-          {mutation.isError && <ErrorBox>{(mutation.error as Error).message}</ErrorBox>}
+          {mutation.isError && <ErrorBox>{mutation.error.message}</ErrorBox>}
         </div>
       </Panel>
 
@@ -220,7 +220,6 @@ export function BirdsEyeTab({
               className="overflow-hidden rounded border border-line hover:border-line-strong"
               onClick={openZoom}
             >
-              {/* eslint-disable-next-line jsx-a11y/img-redundant-alt -- key is content identity, not decoration */}
               <img
                 src={overlayUrl(mutation.data.id)}
                 alt="bird's-eye mosaic"
@@ -256,7 +255,6 @@ export function BirdsEyeTab({
             className="h-96 w-full"
             fitLabel={null}
           >
-            {/* eslint-disable-next-line jsx-a11y/img-redundant-alt -- key is content identity, not decoration */}
             <img
               src={overlayUrl(mutation.data.id)}
               alt="bird's-eye mosaic, zoomed"

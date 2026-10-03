@@ -30,7 +30,7 @@ CI runs these and more:
 | Examples | every self-asserting example in `crates/vision-metrology/examples/` |
 | Python bindings | `pip install crates/vm-python`, then `pytest crates/vm-python/tests` |
 | Cross-platform | build and test on Windows and macOS |
-| Lab | frontend typecheck, test and build; desktop crate fmt, clippy and test |
+| Lab | frontend typecheck, lint, test and build; desktop crate fmt, clippy and test |
 
 The lab backend's pytest is not in CI yet; run it locally when touching `lab/backend`.
 

@@ -158,7 +158,7 @@ export function AlignTab({ image, models }: { image: ImageOut; models: ModelOut[
           <Button variant="primary" disabled={!canRun} loading={mutation.isPending} onClick={() => mutation.mutate()}>
             Rectify
           </Button>
-          {mutation.isError && <ErrorBox>{(mutation.error as Error).message}</ErrorBox>}
+          {mutation.isError && <ErrorBox>{mutation.error.message}</ErrorBox>}
         </div>
       </Panel>
 

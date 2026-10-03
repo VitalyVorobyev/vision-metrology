@@ -58,15 +58,17 @@ export function FindPage() {
 
   const search = useMutation({
     mutationFn: async () => {
+      const angleRange: [number, number] | null =
+        angleLo !== "" && angleHi !== ""
+          ? [(Number(angleLo) * Math.PI) / 180, (Number(angleHi) * Math.PI) / 180]
+          : null;
       const req = {
         image_id: selectedImage!.id,
         model_id: modelId,
         min_score: minScore,
         max_matches: maxMatches === "" ? null : Number(maxMatches),
         roi: null,
-        angle_range: (angleLo !== "" && angleHi !== ""
-          ? [(Number(angleLo) * Math.PI) / 180, (Number(angleHi) * Math.PI) / 180]
-          : null) as [number, number] | null,
+        angle_range: angleRange,
         tuning: { greediness },
       };
       const res = await backend.find(req);
@@ -172,7 +174,7 @@ export function FindPage() {
             >
               Find
             </Button>
-            {search.isError && <ErrorBox>{(search.error as Error).message}</ErrorBox>}
+            {search.isError && <ErrorBox>{search.error.message}</ErrorBox>}
           </div>
         </Panel>
 

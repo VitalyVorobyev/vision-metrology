@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const invokeMock = vi.fn();
+const invokeMock = vi.fn<(...args: unknown[]) => unknown>();
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: unknown[]) => invokeMock(...args),
@@ -67,8 +67,7 @@ describe("createTauriBackend", () => {
     ];
     for (const [method, command] of cases) {
       invokeMock.mockResolvedValueOnce({});
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (backend[method] as any)({ dummy: true });
+      await (backend[method] as (req: unknown) => Promise<unknown>)({ dummy: true });
       expect(invokeMock).toHaveBeenLastCalledWith(command, { req: { dummy: true } });
     }
   });
@@ -123,8 +122,11 @@ describe("createTauriBackend", () => {
     });
     const backend = createTauriBackend();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const resp = await backend.rectify({ image_id: "img-1", model_id: "model-1", crop: { rect: [0, 0, 1, 1] } } as any);
+    const resp = await backend.rectify({
+      image_id: "img-1",
+      model_id: "model-1",
+      crop: { rect: [0, 0, 1, 1] },
+    } as unknown as Parameters<typeof backend.rectify>[0]);
 
     expect(resp.matches[0]?.crop_url).toBe("img-1/model-1/0");
   });
@@ -178,8 +180,7 @@ describe("createTauriBackend", () => {
 
   it("mosaic()/mosaicImageUrl()/mosaicSourceIdUrl() are unsupported in the desktop build", async () => {
     const backend = createTauriBackend();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await expect(backend.mosaic({} as any)).rejects.toThrow(/desktop build/);
+    await expect(backend.mosaic({} as Parameters<typeof backend.mosaic>[0])).rejects.toThrow(/desktop build/);
     expect(() => backend.mosaicImageUrl("mosaic-1", false)).toThrow(/desktop build/);
     expect(() => backend.mosaicSourceIdUrl("mosaic-1")).toThrow(/desktop build/);
   });

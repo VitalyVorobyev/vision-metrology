@@ -22,15 +22,6 @@ The lab still depends on the deprecated `@vitavision/lab-ui` compatibility packa
 its last consumer, which blocks lab-ui's removal ticket (L9-1 in lab-ui's plan). The target
 is `@vitavision/ui`, `stage2d`, `charts` and `workbench` ([ADR-0015](adr/0015-the-lab.md)).
 
-### L1: toolchain baseline, `planned`
-- TS 6 with `@vitavision/config-ts` (`exactOptionalPropertyTypes`).
-- vitest 5 with `config-vitest`; eslint with `config-eslint` (`tokensOnly`, with
-  `CrashScreen.tsx` exempt).
-- react 19.3 and react-router 8.4.
-- Declare `lucide-react`.
-
-**Accept:** `typecheck`, `test`, `build` and `lint` are green, with no behaviour change.
-
 ### L2: move to the split packages, `planned`
 - Replace `@vitavision/lab-ui` with `ui ^0.8`, `stage2d ^0.7`, `charts ^0.6.2` and
   `workbench ^0.1`, with per-package CSS.

@@ -17,7 +17,9 @@ import { useEffect } from "react";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type * as BackendModule from "../api/backend";
 import type { ContourOut, ImageOut, LabBackend } from "../api/backend";
+import type { SelectMode } from "./contourSelection";
 import { LabProvider, useLab } from "../state/LabContext";
 import { CanvasStage } from "./CanvasStage";
 import { describeContours } from "./contourSelection";
@@ -30,7 +32,7 @@ const CONTOURS: ContourOut[] = [
 ];
 
 vi.mock("../api/backend", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../api/backend")>();
+  const actual = await importOriginal<typeof BackendModule>();
   return {
     ...actual,
     getBackend: () =>
@@ -67,7 +69,7 @@ function withViewport(box: { width: number; height: number }) {
       observe(element: Element) {
         this.callback(
           [{ target: element, contentRect: box } as unknown as ResizeObserverEntry],
-          this as unknown as ResizeObserver,
+          this,
         );
       }
       unobserve() {}
@@ -76,7 +78,7 @@ function withViewport(box: { width: number; height: number }) {
   );
 }
 
-const selectSpy = vi.fn();
+const selectSpy = vi.fn<(ids: number[], mode: SelectMode) => void>();
 const roiSpy = vi.fn();
 
 function Seed({ withContours = false }: { withContours?: boolean }) {
@@ -179,7 +181,7 @@ describe("CanvasStage", () => {
 
     // And the photograph is laid out at that same size rather than letterboxed inside it —
     // the `object-contain` that used to disagree with the overlays is gone.
-    const image = stage.querySelector("img") as HTMLImageElement | null;
+    const image = stage.querySelector<HTMLImageElement>("img");
     if (image) expect(image.className).not.toContain("object-contain");
   });
 

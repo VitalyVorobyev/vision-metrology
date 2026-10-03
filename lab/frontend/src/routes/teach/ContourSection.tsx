@@ -208,7 +208,7 @@ export function ContourSection({
           isRowActive={(stat) => selected.has(stat.id) || hovered === stat.id}
           onRowHover={(stat) => onHover(stat?.id ?? null)}
           onRowClick={(stat, _index, event) =>
-            onSelect([stat.id], modeFor(event as { metaKey: boolean; ctrlKey: boolean; shiftKey: boolean }))
+            onSelect([stat.id], modeFor(event))
           }
         />
       </div>

@@ -155,7 +155,7 @@ export function LibraryPage() {
                   </Button>
                 </div>
               )}
-              {openFolder.isError && <ErrorBox>{(openFolder.error as Error).message}</ErrorBox>}
+              {openFolder.isError && <ErrorBox>{openFolder.error.message}</ErrorBox>}
 
               {scanned !== null && (
                 <Section step={1} title={`${scanned.length} images in this folder`} hint={folder ?? undefined}>
@@ -286,7 +286,7 @@ function BatchPanel({
             label={`${progress.done}/${progress.total} · ${progress.image_id}`}
           />
         )}
-        {run.isError && <ErrorBox>{(run.error as Error).message}</ErrorBox>}
+        {run.isError && <ErrorBox>{run.error.message}</ErrorBox>}
 
         {rows.length > 0 && (
           <>

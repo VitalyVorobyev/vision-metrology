@@ -350,11 +350,11 @@ function createHttpBackend(): LabBackend {
       return unwrap<ImageOut>(res, "the uploaded image");
     },
 
-    async imageUrl(imageId: string, tier: ImageTier) {
+    imageUrl(imageId: string, tier: ImageTier) {
       // Nothing to await here — the browser fetches this lazily from the
-      // `<img>`. The signature is async because the desktop shell genuinely
-      // needs it to be; see `LabBackend.imageUrl`.
-      return `${baseUrl}/api/images/${imageId}/${tier}`;
+      // `<img>`. The signature returns a promise because the desktop shell genuinely
+      // needs it to; see `LabBackend.imageUrl`.
+      return Promise.resolve(`${baseUrl}/api/images/${imageId}/${tier}`);
     },
 
     async listModels() {
@@ -386,8 +386,8 @@ function createHttpBackend(): LabBackend {
       return `${baseUrl}/api/rectify/${imageId}/${modelId}/${index}`;
     },
 
-    async resolveCropUrl(key: string) {
-      return key;
+    resolveCropUrl(key: string) {
+      return Promise.resolve(key);
     },
 
     async listCalibrations() {

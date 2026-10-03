@@ -14,8 +14,8 @@ import { NavLink } from "react-router";
 export interface Step {
   to: string;
   label: string;
-  /** When set, the step is unavailable and this says what is missing. */
-  blockedBy?: string;
+  /** When set, the step is unavailable and this says what is missing; `undefined` means available. */
+  blockedBy?: string | undefined;
 }
 
 export function Stepper({ steps, label }: { steps: Step[]; label: string }) {

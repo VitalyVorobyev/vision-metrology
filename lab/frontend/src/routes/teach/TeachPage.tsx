@@ -327,7 +327,7 @@ export function TeachPage() {
           onNumLevels={setNumLevels}
           onExtract={() => extract.mutate()}
           extracting={extract.isPending}
-          error={extract.isError ? (extract.error as Error).message : null}
+          error={extract.isError ? extract.error.message : null}
           stale={stale && curated}
           elapsedMs={elapsedMs}
           disabled={roi === null || !selectedImage || !canPreview}
@@ -383,7 +383,7 @@ export function TeachPage() {
           />
         )}
 
-        {teach.isError && <ErrorBox>{(teach.error as Error).message}</ErrorBox>}
+        {teach.isError && <ErrorBox>{teach.error.message}</ErrorBox>}
         {preview !== null && kept.size === 0 && (
           <Callout tone="warning">
             Nothing is kept, so there is no model to build. Keep at least one contour.
