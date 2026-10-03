@@ -5,6 +5,11 @@
 //! This module exposes both object-oriented detector/matcher classes and
 //! declarative free functions.
 
+// `#[pyclass(from_py_object)]` generates a `.clone()` when extracting a pyclass by
+// value, and clippy (1.99+) reports it as `clone_on_copy` on every `Copy` pyclass.
+// The call is in macro output, not in this crate's code.
+#![allow(clippy::clone_on_copy)]
+
 mod config;
 mod contour_py;
 mod convert;
