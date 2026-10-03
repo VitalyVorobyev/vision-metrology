@@ -318,38 +318,6 @@ impl Placement {
             }
         }
     }
-
-    /// Recover a profile index from an edge's scan coordinate `t`.
-    pub(crate) fn index_of(&self, t: f32, denom: f32) -> f32 {
-        // For rect and radial, `t` is a signed distance from the caliper centre
-        // along the scan axis, so the index is a plain affine map back.
-        let linear = |half_len: f32| {
-            if half_len.abs() < 1e-6 {
-                0.0
-            } else {
-                (t + half_len) * denom / (2.0 * half_len)
-            }
-        };
-        match *self {
-            Placement::Rect(r) => linear(r.half_len),
-            Placement::Radial(r) => linear(r.half_len),
-            Placement::Arc(a) => {
-                if a.radius.abs() < 1e-6 {
-                    0.0
-                } else {
-                    t / a.radius / a.angle_extent * denom
-                }
-            }
-            Placement::Strip(s) => {
-                let length = s.geometry().length as f32;
-                if length <= 0.0 {
-                    0.0
-                } else {
-                    t * denom / length
-                }
-            }
-        }
-    }
 }
 
 /// `(n − 1)` as the divisor of a profile index, at least 1.

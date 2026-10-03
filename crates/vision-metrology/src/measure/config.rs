@@ -1,6 +1,6 @@
 //! What a caliper looks for, and how it builds the profile it looks in.
 
-use vm_primitives::{BorderMode, SubpixRefine};
+use vm_primitives::{BorderMode, EdgePolarity, SubpixRefine};
 
 /// Which edges to keep from a profile.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -14,6 +14,36 @@ pub enum EdgeSelect {
     Last,
     /// The one with the largest amplitude.
     Strongest,
+    /// One edge per entry of the sequence, in scan order: for each entry, the strongest
+    /// edge of that polarity strictly after the edge chosen for the previous entry.
+    ///
+    /// "After" compares subpixel positions on the profile, not `t`, which runs
+    /// backwards along an arc with a negative extent. Equal amplitudes go to the earlier
+    /// edge. When the first entry finds nothing the caliper reports
+    /// [`RejectReason::WrongPolarity`]; when a later one does, it reports
+    /// [`RejectReason::IncompleteSequence`].
+    StrongestInOrder(EdgeSequence),
+}
+
+/// The ordered polarities [`EdgeSelect::StrongestInOrder`] looks for — one edge, or two
+/// in scan order (a bar, a gap, a step and its return).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EdgeSequence {
+    /// The polarity of the first edge.
+    pub first: PolaritySelect,
+    /// The polarity of the edge after it, if there is one.
+    pub second: Option<PolaritySelect>,
+}
+
+impl PolaritySelect {
+    /// Whether an edge of `polarity` counts.
+    pub(crate) fn admits(self, polarity: EdgePolarity) -> bool {
+        match self {
+            PolaritySelect::Any => true,
+            PolaritySelect::Rising => polarity == EdgePolarity::Rising,
+            PolaritySelect::Falling => polarity == EdgePolarity::Falling,
+        }
+    }
 }
 
 /// Which transitions count as edges.
@@ -173,4 +203,7 @@ pub enum RejectReason {
     /// The caliper reached outside the image, so the profile is partly border
     /// fill rather than data.
     OffImage,
+    /// [`EdgeSelect::StrongestInOrder`] found its first edge but no edge for a later
+    /// entry after it.
+    IncompleteSequence,
 }

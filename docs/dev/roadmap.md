@@ -78,7 +78,6 @@ No obliquity gate or other non-textbook logic is used by the runner. The design 
 
 | Step | Content | Accept |
 |---|---|---|
-| M4 | `EdgeSelect::StrongestInOrder` + `RejectReason::IncompleteSequence` | tie and strict-order tests |
 | M5 | `level1d.rs` (`LevelCrossing1D`) + `Locate::{MidpointCrossing, HalfContrast}` | analytic tests; checks run in CaliperBench's order |
 | M6 | `diagnostics::explain` → `CaliperTrace` | trace edges equal `measure` output bit-for-bit |
 | M7 | `examples/caliperbench_run.rs` + golden cross-check fixture | ≥ 99.9% identical rows against `caliperbench run` on synth-v1, with every mismatch a listed exact tie |

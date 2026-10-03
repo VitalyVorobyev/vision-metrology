@@ -162,11 +162,16 @@ pub struct MeasureConfig {
   transitions count. A caliper that should only ever see a dark-to-bright
   edge and instead reports a bright-to-dark one is a useful signal that
   something is wrong with the part, not just noise to filter.
-- **`select`** (`EdgeSelect::{All, First, Last, Strongest}`) — which of the
-  surviving edges to keep when more than one crosses the threshold.
+- **`select`** (`EdgeSelect::{All, First, Last, Strongest, StrongestInOrder}`) —
+  which of the surviving edges to keep when more than one crosses the threshold.
   `Strongest` is the sane default once a model's geometry is already
   approximately right (`MetrologyObject::new` picks it) — a caliper on a
   nominal edge should report *that* edge, not every edge it happens to cross.
+  `StrongestInOrder(EdgeSequence { first, second })` reads one or two edges in
+  scan order — a bar is `Rising` then `Falling`. For each entry it takes the
+  strongest edge of that polarity strictly after the previous choice (equal
+  strength: the earlier one). "After" is along the profile, not along `t`,
+  which runs backwards on an arc with a negative extent.
 - **`locate`** — how an edge position is found on the profile.
   `Locate::GradientPeak { refine }` takes a local extremum of the derivative and
   refines it with `SubpixRefine::Parabolic3` (the default), `Gaussian3` (a parabola
@@ -206,9 +211,10 @@ short":
 |---|---|
 | `ProfileTooShort` | fewer than 3 profile samples — the placement is degenerate (near-zero `half_len`) |
 | `NoEdge` | no response reached `threshold` anywhere in the window |
-| `WrongPolarity` | edges were found, but none had the polarity `MeasureConfig::polarity` asked for |
+| `WrongPolarity` | edges were found, but none had the polarity `MeasureConfig::polarity` (or the first entry of an `EdgeSequence`) asked for |
 | `TooOblique` | the best edge crossed at more than `max_obliquity_deg` from the scan direction |
 | `OffImage` | the caliper reached outside the image: always with `OffImage::Reject`, and with `Fill` when the partly filled profile held no edge |
+| `IncompleteSequence` | `StrongestInOrder` found its first edge but no edge of the next polarity after it |
 
 There is deliberately no variant of `measure` that discards this and returns
 an empty slice instead — `Ok(&[])` is unrepresentable, because an extraction

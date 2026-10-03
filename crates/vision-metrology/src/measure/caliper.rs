@@ -3,8 +3,8 @@
 use std::num::NonZeroUsize;
 
 use vm_primitives::{
-    BorderMode, Derivative1D, Edge1DConfig, Edge1DDetector, EdgePolarity, ImageView, Pixel,
-    Point2f, Vec2f, Vec2fExt, sample_bilinear_at, sample_bilinear_f32,
+    BorderMode, Derivative1D, Edge1DConfig, Edge1DDetector, ImageView, Pixel, Point2f, Vec2f,
+    Vec2fExt, sample_bilinear_at, sample_bilinear_f32,
 };
 
 use super::config::{
@@ -13,7 +13,7 @@ use super::config::{
 use super::placement::{
     MeasureArc, MeasureRadial, MeasureRect, MeasureStrip, Placement, StripGeometry,
 };
-use super::select::{MeasureEdge, MeasurePair, pair_edges, select_edges};
+use super::select::{Candidate, MeasureEdge, MeasurePair, pair_edges, select_edges};
 
 /// A reusable caliper: place it, then measure frame after frame.
 ///
@@ -59,7 +59,7 @@ pub struct Caliper {
     det: Edge1DDetector,
     profile: Vec<f32>,
     /// Edges that passed threshold and polarity, before `select`.
-    cands: Vec<MeasureEdge>,
+    cands: Vec<Candidate>,
     edges: Vec<MeasureEdge>,
     pairs: Vec<MeasurePair>,
 }
@@ -259,18 +259,16 @@ impl Caliper {
         let mut any_peak = false;
         for pk in peaks.iter().filter(|pk| pk.strength >= threshold) {
             any_peak = true;
-            let keep = match want {
-                PolaritySelect::Any => true,
-                PolaritySelect::Rising => pk.polarity == EdgePolarity::Rising,
-                PolaritySelect::Falling => pk.polarity == EdgePolarity::Falling,
-            };
-            if keep {
+            if want.admits(pk.polarity) {
                 let (p, t) = placement.point_at(pk.x, denom);
-                self.cands.push(MeasureEdge {
-                    p,
-                    t,
-                    amplitude: pk.strength,
-                    polarity: pk.polarity,
+                self.cands.push(Candidate {
+                    x: pk.x,
+                    edge: MeasureEdge {
+                        p,
+                        t,
+                        amplitude: pk.strength,
+                        polarity: pk.polarity,
+                    },
                 });
             }
         }
@@ -289,10 +287,9 @@ impl Caliper {
         // scan axis, give or take.
         if self.cfg.max_obliquity_deg < 180.0 {
             let cos_max = self.cfg.max_obliquity_deg.to_radians().cos();
-            self.cands.retain(|e| {
-                let x = placement.index_of(e.t, denom);
-                let dir = placement.scan_dir(x, denom);
-                match local_gradient(img, e.p) {
+            self.cands.retain(|c| {
+                let dir = placement.scan_dir(c.x, denom);
+                match local_gradient(img, c.edge.p) {
                     Some(g) => g.dot(&dir).abs() >= cos_max,
                     None => false,
                 }
@@ -302,8 +299,7 @@ impl Caliper {
             }
         }
 
-        select_edges(&self.cands, self.cfg.select, &mut self.edges);
-        None
+        select_edges(&self.cands, self.cfg.select, &mut self.edges).err()
     }
 }
 
@@ -892,6 +888,89 @@ mod tests {
         let img = step_image(64, 64, 30);
         let mut cal = Caliper::rect(rect(2.0, 2.0, 0.0, 40.0, 20.0), MeasureConfig::default());
         let _ = cal.measure(&img.as_view());
+    }
+
+    /// An ordered sequence reads a bar as its rising edge, then its falling edge.
+    #[test]
+    fn strongest_in_order_reads_a_bar_in_scan_order() {
+        use crate::measure::EdgeSequence;
+        let img = bar_image(96, 96, 30, 60);
+        let (rising, falling) = (PolaritySelect::Rising, PolaritySelect::Falling);
+        let measure = |first, second, polarity| {
+            let cfg = MeasureConfig {
+                polarity,
+                select: EdgeSelect::StrongestInOrder(EdgeSequence { first, second }),
+                ..MeasureConfig::default()
+            };
+            Caliper::rect(rect(48.0, 48.0, 0.0, 40.0, 8.0), cfg)
+                .measure(&img.as_view())
+                .map(|e| e.iter().map(|e| e.p.x).collect::<Vec<_>>())
+        };
+
+        let bar = measure(rising, Some(falling), PolaritySelect::Any).expect("both edges");
+        assert_eq!(bar.len(), 2);
+        assert!(
+            (bar[0] - 29.5).abs() < 0.1 && (bar[1] - 59.5).abs() < 0.1,
+            "{bar:?}"
+        );
+
+        // Falling, then rising: nothing rises after x = 59.5.
+        assert_eq!(
+            measure(falling, Some(rising), PolaritySelect::Any),
+            Err(RejectReason::IncompleteSequence)
+        );
+        // `polarity` filters first: only the falling edge is left for a rising entry.
+        assert_eq!(
+            measure(rising, Some(falling), PolaritySelect::Falling),
+            Err(RejectReason::WrongPolarity)
+        );
+    }
+
+    /// "After" is along the profile, not along `t`: an arc swept clockwise has `t`
+    /// decreasing, and the sequence still follows the scan.
+    #[test]
+    fn strongest_in_order_follows_the_profile_on_a_clockwise_arc() {
+        use crate::measure::EdgeSequence;
+        let (w, h) = (128usize, 128usize);
+        let c = Point2f::new(64.0, 64.0);
+        // A dark wedge from 0 to 30 degrees on a bright disc.
+        let data: Vec<u8> = (0..w * h)
+            .map(|i| {
+                let (x, y) = ((i % w) as f32 - c.x, (i / w) as f32 - c.y);
+                if (0.0..30.0f32.to_radians()).contains(&y.atan2(x)) {
+                    20u8
+                } else {
+                    200
+                }
+            })
+            .collect();
+        let img = Image::from_vec(w, h, data).expect("valid image");
+        let mut cal = Caliper::arc(
+            MeasureArc {
+                center: c,
+                radius: 40.0,
+                angle_start: 50.0f32.to_radians(),
+                angle_extent: -70.0f32.to_radians(),
+                half_width: 4.0,
+            },
+            MeasureConfig {
+                select: EdgeSelect::StrongestInOrder(EdgeSequence {
+                    first: PolaritySelect::Falling,
+                    second: Some(PolaritySelect::Rising),
+                }),
+                ..MeasureConfig::default()
+            },
+        );
+        let edges = cal.measure(&img.as_view()).expect("both wedge edges");
+        let angles: Vec<f32> = edges
+            .iter()
+            .map(|e| (e.p.y - c.y).atan2(e.p.x - c.x).to_degrees())
+            .collect();
+        // Sweeping from 50 down to -20 degrees, the scan enters the wedge at 30
+        // degrees and leaves it at 0, where `t` is smaller.
+        assert!((angles[0] - 30.0).abs() < 1.5, "{angles:?}");
+        assert!((angles[1] - 0.0).abs() < 1.5, "{angles:?}");
+        assert!(edges[0].t > edges[1].t, "t runs backwards: {edges:?}");
     }
 
     mod strip {

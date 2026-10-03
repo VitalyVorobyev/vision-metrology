@@ -35,7 +35,10 @@ whether the result is unbiased:
   the edge. A 32-caliper fit reads 39.88 px; `MeasureRadial` reads 39.990 px, and its bias
   no longer grows with width.
 - **Edges along the profile** come from `Edge1DDetector`, filtered by threshold and
-  `PolaritySelect`, and narrowed by `EdgeSelect`. The derivative operator and the
+  `PolaritySelect`, and narrowed by `EdgeSelect`. `EdgeSelect::StrongestInOrder` is
+  CaliperBench's greedy rule (per entry, the strongest edge strictly after the previous
+  choice, ties to the earlier edge). It orders by subpixel profile position rather than
+  `t`, because `t` decreases along an arc with a negative extent. The derivative operator and the
   subpixel refinement are configurable (`ProfileConfig::derivative`,
   `Locate::GradientPeak { refine }`). The defaults, derivative of Gaussian and a
   three-point parabola, are what the accuracy envelopes and the can-end baseline
