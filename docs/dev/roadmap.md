@@ -19,33 +19,14 @@ The measurement chain runs end to end on real data: rectify → locate → fixtu
 ## Track L: the lab on `@vitavision/*` packages, `in progress`
 
 The lab is built on `@vitavision/ui`, `stage2d`, `charts` and `workbench`
-([ADR-0015](adr/0015-the-lab.md)). What remains is moving its lab-specific canvas layers and
-shell pieces upstream where a second app needs them, and building on them.
-
-### L3: upstream components in lab-ui, `planned`
-These go into lab-ui as one ticket per PR. Each has two consumers (this lab and
-CaliperBench, or another sibling app):
-
-| Ticket | Package | Component |
-|---|---|---|
-| U1 | ui | numeric `NumberInput` value API; `Popover`/`DropdownMenu`/`Listbox`; `Kbd` |
-| U2 | stage2d | imperative stage handle and `initialView`; `ImageLayer` with pixelated zoom and resolution tiers; tooltip'd `StageButton`; `StageLayersMenu` |
-| U3 | stage2d | rectangle ROI editor layer |
-| U4 | stage2d | tool model on `ImageStage` + selectable `PolylineSet` layer (hover, marquee, ids) |
-| U5 | stage2d | overlay role tokens; additive `MeasureOverlay` `polyline` primitive and per-primitive `id`/`state` |
-| U6 | charts | responsive frame, hover/pick/cursor, bands and markers, sequential colormaps |
-| U7 | workbench | thumbnail strip / sequence navigator; `FileDrop` path adapter for Tauri |
-
-Single-consumer proposals (datum handle, nav rail, stepper, status bar, triptych) are filed
-as lab-ui issues and stay local here.
-
-**Accept:** each component is released, with stories and tests, and passes lab-ui's
-definition-of-done checks.
+([ADR-0015](adr/0015-the-lab.md)). Lab-specific pieces stay local until a second app needs
+them; package gaps the lab runs into are filed as lab-ui issues.
 
 ### L5: Find and Verify inventories, `planned`
 - Find gets a match inventory that is hover-linked to the canvas, selectable, steppable
   and framable, as Teach's contour inventory is.
-- Verify gets the same per caliper, built on U4/U5 and on M9's `explain_model`.
+- Verify gets the same per caliper, built on stage2d's `PolylineSet` / `MeasureOverlay` ids
+  and on M9's `explain_model`.
 
 **Accept:** both views are driven end to end on a real capture.
 
