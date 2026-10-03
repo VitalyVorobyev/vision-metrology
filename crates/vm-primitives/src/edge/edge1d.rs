@@ -76,6 +76,7 @@ impl Default for Edge1DConfig {
 
 /// Polarity of a 1-D edge (sign of the first derivative of intensity).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum EdgePolarity {
     /// Positive edge: intensity increases (dark-to-bright transition).
     Rising,

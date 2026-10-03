@@ -58,6 +58,13 @@ The workspace was consolidated from twelve crates into three: `vm-primitives`,
     `vm.Locate.half_contrast(...)`, `Caliper.levels()`, `vm.LevelEdge`.
   - `MetrologyModel` applies line and circle objects at a fixture pose and fits them.
   - `measure::diagnostics::layout` gives caliper placement without an image.
+  - `measure::diagnostics::explain` traces one measurement (`CaliperTrace`: the profile,
+    its smoothed version and derivative, the candidates before `select`, the level
+    crossings, and the edges or rejection `measure` returns), and `Caliper::spacing`
+    gives the distance between profile samples. With the `serde` feature `CaliperTrace`
+    serializes, and `MeasureEdge`, `RejectReason`, `EdgePolarity` and `LevelEdge`
+    (de)serialize. Python: `Caliper.explain(img)`, `Caliper.spacing()`,
+    `vm.CaliperTrace`.
 - **Robust fitting** (`fit`): `fit_line`, `fit_circle` (Taubin then Gauss–Newton) and
   `fit_ellipse`, with `RobustLoss::{Huber, Tukey}` (annealed) and `RansacConfig`. Every fit
   reports `rms`, `max_dev` and `n_used`.

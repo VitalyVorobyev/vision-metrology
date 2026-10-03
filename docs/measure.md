@@ -311,6 +311,59 @@ between `NoEdge` and `TooOblique` is the difference between "the part is
 missing" and "the recipe is mis-taught", and only a typed reason tells you
 which without staring at the image.
 
+## Seeing why
+
+`measure` returns edges or a reason and keeps little else. When a caliper does
+something unexpected, `measure::diagnostics::explain` measures again and keeps
+every intermediate:
+
+```rust
+use vision_metrology::measure::diagnostics::explain;
+use vision_metrology::measure::{Caliper, MeasureConfig, MeasureRect, RejectReason};
+use vision_metrology::{Image, Point2f};
+
+let flat = Image::from_vec(64, 64, vec![128u8; 64 * 64]).unwrap();
+let rect = MeasureRect {
+    center: Point2f::new(32.0, 32.0),
+    angle: 0.0,
+    half_len: 20.0,
+    half_width: 4.0,
+};
+let mut cal = Caliper::rect(rect, MeasureConfig::default());
+let trace = explain(&mut cal, &flat.as_view());
+assert_eq!(trace.reject, Some(RejectReason::NoEdge));
+let peak = trace.response.iter().fold(0.0f32, |m, r| m.max(r.abs()));
+println!("strongest response {peak} against a threshold of {}", trace.threshold);
+```
+
+| `CaliperTrace` field | What it holds |
+|---|---|
+| `profile` | the averaged profile: `samples` entries, `spacing` px apart, `across` lines averaged into each |
+| `smoothed` | the profile after the Gaussian of `profile.sigma`, which the level methods read |
+| `response` | the derivative the gradient peaks are found on, to compare with `threshold` |
+| `candidates` | the edges that passed threshold, polarity and the obliquity gate, before `select` |
+| `levels` | the levels each level-located edge sits between (`Caliper::levels`) |
+| `edges`, `reject` | what `measure` returned |
+
+Reading a failure off it:
+
+- **`NoEdge`.** The highest `response` against `threshold` says whether the
+  threshold is too high or the window misses the edge; `profile` shows which.
+- **`WrongPolarity`.** `candidates` is empty, but `response` has a peak of the
+  other sign: the scan runs the other way round, or the part is.
+- **`IncompleteSequence`, or an edge in the wrong place.** `candidates` lists
+  everything `select` chose from.
+- **`LowContrast`, `NoCrossing`.** `levels` and `smoothed` show the levels a level
+  method read and whether the profile crosses them.
+
+The trace's edges and rejection are exactly what `measure` returns for the same
+caliper and image, and explaining leaves the caliper's later measurements
+unchanged. It allocates, so it belongs in a tool that shows why a caliper
+failed, not in the loop that measures. With the `serde` feature, `CaliperTrace`
+serializes. In Python, `cal.explain(img)` returns the same fields, with
+`profile`, `smoothed` and `response` as `float32` arrays and `reject` as the
+reason string; it does not raise `MeasureRejected`.
+
 ## The metrology model: `find → pose → apply → fit`
 
 A single caliper measures one edge. [`MetrologyModel`] is what scales that up

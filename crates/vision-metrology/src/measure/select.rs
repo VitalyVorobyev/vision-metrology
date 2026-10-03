@@ -8,6 +8,7 @@ use super::config::{EdgeSelect, RejectReason};
 
 /// One edge found by a caliper.
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MeasureEdge {
     /// Subpixel position in **image** coordinates.
     pub p: Point2f,

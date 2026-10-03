@@ -99,8 +99,9 @@ deleted here.
   - `matching/matcher.rs` 649
 
   Split them when a change touches them.
-- **The `serde` feature implies `matching`.** Serde derives on non-matching types such as a
-  caliper trace therefore pull in the matcher. Split model persistence into its own feature.
+- **The `serde` feature implies `matching`.** Serde derives on non-matching types such as
+  `CaliperTrace` therefore pull in the matcher. Split model persistence into its own
+  feature.
 
 ## Lab
 
