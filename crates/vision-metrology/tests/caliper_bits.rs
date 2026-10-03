@@ -4,6 +4,10 @@
 //! every reported edge (position, `t`, amplitude, polarity) or the rejection reason. A
 //! refactor that is meant to change nothing must keep every hash.
 //!
+//! The `f32` transcendental functions (`sin_cos`, `exp`) are not bit-identical across
+//! platforms, so the hashes are only compared on the platform they were captured on
+//! (aarch64 macOS); elsewhere the cases still run.
+//!
 //! To print the current hashes (for a change that is *meant* to move results), run
 //! `CALIPER_PIN_PRINT=1 cargo test -p vision-metrology --test caliper_bits -- --nocapture`.
 
@@ -423,10 +427,12 @@ fn caliper_output_is_bit_identical_to_the_pinned_implementation() {
         return;
     }
     assert_eq!(cases.len(), EXPECTED_CASES, "the case list itself changed");
-    assert_eq!(
-        all.0, EXPECTED_COMBINED,
-        "caliper output changed; rerun with CALIPER_PIN_PRINT=1 to see which cases"
-    );
+    if cfg!(all(target_arch = "aarch64", target_os = "macos")) {
+        assert_eq!(
+            all.0, EXPECTED_COMBINED,
+            "caliper output changed; rerun with CALIPER_PIN_PRINT=1 to see which cases"
+        );
+    }
 }
 
 const EXPECTED_CASES: usize = 2132;
