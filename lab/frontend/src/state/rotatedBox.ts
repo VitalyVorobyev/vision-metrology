@@ -68,3 +68,19 @@ export function pickBox<T>(
   }
   return best;
 }
+
+/**
+ * `bounds`, grown about its centre to at least `min` image pixels on each side: what to frame
+ * so a small item (a caliper a few pixels wide, a match with no known extent) is shown with
+ * its surroundings rather than magnified to a blur.
+ */
+export function atLeast(bounds: Rect, min: number): Rect {
+  const width = Math.max(bounds.width, min);
+  const height = Math.max(bounds.height, min);
+  return {
+    x: bounds.x + (bounds.width - width) / 2,
+    y: bounds.y + (bounds.height - height) / 2,
+    width,
+    height,
+  };
+}

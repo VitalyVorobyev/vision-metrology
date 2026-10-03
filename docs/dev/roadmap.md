@@ -8,27 +8,8 @@ scheduled lives in [`backlog.md`](backlog.md).
 ## Where the library stands
 
 The measurement chain runs end to end on real data: rectify → locate → fixture → calipers
-→ robust fit → millimetres → pass/fail ([system design](system-design.md)). The work ahead:
-
-1. the lab moves onto the shared `@vitavision/*` UI packages;
-2. the remaining gaps: `filter`, accuracy coverage, blob features, bindings.
-
----
-
-## Track L: the lab on `@vitavision/*` packages, `in progress`
-
-The lab is built on `@vitavision/ui`, `stage2d`, `charts` and `workbench`
-([ADR-0015](adr/0015-the-lab.md)). Lab-specific pieces stay local until a second app needs
-them; package gaps the lab runs into are filed as lab-ui issues.
-
-### L5: Find and Verify inventories, `planned`
-- Find gets a match inventory that is hover-linked to the canvas, selectable, steppable
-  and framable, as Teach's contour inventory is.
-- Verify gets the same per caliper, built on stage2d's `PolylineSet` / `MeasureOverlay` ids
-  and on the per-caliper traces `diagnostics::explain_model` already feeds the measure
-  response.
-
-**Accept:** both views are driven end to end on a real capture.
+→ robust fit → millimetres → pass/fail ([system design](system-design.md)). The work ahead
+is the remaining gaps: `filter`, accuracy coverage, blob features, bindings.
 
 ---
 

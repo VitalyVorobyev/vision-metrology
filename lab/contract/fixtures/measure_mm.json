@@ -42,12 +42,15 @@
             "profile": {
               "edges": [
                 {
+                  "amplitude": 64.1849136352539,
                   "polarity": "falling",
                   "pos_px": -0.05302619934082031,
                   "x_mm": -81.22569274902344,
                   "y_mm": -5.425962448120117
                 }
               ],
+              "end_px": 8.01058292388916,
+              "start_px": -8.01058292388916,
               "step_px": 1.0,
               "values": [
                 200.0,
@@ -70,6 +73,7 @@
               ]
             },
             "reason": null,
+            "residual": -0.018161773146381677,
             "status": "hit"
           },
           {
@@ -77,12 +81,15 @@
             "profile": {
               "edges": [
                 {
+                  "amplitude": 63.604164123535156,
                   "polarity": "falling",
                   "pos_px": -0.025814056396484375,
                   "x_mm": -81.27386474609375,
                   "y_mm": -5.440624713897705
                 }
               ],
+              "end_px": 8.01058292388916,
+              "start_px": -8.01058292388916,
               "step_px": 1.0,
               "values": [
                 200.0,
@@ -105,6 +112,7 @@
               ]
             },
             "reason": null,
+            "residual": 0.00908215190962025,
             "status": "hit"
           },
           {
@@ -112,12 +120,15 @@
             "profile": {
               "edges": [
                 {
+                  "amplitude": 63.60393524169922,
                   "polarity": "falling",
                   "pos_px": -0.02585887908935547,
                   "x_mm": -81.30744171142578,
                   "y_mm": -5.475872993469238
                 }
               ],
+              "end_px": 8.01058292388916,
+              "start_px": -8.01058292388916,
               "step_px": 1.0,
               "values": [
                 200.0,
@@ -140,6 +151,7 @@
               ]
             },
             "reason": null,
+            "residual": 0.009073764483950697,
             "status": "hit"
           },
           {
@@ -147,12 +159,15 @@
             "profile": {
               "edges": [
                 {
+                  "amplitude": 64.18507385253906,
                   "polarity": "falling",
                   "pos_px": -0.05312299728393555,
                   "x_mm": -81.31732177734375,
                   "y_mm": -5.522153854370117
                 }
               ],
+              "end_px": 8.01058292388916,
+              "start_px": -8.01058292388916,
               "step_px": 1.0,
               "values": [
                 200.0,
@@ -175,6 +190,7 @@
               ]
             },
             "reason": null,
+            "residual": -0.018150328831257667,
             "status": "hit"
           },
           {
@@ -182,12 +198,15 @@
             "profile": {
               "edges": [
                 {
+                  "amplitude": 63.60401916503906,
                   "polarity": "falling",
                   "pos_px": -0.025925636291503906,
                   "x_mm": -81.30117797851562,
                   "y_mm": -5.567093849182129
                 }
               ],
+              "end_px": 8.01058292388916,
+              "start_px": -8.01058292388916,
               "step_px": 1.0,
               "values": [
                 200.0,
@@ -210,6 +229,7 @@
               ]
             },
             "reason": null,
+            "residual": 0.009075407515869216,
             "status": "hit"
           },
           {
@@ -217,12 +237,15 @@
             "profile": {
               "edges": [
                 {
+                  "amplitude": 63.603851318359375,
                   "polarity": "falling",
                   "pos_px": -0.02594137191772461,
                   "x_mm": -81.26301574707031,
                   "y_mm": -5.598646640777588
                 }
               ],
+              "end_px": 8.01058292388916,
+              "start_px": -8.01058292388916,
               "step_px": 1.0,
               "values": [
                 200.0,
@@ -245,6 +268,7 @@
               ]
             },
             "reason": null,
+            "residual": 0.00907124531773107,
             "status": "hit"
           },
           {
@@ -252,12 +276,15 @@
             "profile": {
               "edges": [
                 {
+                  "amplitude": 64.18511962890625,
                   "polarity": "falling",
                   "pos_px": -0.05315113067626953,
                   "x_mm": -81.2131576538086,
                   "y_mm": -5.60825777053833
                 }
               ],
+              "end_px": 8.01058292388916,
+              "start_px": -8.01058292388916,
               "step_px": 1.0,
               "values": [
                 200.0,
@@ -280,6 +307,7 @@
               ]
             },
             "reason": null,
+            "residual": -0.018146514717798823,
             "status": "hit"
           },
           {
@@ -287,12 +315,15 @@
             "profile": {
               "edges": [
                 {
+                  "amplitude": 63.60398864746094,
                   "polarity": "falling",
                   "pos_px": -0.02590036392211914,
                   "x_mm": -81.16495513916016,
                   "y_mm": -5.593622207641602
                 }
               ],
+              "end_px": 8.01058292388916,
+              "start_px": -8.01058292388916,
               "step_px": 1.0,
               "values": [
                 200.0,
@@ -315,6 +346,7 @@
               ]
             },
             "reason": null,
+            "residual": 0.009076392486374374,
             "status": "hit"
           },
           {
@@ -322,12 +354,15 @@
             "profile": {
               "edges": [
                 {
+                  "amplitude": 63.60400390625,
                   "polarity": "falling",
                   "pos_px": -0.02586078643798828,
                   "x_mm": -81.13134002685547,
                   "y_mm": -5.558370113372803
                 }
               ],
+              "end_px": 8.01058292388916,
+              "start_px": -8.01058292388916,
               "step_px": 1.0,
               "values": [
                 200.0,
@@ -350,6 +385,7 @@
               ]
             },
             "reason": null,
+            "residual": 0.009079148307215235,
             "status": "hit"
           },
           {
@@ -357,12 +393,15 @@
             "profile": {
               "edges": [
                 {
+                  "amplitude": 64.1849594116211,
                   "polarity": "falling",
                   "pos_px": -0.0530552864074707,
                   "x_mm": -81.12144470214844,
                   "y_mm": -5.512056350708008
                 }
               ],
+              "end_px": 8.01058292388916,
+              "start_px": -8.01058292388916,
               "step_px": 1.0,
               "values": [
                 200.0,
@@ -385,6 +424,7 @@
               ]
             },
             "reason": null,
+            "residual": -0.01815414420942929,
             "status": "hit"
           },
           {
@@ -392,12 +432,15 @@
             "profile": {
               "edges": [
                 {
+                  "amplitude": 63.604156494140625,
                   "polarity": "falling",
                   "pos_px": -0.025787830352783203,
                   "x_mm": -81.13762664794922,
                   "y_mm": -5.46708869934082
                 }
               ],
+              "end_px": 8.01058292388916,
+              "start_px": -8.01058292388916,
               "step_px": 1.0,
               "values": [
                 200.0,
@@ -420,6 +463,7 @@
               ]
             },
             "reason": null,
+            "residual": 0.009080718304876001,
             "status": "hit"
           },
           {
@@ -427,12 +471,15 @@
             "profile": {
               "edges": [
                 {
+                  "amplitude": 63.60407257080078,
                   "polarity": "falling",
                   "pos_px": -0.025778770446777344,
                   "x_mm": -81.17583465576172,
                   "y_mm": -5.435541152954102
                 }
               ],
+              "end_px": 8.01058292388916,
+              "start_px": -8.01058292388916,
               "step_px": 1.0,
               "values": [
                 200.0,
@@ -455,6 +502,7 @@
               ]
             },
             "reason": null,
+            "residual": 0.009075059980158784,
             "status": "hit"
           }
         ],
@@ -477,11 +525,12 @@
           {
             "angle": 1.5708014965057373,
             "cross": null,
-            "cx": 63.99995422363281,
-            "cy": 63.999916076660156,
+            "cx": 63.999829986435735,
+            "cy": 88.03166580168082,
             "dashed": null,
             "endAngle": null,
             "height": 8.01058292388916,
+            "id": "caliper-0-0",
             "kind": "caliper",
             "label": null,
             "r": null,
@@ -503,6 +552,7 @@
             "dashed": null,
             "endAngle": null,
             "height": null,
+            "id": "caliper-0-0",
             "kind": "point",
             "label": null,
             "r": null,
@@ -519,11 +569,12 @@
           {
             "angle": 2.094400405883789,
             "cross": null,
-            "cx": 63.99995422363281,
-            "cy": 63.999916076660156,
+            "cx": 51.983968984323774,
+            "cy": 84.81195810982386,
             "dashed": null,
             "endAngle": null,
             "height": 8.01058292388916,
+            "id": "caliper-0-1",
             "kind": "caliper",
             "label": null,
             "r": null,
@@ -545,6 +596,7 @@
             "dashed": null,
             "endAngle": null,
             "height": null,
+            "id": "caliper-0-1",
             "kind": "point",
             "label": null,
             "r": null,
@@ -561,11 +613,12 @@
           {
             "angle": 2.6179990768432617,
             "cross": null,
-            "cx": 63.99995422363281,
-            "cy": 63.999916076660156,
+            "cx": 43.1877859956261,
+            "cy": 76.01568274011586,
             "dashed": null,
             "endAngle": null,
             "height": 8.01058292388916,
+            "id": "caliper-0-2",
             "kind": "caliper",
             "label": null,
             "r": null,
@@ -587,6 +640,7 @@
             "dashed": null,
             "endAngle": null,
             "height": null,
+            "id": "caliper-0-2",
             "kind": "point",
             "label": null,
             "r": null,
@@ -603,11 +657,12 @@
           {
             "angle": 3.1415977478027344,
             "cross": null,
-            "cx": 63.99995422363281,
-            "cy": 63.999916076660156,
+            "cx": 39.968204498602844,
+            "cy": 63.99979365380971,
             "dashed": null,
             "endAngle": null,
             "height": 8.01058292388916,
+            "id": "caliper-0-3",
             "kind": "caliper",
             "label": null,
             "r": null,
@@ -629,6 +684,7 @@
             "dashed": null,
             "endAngle": null,
             "height": null,
+            "id": "caliper-0-3",
             "kind": "point",
             "label": null,
             "r": null,
@@ -645,11 +701,12 @@
           {
             "angle": 3.665196657180786,
             "cross": null,
-            "cx": 63.99995422363281,
-            "cy": 63.999916076660156,
+            "cx": 43.18791128328752,
+            "cy": 51.98393240861661,
             "dashed": null,
             "endAngle": null,
             "height": 8.01058292388916,
+            "id": "caliper-0-4",
             "kind": "caliper",
             "label": null,
             "r": null,
@@ -671,6 +728,7 @@
             "dashed": null,
             "endAngle": null,
             "height": null,
+            "id": "caliper-0-4",
             "kind": "point",
             "label": null,
             "r": null,
@@ -687,11 +745,12 @@
           {
             "angle": 4.188795566558838,
             "cross": null,
-            "cx": 63.99995422363281,
-            "cy": 63.999916076660156,
+            "cx": 51.984190950909856,
+            "cy": 43.187745891036855,
             "dashed": null,
             "endAngle": null,
             "height": 8.01058292388916,
+            "id": "caliper-0-5",
             "kind": "caliper",
             "label": null,
             "r": null,
@@ -713,6 +772,7 @@
             "dashed": null,
             "endAngle": null,
             "height": null,
+            "id": "caliper-0-5",
             "kind": "point",
             "label": null,
             "r": null,
@@ -729,11 +789,12 @@
           {
             "angle": 4.7123942375183105,
             "cross": null,
-            "cx": 63.99995422363281,
-            "cy": 63.999916076660156,
+            "cx": 64.00008056175226,
+            "cy": 39.968166351650446,
             "dashed": null,
             "endAngle": null,
             "height": 8.01058292388916,
+            "id": "caliper-0-6",
             "kind": "caliper",
             "label": null,
             "r": null,
@@ -755,6 +816,7 @@
             "dashed": null,
             "endAngle": null,
             "height": null,
+            "id": "caliper-0-6",
             "kind": "point",
             "label": null,
             "r": null,
@@ -771,11 +833,12 @@
           {
             "angle": 5.235993385314941,
             "cross": null,
-            "cx": 63.99995422363281,
-            "cy": 63.999916076660156,
+            "cx": 76.01594624436528,
+            "cy": 43.18787795880252,
             "dashed": null,
             "endAngle": null,
             "height": 8.01058292388916,
+            "id": "caliper-0-7",
             "kind": "caliper",
             "label": null,
             "r": null,
@@ -797,6 +860,7 @@
             "dashed": null,
             "endAngle": null,
             "height": null,
+            "id": "caliper-0-7",
             "kind": "point",
             "label": null,
             "r": null,
@@ -813,11 +877,12 @@
           {
             "angle": 5.759592056274414,
             "cross": null,
-            "cx": 63.99995422363281,
-            "cy": 63.999916076660156,
+            "cx": 84.81212636687216,
+            "cy": 51.98415619467027,
             "dashed": null,
             "endAngle": null,
             "height": 8.01058292388916,
+            "id": "caliper-0-8",
             "kind": "caliper",
             "label": null,
             "r": null,
@@ -839,6 +904,7 @@
             "dashed": null,
             "endAngle": null,
             "height": null,
+            "id": "caliper-0-8",
             "kind": "point",
             "label": null,
             "r": null,
@@ -855,11 +921,12 @@
           {
             "angle": 6.283190727233887,
             "cross": null,
-            "cx": 63.99995422363281,
-            "cy": 63.999916076660156,
+            "cx": 88.03170394862161,
+            "cy": 64.00004633004859,
             "dashed": null,
             "endAngle": null,
             "height": 8.01058292388916,
+            "id": "caliper-0-9",
             "kind": "caliper",
             "label": null,
             "r": null,
@@ -881,6 +948,7 @@
             "dashed": null,
             "endAngle": null,
             "height": null,
+            "id": "caliper-0-9",
             "kind": "point",
             "label": null,
             "r": null,
@@ -897,11 +965,12 @@
           {
             "angle": 6.806789398193359,
             "cross": null,
-            "cx": 63.99995422363281,
-            "cy": 63.999916076660156,
+            "cx": 84.81199611350732,
+            "cy": 76.01590156415031,
             "dashed": null,
             "endAngle": null,
             "height": 8.01058292388916,
+            "id": "caliper-0-10",
             "kind": "caliper",
             "label": null,
             "r": null,
@@ -923,6 +992,7 @@
             "dashed": null,
             "endAngle": null,
             "height": null,
+            "id": "caliper-0-10",
             "kind": "point",
             "label": null,
             "r": null,
@@ -939,11 +1009,12 @@
           {
             "angle": 7.330388069152832,
             "cross": null,
-            "cx": 63.99995422363281,
-            "cy": 63.999916076660156,
+            "cx": 76.0157206389059,
+            "cy": 84.81208444795345,
             "dashed": null,
             "endAngle": null,
             "height": 8.01058292388916,
+            "id": "caliper-0-11",
             "kind": "caliper",
             "label": null,
             "r": null,
@@ -965,6 +1036,7 @@
             "dashed": null,
             "endAngle": null,
             "height": null,
+            "id": "caliper-0-11",
             "kind": "point",
             "label": null,
             "r": null,
@@ -986,6 +1058,7 @@
             "dashed": null,
             "endAngle": null,
             "height": null,
+            "id": null,
             "kind": "circle",
             "label": null,
             "r": 23.996814727783203,

@@ -260,6 +260,16 @@ export interface components {
         CaliperProfileOut: {
             /** Edges */
             edges: components["schemas"]["EdgeMarkOut"][];
+            /**
+             * End Px
+             * @description position of the last sample, as start_px
+             */
+            end_px?: number | null;
+            /**
+             * Start Px
+             * @description position of values[0] along the caliper, in the frame of edges[].pos_px (signed from the caliper's centre); values[i] sits at start_px + (end_px - start_px) * i / (len(values) - 1)
+             */
+            start_px?: number | null;
             /** Step Px */
             step_px: number;
             /** Values */
@@ -272,6 +282,11 @@ export interface components {
             profile: components["schemas"]["CaliperProfileOut"];
             /** Reason */
             reason?: string | null;
+            /**
+             * Residual
+             * @description signed distance of the edge from the fitted shape, in pixels (outside a circle is positive); null for a rejected caliper or an object with no fit
+             */
+            residual?: number | null;
             /**
              * Status
              * @enum {string}
@@ -371,6 +386,11 @@ export interface components {
         };
         /** EdgeMarkOut */
         EdgeMarkOut: {
+            /**
+             * Amplitude
+             * @description the edge's local contrast: |derivative response| at a gradient peak, or |after - before| for a level crossing
+             */
+            amplitude?: number | null;
             /** Polarity */
             polarity: string;
             /** Pos Px */
@@ -769,6 +789,11 @@ export interface components {
             endAngle?: number | null;
             /** Height */
             height?: number | null;
+            /**
+             * Id
+             * @description links the primitive to a row: `caliper-<object>-<caliper>` on a caliper's box and its edge mark
+             */
+            id?: string | null;
             /**
              * Kind
              * @enum {string}

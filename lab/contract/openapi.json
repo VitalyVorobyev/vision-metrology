@@ -70,6 +70,30 @@
             "title": "Edges",
             "type": "array"
           },
+          "end_px": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "position of the last sample, as start_px",
+            "title": "End Px"
+          },
+          "start_px": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "position of values[0] along the caliper, in the frame of edges[].pos_px (signed from the caliper's centre); values[i] sits at start_px + (end_px - start_px) * i / (len(values) - 1)",
+            "title": "Start Px"
+          },
           "step_px": {
             "title": "Step Px",
             "type": "number"
@@ -109,6 +133,18 @@
               }
             ],
             "title": "Reason"
+          },
+          "residual": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "signed distance of the edge from the fitted shape, in pixels (outside a circle is positive); null for a rejected caliper or an object with no fit",
+            "title": "Residual"
           },
           "status": {
             "enum": [
@@ -310,6 +346,18 @@
       },
       "EdgeMarkOut": {
         "properties": {
+          "amplitude": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "the edge's local contrast: |derivative response| at a gradient peak, or |after - before| for a level crossing",
+            "title": "Amplitude"
+          },
           "polarity": {
             "title": "Polarity",
             "type": "string"
@@ -1545,6 +1593,18 @@
               }
             ],
             "title": "Height"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "links the primitive to a row: `caliper-<object>-<caliper>` on a caliper's box and its edge mark",
+            "title": "Id"
           },
           "kind": {
             "enum": [

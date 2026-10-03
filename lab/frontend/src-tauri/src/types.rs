@@ -379,6 +379,8 @@ pub struct EdgeMarkOut {
     pub polarity: String,
     pub x_mm: Option<f32>,
     pub y_mm: Option<f32>,
+    /// The edge's local contrast (`MeasureEdge::amplitude`).
+    pub amplitude: Option<f32>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -386,6 +388,10 @@ pub struct CaliperProfileOut {
     pub values: Vec<f32>,
     pub step_px: f32,
     pub edges: Vec<EdgeMarkOut>,
+    /// Position of `values[0]` along the caliper, in the frame of `edges[].pos_px`.
+    pub start_px: Option<f32>,
+    /// Position of the last sample, as `start_px`.
+    pub end_px: Option<f32>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -394,6 +400,9 @@ pub struct CaliperResultOut {
     pub status: &'static str,
     pub reason: Option<String>,
     pub profile: CaliperProfileOut,
+    /// Signed distance of the edge from the fitted shape, in pixels; `None` for a
+    /// rejected caliper or an object with no fit.
+    pub residual: Option<f32>,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -401,6 +410,9 @@ pub struct OverlayPrimitiveOut {
     pub kind: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tone: Option<&'static str>,
+    /// Links the primitive to a list row: `caliper-<object>-<caliper>`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cx: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]

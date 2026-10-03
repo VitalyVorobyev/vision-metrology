@@ -1,4 +1,13 @@
-import { LineProfile } from "@vitavision/charts";
+/**
+ * Calipers and fits at the found pose, and the evidence behind each number.
+ *
+ * The objects are nominal geometry in the model's frame; the backend places them at the
+ * auto-found fixture and measures every caliper once. The results are per object (the fit,
+ * its residual statistics) and per caliper: the caliper inventory (`CaliperSection`) lists
+ * each one's verdict, edge, residual and amplitude, linked to its box and edge mark on the
+ * canvas, and draws the selected one's profile.
+ */
+
 import {
   Badge,
   Button,
@@ -12,19 +21,36 @@ import {
   Table,
 } from "@vitavision/ui";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 
 import { getBackend } from "../api/backend";
 import type {
   CalibrationOut,
-  CaliperResultOut,
   ImageOut,
   MeasureObjectIn,
   MeasureObjectResultOut,
   ModelOut,
-  OverlayPrimitiveOut,
 } from "../api/backend";
-import { caliperToProfile, formatMeasurement, type MeasureUnit } from "../api/transforms";
+import { formatMeasurement, type MeasureUnit } from "../api/transforms";
+import { toMeasurePrimitives } from "../overlay/toMeasurePrimitive";
+import {
+  describeCalipers,
+  filterCalipers,
+  filterCounts,
+  pickCaliper,
+  withCaliperStates,
+  type CaliperFilter,
+} from "../state/caliperInventory";
+import { stepThrough } from "../state/contourInventory";
+import { isTypingTarget } from "../state/keyboard";
+import { useLab } from "../state/LabContext";
+import { atLeast } from "../state/rotatedBox";
+import { CaliperProfilePanel, CaliperSection } from "./CaliperSection";
+
+/** Framing a caliper shows at least this much image around it, in image pixels. */
+const CALIPER_CONTEXT = 64;
+/** Margin around a framed caliper, as a fraction of the framed box. */
+const FRAME_PAD = 0.15;
 
 type Kind = "circle" | "line";
 
@@ -37,23 +63,24 @@ export function MeasureTab({
   image,
   models,
   calibrations,
-  onResult,
 }: {
   image: ImageOut;
   models: ModelOut[];
   calibrations: CalibrationOut[];
-  onResult: (overlay: OverlayPrimitiveOut[]) => void;
 }) {
+  const { setOverlay, setOverlayPicker, canvas } = useLab();
   const [modelId, setModelId] = useState(models[0]?.id ?? "");
   const [minScore, setMinScore] = useState(0.7);
   const [objects, setObjects] = useState<MeasureObjectIn[]>([]);
   const [draftKind, setDraftKind] = useState<Kind>("circle");
-  const [selected, setSelected] = useState<{ object: number; caliper: number } | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [hovered, setHovered] = useState<string | null>(null);
+  const [filter, setFilter] = useState<CaliperFilter>("all");
   const [calibrationId, setCalibrationId] = useState("");
   const [cameraIndex, setCameraIndex] = useState(0);
   const [unit, setUnit] = useState<MeasureUnit>("px");
   const queryClient = useQueryClient();
-  const calibrationFileInput = useRef<HTMLInputElement>(null);
+  const calibrationFileInputRef = useRef<HTMLInputElement>(null);
   const uploadCalibrationMutation = useMutation({
     mutationFn: (file: File) => getBackend().uploadCalibration(file),
     onSuccess: (calibration) => {
@@ -63,18 +90,20 @@ export function MeasureTab({
   });
 
   const mutation = useMutation({
-    mutationFn: () =>
-      getBackend().measure({
+    mutationFn: async () => {
+      const response = await getBackend().measure({
         image_id: image.id,
         model_id: modelId,
         min_score: minScore,
         objects,
         camera_index: cameraIndex,
         ...(calibrationId ? { calibration_id: calibrationId } : {}),
-      }),
-    onSuccess: (res) => {
-      onResult(res.objects.flatMap((o) => o.overlay ?? []));
+      });
+      return { response, imageId: image.id };
+    },
+    onSuccess: () => {
       setSelected(null);
+      setHovered(null);
     },
   });
 
@@ -83,10 +112,82 @@ export function MeasureTab({
   const patchObject = (i: number, patch: Partial<MeasureObjectIn>) =>
     setObjects((prev) => prev.map((o, idx) => (idx === i ? { ...o, ...patch } : o)));
 
-  const results = mutation.data?.objects ?? [];
-  const activeCaliper: CaliperResultOut | null =
-    selected && results[selected.object]
-      ? (results[selected.object]?.calipers?.[selected.caliper] ?? null)
+  /* A measurement is about the frame it ran on. Stepping to another frame leaves the objects
+   * set up, and the result behind: drawing it over the new frame would look like a result
+   * about that one. */
+  const data = mutation.data?.imageId === image.id ? mutation.data.response : undefined;
+  const results = useMemo(() => data?.objects ?? [], [data]);
+  const rows = useMemo(() => describeCalipers(results), [results]);
+  const counts = useMemo(() => filterCounts(rows), [rows]);
+  const visible = useMemo(() => filterCalipers(rows, filter), [rows, filter]);
+  const order = useMemo(() => visible.map((row) => row.id), [visible]);
+  const shown = useMemo(() => new Set(order), [order]);
+  const overlay = useMemo(() => toMeasurePrimitives(results.flatMap((o) => o.overlay ?? [])), [results]);
+  const active = rows.find((row) => row.id === selected) ?? null;
+
+  /* The measurement on the canvas, each caliper's box and edge mark in its state. Pushed only
+   * once there is a result: until then the canvas keeps what the previous step drew. */
+  useEffect(() => {
+    if (data === undefined) return;
+    setOverlay(withCaliperStates(overlay, selected, hovered, shown));
+  }, [data, overlay, selected, hovered, shown, setOverlay]);
+
+  // The canvas side of the list: the caliper under the pointer, and what a click selects.
+  useEffect(() => {
+    if (visible.length === 0) {
+      setOverlayPicker(null);
+      return;
+    }
+    setOverlayPicker({
+      pick: (point, tolerance) => pickCaliper(visible, point, tolerance),
+      hovered,
+      onHover: setHovered,
+      onSelect: setSelected,
+    });
+    return () => setOverlayPicker(null);
+  }, [visible, hovered, setOverlayPicker]);
+
+  const frameCaliper = useCallback(
+    (id: string) => {
+      const bounds = rows.find((row) => row.id === id)?.bounds;
+      if (bounds) canvas.current?.frame(atLeast(bounds, CALIPER_CONTEXT), FRAME_PAD);
+    },
+    [rows, canvas],
+  );
+
+  const onKey = useEffectEvent((event: KeyboardEvent) => {
+    if (order.length === 0 || isTypingTarget(event.target) || event.metaKey || event.ctrlKey || event.altKey) {
+      return;
+    }
+    switch (event.key) {
+      case "ArrowDown":
+      case "ArrowUp":
+        setSelected(stepThrough(order, selected, event.key === "ArrowDown" ? 1 : -1));
+        break;
+      case "f":
+      case "F":
+        if (selected === null) return;
+        frameCaliper(selected);
+        break;
+      case "Escape":
+        if (selected === null) return;
+        setSelected(null);
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+  });
+  useEffect(() => {
+    const listener = (event: KeyboardEvent) => onKey(event);
+    window.addEventListener("keydown", listener);
+    return () => window.removeEventListener("keydown", listener);
+  }, []);
+
+  const activeEdge = active?.caliper.profile.edges[0];
+  const activeMm =
+    calibrationId && unit === "mm" && activeEdge?.x_mm != null && activeEdge.y_mm != null
+      ? `${activeEdge.x_mm.toFixed(3)}, ${activeEdge.y_mm.toFixed(3)}`
       : null;
 
   return (
@@ -123,12 +224,12 @@ export function MeasureTab({
                 size="sm"
                 variant="ghost"
                 loading={uploadCalibrationMutation.isPending}
-                onClick={() => calibrationFileInput.current?.click()}
+                onClick={() => calibrationFileInputRef.current?.click()}
               >
                 Upload…
               </Button>
               <input
-                ref={calibrationFileInput}
+                ref={calibrationFileInputRef}
                 type="file"
                 accept="application/json,.json"
                 className="hidden"
@@ -223,13 +324,13 @@ export function MeasureTab({
         </div>
       </Panel>
 
-      {mutation.data && (
+      {data && (
         <Panel title="Results">
           <div className="mb-3 flex items-center justify-between">
             <div className="flex flex-col gap-1 text-xs text-fg-muted">
-              fixture ({mutation.data.fixture_source}): x={mutation.data.fixture.x.toFixed(2)} y=
-              {mutation.data.fixture.y.toFixed(2)} angle={((mutation.data.fixture.angle * 180) / Math.PI).toFixed(2)}°
-              scale={mutation.data.fixture.scale.toFixed(3)}
+              fixture ({data.fixture_source}): x={data.fixture.x.toFixed(2)} y=
+              {data.fixture.y.toFixed(2)} angle={((data.fixture.angle * 180) / Math.PI).toFixed(2)}°
+              scale={data.fixture.scale.toFixed(3)}
             </div>
             {calibrationId && (
               <SegmentedControl
@@ -274,55 +375,28 @@ export function MeasureTab({
           />
           {results.some((r) => r.message) && (
             <ul className="mt-2 flex flex-col gap-1">
-              {results
-                .filter((r) => r.message)
-                .map((r, i) => (
-                  <li key={i}>
-                    <ErrorBox>{r.message}</ErrorBox>
-                  </li>
-                ))}
+              {results.flatMap((r, i) =>
+                r.message ? [<li key={`${i}-${r.message}`}><ErrorBox>{r.message}</ErrorBox></li>] : [],
+              )}
             </ul>
           )}
-
-          <div className="mt-4 flex flex-col gap-2">
-            <h3 className="text-xs font-semibold text-fg-muted">Calipers</h3>
-            {results.map((r, oi) => (
-              <div key={oi} className="flex flex-wrap gap-1.5">
-                {(r.calipers ?? []).map((c) => (
-                  <button
-                    key={c.index}
-                    type="button"
-                    onClick={() => setSelected({ object: oi, caliper: c.index })}
-                    title={c.reason ?? undefined}
-                    className={
-                      "rounded px-1.5 py-0.5 font-mono text-[10px] " +
-                      (c.status === "hit" ? "bg-signal/15 text-signal" : "bg-defect/15 text-defect") +
-                      (selected?.object === oi && selected.caliper === c.index ? " ring-1 ring-fg" : "")
-                    }
-                  >
-                    {oi}.{c.index}
-                  </button>
-                ))}
-              </div>
-            ))}
-          </div>
         </Panel>
       )}
 
-      {activeCaliper && (
-        <Panel title={`Caliper profile — ${activeCaliper.status}${activeCaliper.reason ? ` (${activeCaliper.reason})` : ""}`}>
-          <LineProfile {...caliperToProfile(activeCaliper)} label="intensity along caliper axis" />
-          {calibrationId &&
-            unit === "mm" &&
-            activeCaliper.profile.edges[0]?.x_mm !== null &&
-            activeCaliper.profile.edges[0]?.x_mm !== undefined && (
-              <p className="mt-2 text-xs text-fg-muted">
-                edge position (mm frame): {activeCaliper.profile.edges[0].x_mm.toFixed(3)},{" "}
-                {activeCaliper.profile.edges[0].y_mm?.toFixed(3)}
-              </p>
-            )}
-        </Panel>
+      {data && rows.length > 0 && (
+        <CaliperSection
+          rows={visible}
+          counts={counts}
+          filter={filter}
+          onFilter={setFilter}
+          selected={selected}
+          hovered={hovered}
+          onSelect={setSelected}
+          onHover={setHovered}
+        />
       )}
+
+      {active && <CaliperProfilePanel row={active} mm={activeMm} />}
     </div>
   );
 }

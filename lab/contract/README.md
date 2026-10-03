@@ -71,4 +71,5 @@ Python replay; see the Rust replay test for its own tolerance).
   agreement, using `serde_json::Value` field lookups rather than a full response-schema
   match — the two backends' JSON *shapes* differ in places (this is not a wire-format
   contract between them, only a numeric-agreement one), but the fields both report
-  (pose, score, measured radius/rms, mm values, displacement dx/dy/score) must agree.
+  (pose, score, measured radius/rms, each caliper's verdict, edge and residual, the
+  measure overlay, mm values, displacement dx/dy/score) must agree.

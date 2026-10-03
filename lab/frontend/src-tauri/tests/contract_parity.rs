@@ -7,8 +7,9 @@
 //! `lab/contract/README.md` for what "agreement" means here: field-by-field numeric
 //! comparison, not a byte-identical JSON shape — the two backends' response *types*
 //! differ in places (this crate's own `types.rs`, not `lab_backend`'s Pydantic models),
-//! but the fields both report (pose, score, measured radius/rms, mm values, displacement
-//! dx/dy/score) must agree within float tolerance.
+//! but the fields both report (pose, score, measured radius/rms, each caliper's verdict,
+//! edge and residual, the measure overlay, mm values, displacement dx/dy/score) must agree
+//! within float tolerance.
 
 use std::path::PathBuf;
 
@@ -255,6 +256,46 @@ fn measure_matches_the_golden() {
         e_obj["calipers"].as_array().unwrap().len(),
         "measure: caliper count"
     );
+    // The caliper list: each caliper's verdict, edge (position, polarity, amplitude),
+    // residual against the fit, and where its profile's samples sit along it.
+    let calipers = a_obj["calipers"].as_array().unwrap();
+    for (i, (a, e)) in calipers
+        .iter()
+        .zip(e_obj["calipers"].as_array().unwrap())
+        .enumerate()
+    {
+        for field in ["index", "status", "reason", "residual"] {
+            assert_agrees(
+                &a[field],
+                &e[field],
+                &format!("measure.calipers[{i}].{field}"),
+            );
+        }
+        for field in ["start_px", "end_px", "edges"] {
+            assert_agrees(
+                &a["profile"][field],
+                &e["profile"][field],
+                &format!("measure.calipers[{i}].profile.{field}"),
+            );
+        }
+    }
+    // The overlay, primitive by primitive: the same boxes in the same places, linked to
+    // their rows by the same ids. Only the fields the golden sets: FastAPI writes every
+    // absent one as `null`, and this crate leaves them out.
+    let overlay = a_obj["overlay"].as_array().unwrap();
+    let golden_overlay = e_obj["overlay"].as_array().unwrap();
+    assert_eq!(
+        overlay.len(),
+        golden_overlay.len(),
+        "measure: overlay length"
+    );
+    for (i, (a, e)) in overlay.iter().zip(golden_overlay).enumerate() {
+        for (k, v) in e.as_object().unwrap() {
+            if !v.is_null() {
+                assert_agrees(&a[k], v, &format!("measure.overlay[{i}].{k}"));
+            }
+        }
+    }
 
     // -- measure with calibration/mm --------------------------------------------------
     let resp_mm = commands::measure::measure(

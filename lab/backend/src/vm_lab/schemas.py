@@ -171,12 +171,24 @@ class EdgeMarkOut(BaseModel):
     polarity: str
     x_mm: float | None = None
     y_mm: float | None = None
+    amplitude: float | None = Field(
+        default=None,
+        description="the edge's local contrast: |derivative response| at a gradient peak, "
+        "or |after - before| for a level crossing",
+    )
 
 
 class CaliperProfileOut(BaseModel):
     values: list[float]
     step_px: float
     edges: list[EdgeMarkOut]
+    start_px: float | None = Field(
+        default=None,
+        description="position of values[0] along the caliper, in the frame of edges[].pos_px "
+        "(signed from the caliper's centre); values[i] sits at "
+        "start_px + (end_px - start_px) * i / (len(values) - 1)",
+    )
+    end_px: float | None = Field(default=None, description="position of the last sample, as start_px")
 
 
 class CaliperResultOut(BaseModel):
@@ -184,6 +196,11 @@ class CaliperResultOut(BaseModel):
     status: Literal["hit", "rejected"]
     reason: str | None = None
     profile: CaliperProfileOut
+    residual: float | None = Field(
+        default=None,
+        description="signed distance of the edge from the fitted shape, in pixels (outside a "
+        "circle is positive); null for a rejected caliper or an object with no fit",
+    )
 
 
 class OverlayPrimitiveOut(BaseModel):
@@ -192,6 +209,11 @@ class OverlayPrimitiveOut(BaseModel):
 
     kind: Literal["point", "segment", "circle", "arc", "caliper", "dimension"]
     tone: Literal["signal", "normal", "defect", "warn", "muted"] | None = None
+    id: str | None = Field(
+        default=None,
+        description="links the primitive to a row: `caliper-<object>-<caliper>` on a caliper's "
+        "box and its edge mark",
+    )
 
     x: float | None = None
     y: float | None = None

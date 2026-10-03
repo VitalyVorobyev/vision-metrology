@@ -38,12 +38,16 @@ React UI ── LabBackend ─┬─ httpBackend  ── openapi-fetch ──►
   `MetrologyModel.explain`) measures each caliper once. Per object it returns what
   `MetrologyModel::apply` returns (the fit, its residuals and hits), with every caliper's
   placement and trace. `routers/measure.py` and `commands/measure.rs` build the caliper
-  list (hit or rejection reason, profile, edge) and the overlay from those traces, so
-  there is no second, per-caliper measurement to drift from the fit. The placements are
-  `apply`'s own: the same code as `measure::diagnostics::layout`.
+  list (hit or rejection reason, edge and its amplitude, residual against the fit, profile
+  with the span its samples cover) and the overlay from those traces, so there is no
+  second, per-caliper measurement to drift from the fit. The placements are `apply`'s own:
+  the same code as `measure::diagnostics::layout`. A radial placement's `center` is its
+  circle's, so its box is drawn `radius` out along its axis. Each caliper's box and edge
+  mark carry the id `caliper-<object>-<index>`.
 - **The overlay type is mirrored.** The backend's `OverlayPrimitiveOut` mirrors stage2d's
   `MeasurePrimitive` field for field (`src/overlay/toMeasurePrimitive.ts`, Tauri
-  `types.rs`). Changes to it must be additive.
+  `types.rs`), `id` included. Changes to it must be additive. `state` is the UI's: the
+  backend never sets it.
 
 ### Desktop specifics
 
@@ -113,9 +117,10 @@ DatumLayer       model origin and its 0° arm
   `hovered`, so a row hovered in the list and a contour hovered on the image are the same
   state.
 - **Results are linked by id.** `MeasureOverlay` takes no pointer events, so a route whose
-  list is linked to its overlay (Find's matches) gives each primitive an `id`
-  (`match-<index>`) and a `state` (`hover`, `selected`), and pushes an `OverlayPicker` into
-  `LabContext`. The picker resolves an image point to an id (`state/rotatedBox.ts`: each
+  list is linked to its overlay (Find's matches, Measure's calipers) gives each primitive
+  an `id` (`match-<index>`, or the backend's `caliper-<object>-<index>`) and a `state`
+  (`hover`, `selected`, `dimmed` outside the list's filter), and pushes an `OverlayPicker`
+  into `LabContext`. The picker resolves an image point to an id (`state/rotatedBox.ts`: each
   item is a rotated box, the nearest centre wins). `CanvasStage` asks it on the stage's
   `onHover` and on `onBackgroundClick`, a press that did not pan, so a drag over a result
   still pans. The route's `hovered` is the picker's, as Teach's is `PolylineSet`'s.

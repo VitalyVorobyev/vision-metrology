@@ -7,7 +7,6 @@
 
 import { useEffect } from "react";
 
-import { toMeasurePrimitives } from "../overlay/toMeasurePrimitive";
 import { AlignTab } from "../tabs/AlignTab";
 import { MeasureTab } from "../tabs/MeasureTab";
 import { AppShell } from "../shell/AppShell";
@@ -38,17 +37,12 @@ function GaugeShell({ children }: { children: React.ReactNode }) {
 }
 
 export function MeasurePage() {
-  const { selectedImage, models, calibrations, setOverlay, setRoiMode } = useLab();
+  const { selectedImage, models, calibrations, setRoiMode } = useLab();
   useEffect(() => setRoiMode(false), [setRoiMode]);
   return (
     <GaugeShell>
       {selectedImage && (
-        <MeasureTab
-          image={selectedImage}
-          models={models}
-          calibrations={calibrations}
-          onResult={(o) => setOverlay(toMeasurePrimitives(o))}
-        />
+        <MeasureTab image={selectedImage} models={models} calibrations={calibrations} />
       )}
     </GaugeShell>
   );
