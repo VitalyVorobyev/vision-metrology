@@ -29,7 +29,6 @@ export function ImageLayer({ image }: { image: ImageOut }) {
   return (
     <>
       {url !== null && (
-        /* eslint-disable-next-line jsx-a11y/img-redundant-alt -- key is content identity, not decoration */
         <img
           key={`${image.id}-${tier}`}
           src={url}

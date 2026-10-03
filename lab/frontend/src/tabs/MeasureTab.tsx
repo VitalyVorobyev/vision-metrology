@@ -140,7 +140,7 @@ export function MeasureTab({
               />
             </div>
             {uploadCalibrationMutation.isError && (
-              <ErrorBox>{(uploadCalibrationMutation.error as Error).message}</ErrorBox>
+              <ErrorBox>{uploadCalibrationMutation.error.message}</ErrorBox>
             )}
           </Field>
           {calibrationId && (
@@ -224,7 +224,7 @@ export function MeasureTab({
           >
             Run measure
           </Button>
-          {mutation.isError && <ErrorBox>{(mutation.error as Error).message}</ErrorBox>}
+          {mutation.isError && <ErrorBox>{mutation.error.message}</ErrorBox>}
         </div>
       </Panel>
 

@@ -16,6 +16,7 @@ import { useEffect } from "react";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type * as BackendModule from "../../api/backend";
 import type { ContourOut, ImageOut, LabBackend } from "../../api/backend";
 import { LabProvider, useLab } from "../../state/LabContext";
 import { TeachPage } from "./TeachPage";
@@ -34,8 +35,8 @@ const CONTOURS: ContourOut[] = [
   { id: 2, points: [50, 50, 55, 55, 60, 60, 65, 65], closed: false, length: 21, mean_strength: 0.6 },
 ];
 
-const teachPreview = vi.fn();
-const teachModel = vi.fn();
+const teachPreview = vi.fn<LabBackend["teachPreview"]>();
+const teachModel = vi.fn<LabBackend["teachModel"]>();
 
 function fakeBackend(): LabBackend {
   return {
@@ -55,7 +56,7 @@ function fakeBackend(): LabBackend {
 }
 
 vi.mock("../../api/backend", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../api/backend")>();
+  const actual = await importOriginal<typeof BackendModule>();
   return { ...actual, getBackend: () => fakeBackend() };
 });
 
@@ -114,7 +115,7 @@ async function extractContours() {
 /** The inventory's rows, in the order they are rendered. */
 function rowIds(): string[] {
   const rows = screen.getAllByRole("row").slice(1); // drop the header
-  return rows.map((row) => within(row).getAllByRole("cell")[0]!.textContent!.trim());
+  return rows.map((row) => within(row).getAllByRole("cell")[0]!.textContent.trim());
 }
 
 describe("TeachPage", () => {
@@ -238,7 +239,7 @@ describe("TeachPage", () => {
 
     await waitFor(() => expect(teachModel).toHaveBeenCalledTimes(1));
     const request = teachModel.mock.calls[0]![0];
-    expect(request.keep_contours.sort()).toEqual([0, 2]);
+    expect([...(request.keep_contours ?? [])].sort()).toEqual([0, 2]);
     expect(request.roi).toEqual([500, 350, 340, 275]);
     expect(request.min_contrast).toBe(0.1);
     expect(request.origin).toEqual([670, 487.5]);

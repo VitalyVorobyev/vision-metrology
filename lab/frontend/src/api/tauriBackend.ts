@@ -57,7 +57,6 @@ import type {
   RectifyResponse,
   Roi,
   TeachPreviewRequest,
-  TeachPreviewResponse,
   ThumbEvent,
 } from "./backend";
 
@@ -102,8 +101,12 @@ async function bytesOf(file: File): Promise<number[]> {
   return Array.from(new Uint8Array(await file.arrayBuffer()));
 }
 
+function unsupportedError(feature: string): Error {
+  return new Error(`${feature} is not available in the desktop build yet (see lab/README.md).`);
+}
+
 function unsupported(feature: string): never {
-  throw new Error(`${feature} is not available in the desktop build yet (see lab/README.md).`);
+  throw unsupportedError(feature);
 }
 
 export function createTauriBackend(): LabBackend {
@@ -179,7 +182,7 @@ export function createTauriBackend(): LabBackend {
         "teach_preview",
         { req },
       );
-      return res as TeachPreviewResponse;
+      return res;
     },
 
     async modelGeometry(modelId: string, level: number, frame: "reference" | "model") {
@@ -270,8 +273,8 @@ export function createTauriBackend(): LabBackend {
 
     // Not implemented: the mosaic compositor (`lab/backend/src/vm_lab/routers/mosaic.py`)
     // has no Tauri command yet (docs/dev/backlog.md, "Lab").
-    async mosaic(_req: MosaicRequest): Promise<MosaicResponse> {
-      unsupported("Bird's-eye mosaic");
+    mosaic(_req: MosaicRequest): Promise<MosaicResponse> {
+      return Promise.reject(unsupportedError("Bird's-eye mosaic"));
     },
     mosaicImageUrl(_mosaicId: string, _feather: boolean): string {
       unsupported("Bird's-eye mosaic");

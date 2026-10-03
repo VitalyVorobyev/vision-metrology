@@ -214,10 +214,8 @@ jobs:
       - name: Install bun
         uses: oven-sh/setup-bun@v2
 
-      # @vitavision/lab-ui is a published package, so there is nothing to check
-      # out beside this repo and nothing to build first. While it was a
-      # `file:../../../lab-ui` path dependency this job was not possible without
-      # cloning a sibling repo, which is most of why the lab had no CI at all.
+      # The @vitavision/* UI packages come from npm, so there is nothing to
+      # check out beside this repo and nothing to build first.
       - name: Install frontend dependencies
         working-directory: lab/frontend
         run: bun install --frozen-lockfile
@@ -225,6 +223,10 @@ jobs:
       - name: Typecheck
         working-directory: lab/frontend
         run: bun run typecheck
+
+      - name: Lint
+        working-directory: lab/frontend
+        run: bun run lint
 
       - name: Test
         working-directory: lab/frontend

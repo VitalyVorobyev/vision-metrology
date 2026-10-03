@@ -165,7 +165,7 @@ export function MotionTab({
           <Button variant="primary" disabled={!canRun} loading={mutation.isPending} onClick={() => mutation.mutate()}>
             Run
           </Button>
-          {mutation.isError && <ErrorBox>{(mutation.error as Error).message}</ErrorBox>}
+          {mutation.isError && <ErrorBox>{mutation.error.message}</ErrorBox>}
         </div>
       </Panel>
 
