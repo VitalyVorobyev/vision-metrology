@@ -7,6 +7,9 @@
  * two are separate jobs entirely. Grouping them into workspaces means the
  * screen only ever offers what the current job needs: nothing about camera
  * mosaics is on screen while a model is being taught.
+ *
+ * The shell's `rail` slot is the `<nav>` landmark ("Workspaces"), with its border and
+ * background; this is only the column of links inside it.
  */
 
 import { cn, focusRing } from "@vitavision/ui";
@@ -22,10 +25,7 @@ const WORKSPACES = [
 
 export function WorkspaceRail() {
   return (
-    <nav
-      aria-label="Workspaces"
-      className="flex w-[4.5rem] shrink-0 flex-col gap-1 border-r border-line bg-surface px-2 py-3"
-    >
+    <div className="flex w-[4.5rem] flex-col gap-1 px-2 py-3">
       {WORKSPACES.map(({ to, icon: Icon, label, hint }) => (
         <NavLink
           key={to}
@@ -49,6 +49,6 @@ export function WorkspaceRail() {
           )}
         </NavLink>
       ))}
-    </nav>
+    </div>
   );
 }

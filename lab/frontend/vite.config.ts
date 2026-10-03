@@ -1,4 +1,5 @@
 import tailwindcss from "@tailwindcss/vite";
+import { dom } from "@vitavision/config-vitest/dom";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
@@ -13,9 +14,9 @@ export default defineConfig({
   build: {
     outDir: "dist",
   },
-  test: {
-    environment: "happy-dom",
-    globals: false,
-    setupFiles: ["./src/test-setup.ts"],
-  },
+  // The shared happy-dom preset: the environment, explicit vitest imports, the Testing
+  // Library teardown and `src/**/*.test.*` discovery. Only its `test` block: its plugins and
+  // its source-resolution condition are for the package monorepo, and the app builds against
+  // the published `dist`.
+  test: { ...dom().test },
 });

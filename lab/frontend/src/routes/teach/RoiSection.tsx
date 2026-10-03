@@ -9,7 +9,7 @@
 import { Button, Panel, VectorInput } from "@vitavision/ui";
 
 import type { Roi } from "../../api/backend";
-import { clampRoi } from "../../canvas/roiEdit";
+import { clampRoi } from "../../canvas/roi";
 
 export function RoiSection({
   roi,

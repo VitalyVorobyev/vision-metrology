@@ -34,7 +34,7 @@ import {
   type SelectMode,
   type SortKey,
 } from "../../canvas/contourSelection";
-import { sameRoi } from "../../canvas/roiEdit";
+import { sameRoi } from "../../canvas/roi";
 import { modelOverlay } from "../../overlay/modelOverlay";
 import { RecognizeShell } from "../RecognizeShell";
 import { useLab } from "../../state/LabContext";

@@ -15,7 +15,7 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
-import type { MeasurePrimitive, StageView } from "@vitavision/stage2d";
+import type { MeasurePrimitive, StageHandle, StageView } from "@vitavision/stage2d";
 import { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 
@@ -149,7 +149,8 @@ interface LabState {
   setTool: (tool: CanvasTool) => void;
 
   /**
-   * What a panel may ask the canvas to do, published by the canvas while it is mounted.
+   * What a panel may ask the canvas to do: the stage's own handle (`frame`, `fit`,
+   * `zoomTo`), attached as `ImageStage`'s `ref`.
    *
    * A ref rather than state because it is a set of imperative handles, not a value to
    * render: putting them in the context value would re-render every consumer whenever the
@@ -157,13 +158,7 @@ interface LabState {
    * (the Library workspace replaces it), which callers must treat as "not now" rather than
    * as an error.
    */
-  canvas: RefObject<CanvasCommands | null>;
-}
-
-export interface CanvasCommands {
-  /** Put a rect (image coordinates) on screen with a margin. */
-  frame: (rect: { x: number; y: number; width: number; height: number }, pad?: number) => void;
-  fit: () => void;
+  canvas: RefObject<StageHandle | null>;
 }
 
 const Ctx = createContext<LabState | null>(null);
@@ -195,7 +190,7 @@ export function LabProvider({ children }: { children: ReactNode }) {
   const [layers, setLayers] = useState<LayerVisibility>(DEFAULT_LAYERS);
   const [tool, setTool] = useState<CanvasTool>("pan");
 
-  const canvas = useRef<CanvasCommands | null>(null);
+  const canvas = useRef<StageHandle | null>(null);
 
   const setLayer = useCallback((key: keyof LayerVisibility, on: boolean) => {
     setLayers((current) => ({ ...current, [key]: on }));
