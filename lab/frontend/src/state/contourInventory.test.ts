@@ -4,15 +4,13 @@ import {
   applyKeep,
   applySelect,
   boundsOf,
-  boundsOfPoints,
-  contoursInBox,
   describeContours,
   filterContours,
   invertKeep,
   pointsIn,
   sortContours,
   stepThrough,
-} from "./contourSelection";
+} from "./contourInventory";
 import type { ContourOut } from "../api/backend";
 
 function contour(id: number, points: number[], extra: Partial<ContourOut> = {}): ContourOut {
@@ -42,7 +40,7 @@ describe("describeContours", () => {
   });
 
   it("gives an empty contour a degenerate box rather than NaN", () => {
-    expect(boundsOfPoints([])).toEqual({ x: 0, y: 0, width: 0, height: 0 });
+    expect(describeContours([contour(9, [])])[0]!.bounds).toEqual({ x: 0, y: 0, width: 0, height: 0 });
   });
 });
 
@@ -136,18 +134,6 @@ describe("keep operations", () => {
   it("counts the points a keep set carries", () => {
     expect(pointsIn(stats, new Set([0, 1, 2]))).toBe(9);
     expect(pointsIn(stats, new Set([1]))).toBe(2);
-  });
-});
-
-describe("contoursInBox", () => {
-  it("catches a contour by any vertex, not only its midpoint", () => {
-    // Contour 1 runs from x=100 to x=400 at y=100; the band covers only its far end.
-    const band = { x: 380, y: 90, width: 40, height: 20 };
-    expect(contoursInBox(CONTOURS, band)).toEqual([1]);
-  });
-
-  it("returns nothing for a band over empty space", () => {
-    expect(contoursInBox(CONTOURS, { x: 800, y: 800, width: 10, height: 10 })).toEqual([]);
   });
 });
 

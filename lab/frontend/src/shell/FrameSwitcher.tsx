@@ -4,13 +4,17 @@
  * Changing frame must not require a round trip through Library: on Find the whole task is
  * "run this model against a different frame".
  *
- * `[` and `]` step the sequence, because a capture is an ordered set and stepping through it
- * one frame at a time is what the Find and Verify steps are for.
+ * Two controls, for the two ways a frame is chosen. Stepping is workbench's
+ * `SequenceNavigator`: the neighbours as a thumbnail strip, previous and next, the position,
+ * and `[` / `]` from anywhere, because a capture is an ordered set and stepping through it one
+ * frame at a time is what the Find and Verify steps are for. Jumping is the frame menu: every
+ * frame by name and size.
  */
 
 import { Button, cn, focusRing, Listbox, Popover } from "@vitavision/ui";
-import { ChevronDown, ChevronLeft, ChevronRight, Images } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { SequenceNavigator } from "@vitavision/workbench";
+import { ChevronDown, Images } from "lucide-react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 
 import type { ImageOut } from "../api/backend";
@@ -22,24 +26,10 @@ export function FrameSwitcher() {
   const navigate = useNavigate();
   const [open, setOpen] = useState<"frames" | "models" | null>(null);
   const imageById = useMemo(() => new Map(images.map((image) => [image.id, image])), [images]);
-
-  const index = selectedImage ? images.findIndex((image) => image.id === selectedImage.id) : -1;
-  const step = (delta: 1 | -1) => {
-    if (images.length === 0) return;
-    const next = index < 0 ? 0 : (index + delta + images.length) % images.length;
-    selectImage(images[next]!.id);
-  };
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
-      if (isTypingTarget(event.target)) return;
-      if (event.key === "[") step(-1);
-      else if (event.key === "]") step(1);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  });
+  const sequence = useMemo(
+    () => images.map((image) => ({ id: image.id, label: image.filename })),
+    [images],
+  );
 
   if (images.length === 0) {
     return (
@@ -50,10 +40,21 @@ export function FrameSwitcher() {
   }
 
   return (
-    <div className="flex items-center gap-1">
-      <IconStep label="Previous frame ([)" onClick={() => step(-1)} disabled={images.length < 2}>
-        <ChevronLeft className="size-4" aria-hidden />
-      </IconStep>
+    <div className="flex min-w-0 flex-1 items-center gap-2">
+      <SequenceNavigator
+        aria-label="Frame sequence"
+        items={sequence}
+        value={selectedImage?.id ?? null}
+        onValueChange={selectImage}
+        // A capture is browsed in both directions; the last frame steps on to the first.
+        wrap
+        renderThumbnail={(item) => (
+          <Thumb imageId={item.id} alt="" className="h-full w-full object-cover" />
+        )}
+        // Sized to its content: a short capture keeps Next beside its frames, and a long one
+        // scrolls inside the strip rather than pushing the frame menu off the bar.
+        className="max-w-xl [&>ol]:flex-initial"
+      />
 
       <Popover
         open={open === "frames"}
@@ -64,14 +65,11 @@ export function FrameSwitcher() {
           <button
             type="button"
             className={cn(
-              "flex h-7 items-center gap-1.5 rounded-control px-2 font-mono text-xs text-fg hover:bg-raised",
+              "flex h-7 shrink-0 items-center gap-1.5 rounded-control px-2 font-mono text-xs text-fg hover:bg-raised",
               focusRing,
             )}
           >
             <span className="max-w-52 truncate">{selectedImage?.filename ?? "no frame"}</span>
-            <span className="text-fg-subtle tabular-nums">
-              {index >= 0 ? `${index + 1}/${images.length}` : `–/${images.length}`}
-            </span>
             <ChevronDown className="size-3.5 text-fg-subtle" aria-hidden />
           </button>
         }
@@ -93,10 +91,6 @@ export function FrameSwitcher() {
         />
       </Popover>
 
-      <IconStep label="Next frame (])" onClick={() => step(1)} disabled={images.length < 2}>
-        <ChevronRight className="size-4" aria-hidden />
-      </IconStep>
-
       {selectedModel && (
         <Popover
           open={open === "models"}
@@ -107,7 +101,7 @@ export function FrameSwitcher() {
             <button
               type="button"
               className={cn(
-                "ml-1 flex h-7 items-center gap-1.5 rounded-control bg-signal/10 px-2 font-mono text-xs text-signal hover:bg-signal/20",
+                "ml-1 flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-control bg-signal/10 px-2 font-mono text-xs text-signal hover:bg-signal/20",
                 focusRing,
               )}
             >
@@ -153,39 +147,4 @@ function FrameRow({ image }: { image: ImageOut }) {
       </span>
     </span>
   );
-}
-
-function IconStep({
-  label,
-  onClick,
-  disabled,
-  children,
-}: {
-  label: string;
-  onClick: () => void;
-  disabled?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      title={label}
-      aria-label={label}
-      disabled={disabled}
-      onClick={onClick}
-      className={cn(
-        "grid size-7 place-items-center rounded-control text-fg-muted hover:bg-raised hover:text-fg",
-        "disabled:pointer-events-none disabled:opacity-40",
-        focusRing,
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
-function isTypingTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  const tag = target.tagName;
-  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable;
 }

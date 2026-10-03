@@ -7,10 +7,10 @@
  * matters when the answer is "the tab's centre" or "45°, exactly".
  */
 
+import type { Rect } from "@vitavision/stage2d";
 import { Button, Field, NumberInput, Panel, VectorInput } from "@vitavision/ui";
 
 import type { Roi } from "../../api/backend";
-import type { Bounds } from "../../canvas/contourSelection";
 
 export function DatumSection({
   origin,
@@ -25,7 +25,7 @@ export function DatumSection({
   onOrigin: (p: [number, number]) => void;
   onAngle: (radians: number) => void;
   roi: Roi | null;
-  keptBounds: Bounds | null;
+  keptBounds: Rect | null;
 }) {
   if (origin === null) {
     return (

@@ -29,6 +29,7 @@
 
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 import type {
@@ -40,6 +41,7 @@ import type {
   DirEntry,
   DisplacementRequest,
   DisplacementResponse,
+  FileDropHandlers,
   FindRequestFull,
   FindResponse,
   ImageOut,
@@ -120,10 +122,12 @@ export function createTauriBackend(): LabBackend {
       return invoke<ImageOut[]>("images_list");
     },
 
+    imageAccept: () => IMAGE_EXTENSIONS.map((ext) => `.${ext}`).join(","),
+
     async uploadImage(file: File) {
-      // Kept for drag-and-drop, where all we have is a `File`. Opening from
-      // disk should go through `pickImages`/`openImagePaths` instead, which
-      // moves no bytes at all.
+      // Kept for a bare `File`. Opening from disk, dropped files included, goes
+      // through `pickImages`/`onFileDrop` and `openImagePaths` instead, which
+      // move no bytes at all.
       const bytes = await bytesOf(file);
       return invoke<ImageOut>("images_upload", { filename: file.name, bytes });
     },
@@ -152,6 +156,19 @@ export function createTauriBackend(): LabBackend {
 
     async openImagePaths(paths: string[]) {
       return invoke<ImageOut[]>("images_open_paths", { paths });
+    },
+
+    onFileDrop(handlers: FileDropHandlers) {
+      // The webview's native drag and drop, which reports paths. (With it on, the page
+      // never sees a DOM drop carrying files.)
+      const pending = getCurrentWebview().onDragDropEvent(({ payload }) => {
+        if (payload.type === "enter") handlers.onEnter();
+        else if (payload.type === "leave") handlers.onLeave();
+        else if (payload.type === "drop") handlers.onDrop(payload.paths);
+      });
+      return () => {
+        void pending.then((unlisten) => unlisten());
+      };
     },
 
     async scanDir(dir: string, recursive: boolean) {

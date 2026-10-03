@@ -23,7 +23,7 @@ import {
 } from "@vitavision/ui";
 import { Crosshair } from "lucide-react";
 
-import type { ContourStat, KeepFilter, SelectMode, SortKey } from "../../canvas/contourSelection";
+import type { ContourStat, KeepFilter, SelectMode, SortKey } from "../../state/contourInventory";
 
 /** Short enough not to wrap in a narrow inspector; the column headers say what they mean. */
 const SORTS: { value: SortKey; label: string }[] = [

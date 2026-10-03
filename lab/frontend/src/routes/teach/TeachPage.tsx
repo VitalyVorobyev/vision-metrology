@@ -33,7 +33,7 @@ import {
   type KeepFilter,
   type SelectMode,
   type SortKey,
-} from "../../canvas/contourSelection";
+} from "../../state/contourInventory";
 import { sameRoi } from "../../canvas/roi";
 import { modelOverlay } from "../../overlay/modelOverlay";
 import { RecognizeShell } from "../RecognizeShell";

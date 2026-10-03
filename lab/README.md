@@ -36,7 +36,7 @@ platform's app-data directory.
 
 | Workspace | Screen | What you do |
 |---|---|---|
-| Library | — | Open images or a whole folder (desktop), browse thumbnails, pick the current frame |
+| Library | — | Open or drop images, or open a whole folder (desktop); browse thumbnails, pick the current frame |
 | Recognize | Teach | Draw a region, inspect the extracted contours, keep or drop them, set the datum (origin and 0° direction), build a shape model |
 | | Find | Search the current frame (or, on desktop, every frame) for the model |
 | | Verify | Compare the model with a found instance, both rectified into the same frame (checker, wipe, difference) |
@@ -45,7 +45,11 @@ platform's app-data directory.
 | Camera | Motion | Track a window between consecutive frames (subpixel displacement) |
 | | Mosaic | Composite calibrated cameras onto their shared plane (browser only for now) |
 
-A frame switcher in the header changes the current frame on every screen (`[` / `]`).
+The header shows the frames as a strip of thumbnails on every screen: click one, or step
+with `[` / `]`. The menu beside it lists every frame by name.
+
+**Opening files.** Drop images anywhere on the Library, or use Open files…. The desktop app
+opens them where they are; the browser build uploads a copy.
 
 ## On the canvas
 
@@ -57,7 +61,10 @@ A frame switcher in the header changes the current frame on every screen (`[` / 
   handles resize it and its inside moves it. Focused, it moves with the arrow keys (Shift
   ×10) and resizes with Alt + arrows.
 - **Selecting contours.** Click selects a contour; ⌘/Ctrl-click adds or removes one;
-  shift-drag sweeps a selection.
+  shift-drag, or any drag with the sweep tool, selects every contour it touches (⌘/Ctrl
+  adds them). Hovering a contour highlights its row in the inventory, and the other way
+  round. Kept contours are drawn solid and dropped ones dashed; from 3× zoom the hovered
+  and selected ones show their points.
 - **Inventory keys (Teach).** `↑` / `↓` step through the inventory, `Space` toggles keep,
   `Delete` drops, `Enter` keeps only the selection, `F` frames it, `Esc` clears it.
 - **Coordinates.** Image coordinates name pixel centres, as everywhere in the library.

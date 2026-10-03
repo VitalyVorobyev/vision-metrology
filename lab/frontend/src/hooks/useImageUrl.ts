@@ -33,7 +33,7 @@ export function useImageUrl(imageId: string | null, tier: ImageTier): ImageUrlSt
  * A folder of three thousand frames is listed without decoding any of them —
  * and that laziness is thrown away if the grid then asks for three thousand
  * thumbnails at once, since each one is a decode plus a resize plus a PNG
- * encode. Gating on visibility (see `ImageGrid`'s IntersectionObserver) keeps
+ * encode. Gating on visibility (see `useNearViewport`) keeps
  * the cost proportional to what is actually on screen.
  */
 export function useLazyImageUrl(

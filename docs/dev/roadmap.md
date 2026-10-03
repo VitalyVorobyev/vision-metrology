@@ -20,7 +20,7 @@ The measurement chain runs end to end on real data: rectify → locate → fixtu
 
 The lab is built on `@vitavision/ui`, `stage2d`, `charts` and `workbench`
 ([ADR-0015](adr/0015-the-lab.md)). What remains is moving its lab-specific canvas layers and
-shell pieces upstream where a second app needs them, then using the released components.
+shell pieces upstream where a second app needs them, and building on them.
 
 ### L3: upstream components in lab-ui, `planned`
 These go into lab-ui as one ticket per PR. Each has two consumers (this lab and
@@ -41,14 +41,6 @@ as lab-ui issues and stay local here.
 
 **Accept:** each component is released, with stories and tests, and passes lab-ui's
 definition-of-done checks.
-
-### L4: use the upstreamed components, `in progress`
-- Delete the local ROI layer, contour selection, interaction hook, image layer and image
-  grid in favour of U2–U7, as each is released.
-- `MeasureOverlay` changes stay additive, because `OverlayPrimitiveOut` in the contract
-  mirrors it.
-
-**Accept:** contract parity passes and the Teach workflow test passes unchanged.
 
 ### L5: Find and Verify inventories, `planned`
 - Find gets a match inventory that is hover-linked to the canvas, selectable, steppable

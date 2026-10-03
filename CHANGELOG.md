@@ -126,6 +126,16 @@ The workspace was consolidated from twelve crates into three: `vm-primitives`,
 
 ### Lab
 
+- Contours on the canvas are `@vitavision/stage2d`'s `PolylineSet`: drawn batched and picked
+  through a spatial index, with hover shared with the inventory. Sweeps start from bare
+  image, the region or a contour through stage2d's `StageSurface` and `useStageDrag`, and a
+  sweep now catches a contour that crosses the band between two of its points. Overlays
+  use stage2d's role colours (`feature`, `model`, `structure`, `selection`) on a halo, and
+  the datum is drawn as an origin ring with its i and j axes.
+- The header's frame switcher is `@vitavision/workbench`'s `SequenceNavigator`, a strip of
+  thumbnails with `[` / `]`. The Library opens files through workbench's `FileDrop`:
+  dropped anywhere on the window, or picked. The desktop app opens them by path, and the
+  browser build uploads them.
 - The canvas runs on `@vitavision/stage2d` 0.8: its image layer, its region editor and its
   stage handle. Frames open at fit whatever their size, and the focused region moves with
   the arrow keys (Shift ×10) and resizes with Alt + arrows. The workspace rail sits in

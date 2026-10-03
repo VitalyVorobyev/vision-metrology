@@ -208,11 +208,24 @@ export type FindRequestFull = FindRequest & {
   tuning?: SearchTuning | null;
 };
 
+/** Files dragged over the window by the shell, reported as paths. */
+export interface FileDropHandlers {
+  /** A drag carrying files entered the window. */
+  onEnter: () => void;
+  /** It left without dropping. */
+  onLeave: () => void;
+  /** It was dropped: the paths, unfiltered. */
+  onDrop: (paths: string[]) => void;
+}
+
 /** The operations every tab/component needs, transport-agnostic. */
 export interface LabBackend {
   health(): Promise<{ status: string }>;
   listImages(): Promise<ImageOut[]>;
+  /** Copy an image into the lab: the browser's way in, and the desktop's for a bare `File`. */
   uploadImage(file: File): Promise<ImageOut>;
+  /** The image files this transport opens, as an `<input accept>` string. */
+  imageAccept(): string;
   /**
    * The URL an `<img src>` should load for this tier.
    *
@@ -239,6 +252,11 @@ export interface LabBackend {
   pickFolder(): Promise<string | null>;
   /** Register images already on disk. No pixels cross the IPC boundary. */
   openImagePaths(paths: string[]): Promise<ImageOut[]>;
+  /**
+   * Hear files dragged onto the window, by path. Returns an unsubscribe function. The
+   * browser's drops arrive as `File`s through the DOM instead, so there this hears nothing.
+   */
+  onFileDrop(handlers: FileDropHandlers): () => void;
   /** List a folder's image files without decoding any of them. */
   scanDir(dir: string, recursive: boolean): Promise<DirEntry[]>;
   /** Render missing thumbnails ahead of the grid reaching them. */
@@ -337,6 +355,9 @@ function createHttpBackend(): LabBackend {
       return unwrap<ImageOut[]>(res, "the image list");
     },
 
+    // What `POST /api/images` decodes.
+    imageAccept: () => ".png,.bmp",
+
     async uploadImage(file: File) {
       const body = new FormData();
       body.append("file", file);
@@ -434,6 +455,7 @@ function createHttpBackend(): LabBackend {
     pickImages: () => unsupported("Opening files from disk"),
     pickFolder: () => unsupported("Opening a folder"),
     openImagePaths: () => unsupported("Opening images by path"),
+    onFileDrop: () => () => {},
     scanDir: () => unsupported("Scanning a folder"),
     // The browser fetches thumbnails over HTTP with its own cache; there is
     // nothing to warm and nothing to report.
