@@ -40,6 +40,10 @@ use vision_metrology::{
 };
 use vm_primitives::{Hysteresis, Subpix2D};
 
+// Strip and caliper rows on CaliperBench's pixel-integrated image model.
+#[path = "accuracy/strip.rs"]
+mod strip;
+
 // ── shared fixtures ──────────────────────────────────────────────────────
 
 /// A tiny seeded xorshift64* — deterministic noise without an external RNG
@@ -1252,6 +1256,26 @@ struct Row {
 /// | displacement_quadratic (px)          | 0.0239              | 0.0164           | 0.04            | 0.025             |
 /// | displacement_lk (px)                 | 0.0204              | 0.0141           | 0.035           | 0.022             |
 ///
+/// The strip and caliper rows (`accuracy/strip.rs`, measured 2026-10-03) run on
+/// CaliperBench's pixel-integrated image model, the strips with CaliperBench's textbook
+/// settings. Their worst cells are all PSF σ 2.5 px with 5 DN of noise, where the
+/// textbook smoothing (σ of one 0.5 px sample) leaves the gradient peak of a broad edge
+/// to the noise; the level methods average it out:
+///
+/// | Row                                 | measured \|bias\| | measured sigma | envelope bias | envelope sigma |
+/// |--------------------------------------|-------------------:|----------------:|---------------:|-----------------:|
+/// | strip_step_parabolic (px)            | 0.176               | 0.805            | 0.27            | 1.2               |
+/// | strip_step_gaussian (px)             | 0.176               | 0.805            | 0.27            | 1.2               |
+/// | strip_step_midpoint (px)             | 0.032               | 0.175            | 0.05            | 0.27              |
+/// | strip_step_half_contrast (px)        | 0.045               | 0.170            | 0.07            | 0.26              |
+/// | strip_bar_center (px)                | 0.191               | 0.735            | 0.29            | 1.1               |
+/// | strip_bar_width_w10 (px)             | 0.071               | 0.120            | 0.11            | 0.18              |
+/// | strip_bar_width_w2_w3 (px)           | 3.379               | 0.224            | 5.1             | 0.34              |
+/// | strip_oblique_15deg (px)             | 0.083               | 0.659            | 0.13            | 1.0               |
+/// | strip_oblique_30deg (px)             | 0.168               | 0.801            | 0.26            | 1.2               |
+/// | caliper_rect_pixel_integrated (px)   | 0.067               | 0.304            | 0.10            | 0.46              |
+/// | caliper_arc_radial_position (px)     | 0.074               | 0.229            | 0.11            | 0.35              |
+///
 /// Rows 5-6 are the C1 scale sweep: 12 true scales geometrically spaced 0.5..2.0x, 3 rotations each,
 /// model taught at scale 1.0 with `scale_range = (0.45, 2.1)`. Every scale
 /// found every rotation (100% found-rate — see `BASELINE_FOUND_RATE`'s full
@@ -1400,6 +1424,85 @@ const ROWS: &[Row] = &[
         measure: displacement_lk_sweep,
         bias_envelope: 0.035,
         sigma_envelope: 0.022,
+    },
+    Row {
+        // Measured: |bias| 0.176, sigma 0.805. ~1.5x, rounded.
+        name: "strip_step_parabolic",
+        measure: strip::step_parabolic_sweep,
+        bias_envelope: 0.27,
+        sigma_envelope: 1.2,
+    },
+    Row {
+        // Measured: |bias| 0.176, sigma 0.805. ~1.5x, rounded.
+        name: "strip_step_gaussian",
+        measure: strip::step_gaussian_sweep,
+        bias_envelope: 0.27,
+        sigma_envelope: 1.2,
+    },
+    Row {
+        // Measured: |bias| 0.032, sigma 0.175. ~1.5x, rounded.
+        name: "strip_step_midpoint",
+        measure: strip::step_midpoint_sweep,
+        bias_envelope: 0.05,
+        sigma_envelope: 0.27,
+    },
+    Row {
+        // Measured: |bias| 0.045, sigma 0.170. ~1.5x, rounded.
+        name: "strip_step_half_contrast",
+        measure: strip::step_half_contrast_sweep,
+        bias_envelope: 0.07,
+        sigma_envelope: 0.26,
+    },
+    Row {
+        // Measured: |bias| 0.191, sigma 0.735. ~1.5x, rounded.
+        name: "strip_bar_center",
+        measure: strip::bar_center_sweep,
+        bias_envelope: 0.29,
+        sigma_envelope: 1.1,
+    },
+    Row {
+        // Noise-free. Measured: |bias| 0.071, sigma 0.120. ~1.5x, rounded.
+        name: "strip_bar_width_w10",
+        measure: strip::bar_width_w10_sweep,
+        bias_envelope: 0.11,
+        sigma_envelope: 0.18,
+    },
+    Row {
+        // Noise-free, and loose on purpose: a bar this narrow under a
+        // 2.5 px PSF reads 3.4 px too wide, its two gradient peaks pushed apart.
+        // Measured: |bias| 3.379, sigma 0.224. ~1.5x, rounded.
+        name: "strip_bar_width_w2_w3",
+        measure: strip::bar_width_w2_w3_sweep,
+        bias_envelope: 5.1,
+        sigma_envelope: 0.34,
+    },
+    Row {
+        // Measured: |bias| 0.083, sigma 0.659. ~1.5x, rounded.
+        name: "strip_oblique_15deg",
+        measure: strip::oblique_15_sweep,
+        bias_envelope: 0.13,
+        sigma_envelope: 1.0,
+    },
+    Row {
+        // Measured: |bias| 0.168, sigma 0.801. ~1.5x, rounded.
+        name: "strip_oblique_30deg",
+        measure: strip::oblique_30_sweep,
+        bias_envelope: 0.26,
+        sigma_envelope: 1.2,
+    },
+    Row {
+        // Measured: |bias| 0.067, sigma 0.304. ~1.5x, rounded.
+        name: "caliper_rect_pixel_integrated",
+        measure: strip::rect_pixel_integrated_sweep,
+        bias_envelope: 0.10,
+        sigma_envelope: 0.46,
+    },
+    Row {
+        // Measured: |bias| 0.074, sigma 0.229. ~1.5x, rounded.
+        name: "caliper_arc_radial_position",
+        measure: strip::arc_radial_sweep,
+        bias_envelope: 0.11,
+        sigma_envelope: 0.35,
     },
 ];
 
