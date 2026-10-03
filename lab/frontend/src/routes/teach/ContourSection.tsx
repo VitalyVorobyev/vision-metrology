@@ -20,7 +20,7 @@ import {
   Select,
   Table,
   type Column,
-} from "@vitavision/lab-ui";
+} from "@vitavision/ui";
 import { Crosshair } from "lucide-react";
 
 import type { ContourStat, KeepFilter, SelectMode, SortKey } from "../../canvas/contourSelection";

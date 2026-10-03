@@ -9,7 +9,8 @@
  * whichever contours happened to land on those indices — silently, and with no error.
  */
 
-import { Button, Callout, ErrorBox, Field, NumberInput, Panel, Slider } from "@vitavision/lab-ui";
+import { Button, Callout, ErrorBox, Field, NumberInput, Panel, Slider } from "@vitavision/ui";
+import { QuantityInput } from "../../components/QuantityInput";
 
 export function ExtractSection({
   minContrast,
@@ -60,17 +61,12 @@ export function ExtractSection({
               onValueChange={onMinContrast}
               className="flex-1"
             />
-            <NumberInput
+            <QuantityInput
               min={0.01}
               max={0.6}
               step={0.01}
               value={minContrast}
-              onChange={(event) => {
-                // See `RoiSection`: an empty field is mid-edit, not a zero.
-                if (event.target.value.trim() === "") return;
-                const value = Number(event.target.value);
-                if (Number.isFinite(value)) onMinContrast(clamp(value, 0.01, 0.6));
-              }}
+              onValueChange={onMinContrast}
               className="w-16 px-1.5 text-[11px]"
               aria-label="Min contrast"
             />
@@ -104,8 +100,4 @@ export function ExtractSection({
       </div>
     </Panel>
   );
-}
-
-function clamp(value: number, low: number, high: number): number {
-  return Math.min(high, Math.max(low, value));
 }

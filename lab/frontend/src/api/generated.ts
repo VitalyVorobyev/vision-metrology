@@ -751,7 +751,7 @@ export interface components {
         };
         /**
          * OverlayPrimitiveOut
-         * @description Mirrors `@vitavision/lab-ui`'s `MeasurePrimitive` union exactly (field names and
+         * @description Mirrors `@vitavision/stage2d`'s `MeasurePrimitive` union exactly (field names and
          *     units — angles in radians) so the frontend can pass this straight through.
          */
         OverlayPrimitiveOut: {

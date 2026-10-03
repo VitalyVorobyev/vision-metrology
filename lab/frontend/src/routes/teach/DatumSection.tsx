@@ -7,17 +7,11 @@
  * matters when the answer is "the tab's centre" or "45°, exactly".
  */
 
-import { Button, Field, NumberInput, Panel } from "@vitavision/lab-ui";
+import { Button, Field, Panel, VectorInput } from "@vitavision/ui";
 
 import type { Roi } from "../../api/backend";
 import type { Bounds } from "../../canvas/contourSelection";
-
-/** An empty field is a field being retyped: `Number("")` is `0`, which would jump the datum. */
-function parse(raw: string): number | null {
-  if (raw.trim() === "") return null;
-  const value = Number(raw);
-  return Number.isFinite(value) ? value : null;
-}
+import { QuantityInput } from "../../components/QuantityInput";
 
 export function DatumSection({
   origin,
@@ -49,41 +43,24 @@ export function DatumSection({
   return (
     <Panel title="Datum">
       <div className="flex flex-col gap-2">
-        <div className="grid grid-cols-3 gap-1.5">
-          <Field label="origin x">
-            <NumberInput
-              value={round(origin[0])}
-              step={1}
-              onChange={(event) => {
-                const value = parse(event.target.value);
-                if (value !== null) onOrigin([value, origin[1]]);
-              }}
-              className="px-1.5 text-[11px]"
-            />
-          </Field>
-          <Field label="origin y">
-            <NumberInput
-              value={round(origin[1])}
-              step={1}
-              onChange={(event) => {
-                const value = parse(event.target.value);
-                if (value !== null) onOrigin([origin[0], value]);
-              }}
-              className="px-1.5 text-[11px]"
-            />
-          </Field>
-          <Field label="0° at" annotation="°">
-            <NumberInput
-              value={round(degrees)}
-              step={1}
-              onChange={(event) => {
-                const value = parse(event.target.value);
-                if (value !== null) onAngle((value * Math.PI) / 180);
-              }}
-              className="px-1.5 text-[11px]"
-            />
-          </Field>
-        </div>
+        <VectorInput
+          value={origin}
+          onValueChange={(v) => onOrigin([v[0] ?? origin[0], v[1] ?? origin[1]])}
+          labels={["x", "y"]}
+          unit="px"
+          step={1}
+          precision={1}
+          aria-label="Origin"
+        />
+        <Field label="0° at">
+          <QuantityInput
+            unit="°"
+            step={1}
+            value={Math.round(degrees * 10) / 10}
+            onValueChange={(value) => onAngle((value * Math.PI) / 180)}
+            className="px-1.5 text-[11px]"
+          />
+        </Field>
 
         <div className="flex flex-wrap items-center gap-1">
           <Button
@@ -117,8 +94,4 @@ export function DatumSection({
       </div>
     </Panel>
   );
-}
-
-function round(value: number): string {
-  return Number.isFinite(value) ? String(Math.round(value * 10) / 10) : "";
 }

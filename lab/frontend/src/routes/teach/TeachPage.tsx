@@ -13,7 +13,7 @@
  * out as, still drawn over the contours it was built from.
  */
 
-import { Button, Callout, ErrorBox } from "@vitavision/lab-ui";
+import { Button, Callout, ErrorBox } from "@vitavision/ui";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
@@ -292,8 +292,11 @@ export function TeachPage() {
         // points rather than the rectangle's own answer.
         ...(preview !== null ? { keep_contours: [...kept], origin, reference_angle: angle } : {}),
       });
-      // Draw what was learned, in the frame of the image it was learned from.
-      const geometry = await backend.modelGeometry(built.id, 0, "reference");
+      // Draw what was learned, in the frame of the image it was learned from. Reading a
+      // model's points is desktop-only; the browser build shows the build result alone.
+      const geometry = backend.canOpenFiles()
+        ? await backend.modelGeometry(built.id, 0, "reference")
+        : null;
       return { built, geometry };
     },
     onSuccess: ({ built, geometry }) => {
@@ -302,7 +305,7 @@ export function TeachPage() {
       setModel(built);
       // The contours stay: "is the model what I picked?" is the question a build raises,
       // and clearing the evidence was what made it unanswerable.
-      setOverlay(modelOverlay(geometry));
+      setOverlay(geometry === null ? [] : modelOverlay(geometry));
     },
   });
 

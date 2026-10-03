@@ -15,7 +15,7 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
-import type { MeasurePrimitive, StageView } from "@vitavision/lab-ui";
+import type { MeasurePrimitive, StageView } from "@vitavision/stage2d";
 import { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 

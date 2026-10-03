@@ -8,7 +8,7 @@
  * one frame at a time is what the Find and Verify steps are for.
  */
 
-import { Button, cn, focusRing } from "@vitavision/lab-ui";
+import { Button, cn, focusRing } from "@vitavision/ui";
 import { ChevronDown, ChevronLeft, ChevronRight, Images } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";

@@ -1,8 +1,8 @@
 // Pure logic pulled out of the tab components so it's unit-testable without rendering
 // anything — see transforms.test.ts.
 
-import type { MeasureTone } from "@vitavision/lab-ui";
-import type { EdgeMark, ProfileSeries } from "@vitavision/lab-ui";
+import type { MeasureTone } from "@vitavision/ui";
+import type { EdgeMark, ProfileSeries } from "@vitavision/charts";
 
 import type { CaliperResultOut, Roi } from "./backend";
 

@@ -1,11 +1,4 @@
-// Self-hosted rather than fetched: a local workbench should not depend on the network for
-// its own chrome.
-import "@fontsource-variable/ibm-plex-sans/wght.css";
-import "@fontsource/ibm-plex-mono/latin-400.css";
-import "@fontsource/ibm-plex-mono/latin-500.css";
-import "@fontsource/ibm-plex-mono/latin-600.css";
-
-import { initTheme, TooltipProvider } from "@vitavision/lab-ui";
+import { initTheme, TooltipProvider } from "@vitavision/ui";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
@@ -37,14 +30,11 @@ createRoot(container).render(
   <StrictMode>
     <CrashBoundary>
       <QueryClientProvider client={queryClient}>
-        {/* Radix tooltips read their delay/state from a provider and *throw* without one —
-            `@vitavision/lab-ui`'s `ThemeToggle` and `InfoHint` both render one, so this is
-            a context the app must mount exactly like the router below, not a nicety. It
-            was missing when the shell grew a `ThemeToggle`, which took the whole tree down
-            on first render. */}
+        {/* `ThemeToggle`, `Tooltip` and `InfoHint` render Radix tooltips, which throw
+            without this provider; a throw during render unmounts the whole root. */}
         <TooltipProvider>
-          {/* HashRouter even though this is a one-page app: @vitavision/lab-ui's PageHeader
-              renders a react-router <Link>, which needs a router context to exist at all. */}
+          {/* Hash routing keeps every route inside one document, so the desktop shell's
+              asset protocol and a plain static server both serve it without rewrites. */}
           <HashRouter>
             <App />
           </HashRouter>

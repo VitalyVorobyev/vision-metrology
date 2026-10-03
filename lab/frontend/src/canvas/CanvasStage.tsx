@@ -24,10 +24,10 @@ import {
   StageReadout,
   StageToolbar,
   imageViewBox,
-  toneColor,
   useStage,
-} from "@vitavision/lab-ui";
-import type { MeasurePrimitive } from "@vitavision/lab-ui";
+} from "@vitavision/stage2d";
+import { toneColor } from "@vitavision/ui";
+import type { MeasurePrimitive } from "@vitavision/stage2d";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { ImageOut } from "../api/backend";

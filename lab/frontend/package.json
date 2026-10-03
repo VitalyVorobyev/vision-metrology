@@ -15,12 +15,13 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "@fontsource-variable/ibm-plex-sans": "^5.3.0",
-    "@fontsource/ibm-plex-mono": "^5.3.0",
     "@tanstack/react-query": "^5.101.4",
     "@tauri-apps/api": "~2.11.1",
     "@tauri-apps/plugin-dialog": "~2.7.2",
-    "@vitavision/lab-ui": "^0.3.0",
+    "@vitavision/charts": "^0.6.3",
+    "@vitavision/stage2d": "^0.7.1",
+    "@vitavision/ui": "^0.9.0",
+    "@vitavision/workbench": "^0.1.1",
     "lucide-react": "^1.51.0",
     "openapi-fetch": "^0.17.0",
     "react": "^19.3.0",

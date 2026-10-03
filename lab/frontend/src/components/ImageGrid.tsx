@@ -12,7 +12,7 @@
  * so scrolling back is free after the first pass.
  */
 
-import { cn, focusRing } from "@vitavision/lab-ui";
+import { cn, focusRing } from "@vitavision/ui";
 import { useEffect, useRef, useState } from "react";
 
 import type { ImageOut } from "../api/backend";

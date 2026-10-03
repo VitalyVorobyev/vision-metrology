@@ -7,7 +7,7 @@
  * crashed backend, and it is what a `<ThemeToggle>` rendered outside `TooltipProvider`
  * looked like from the outside: a black window, no message, nowhere to start.
  *
- * So this file deliberately depends on **nothing**: no `@vitavision/lab-ui` import, no
+ * So this file deliberately depends on **nothing**: no `@vitavision/*` import, no
  * Tailwind class, no design token, no router. Inline styles only, with its own colours. A
  * crash screen that needs the stylesheet is another black window on the day the stylesheet
  * is what failed.

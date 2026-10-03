@@ -9,7 +9,7 @@
  * far from that is the shell's doing, not the matcher's.
  */
 
-import { cn } from "@vitavision/lab-ui";
+import { cn } from "@vitavision/ui";
 import { useEffect, useState } from "react";
 
 import { getBackend } from "../api/backend";

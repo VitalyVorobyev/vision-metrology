@@ -11,7 +11,7 @@
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { TooltipProvider } from "@vitavision/lab-ui";
+import { TooltipProvider } from "@vitavision/ui";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { useEffect } from "react";
 import { MemoryRouter } from "react-router";

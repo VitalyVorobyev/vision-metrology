@@ -8,7 +8,8 @@
  */
 
 import { Hand, Layers, SquareDashed, SquareMousePointer } from "lucide-react";
-import { StageButton, StageToolbarDivider, cn, focusRing } from "@vitavision/lab-ui";
+import { StageButton, StageToolbarDivider } from "@vitavision/stage2d";
+import { cn, focusRing } from "@vitavision/ui";
 import { useEffect, useRef, useState } from "react";
 
 import type { CanvasTool, LayerVisibility } from "../state/LabContext";

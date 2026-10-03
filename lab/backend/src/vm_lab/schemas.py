@@ -187,7 +187,7 @@ class CaliperResultOut(BaseModel):
 
 
 class OverlayPrimitiveOut(BaseModel):
-    """Mirrors `@vitavision/lab-ui`'s `MeasurePrimitive` union exactly (field names and
+    """Mirrors `@vitavision/stage2d`'s `MeasurePrimitive` union exactly (field names and
     units — angles in radians) so the frontend can pass this straight through."""
 
     kind: Literal["point", "segment", "circle", "arc", "caliper", "dimension"]

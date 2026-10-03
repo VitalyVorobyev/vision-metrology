@@ -1,11 +1,7 @@
 /**
- * One theme key, in one place.
- *
- * It was written in three: `AppShell` passed `"metrology-lab-theme"` to the toggle,
- * `index.html`'s pre-paint script read `"vitavision-theme"`, and `main.tsx` called
- * `initTheme()` with no key at all. So the toggle's choice was not what the no-flash script
- * read back, and a dark-mode user got a white flash on every start of the desktop app —
- * which looks exactly like a slow load.
+ * One theme key, used by the toggle (`AppShell`), `initTheme` (`main.tsx`) and the
+ * pre-paint script in `index.html`. If they disagree, a dark-mode user gets a light flash
+ * on every start.
  *
  * The value has to match the literal in `index.html`, which cannot import anything: it runs
  * before the bundle exists, and that is the whole point of it.

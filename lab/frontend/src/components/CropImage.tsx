@@ -8,7 +8,7 @@
  * treating a crop as a picture.
  */
 
-import { cn } from "@vitavision/lab-ui";
+import { cn } from "@vitavision/ui";
 
 import { getBackend } from "../api/backend";
 import { useAsyncUrl } from "../hooks/useImageUrl";

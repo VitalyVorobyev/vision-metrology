@@ -23,7 +23,7 @@
  * canvas, which is exactly what dragging a corner outward does.
  */
 
-import { useStage } from "@vitavision/lab-ui";
+import { useStage } from "@vitavision/stage2d";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 

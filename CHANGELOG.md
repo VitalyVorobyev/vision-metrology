@@ -111,6 +111,14 @@ The workspace was consolidated from twelve crates into three: `vm-primitives`,
 
 - The frontend builds on TypeScript 6, React 19.3, vitest 5 and ESLint 10 with the shared
   `@vitavision/config-ts` and `@vitavision/config-eslint` presets; CI lints it.
+- The frontend uses the `@vitavision/ui`, `stage2d`, `charts` and `workbench` packages
+  directly. The shell is workbench's `AppShell` with a resizable, remembered inspector;
+  Align and Bird's-eye zoom views use `ImageStage`.
+- Region, datum origin and crop rectangle are edited as vectors with units, and numeric
+  fields keep what is typed while focused, so clearing a field to retype it no longer reads
+  as zero.
+- The browser build no longer reports an error after building a model (reading model
+  geometry is desktop-only).
 - A new interactive workbench in `lab/`: a browser build over FastAPI and the Python
   bindings, and a Tauri desktop build calling the Rust library directly. Contract fixtures
   keep the two in agreement.

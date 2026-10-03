@@ -9,7 +9,7 @@
  * mosaics is on screen while a model is being taught.
  */
 
-import { cn, focusRing } from "@vitavision/lab-ui";
+import { cn, focusRing } from "@vitavision/ui";
 import { Boxes, Crosshair, Images, Ruler } from "lucide-react";
 import { NavLink } from "react-router";
 

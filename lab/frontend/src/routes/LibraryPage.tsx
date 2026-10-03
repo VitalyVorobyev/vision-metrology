@@ -12,6 +12,7 @@
  * so a set of several thousand opens as fast as the filesystem can list it.
  */
 
+import { ScoreHistogram } from "@vitavision/charts";
 import {
   Badge,
   Button,
@@ -19,14 +20,12 @@ import {
   Empty,
   ErrorBox,
   Field,
-  NumberInput,
   Panel,
   ProgressBar,
-  ScoreHistogram,
   Section,
   Select,
   Table,
-} from "@vitavision/lab-ui";
+} from "@vitavision/ui";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
@@ -36,6 +35,7 @@ import type { BatchFindItem, BatchProgress, DirEntry } from "../api/backend";
 import { ImageGrid } from "../components/ImageGrid";
 import { AppShell } from "../shell/AppShell";
 import { useLab } from "../state/LabContext";
+import { QuantityInput } from "../components/QuantityInput";
 
 export function LibraryPage() {
   const backend = getBackend();
@@ -262,13 +262,7 @@ function BatchPanel({
           />
         </Field>
         <Field label="Min score" annotation="0–1">
-          <NumberInput
-            min={0}
-            max={1}
-            step={0.05}
-            value={minScore}
-            onChange={(e) => setMinScore(Number(e.target.value))}
-          />
+          <QuantityInput min={0} max={1} step={0.05} value={minScore} onValueChange={setMinScore} />
         </Field>
         <Button
           size="sm"

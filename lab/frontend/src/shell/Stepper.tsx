@@ -8,7 +8,7 @@
  * concludes the search is broken.
  */
 
-import { cn, focusRing } from "@vitavision/lab-ui";
+import { cn, focusRing } from "@vitavision/ui";
 import { NavLink } from "react-router";
 
 export interface Step {

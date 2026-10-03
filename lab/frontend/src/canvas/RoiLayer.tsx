@@ -15,7 +15,8 @@
  * handled by the background surface underneath them (see `useCanvasInteraction`).
  */
 
-import { imageViewBox, toneColor, useStage } from "@vitavision/lab-ui";
+import { imageViewBox, useStage } from "@vitavision/stage2d";
+import { toneColor } from "@vitavision/ui";
 import type { PointerEvent as ReactPointerEvent } from "react";
 
 import type { Roi } from "../api/backend";

@@ -14,7 +14,8 @@
  * covered in cyan contours, it was one more inert line among a hundred and sixty-six.
  */
 
-import { imageViewBox, toneColor, useStage } from "@vitavision/lab-ui";
+import { imageViewBox, useStage } from "@vitavision/stage2d";
+import { toneColor } from "@vitavision/ui";
 import { useRef } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 

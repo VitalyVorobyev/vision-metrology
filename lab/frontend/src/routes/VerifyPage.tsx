@@ -8,7 +8,7 @@
  * rectified into the same frame and interleaved: registration you can see.
  */
 
-import { Callout, Empty, ErrorBox, Field, NumberInput, Panel, Table } from "@vitavision/lab-ui";
+import { Callout, Empty, ErrorBox, Field, Panel, Table } from "@vitavision/ui";
 import { useMemo, useState } from "react";
 
 import { getBackend } from "../api/backend";
@@ -17,6 +17,7 @@ import { Triptych } from "../components/Triptych";
 import { useAsyncUrl } from "../hooks/useImageUrl";
 import { RecognizeShell } from "./RecognizeShell";
 import { useLab } from "../state/LabContext";
+import { QuantityInput } from "../components/QuantityInput";
 
 export function VerifyPage() {
   const backend = getBackend();
@@ -98,13 +99,7 @@ export function VerifyPage() {
                 tile boundary. A step at the boundaries is the registration error, made visible.
               </Callout>
               <Field label="Crop resolution" annotation="destination pixels per model pixel">
-                <NumberInput
-                  min={0.25}
-                  max={4}
-                  step={0.25}
-                  value={pxPerUnit}
-                  onChange={(e) => setPxPerUnit(Number(e.target.value))}
-                />
+                <QuantityInput min={0.25} max={4} step={0.25} value={pxPerUnit} onValueChange={setPxPerUnit} />
               </Field>
             </div>
           )}
