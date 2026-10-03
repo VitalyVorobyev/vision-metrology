@@ -112,6 +112,17 @@ DatumLayer       model origin and its 0° arm
 - **Hover is shared.** `PolylineSet`'s hover is controlled by the Teach inventory's
   `hovered`, so a row hovered in the list and a contour hovered on the image are the same
   state.
+- **Results are linked by id.** `MeasureOverlay` takes no pointer events, so a route whose
+  list is linked to its overlay (Find's matches) gives each primitive an `id`
+  (`match-<index>`) and a `state` (`hover`, `selected`), and pushes an `OverlayPicker` into
+  `LabContext`. The picker resolves an image point to an id (`state/rotatedBox.ts`: each
+  item is a rotated box, the nearest centre wins). `CanvasStage` asks it on the stage's
+  `onHover` and on `onBackgroundClick`, a press that did not pan, so a drag over a result
+  still pans. The route's `hovered` is the picker's, as Teach's is `PolylineSet`'s.
+- **Batch results are per frame.** A batch find (Find's "In all frames", or the Library's
+  run) is kept in `LabContext.batch`. Selecting a frame it covered loads that frame's
+  matches and request as `matches` / `lastFind`, so Find, Verify and Measure see the frame's
+  own result; the frame strip and menu mark the frames with no match.
 - **The region commits on release.** The editor's moves go to a local draft, and the shared
   `roi` changes once per gesture, which is what the Teach panel re-extracts from.
   `canvas/roi.ts` converts between the backend's `Roi` tuple and stage2d's `Rect`, so a
@@ -128,8 +139,8 @@ DatumLayer       model origin and its 0° arm
   `--stage-*`), one set for both themes, with a halo under the lab's own strokes:
   - kept contours are `feature`, dropped ones dashed `structure`, and a selection
     `selection`;
-  - the datum and the model's points are `model`, and Find draws the match the table
-    points at in the `selected` state;
+  - the datum and the model's points are `model`. Find draws the selected match in the
+    `selected` state and the hovered one in `hover`, each with its extent outlined;
   - vertices are `label` dots. `PolylineSet` can draw them, but in the selection colour,
     so on a selected line they vanish.
 

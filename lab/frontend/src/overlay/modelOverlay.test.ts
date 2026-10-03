@@ -61,6 +61,11 @@ describe("matchOverlay", () => {
     expect(first.y2 - first.y1).toBeGreaterThan(0);
   });
 
+  it("names every primitive of a match with its id and draws it in its state", () => {
+    const out = matchOverlay(GEOMETRY, matchAt(10, 20, 0, 1), "hover", "match-3");
+    expect(out.every((p) => p.id === "match-3" && p.state === "hover")).toBe(true);
+  });
+
   it("labels each instance with its score", () => {
     const out = matchOverlay(GEOMETRY, matchAt(10, 20, 0, 1));
     const cross = out.find((p) => p.kind === "point") as { label?: string };

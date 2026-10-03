@@ -15,13 +15,14 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
-import type { MeasurePrimitive, StageHandle, StageView } from "@vitavision/stage2d";
+import type { MeasurePrimitive, Point, StageHandle, StageView } from "@vitavision/stage2d";
 import { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 
 import type { ContourStat, SelectMode } from "./contourInventory";
 import { getBackend } from "../api/backend";
 import type {
+  BatchFindItem,
   CalibrationOut,
   ContourOut,
   FindRequestFull,
@@ -58,6 +59,36 @@ export interface ContourSelection {
   onHover: (id: number | null) => void;
   onSelect: (ids: number[], mode: SelectMode) => void;
   onKeep: (ids: number[], keep: boolean) => void;
+}
+
+/**
+ * What the canvas can point at in the results overlay: a route's list of findings (Find's
+ * matches, Measure's calipers), linked to their overlay primitives by `id`.
+ *
+ * `MeasureOverlay` takes no pointer events, so the route resolves a canvas point to an id
+ * itself, and the canvas only asks. `hovered` is shared with the route's list, as the
+ * contours' hover is with Teach's inventory: a row hovered in the list and a mark hovered on
+ * the image are the same state.
+ */
+export interface OverlayPicker {
+  /** The id under `point` (image pixels), or `null`. `tolerance` is in image pixels. */
+  pick: (point: Point, tolerance: number) => string | null;
+  hovered: string | null;
+  onHover: (id: string | null) => void;
+  /** A click on the image: the id under it, or `null` for bare image, which clears. */
+  onSelect: (id: string | null) => void;
+}
+
+/**
+ * A search run over several frames (desktop batch find), kept per frame so stepping to a
+ * frame shows its own matches, and the frame strip can mark the frames where nothing was
+ * found.
+ */
+export interface BatchRun {
+  /** The search every frame ran, less its frame. */
+  request: Omit<FindRequestFull, "image_id">;
+  /** Each frame's result, by image id. */
+  items: ReadonlyMap<string, BatchFindItem>;
 }
 
 /** What a drag on the canvas means. Handles and contours stay live in every mode. */
@@ -120,9 +151,20 @@ interface LabState {
    */
   lastFind: FindRequestFull | null;
   setMatches: (m: MatchOut[], req: FindRequestFull) => void;
-  /** Which match the user is pointing at, so table and canvas agree. */
+  /**
+   * The selected match, by its index in `matches`: the Find list's selection, and the
+   * instance Verify compares.
+   */
   highlightedMatch: number | null;
   setHighlightedMatch: (i: number | null) => void;
+
+  /** The last batch run, or `null`. Selecting a frame it covered loads that frame's matches. */
+  batch: BatchRun | null;
+  /** Keep a batch run, and load the current frame's matches from it. */
+  setBatch: (run: BatchRun | null) => void;
+
+  overlayPicker: OverlayPicker | null;
+  setOverlayPicker: (p: OverlayPicker | null) => void;
 
   contourSelection: ContourSelection | null;
   setContourSelection: (s: ContourSelection | null) => void;
@@ -183,6 +225,8 @@ export function LabProvider({ children }: { children: ReactNode }) {
     setLastFind(req);
   }, []);
   const [highlightedMatch, setHighlightedMatch] = useState<number | null>(null);
+  const [batchRun, setBatchRun] = useState<BatchRun | null>(null);
+  const [overlayPicker, setOverlayPicker] = useState<OverlayPicker | null>(null);
   const [contourSelection, setContourSelection] = useState<ContourSelection | null>(null);
   const [frameHandles, setFrameHandles] = useState<FrameHandles | null>(null);
   const [roiMode, setRoiMode] = useState(false);
@@ -191,6 +235,33 @@ export function LabProvider({ children }: { children: ReactNode }) {
   const [tool, setTool] = useState<CanvasTool>("pan");
 
   const canvas = useRef<StageHandle | null>(null);
+  /* Read by `selectImage` and `setBatch`, which stay stable callbacks: a new `selectImage`
+   * per batch run would re-render every consumer of the lab state for nothing. */
+  const batchRef = useRef<BatchRun | null>(null);
+  const selectedImageRef = useRef<string | null>(null);
+
+  /** The matches a frame has from the batch, or none: a frame's results never outlive it. */
+  const loadBatchMatches = useCallback((id: string | null) => {
+    const run = batchRef.current;
+    const item = id === null ? undefined : run?.items.get(id);
+    if (run !== null && id !== null && item !== undefined && item.matches.length > 0) {
+      setMatchList(item.matches);
+      setLastFind({ ...run.request, image_id: id });
+    } else {
+      setMatchList([]);
+      setLastFind(null);
+    }
+    setHighlightedMatch(null);
+  }, []);
+
+  const setBatch = useCallback(
+    (run: BatchRun | null) => {
+      batchRef.current = run;
+      setBatchRun(run);
+      if (run !== null) loadBatchMatches(selectedImageRef.current);
+    },
+    [loadBatchMatches],
+  );
 
   const setLayer = useCallback((key: keyof LayerVisibility, on: boolean) => {
     setLayers((current) => ({ ...current, [key]: on }));
@@ -201,21 +272,21 @@ export function LabProvider({ children }: { children: ReactNode }) {
   const calibrations = useMemo(() => calibrationsQuery.data ?? [], [calibrationsQuery.data]);
 
   const selectImage = useCallback((id: string | null) => {
+    selectedImageRef.current = id;
     setSelectedImageId(id);
     // A different frame invalidates everything drawn over the old one. Leaving
     // it up is worse than clearing it: an overlay from another image looks like
-    // a result about this one.
+    // a result about this one. The one exception is a batch run's own result
+    // for the new frame, which is about that frame.
     setRoi(null);
     setOverlay([]);
-    setMatchList([]);
-    setLastFind(null);
-    setHighlightedMatch(null);
+    loadBatchMatches(id);
     setContourSelection(null);
     setFrameHandles(null);
     // A different frame is a different size and a different subject; keeping a pan offset
     // across it would open the new one scrolled to a corner of the old one.
     setView(null);
-  }, []);
+  }, [loadBatchMatches]);
 
   const value = useMemo<LabState>(
     () => ({
@@ -236,6 +307,10 @@ export function LabProvider({ children }: { children: ReactNode }) {
       setMatches,
       highlightedMatch,
       setHighlightedMatch,
+      batch: batchRun,
+      setBatch,
+      overlayPicker,
+      setOverlayPicker,
       contourSelection,
       setContourSelection,
       frameHandles,
@@ -264,6 +339,9 @@ export function LabProvider({ children }: { children: ReactNode }) {
       lastFind,
       setMatches,
       highlightedMatch,
+      batchRun,
+      setBatch,
+      overlayPicker,
       contourSelection,
       frameHandles,
       roiMode,

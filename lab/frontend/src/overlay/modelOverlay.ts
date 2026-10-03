@@ -22,9 +22,10 @@
  * model predicts, not what was detected.
  */
 
-import type { MeasurePrimitive, OverlayState } from "@vitavision/stage2d";
+import { caliperCorners, type MeasurePrimitive, type OverlayState } from "@vitavision/stage2d";
 
 import type { MatchOut, ModelGeometryOut } from "../api/backend";
+import type { RotatedBox } from "../state/rotatedBox";
 
 /** Half-length of a point's orientation tick, in source-image pixels. */
 const TICK = 2.5;
@@ -71,12 +72,15 @@ export function modelOverlay(geometry: ModelGeometryOut): MeasurePrimitive[] {
  * instance is what makes a match verifiable at a glance: a cross with a score
  * next to it tells you the search returned something, not whether it was right.
  *
- * `state` is the overlay grammar's: `selected` is the match the table points at.
+ * `state` is the overlay grammar's: `selected` is the match the table points at, `hover`
+ * the one under the pointer. `id` (`match-<index>`) links every primitive of the match to
+ * its row.
  */
 export function matchOverlay(
   geometry: ModelGeometryOut,
   match: MatchOut,
   state: OverlayState = "default",
+  id?: string,
 ): MeasurePrimitive[] {
   const role = "model";
   const { points, origin } = geometry;
@@ -103,6 +107,7 @@ export function matchOverlay(
       kind: "segment",
       role,
       state,
+      id,
       x1: px - dx * TICK,
       y1: py - dy * TICK,
       x2: px + dx * TICK,
@@ -114,6 +119,7 @@ export function matchOverlay(
     kind: "point",
     role,
     state,
+    id,
     x: match.x,
     y: match.y,
     cross: true,
@@ -123,10 +129,36 @@ export function matchOverlay(
     kind: "segment",
     role,
     state,
+    id,
     x1: match.x,
     y1: match.y,
     x2: match.x + ARM * match.scale * Math.cos(match.angle),
     y2: match.y + ARM * match.scale * Math.sin(match.angle),
   });
   return out;
+}
+
+/**
+ * A match without the model's geometry (the browser build reads no model points): a cross
+ * at the found origin, labelled with the score.
+ */
+export function matchMarker(match: MatchOut, state: OverlayState = "default", id?: string): MeasurePrimitive {
+  return { kind: "point", role: "model", state, id, x: match.x, y: match.y, cross: true, label: match.score.toFixed(2) };
+}
+
+/**
+ * The extent a match occupies, as a dashed outline: drawn for the match being pointed at,
+ * so the row under the pointer has a shape on the canvas and not only a heavier stroke.
+ */
+export function matchBoxOverlay(box: RotatedBox, state: OverlayState, id?: string): MeasurePrimitive {
+  const corners = caliperCorners(box.cx, box.cy, box.width, box.height, box.angle);
+  return {
+    kind: "polyline",
+    role: "model",
+    state,
+    id,
+    dashed: true,
+    closed: true,
+    points: corners.flatMap((corner) => [corner.x, corner.y]),
+  };
 }
