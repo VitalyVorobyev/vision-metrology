@@ -807,6 +807,37 @@ def test_caliper_half_contrast_refines_gradient_seeds():
     assert plain.levels() == []
 
 
+def test_caliper_explain_traces_what_measure_returns():
+    bar = np.zeros((96, 96), dtype=np.uint8)
+    bar[:, 30:60] = 200
+    cal = vm.Caliper.rect((45.0, 48.0), 0.0, 30.0, 6.0)
+    trace = cal.explain(bar)
+    assert isinstance(trace, vm.CaliperTrace)
+    assert (trace.samples, trace.across, trace.spacing) == (61, 13, 1.0)
+    assert trace.spacing == cal.spacing()
+    for arr in (trace.profile, trace.smoothed, trace.response):
+        assert isinstance(arr, np.ndarray) and arr.dtype == np.float32 and arr.shape == (61,)
+    assert trace.profile[0] == 0.0 and trace.profile[30] == 200.0
+    assert trace.reject is None and trace.levels == []
+    measured = cal.measure(bar)
+    assert [(e.x, e.y, e.t, e.amplitude) for e in trace.edges] == [
+        (e.x, e.y, e.t, e.amplitude) for e in measured
+    ]
+    assert len(trace.candidates) == 2
+    assert int(np.argmax(trace.response)) in (14, 15)  # the rising side at x = 29.5
+
+    # A rejection is the trace's `reject`, not an exception.
+    flat = np.full((96, 96), 128, dtype=np.uint8)
+    rejected = cal.explain(flat)
+    assert rejected.reject == "no_edge" and rejected.edges == []
+    assert "no_edge" in repr(rejected)
+
+    cfg = vm.MeasureConfig(locate=vm.Locate.half_contrast())
+    half = vm.Caliper.rect((45.0, 48.0), 0.0, 30.0, 6.0, config=cfg).explain(bar)
+    assert len(half.levels) == 2
+    assert half.levels[0].x * half.spacing + 15.0 == pytest.approx(half.edges[0].x)
+
+
 def test_fit_line_object_and_function():
     pts = np.array([[float(i), 2.0] for i in range(10)], dtype=np.float32)
     obj = vm.Fitter().fit_line(pts)

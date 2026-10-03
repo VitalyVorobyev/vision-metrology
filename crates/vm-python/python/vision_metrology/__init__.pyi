@@ -661,6 +661,29 @@ class Caliper:
         """The level crossings behind the last `measure` call's edges (none for
         `Locate.gradient_peak`); `x` is in profile samples."""
         ...
+    def spacing(self) -> float:
+        """Distance between profile samples, in pixels."""
+        ...
+    def explain(self, img: ImageAny) -> CaliperTrace:
+        """Measure and keep every intermediate. Never raises `MeasureRejected`:
+        a rejection is the trace's `reject`."""
+        ...
+
+class CaliperTrace:
+    """Everything one caliper measurement computed. `edges` and `reject` are
+    exactly what `measure` returns or raises."""
+
+    spacing: float
+    samples: int
+    across: int
+    threshold: float
+    profile: npt.NDArray[np.float32]
+    smoothed: npt.NDArray[np.float32]
+    response: npt.NDArray[np.float32]
+    candidates: List[MeasureEdge]
+    levels: List[LevelEdge]
+    edges: List[MeasureEdge]
+    reject: Optional[str]
 
 class LevelEdge:
     """An edge located as a level crossing."""

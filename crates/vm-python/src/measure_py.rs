@@ -30,9 +30,10 @@ use pyo3::{
     exceptions::{PyException, PyValueError},
 };
 
+use numpy::{IntoPyArray, PyArray1};
 use vision_metrology::measure::diagnostics::{
     CaliperPlacement as NativeCaliperPlacement, CaliperShape as NativeCaliperShape,
-    layout as native_layout,
+    explain as native_explain, layout as native_layout,
 };
 use vision_metrology::measure::{
     Caliper as NativeCaliper, MeasureArc, MeasureRadial, MeasureRect, MeasureStrip,
@@ -332,6 +333,36 @@ impl Caliper {
         self.inner.profile().to_vec()
     }
 
+    /// Distance between profile samples, in pixels, at the current placement: it
+    /// converts a `LevelEdge.x` to pixels along the scan.
+    pub fn spacing(&self) -> f32 {
+        self.inner.spacing()
+    }
+
+    /// Measure and keep every intermediate — see [`CaliperTrace`]. Never raises
+    /// `MeasureRejected`: a rejection is the trace's `reject`.
+    pub fn explain(&mut self, py: Python<'_>, img: &Bound<'_, PyAny>) -> PyResult<CaliperTrace> {
+        let any = any_image_from_numpy(py, img)?;
+        let trace = with_any_image!(any, view => native_explain(&mut self.inner, &view));
+        Ok(CaliperTrace {
+            spacing: trace.spacing,
+            samples: trace.samples,
+            across: trace.across,
+            threshold: trace.threshold,
+            profile: trace.profile.into_pyarray(py).unbind(),
+            smoothed: trace.smoothed.into_pyarray(py).unbind(),
+            response: trace.response.into_pyarray(py).unbind(),
+            candidates: trace
+                .candidates
+                .into_iter()
+                .map(MeasureEdge::from)
+                .collect(),
+            levels: trace.levels.into_iter().map(LevelEdge::from).collect(),
+            edges: trace.edges.into_iter().map(MeasureEdge::from).collect(),
+            reject: trace.reject.map(reject_reason_str),
+        })
+    }
+
     /// The level crossings behind the last `measure` call's edges: one for
     /// `Locate.midpoint_crossing`, one per edge for `Locate.half_contrast`, none for
     /// `Locate.gradient_peak`. `x` is in profile samples.
@@ -342,6 +373,41 @@ impl Caliper {
             .copied()
             .map(LevelEdge::from)
             .collect()
+    }
+}
+
+/// Everything one caliper measurement computed — mirrors
+/// `vision_metrology::measure::diagnostics::CaliperTrace`.
+///
+/// `profile`, `smoothed` and `response` are `float32` arrays of `samples` entries;
+/// `candidates` are the edges that passed threshold, polarity and the obliquity gate,
+/// before `select`; `edges` is what `measure` returned (empty on a rejection) and
+/// `reject` the reason string `measure` would have raised, or `None`.
+#[pyclass(get_all)]
+pub struct CaliperTrace {
+    pub spacing: f32,
+    pub samples: usize,
+    pub across: usize,
+    pub threshold: f32,
+    pub profile: Py<PyArray1<f32>>,
+    pub smoothed: Py<PyArray1<f32>>,
+    pub response: Py<PyArray1<f32>>,
+    pub candidates: Vec<MeasureEdge>,
+    pub levels: Vec<LevelEdge>,
+    pub edges: Vec<MeasureEdge>,
+    pub reject: Option<&'static str>,
+}
+
+#[pymethods]
+impl CaliperTrace {
+    fn __repr__(&self) -> String {
+        format!(
+            "CaliperTrace(samples={}, candidates={}, edges={}, reject={:?})",
+            self.samples,
+            self.candidates.len(),
+            self.edges.len(),
+            self.reject
+        )
     }
 }
 

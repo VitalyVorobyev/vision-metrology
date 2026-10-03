@@ -73,6 +73,12 @@ whether the result is unbiased:
   `MeasureConfig` holds threshold, polarity, selection and the obliquity gate;
   `MeasureConfig::profile` (`ProfileConfig`) holds smoothing, sampling step and
   border handling.
+- **Explaining is a separate call.** `measure` keeps only what the next call reuses, so
+  its hot path stays allocation-free. `measure::diagnostics::explain` measures through
+  the same `Caliper` and then copies out the intermediates (profile, smoothed profile,
+  derivative, candidates before `select`, level crossings), so the trace cannot disagree
+  with the result it explains. Per-caliper traces for a whole model belong to a model
+  pass of their own, not to a second measurement per caliper.
 - **Placement is computed once.** `MetrologyModel::apply` and `measure::diagnostics::layout`
   call the same placement code, so a drawn caliper is the one that measures. `layout` needs
   no image. `MeasureRadial::center` is the circle's centre, not the caliper's boundary point.

@@ -150,12 +150,44 @@ impl Caliper {
         &self.profile
     }
 
+    /// Distance between profile samples, in pixels, at the current placement and config.
+    ///
+    /// `step` for rect, arc and radial placements; `length / (samples − 1)` for a strip.
+    /// It converts a profile index, such as [`LevelEdge::x`], to pixels along the scan.
+    pub fn spacing(&self) -> f32 {
+        let step = self.cfg.profile.step;
+        self.placement
+            .spacing(step, self.placement.profile_len(step))
+    }
+
+    /// Number of lines averaged across the scan.
+    pub(crate) fn across(&self) -> usize {
+        self.placement.across_count()
+    }
+
+    /// The edges that passed threshold, polarity and the obliquity gate on the last call,
+    /// before `select`.
+    pub(crate) fn candidates(&self) -> impl ExactSizeIterator<Item = MeasureEdge> + '_ {
+        self.cands.iter().map(|c| c.edge)
+    }
+
+    /// The smoothed profile and the derivative response of the last profile, recomputed
+    /// with the current config. Off the hot path: it allocates both, and leaves every
+    /// result of the last call as it was.
+    pub(crate) fn smoothed_and_response(&mut self) -> (Vec<f32>, Vec<f32>) {
+        let det_cfg = self.detector_config(self.spacing(), SubpixRefine::Parabolic3);
+        let smoothed = self.det.smooth_in_ref(&self.profile, &det_cfg).to_vec();
+        let _ = self.det.detect_in_ref(&self.profile, &det_cfg);
+        (smoothed, self.det.response().to_vec())
+    }
+
     /// The level crossings behind the edges of the last [`measure`](Self::measure) call:
     /// the one crossing of [`Locate::MidpointCrossing`], one per refined edge of
     /// [`Locate::HalfContrast`], none for [`Locate::GradientPeak`].
     ///
-    /// Positions are in profile samples, like the [`profile`](Self::profile) index; the
-    /// levels are on the input pixel scale. A rejected call keeps the crossings it found
+    /// Positions are in profile samples, like the [`profile`](Self::profile) index
+    /// ([`spacing`](Self::spacing) converts them to pixels); the levels are on the input
+    /// pixel scale. A rejected call keeps the crossings it found
     /// before the gate that rejected it.
     pub fn levels(&self) -> &[LevelEdge] {
         &self.levels

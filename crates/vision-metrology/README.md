@@ -27,7 +27,7 @@ vision-metrology = "0.1"
 | `laser` | `LaserExtractor`: laser stripe centrelines from opposite-polarity 1-D edge pairs, scanning rows or columns, with ROI and prior tracking |
 | `lsd` | `LsdDetector`: line-segment detection with NFA validation |
 | `matching` | `ShapeModel` + `ShapeMatcher`: gradient-orientation similarity, coarse-to-fine search over translation / rotation / uniform scale, subpixel pose refinement, masked teaching, and canonical-pose crops (`matching::crop`) |
-| `measure` | `Caliper` (rect / arc / radial / strip placements; gradient-peak, midpoint or half-contrast edge location) and `MetrologyModel`: measure a located part and fit the result, with a typed `RejectReason` when a caliper finds nothing and `diagnostics::layout` for caliper placement |
+| `measure` | `Caliper` (rect / arc / radial / strip placements; gradient-peak, midpoint or half-contrast edge location) and `MetrologyModel`: measure a located part and fit the result, with a typed `RejectReason` when a caliper finds nothing, `diagnostics::explain` to trace one measurement, and `diagnostics::layout` for caliper placement |
 | `metric` | `CameraModel` / `Pose3` / `Plane3` / `PlaneGrid`, exact `pixel_to_plane`, `plane_grid_map` / `undistort_map` for whole images, importers for calibration-rs and `table_calibration` JSON |
 | `scale` | Scale estimation for `matching` (moments / log-polar) and `find_scale_invariant`: estimate once, resample the model, verify in a narrow band |
 | `segment` | Otsu and adaptive thresholding, connected-component labeling with per-component stats, watershed, edgel region growing |
