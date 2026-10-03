@@ -117,6 +117,36 @@ def test_teach_find_measure_circle(tmp_path, monkeypatch) -> None:
     assert hit["profile"]["step_px"] > 0
     assert len(hit["profile"]["edges"]) == 1
 
+    # -- an object on flat ground: every caliper rejected, each with its reason -------
+    resp = client.post(
+        "/api/measure",
+        json={
+            "image_id": image["id"],
+            "model_id": model["id"],
+            "min_score": 0.5,
+            "objects": [
+                {
+                    "kind": "line",
+                    "label": "nothing here",
+                    "ax": 10.0,
+                    "ay": 20.0,
+                    "bx": 10.0,
+                    "by": 60.0,
+                    "n_calipers": 3,
+                    "caliper_len": 4.0,
+                    "caliper_width": 2.0,
+                }
+            ],
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    (flat,) = resp.json()["objects"]
+    assert flat["kind"] == "error" and flat["message"]
+    assert [c["status"] for c in flat["calipers"]] == ["rejected"] * 3
+    assert all(c["reason"] == "no_edge" for c in flat["calipers"])
+    assert all(len(c["profile"]["values"]) == 9 and c["profile"]["edges"] == [] for c in flat["calipers"])
+    assert [o["tone"] for o in flat["overlay"]] == ["defect"] * 3
+
     # -- rectify: find + rectify each match into a canonical model-frame crop --------
     resp = client.post(
         "/api/rectify",

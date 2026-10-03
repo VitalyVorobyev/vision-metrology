@@ -87,8 +87,12 @@ whether the result is unbiased:
   its hot path stays allocation-free. `measure::diagnostics::explain` measures through
   the same `Caliper` and then copies out the intermediates (profile, smoothed profile,
   derivative, candidates before `select`, level crossings), so the trace cannot disagree
-  with the result it explains. Per-caliper traces for a whole model belong to a model
-  pass of their own, not to a second measurement per caliper.
+  with the result it explains. A whole model is explained in one pass:
+  `diagnostics::explain_model` places each caliper with `apply`'s placement code,
+  measures it once through `explain`, and fits its first edges through the same loop
+  `apply` runs (`model::measure_placed`, with the measurement as a closure). Each object's
+  result is therefore `apply`'s, with every caliper's placement and trace beside it, and
+  a tool needs no second measurement per caliper.
 - **Placement is computed once.** `MetrologyModel::apply` and `measure::diagnostics::layout`
   call the same placement code, so a drawn caliper is the one that measures. `layout` needs
   no image. `MeasureRadial::center` is the circle's centre, not the caliper's boundary point.

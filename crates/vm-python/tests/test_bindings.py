@@ -997,6 +997,42 @@ def test_metrology_model_layout_agrees_with_apply_hit_positions():
         assert abs(hit.y - py) < 1.0
 
 
+def test_metrology_model_explain_is_apply_with_every_calipers_trace():
+    """`explain` measures each caliper once and returns, per object, what `apply`
+    returns plus each caliper's placement and trace."""
+    c = (80.0, 80.0)
+    disc = make_disc(160, 160, c[0], c[1], 40.0)
+    model = vm.MetrologyModel()
+    model.add(vm.MetrologyObject(vm.MetrologyShape.circle((0.0, 0.0), 40.0), n_calipers=16))
+    # Two calipers on flat ground: placed and traced, nothing to fit.
+    model.add(vm.MetrologyObject(vm.MetrologyShape.line((-75.0, -70.0), (-75.0, -60.0)), n_calipers=2, caliper_len=3.0))
+
+    traces = model.explain(disc, c[0], c[1])
+    applied = model.apply(disc, c[0], c[1])
+    assert [t.object_index for t in traces] == [0, 1]
+    assert all(isinstance(t, vm.ObjectTrace) for t in traces)
+
+    rim = traces[0]
+    assert isinstance(rim.result, vm.MetrologyResult)
+    assert (rim.result.circle.cx, rim.result.circle.cy, rim.result.circle.r) == (
+        applied[0].circle.cx,
+        applied[0].circle.cy,
+        applied[0].circle.r,
+    )
+    assert len(rim.placements) == len(rim.calipers) == 16
+    placed = model.layout(c[0], c[1])[:16]
+    assert [(p.center, p.angle) for p in rim.placements] == [(p.center, p.angle) for p in placed]
+    assert all(isinstance(t, vm.CaliperTrace) and t.reject is None for t in rim.calipers)
+    firsts = [(t.edges[0].x, t.edges[0].y) for t in rim.calipers]
+    assert firsts == [(h.x, h.y) for h in rim.result.hits]
+
+    flat = traces[1]
+    assert isinstance(flat.result, vm.MetrologyError) and isinstance(applied[1], vm.MetrologyError)
+    assert flat.result.message == applied[1].message
+    assert [t.reject for t in flat.calipers] == ["no_edge", "no_edge"]
+    assert "ObjectTrace(object_index=1" in repr(flat)
+
+
 def test_metrology_model_layout_skips_unmeasurable_objects():
     model = vm.MetrologyModel()
     model.add(vm.MetrologyObject(vm.MetrologyShape.circle((0.0, 0.0), 20.0), n_calipers=2))

@@ -372,6 +372,24 @@ serializes. In Python, `cal.explain(img)` returns the same fields, with
 `profile`, `smoothed` and `response` as `float32` arrays and `reject` as the
 reason string; it does not raise `MeasureRejected`.
 
+A whole [`MetrologyModel`] is explained in one pass with
+`measure::diagnostics::explain_model(&model, img, fixture)`. It returns one
+`ObjectTrace` per object, in `objects()` order:
+
+| `ObjectTrace` field | What it holds |
+|---|---|
+| `result` | what `apply` returns for the object: the fit and its hits, or the error |
+| `placements` | where each caliper sat, in caliper order, as `layout` places it |
+| `calipers` | each caliper's `CaliperTrace`, parallel to `placements` |
+
+Each caliper is measured once. A caliper hit when its trace has edges, and its
+first edge is the one the fit used, so `result` is exactly what `apply` returns
+for the same model, image and fixture. An object whose fit failed (too few
+hits) still has every caliper's trace, which is usually where the reason is.
+In Python, `model.explain(img, x, y, angle=..., scale=..., origin=...)` takes
+`apply`'s arguments and returns `ObjectTrace`s whose `result` is a
+`MetrologyResult` or a `MetrologyError`.
+
 ## Running CaliperBench
 
 [CaliperBench](https://github.com/VitalyVorobyev/caliperbench) scores edge

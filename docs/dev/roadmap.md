@@ -11,8 +11,7 @@ The measurement chain runs end to end on real data: rectify → locate → fixtu
 → robust fit → millimetres → pass/fail ([system design](system-design.md)). The work ahead:
 
 1. the lab moves onto the shared `@vitavision/*` UI packages;
-2. a textbook caliper baseline that CaliperBench can run;
-3. the remaining gaps: `filter`, accuracy coverage, blob features, bindings.
+2. the remaining gaps: `filter`, accuracy coverage, blob features, bindings.
 
 ---
 
@@ -26,29 +25,10 @@ them; package gaps the lab runs into are filed as lab-ui issues.
 - Find gets a match inventory that is hover-linked to the canvas, selectable, steppable
   and framable, as Teach's contour inventory is.
 - Verify gets the same per caliper, built on stage2d's `PolylineSet` / `MeasureOverlay` ids
-  and on M9's `explain_model`.
+  and on the per-caliper traces `diagnostics::explain_model` already feeds the measure
+  response.
 
 **Accept:** both views are driven end to end on a real capture.
-
----
-
-## Track M: caliper baseline for CaliperBench, `in progress`
-
-[CaliperBench](https://github.com/VitalyVorobyev/caliperbench) scores edge localization,
-paired edges (width and centre) and end caps on real and synthetic strips. Its contract is
-a strip (`start`, `end`, `width`, `samples`, `across`) plus an ordered polarity list, and
-the answer is edge distances from `start`. External methods run through a JSONL protocol.
-
-The strip, the textbook operators, the level methods and the protocol runner
-(`examples/caliperbench_run.rs`) are in place. The runner reproduces CaliperBench's three
-baselines row for row ([ADR-0008](adr/0008-calipers.md)), and the accuracy suite pins
-them on CaliperBench's image model. What is left puts them in the lab.
-
-| Step | Content | Accept |
-|---|---|---|
-| M9 | `diagnostics::explain_model`: per-caliper traces plus the fit in one pass | lab backend and Tauri drop their second measurement pass |
-
-Each step ships Python parity and updates `docs/measure.md`.
 
 ---
 

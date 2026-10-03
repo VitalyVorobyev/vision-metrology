@@ -577,6 +577,29 @@ class MetrologyModel:
         scale: float = ...,
         origin: Tuple[float, float] = ...,
     ) -> List[CaliperPlacement]: ...
+    def explain(
+        self,
+        image: ImageAny,
+        x: float,
+        y: float,
+        angle: float = ...,
+        scale: float = ...,
+        origin: Tuple[float, float] = ...,
+    ) -> List[ObjectTrace]:
+        """`apply` and `Caliper.explain` in one pass: per object, what `apply`
+        returns plus every caliper's placement and trace."""
+        ...
+
+class ObjectTrace:
+    """One object of a `MetrologyModel`, measured and explained. `result` is
+    what `apply` returns for it; `placements` and `calipers` are parallel, one
+    entry per caliper. A caliper hit when its trace has `edges`, and its first
+    edge is the one the fit used."""
+
+    object_index: int
+    result: Union[MetrologyResult, MetrologyError]
+    placements: List[CaliperPlacement]
+    calipers: List[CaliperTrace]
 
 class Caliper:
     """A reusable caliper. Construct with `rect`, `arc`, `radial` or `strip`;

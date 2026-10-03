@@ -34,8 +34,13 @@ React UI ── LabBackend ─┬─ httpBackend  ── openapi-fetch ──►
 - **All geometry is computed in the backend or command layer.** Responses carry
   source-image pixel coordinates (caliper boxes, edge points, fitted primitives, profiles),
   and the UI only draws them.
-- **Placement is not duplicated.** Caliper placement comes from
-  `measure::diagnostics::layout`, the same code `MetrologyModel::apply` uses.
+- **Measure is one pass.** `measure::diagnostics::explain_model` (Python:
+  `MetrologyModel.explain`) measures each caliper once. Per object it returns what
+  `MetrologyModel::apply` returns (the fit, its residuals and hits), with every caliper's
+  placement and trace. `routers/measure.py` and `commands/measure.rs` build the caliper
+  list (hit or rejection reason, profile, edge) and the overlay from those traces, so
+  there is no second, per-caliper measurement to drift from the fit. The placements are
+  `apply`'s own: the same code as `measure::diagnostics::layout`.
 - **The overlay type is mirrored.** The backend's `OverlayPrimitiveOut` mirrors stage2d's
   `MeasurePrimitive` field for field (`src/overlay/toMeasurePrimitive.ts`, Tauri
   `types.rs`). Changes to it must be additive.

@@ -1,5 +1,6 @@
-//! Seeing what a caliper did: [`explain`] traces one measurement, and [`layout`] places a
-//! [`MetrologyModel`]'s calipers at a fixture pose without measuring.
+//! Seeing what a caliper did: [`explain`] traces one measurement, [`explain_model`] traces
+//! every caliper of a [`MetrologyModel`] along with its fits, and [`layout`] places a
+//! model's calipers at a fixture pose without measuring.
 //!
 //! ## Caliper layout
 //!
@@ -12,11 +13,11 @@
 //! [`MetrologyModel::apply`] and this function both call the same private
 //! placement code (`model::caliper_placements`), so the two can never disagree.
 
-use vm_primitives::{ImageView, LevelEdge, Pixel, Similarity2f};
+use vm_primitives::{Error, ImageView, LevelEdge, Pixel, Similarity2f};
 
 pub use super::model::CaliperShape;
-use super::model::caliper_placements;
-use super::{Caliper, MeasureEdge, MetrologyModel, MetrologyObject, RejectReason};
+use super::model::{caliper_placements, measure_placed, placeholder_rect};
+use super::{Caliper, MeasureEdge, MetrologyModel, MetrologyObject, MetrologyResult, RejectReason};
 
 /// Everything one caliper measurement computed, from the sampled profile to the result.
 ///
@@ -101,6 +102,98 @@ pub fn explain<P: Pixel>(cal: &mut Caliper, img: &ImageView<'_, P>) -> CaliperTr
         edges,
         reject,
     }
+}
+
+/// One object of a [`MetrologyModel`], measured and explained: its fit and, for each of
+/// its calipers, where the caliper sat and what it computed.
+///
+/// Built by [`explain_model`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct ObjectTrace {
+    /// What [`MetrologyModel::apply`] returns for this object: the fit and its hits, or
+    /// why it could not be measured.
+    pub result: Result<MetrologyResult, Error>,
+    /// Where each caliper sat, in caliper order: what [`layout_object`] returns. Empty
+    /// when the object cannot be placed (fewer than 2 calipers, a zero-length line).
+    pub placements: Vec<CaliperShape>,
+    /// Each caliper's trace, parallel to `placements`. A caliper hit when its trace has
+    /// edges; its first edge is the one the fit used.
+    pub calipers: Vec<CaliperTrace>,
+}
+
+/// Measure every object of `model` at `fixture` and keep each caliper's trace: one entry
+/// per object, in [`MetrologyModel::objects`] order.
+///
+/// It is [`MetrologyModel::apply`] and [`explain`] in one pass. Each caliper is placed by
+/// the same code and measured once, through [`explain`]; its first edge goes to the fit
+/// exactly as in `apply`, so `result` is what `apply` returns for the same model, image
+/// and fixture. Like `explain`, it allocates every trace, so it belongs in a tool that
+/// shows why a model measured what it did, not in the inspection loop.
+///
+/// # Example
+/// ```
+/// use vision_metrology::measure::diagnostics::explain_model;
+/// use vision_metrology::measure::{MetrologyModel, MetrologyObject, MetrologyShape};
+/// use vision_metrology::{Image, Point2f, Similarity2f};
+///
+/// // A bright disc of radius 30, anti-aliased, on a dark 128 × 128 image.
+/// let data: Vec<u8> = (0..128 * 128)
+///     .map(|i| {
+///         let (x, y) = ((i % 128) as f32 - 64.0, (i / 128) as f32 - 64.0);
+///         let cover = (30.5 - (x * x + y * y).sqrt()).clamp(0.0, 1.0);
+///         (20.0 + 180.0 * cover).round() as u8
+///     })
+///     .collect();
+/// let img = Image::from_vec(128, 128, data).unwrap();
+///
+/// let mut model = MetrologyModel::new();
+/// model.add(MetrologyObject::new(MetrologyShape::Circle {
+///     center: Point2f::new(64.0, 64.0),
+///     radius: 30.0,
+///     arc: None,
+/// }));
+/// let traces = explain_model(&model, &img.as_view(), &Similarity2f::identity());
+/// let object = &traces[0];
+/// assert_eq!(object.calipers.len(), 32);
+/// let hits = object.calipers.iter().filter(|t| t.reject.is_none()).count();
+/// assert_eq!(hits, object.result.as_ref().unwrap().hits.len());
+/// ```
+pub fn explain_model<P: Pixel>(
+    model: &MetrologyModel,
+    img: &ImageView<'_, P>,
+    fixture: &Similarity2f,
+) -> Vec<ObjectTrace> {
+    let mut cal: Option<Caliper> = None;
+    let mut points = Vec::new();
+    model
+        .objects()
+        .iter()
+        .map(|obj| {
+            let placements = match caliper_placements(obj, fixture) {
+                Ok(placements) => placements,
+                Err(e) => {
+                    return ObjectTrace {
+                        result: Err(e),
+                        placements: Vec::new(),
+                        calipers: Vec::new(),
+                    };
+                }
+            };
+            let cal = cal.get_or_insert_with(|| Caliper::rect(placeholder_rect(), obj.measure));
+            let mut calipers = Vec::with_capacity(placements.len());
+            let result = measure_placed(cal, obj, &placements, &mut points, |cal| {
+                let trace = explain(cal, img);
+                let hit = trace.edges.first().copied();
+                calipers.push(trace);
+                hit
+            });
+            ObjectTrace {
+                result,
+                placements,
+                calipers,
+            }
+        })
+        .collect()
 }
 
 /// One caliper's placement, addressed by which object and which caliper within
@@ -505,5 +598,122 @@ mod tests {
 
         let placements = layout(&model, &Similarity2f::identity());
         assert!(placements.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod explain_model_tests {
+    use super::{CaliperShape, explain, explain_model, layout_object};
+    use crate::measure::{Caliper, MetrologyModel, MetrologyObject, MetrologyShape};
+    use vm_primitives::{Image, Point2f, Similarity2f, Vec2f};
+
+    /// An anti-aliased bright disc of radius 25 centred at (60, 60) and a bright bar on
+    /// columns 130..160, on a dark 192 × 128 image.
+    fn scene() -> Image<u8> {
+        let (w, h) = (192usize, 128usize);
+        let data = (0..w * h)
+            .map(|i| {
+                let (x, y) = ((i % w) as f32, (i / w) as f32);
+                let disc = (25.5 - (x - 60.0).hypot(y - 60.0)).clamp(0.0, 1.0);
+                let bar = if (130.0..160.0).contains(&x) {
+                    1.0
+                } else {
+                    0.0
+                };
+                (20.0 + 180.0 * f32::max(disc, bar)).round() as u8
+            })
+            .collect();
+        Image::from_vec(w, h, data).expect("valid image")
+    }
+
+    /// Four objects, in model space at the fixture below: the disc's rim; the bar's left
+    /// edge; two calipers on flat ground, which hit nothing and so cannot be fitted; and
+    /// one caliper, which cannot be placed.
+    fn model() -> MetrologyModel {
+        let mut model = MetrologyModel::new();
+        let mut rim = MetrologyObject::new(MetrologyShape::Circle {
+            center: Point2f::new(50.0, 50.0),
+            radius: 25.0,
+            arc: None,
+        });
+        rim.n_calipers = 24;
+        model.add(rim);
+        let mut edge = MetrologyObject::new(MetrologyShape::Line {
+            a: Point2f::new(119.5, 20.0),
+            b: Point2f::new(119.5, 90.0),
+        });
+        edge.n_calipers = 8;
+        model.add(edge);
+        let mut flat = MetrologyObject::new(MetrologyShape::Line {
+            a: Point2f::new(170.0, 10.0),
+            b: Point2f::new(170.0, 100.0),
+        });
+        flat.n_calipers = 2;
+        flat.caliper_len = 4.0;
+        model.add(flat);
+        let mut single = MetrologyObject::new(MetrologyShape::Circle {
+            center: Point2f::new(50.0, 50.0),
+            radius: 25.0,
+            arc: None,
+        });
+        single.n_calipers = 1;
+        model.add(single);
+        model
+    }
+
+    fn fixture() -> Similarity2f {
+        Similarity2f::new(Vec2f::new(10.0, 10.0), 0.0, 1.0)
+    }
+
+    /// The traced model fits exactly what `apply` does, object by object, failures
+    /// included.
+    #[test]
+    fn explain_model_returns_what_apply_returns() {
+        let img = scene();
+        let traces = explain_model(&model(), &img.as_view(), &fixture());
+        let applied = model().apply(&img.as_view(), &fixture());
+        assert_eq!(traces.len(), 4);
+        for (i, (trace, applied)) in traces.iter().zip(&applied).enumerate() {
+            assert_eq!(&trace.result, applied, "object {i}");
+        }
+        assert!(traces[0].result.is_ok() && traces[1].result.is_ok());
+        assert!(traces[2].result.is_err(), "nothing to fit on flat ground");
+        assert!(traces[3].result.is_err(), "one caliper cannot be placed");
+    }
+
+    /// Each caliper's trace is `explain` of a caliper at the layout's placement, and the
+    /// hits are the traces' first edges, in caliper order.
+    #[test]
+    fn every_caliper_is_traced_where_layout_puts_it() {
+        let img = scene();
+        let model = model();
+        let traces = explain_model(&model, &img.as_view(), &fixture());
+        for (obj, trace) in model.objects().iter().zip(&traces) {
+            assert_eq!(trace.placements, layout_object(obj, &fixture()));
+            assert_eq!(trace.calipers.len(), trace.placements.len());
+            for (shape, caliper) in trace.placements.iter().zip(&trace.calipers) {
+                let mut alone = match *shape {
+                    CaliperShape::Rect(r) => Caliper::rect(r, obj.measure),
+                    CaliperShape::Radial(r) => Caliper::radial(r, obj.measure),
+                };
+                assert_eq!(caliper, &explain(&mut alone, &img.as_view()));
+            }
+            if let Ok(result) = &trace.result {
+                let firsts: Vec<_> = trace
+                    .calipers
+                    .iter()
+                    .filter_map(|t| t.edges.first().copied())
+                    .collect();
+                assert_eq!(result.hits, firsts);
+            }
+        }
+        // The rim and the bar's edge: every caliper hit.
+        assert_eq!(traces[0].result.as_ref().map(|r| r.hits.len()), Ok(24));
+        assert_eq!(traces[1].result.as_ref().map(|r| r.hits.len()), Ok(8));
+        // Flat ground: traced, every caliper rejected, nothing to fit.
+        assert_eq!(traces[2].calipers.len(), 2);
+        assert!(traces[2].calipers.iter().all(|t| t.reject.is_some()));
+        // Unplaceable: no calipers at all.
+        assert!(traces[3].placements.is_empty() && traces[3].calipers.is_empty());
     }
 }
