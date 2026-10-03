@@ -59,7 +59,7 @@ definition-of-done checks.
 
 ---
 
-## Track M: caliper baseline for CaliperBench, `planned`
+## Track M: caliper baseline for CaliperBench, `in progress`
 
 [CaliperBench](https://github.com/VitalyVorobyev/caliperbench) scores edge localization,
 paired edges (width and centre) and end caps on real and synthetic strips. Its contract is
@@ -78,7 +78,6 @@ No obliquity gate or other non-textbook logic is used by the runner. The design 
 
 | Step | Content | Accept |
 |---|---|---|
-| M3 | `MeasureStrip{start, end, half_width, samples, across}`, `OffImage::Reject`, `t` measured from the start | strip tests ported from CaliperBench's baseline tests |
 | M4 | `EdgeSelect::StrongestInOrder` + `RejectReason::IncompleteSequence` | tie and strict-order tests |
 | M5 | `level1d.rs` (`LevelCrossing1D`) + `Locate::{MidpointCrossing, HalfContrast}` | analytic tests; checks run in CaliperBench's order |
 | M6 | `diagnostics::explain` → `CaliperTrace` | trace edges equal `measure` output bit-for-bit |

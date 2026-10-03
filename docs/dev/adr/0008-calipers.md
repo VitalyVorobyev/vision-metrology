@@ -19,6 +19,17 @@ whether the result is unbiased:
   - `MeasureRect`: a straight scan, averaged across.
   - `MeasureArc`: a scan along an arc, averaged radially.
   - `MeasureRadial`: a radial scan, averaged **along the arc**.
+  - `MeasureStrip`: a straight scan from `start` to `end`, averaged across, with
+    optional explicit `samples` along (endpoints included) and `across` lines.
+- **A strip exists for exact endpoints and explicit sample counts.** A rect is centred,
+  so its ends and its sample positions follow from `half_len` and `step`. Reproducing a
+  reference implementation (CaliperBench's strips) needs the profile fixed sample for
+  sample: the last sample exactly on `end`, the spacing `length / (samples − 1)`, and
+  σ converted with that true spacing. Its geometry and bilinear weights are computed in
+  `f64` so results agree with a numpy reference to well under 1e-4 px. `t` is the
+  distance from `start`, the reference's convention. `OffImage::Reject`
+  (`ProfileConfig::off_image`) gives the reference's strict bounds; it applies to every
+  placement; the default, `Fill`, samples the outside with `ProfileConfig::border`.
 - **A curved edge gets its own placement.** A rectangle averages along a straight chord. On a
   circle of radius 40, a sample 5 px to the side sits at radius 40.31, on the wrong side of
   the edge. A 32-caliper fit reads 39.88 px; `MeasureRadial` reads 39.990 px, and its bias

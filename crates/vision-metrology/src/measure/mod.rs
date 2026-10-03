@@ -10,9 +10,10 @@
 //!
 //! ## The caliper
 //!
-//! [`Caliper`] places a [`MeasureRect`], [`MeasureArc`] or [`MeasureRadial`] on
-//! the image, averages intensity across its width into a 1-D profile, and runs the existing
-//! subpixel [`Edge1DDetector`](vm_primitives::Edge1DDetector) along it. The
+//! [`Caliper`] places a [`MeasureRect`], [`MeasureArc`], [`MeasureRadial`] or
+//! [`MeasureStrip`] on the image, averages intensity across its width into a 1-D profile,
+//! and runs the existing subpixel [`Edge1DDetector`](vm_primitives::Edge1DDetector) along
+//! it. The
 //! cross-averaging is where the precision comes from: `n` interpolated samples
 //! per profile entry drop noise by `√n` while leaving an edge perpendicular to
 //! the scan exactly as sharp.
@@ -42,8 +43,9 @@ mod select;
 
 pub use caliper::Caliper;
 pub use config::{
-    Derivative, EdgeSelect, Locate, MeasureConfig, PolaritySelect, ProfileConfig, RejectReason,
+    Derivative, EdgeSelect, Locate, MeasureConfig, OffImage, PolaritySelect, ProfileConfig,
+    RejectReason,
 };
 pub use model::{MetrologyFit, MetrologyModel, MetrologyObject, MetrologyResult, MetrologyShape};
-pub use placement::{MeasureArc, MeasureRadial, MeasureRect};
+pub use placement::{MeasureArc, MeasureRadial, MeasureRect, MeasureStrip};
 pub use select::{MeasureEdge, MeasurePair};

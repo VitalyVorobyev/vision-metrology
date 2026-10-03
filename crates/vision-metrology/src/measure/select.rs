@@ -9,8 +9,9 @@ use super::config::EdgeSelect;
 pub struct MeasureEdge {
     /// Subpixel position in **image** coordinates.
     pub p: Point2f,
-    /// Position along the scan, in pixels: the signed distance from the centre for
-    /// rect and radial placements, the arc length from `angle_start` for an arc.
+    /// Position along the scan, in pixels: the distance from `start` for a strip,
+    /// the signed distance from the centre for rect and radial placements, the arc
+    /// length from `angle_start` for an arc.
     pub t: f32,
     /// `|DoG response|` at the edge — the local contrast.
     pub amplitude: f32,

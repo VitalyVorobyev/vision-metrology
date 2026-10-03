@@ -1,13 +1,15 @@
-//! `measure` benchmarks: a single caliper and a full `MetrologyModel::apply`.
+//! `measure` benchmarks: single calipers and a full `MetrologyModel::apply`.
 //!
 //! Run with `cargo bench -p vision-metrology --bench measure`.
 //!
-//! ## Measured numbers (2026-08-20, release, `lto = "thin"`, `codegen-units = 1`)
+//! ## Measured numbers (2026-10-03, release, `lto = "thin"`, `codegen-units = 1`)
 //!
 //! | Benchmark                              | Time      |
 //! |-----------------------------------------|-----------|
-//! | `caliper_rect_pos_1280x1024`             | ~1.75 µs  |
-//! | `metrology_model_apply_96_calipers`      | ~215 µs   |
+//! | `caliper_rect_pos_1280x1024`             | ~1.37 µs  |
+//! | `metrology_model_apply_96_calipers`      | ~208 µs   |
+//! | `caliper_strip_40px_81s_parabolic`       | ~0.51 µs  |
+//! | `caliper_strip_400px_801s_w15_a15`       | ~33.7 µs  |
 //!
 //! The single-caliper number is the cost of one `Caliper::measure` scan on a
 //! 1280×1024 synthetic edge scene — a caliper only touches the pixels under
@@ -15,15 +17,21 @@
 //! rows), so this is independent of image size beyond cache effects.
 //! `metrology_model_apply_96_calipers` is the cost of a full circle object
 //! (96 calipers around a nominal 300 px-radius circle) run through `apply`,
-//! including the robust `fit_circle` at the end: 215 µs / 96 ≈ 2.24 µs per
-//! caliper, close to the single-caliper number plus the fit's own share.
+//! including the robust `fit_circle` at the end: about 2.2 µs per caliper,
+//! the single-caliper number plus the fit's own share.
+//!
+//! The strip benches use the textbook settings on `f32` bar images: a 40 px strip of
+//! 81 samples on one line, and a 400 px strip of 801 samples averaged over 15 lines
+//! (12 015 `f64` bilinear samples, about 2.8 ns each).
 //!
 //! Re-run and update this table whenever `measure`'s hot path changes.
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
+use std::num::NonZeroUsize;
 use vision_metrology::measure::{
-    Caliper, MeasureConfig, MeasureRect, MetrologyModel, MetrologyObject, MetrologyShape,
+    Caliper, Derivative, MeasureConfig, MeasureRect, MeasureStrip, MetrologyModel, MetrologyObject,
+    MetrologyShape, OffImage, ProfileConfig,
 };
 use vision_metrology::{Image, Point2f, Similarity2f, Vec2f};
 
@@ -100,9 +108,81 @@ fn bench_metrology_model_apply_96_calipers(c: &mut Criterion) {
     });
 }
 
+/// A `w × h` f32 image in [0, 1] with a bright bar on columns `x0..x1`, blurred by
+/// a 3-tap box so each edge has a subpixel position.
+fn bar_scene_f32(w: usize, h: usize, x0: usize, x1: usize) -> Image<f32> {
+    let row: Vec<f32> = (0..w)
+        .map(|x| {
+            let at = |x: isize| f32::from(u8::from((x0 as isize..x1 as isize).contains(&x)));
+            let x = x as isize;
+            (at(x - 1) + at(x) + at(x + 1)) / 3.0
+        })
+        .collect();
+    let data = (0..h).flat_map(|_| row.iter().copied()).collect();
+    Image::from_vec(w, h, data).expect("valid image")
+}
+
+/// The textbook settings for a strip sampled every `spacing` pixels: σ of one sample,
+/// a radius-3 Gaussian, central differences, a three-point parabola, strict bounds.
+fn strip_config(spacing: f32) -> MeasureConfig {
+    MeasureConfig {
+        threshold: 0.01,
+        profile: ProfileConfig {
+            sigma: spacing,
+            derivative: Derivative::SmoothThenCentral {
+                radius_px: 3.0 * spacing,
+            },
+            off_image: OffImage::Reject,
+            ..ProfileConfig::default()
+        },
+        ..MeasureConfig::default()
+    }
+}
+
+fn strip(start: (f32, f32), end: (f32, f32), half_width: f32, n: usize, a: usize) -> MeasureStrip {
+    MeasureStrip {
+        start: Point2f::new(start.0, start.1),
+        end: Point2f::new(end.0, end.1),
+        half_width,
+        samples: NonZeroUsize::new(n),
+        across: NonZeroUsize::new(a),
+    }
+}
+
+fn bench_caliper_strip(c: &mut Criterion) {
+    // 40 px, 81 samples (0.5 px apart), a single line: the shape of a typical
+    // CaliperBench request.
+    let small = bar_scene_f32(96, 96, 40, 60);
+    let small_view = small.as_view();
+    let mut cal = Caliper::strip(
+        strip((28.0, 48.3), (68.0, 48.3), 0.0, 81, 1),
+        strip_config(0.5),
+    );
+    c.bench_function("caliper_strip_40px_81s_parabolic", |b| {
+        b.iter(|| {
+            let edges = cal.measure(black_box(&small_view)).expect("two edges");
+            black_box(edges.len());
+        });
+    });
+
+    // 400 px, 801 samples, 15 lines over a 15 px width: the sampling budget of a
+    // wide, dense strip.
+    let large = bar_scene_f32(512, 64, 150, 350);
+    let large_view = large.as_view();
+    let geom = strip((50.0, 31.6), (450.0, 33.1), 7.0, 801, 15);
+    let mut cal = Caliper::strip(geom, strip_config(geom.length() / 800.0));
+    c.bench_function("caliper_strip_400px_801s_w15_a15", |b| {
+        b.iter(|| {
+            let edges = cal.measure(black_box(&large_view)).expect("two edges");
+            black_box(edges.len());
+        });
+    });
+}
+
 criterion_group!(
     benches,
     bench_caliper_rect_pos,
-    bench_metrology_model_apply_96_calipers
+    bench_metrology_model_apply_96_calipers,
+    bench_caliper_strip
 );
 criterion_main!(benches);

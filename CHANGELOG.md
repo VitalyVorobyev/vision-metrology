@@ -39,6 +39,11 @@ The workspace was consolidated from twelve crates into three: `vm-primitives`,
     `ProfileConfig::derivative` (`Derivative`) select the subpixel refinement and the
     derivative operator; Python: `vm.Locate.gradient_peak(refine=...)`,
     `MeasureConfig(derivative=..., kernel_radius_px=...)`.
+  - `MeasureStrip` (`Caliper::strip`, `Caliper::set_strip`): a straight scan with exact
+    endpoints, optional explicit `samples` and `across` counts, and `t` measured from
+    `start`. `ProfileConfig::off_image` (`OffImage::{Fill, Reject}`) rejects a placement
+    that leaves the image. Python: `Caliper.strip`, `Caliper.move_to_{rect, arc, radial,
+    strip}`, `MeasureConfig(off_image=...)`.
   - `MetrologyModel` applies line and circle objects at a fixture pose and fits them.
   - `measure::diagnostics::layout` gives caliper placement without an image.
 - **Robust fitting** (`fit`): `fit_line`, `fit_circle` (Taubin then Gauss–Newton) and

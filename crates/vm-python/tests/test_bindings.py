@@ -624,6 +624,92 @@ def test_caliper_unsupported_dtype_names_the_supported_ones():
         vm.Caliper.rect((8.0, 8.0), 0.0, 4.0, 2.0).measure(bad)
 
 
+def strip_config(spacing: float) -> "vm.MeasureConfig":
+    """Textbook settings: sigma of one sample, a radius-3 Gaussian, central
+    differences, strict bounds, a response floor of 0.01 on a [0, 1] image."""
+    return vm.MeasureConfig(
+        sigma=spacing,
+        threshold=0.01,
+        derivative="smooth_central",
+        kernel_radius_px=3.0 * spacing,
+        off_image="reject",
+    )
+
+
+def make_bar_f32() -> np.ndarray:
+    """A bright bar on columns 16..48 of a 9 x 64 image in [0, 1]."""
+    img = np.zeros((9, 64), dtype=np.float32)
+    img[:, 16:48] = 1.0
+    return img
+
+
+def test_caliper_strip_reports_distances_from_the_start():
+    img = make_bar_f32()
+    for start, end, n in [((0, 4), (63, 4), 64), ((63, 4), (0, 4), 64), ((0, 4), (63, 4), 127)]:
+        cal = vm.Caliper.strip(start, end, samples=n, across=1, config=strip_config(63 / (n - 1)))
+        edges = cal.measure(img)
+        assert [e.polarity for e in edges] == ["rising", "falling"], (start, n)
+        assert abs(edges[0].t - 15.5) < 1e-4, (start, n, edges)
+        assert abs(edges[1].t - 47.5) < 1e-4, (start, n, edges)
+        assert len(cal.profile()) == n
+
+
+def test_caliper_strip_profile_is_bilinear_and_averaged_across():
+    ys, xs = np.mgrid[0:30, 0:30]
+    plane = (2 * xs + 3 * ys).astype(np.float32)
+    cal = vm.Caliper.strip(
+        (5, 5), (20, 20), half_width=1.0, samples=16, across=3, config=strip_config(1.0)
+    )
+    try:
+        cal.measure(plane)
+    except vm.MeasureRejected:
+        pass
+    assert np.allclose(cal.profile(), np.linspace(25, 100, 16), atol=1e-4)
+
+
+def test_caliper_strip_off_image_reject_and_fill():
+    short = np.zeros((3, 64), dtype=np.float32)
+    short[:, 16:48] = 1.0
+    reject = vm.Caliper.strip((0, 4), (63, 4), samples=64, across=1, config=strip_config(1.0))
+    with pytest.raises(vm.MeasureRejected) as exc_info:
+        reject.measure(short)
+    assert exc_info.value.args[0] == "off_image"
+
+    fill = strip_config(1.0)
+    fill.off_image = "fill"
+    edges = vm.Caliper.strip((0, 4), (63, 4), samples=64, across=1, config=fill).measure(short)
+    assert len(edges) == 2
+
+    with pytest.raises(ValueError):
+        vm.MeasureConfig(off_image="clip")
+    with pytest.raises(ValueError):
+        vm.Caliper.strip((0, 4), (63, 4), samples=0)
+
+
+def test_caliper_move_to_keeps_the_config():
+    img = make_bar_f32()
+    cal = vm.Caliper.strip((0, 4), (63, 4), samples=64, across=1, config=strip_config(1.0))
+    cal.move_to_strip((63, 4), (0, 4), samples=64, across=1)
+    edges = cal.measure(img)
+    assert [round(e.t, 4) for e in edges] == [15.5, 47.5]
+    assert [e.polarity for e in edges] == ["rising", "falling"]
+
+    step = make_step_image(64, 64, 30)
+    rect = vm.Caliper.rect((10.0, 10.0), 0.0, 5.0, 2.0)
+    rect.move_to_rect((32.0, 32.0), 0.0, 20.0, 4.0)
+    assert abs(rect.measure(step)[0].x - 29.5) < 0.05
+
+    disc = make_disc(160, 160, 80.0, 80.0, 40.0)
+    radial = vm.Caliper.radial((80.0, 80.0), 40.0, 0.0, 8.0, 3.0)
+    radial.move_to_radial((80.0, 80.0), 40.0, np.pi, 8.0, 3.0)
+    assert abs(radial.measure(disc)[0].x - 40.0) < 0.1  # centre.x - radius
+
+    arc = vm.Caliper.arc((80.0, 80.0), 40.0, 0.0, 1.0, 2.0)
+    arc.move_to_arc((80.0, 80.0), 20.0, 0.0, 1.0, 2.0)
+    with pytest.raises(vm.MeasureRejected):
+        arc.measure(disc)  # entirely inside the disc: nothing to cross
+
+
 def test_fit_line_object_and_function():
     pts = np.array([[float(i), 2.0] for i in range(10)], dtype=np.float32)
     obj = vm.Fitter().fit_line(pts)

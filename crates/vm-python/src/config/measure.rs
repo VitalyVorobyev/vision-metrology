@@ -4,8 +4,8 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use vision_metrology::measure::{
     Derivative as NativeDerivative, EdgeSelect as NativeEdgeSelect, Locate as NativeLocate,
-    MeasureConfig as NativeMeasureConfig, PolaritySelect as NativePolaritySelect,
-    ProfileConfig as NativeProfileConfig,
+    MeasureConfig as NativeMeasureConfig, OffImage as NativeOffImage,
+    PolaritySelect as NativePolaritySelect, ProfileConfig as NativeProfileConfig,
 };
 use vm_primitives::{BorderMode, SubpixRefine};
 
@@ -99,6 +99,11 @@ pub struct MeasureConfig {
     pub kernel_radius_px: f32,
     /// How each edge is located on the profile.
     pub locate: Locate,
+    /// "fill" (default) measures a caliper that overhangs the image, sampling the outside
+    /// with `border_mode`, and reports "off_image" only when no edge is found; "reject"
+    /// raises `MeasureRejected("off_image")` before looking for edges whenever any sample
+    /// lies outside `[0, w - 1] x [0, h - 1]`.
+    pub off_image: String,
 }
 
 #[pymethods]
@@ -116,7 +121,8 @@ impl MeasureConfig {
         border_constant=None,
         derivative=None,
         kernel_radius_px=None,
-        locate=None
+        locate=None,
+        off_image=None
     ))]
     pub fn new(
         sigma: Option<f32>,
@@ -130,6 +136,7 @@ impl MeasureConfig {
         derivative: Option<String>,
         kernel_radius_px: Option<f32>,
         locate: Option<Locate>,
+        off_image: Option<String>,
     ) -> PyResult<Self> {
         let d = Self::default();
         for (name, value, allowed) in [
@@ -153,6 +160,7 @@ impl MeasureConfig {
                 derivative.as_deref(),
                 &["dog", "smooth_central"][..],
             ),
+            ("off_image", off_image.as_deref(), &["fill", "reject"][..]),
         ] {
             if let Some(v) = value
                 && !allowed.contains(&v)
@@ -174,6 +182,7 @@ impl MeasureConfig {
             derivative: derivative.unwrap_or(d.derivative),
             kernel_radius_px: kernel_radius_px.unwrap_or(d.kernel_radius_px),
             locate: locate.unwrap_or(d.locate),
+            off_image: off_image.unwrap_or(d.off_image),
         })
     }
 
@@ -200,6 +209,7 @@ impl Default for MeasureConfig {
             derivative: "dog".to_string(),
             kernel_radius_px: 3.0,
             locate: Locate::default(),
+            off_image: "fill".to_string(),
         }
     }
 }
@@ -234,6 +244,10 @@ impl MeasureConfig {
                     "reflect101" => BorderMode::Reflect101,
                     "constant" => BorderMode::Constant(self.border_constant),
                     _ => BorderMode::Clamp,
+                },
+                off_image: match self.off_image.as_str() {
+                    "reject" => NativeOffImage::Reject,
+                    _ => NativeOffImage::Fill,
                 },
             },
         }

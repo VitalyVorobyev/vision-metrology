@@ -63,6 +63,18 @@ impl Default for Locate {
     }
 }
 
+/// What a caliper does when its placement reaches outside the image.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum OffImage {
+    /// Sample the outside with [`ProfileConfig::border`] and measure anyway;
+    /// [`RejectReason::OffImage`] is reported only when no edge is found.
+    #[default]
+    Fill,
+    /// Reject the measurement with [`RejectReason::OffImage`] before looking for
+    /// edges whenever any sample lies outside `[0, w − 1] × [0, h − 1]`.
+    Reject,
+}
+
 /// How a caliper turns the image under its placement into a 1-D profile and smooths it.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ProfileConfig {
@@ -81,6 +93,8 @@ pub struct ProfileConfig {
     pub step: f32,
     /// Border behaviour when the caliper overhangs the image.
     pub border: BorderMode<f32>,
+    /// Whether a placement that overhangs the image is measured or rejected.
+    pub off_image: OffImage,
 }
 
 impl Default for ProfileConfig {
@@ -90,6 +104,7 @@ impl Default for ProfileConfig {
             derivative: Derivative::default(),
             step: 1.0,
             border: BorderMode::Clamp,
+            off_image: OffImage::default(),
         }
     }
 }
