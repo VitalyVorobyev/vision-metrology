@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { CaliperResultOut } from "./backend";
-import { caliperToProfile, formatMeasurement, rectToRoi } from "./transforms";
+import { formatMeasurement, rectToRoi } from "./transforms";
 
 describe("rectToRoi", () => {
   it("normalizes a rectangle dragged in the positive direction", () => {
@@ -18,46 +17,6 @@ describe("rectToRoi", () => {
 
   it("returns a zero-size roi for a degenerate drag", () => {
     expect(rectToRoi(5, 5, 5, 5)).toEqual([5, 5, 0, 0]);
-  });
-});
-
-describe("caliperToProfile", () => {
-  const base: CaliperResultOut = {
-    index: 3,
-    status: "hit",
-    profile: {
-      values: [10, 20, 200, 210],
-      step_px: 0.5,
-      edges: [{ pos_px: 1.0, polarity: "dark_to_bright" }],
-    },
-  };
-
-  it("lays profile values out at arc-length = index * step_px", () => {
-    const { series } = caliperToProfile(base);
-    expect(series).toHaveLength(1);
-    expect(series[0]?.name).toBe("caliper 3");
-    expect(series[0]?.points).toEqual([
-      { x: 0, y: 10 },
-      { x: 0.5, y: 20 },
-      { x: 1.0, y: 200 },
-      { x: 1.5, y: 210 },
-    ]);
-  });
-
-  it("marks a hit caliper's edges with the signal tone", () => {
-    const { edges } = caliperToProfile(base);
-    expect(edges).toEqual([{ position: 1.0, label: "dark_to_bright", tone: "signal" }]);
-  });
-
-  it("marks a rejected caliper's (empty) edges with the defect tone and empty edges list", () => {
-    const rejected: CaliperResultOut = {
-      ...base,
-      status: "rejected",
-      reason: "no_edge",
-      profile: { ...base.profile, edges: [] },
-    };
-    const { edges } = caliperToProfile(rejected);
-    expect(edges).toEqual([]);
   });
 });
 

@@ -191,48 +191,82 @@ fn reject_reason_str(r: RejectReason) -> &'static str {
     }
 }
 
+/// A caliper's box: centre, axis angle, half-length and half-width. A radial placement's
+/// `center` is its circle's, so its box sits `radius` out along the caliper's own axis.
 fn placement_geometry(shape: &CaliperShape) -> (Point2f, f32, f32, f32) {
     match *shape {
         CaliperShape::Rect(r) => (r.center, r.angle, r.half_len, r.half_width),
-        CaliperShape::Radial(r) => (r.center, r.angle, r.half_len, r.half_width),
+        CaliperShape::Radial(r) => {
+            let (sn, cs) = r.angle.sin_cos();
+            let center = Point2f::new(r.center.x + r.radius * cs, r.center.y + r.radius * sn);
+            (center, r.angle, r.half_len, r.half_width)
+        }
+    }
+}
+
+/// The id a caliper's overlay primitives carry, so a list row can find them.
+pub fn caliper_id(object_index: usize, caliper_index: usize) -> String {
+    format!("caliper-{object_index}-{caliper_index}")
+}
+
+/// Signed distance from `p` to the fitted shape: the residual the fit minimised. Outside a
+/// circle is positive; for a line, the left of its direction (mirrors the Python router).
+fn residual(fit: &MetrologyFit, p: Point2f) -> f32 {
+    match fit {
+        MetrologyFit::Circle(f) => f.model.signed_distance(p),
+        MetrologyFit::Line(f) => {
+            let (l, d) = (&f.model, f.model.dir);
+            d.x * (p.y - l.p.y) - d.y * (p.x - l.p.x)
+        }
     }
 }
 
 /// One object's calipers, in caliper order, from its `explain_model` trace, and the
-/// matching overlay.
+/// matching overlay. Each caliper's box and edge mark carry `caliper_id`.
 fn caliper_results(
     trace: &ObjectTrace,
+    object_index: usize,
     metric: Option<&Metric>,
 ) -> (Vec<CaliperResultOut>, Vec<OverlayPrimitiveOut>) {
+    let fit = trace.result.as_ref().ok().map(|r| &r.fit);
     let mut results = Vec::with_capacity(trace.calipers.len());
     let mut overlay = Vec::new();
 
     for (i, (shape, cal)) in trace.placements.iter().zip(&trace.calipers).enumerate() {
         let (center, angle, half_len, half_width) = placement_geometry(shape);
+        let id = caliper_id(object_index, i);
         let step_px = cal.spacing;
+        // Rect and radial calipers sample `±half_len` about their centre, which is where an
+        // edge's `t` is measured from.
+        let (start_px, end_px) = (Some(-half_len), Some(half_len));
+        let caliper_box = |tone: &'static str| OverlayPrimitiveOut {
+            kind: "caliper",
+            tone: Some(tone),
+            id: Some(id.clone()),
+            cx: Some(center.x),
+            cy: Some(center.y),
+            width: Some(2.0 * half_len),
+            height: Some(2.0 * half_width),
+            angle: Some(angle),
+            ..Default::default()
+        };
         match cal.reject {
             Some(reason) => {
                 let profile = CaliperProfileOut {
                     values: cal.profile.clone(),
                     step_px,
                     edges: Vec::new(),
+                    start_px,
+                    end_px,
                 };
                 results.push(CaliperResultOut {
                     index: i,
                     status: "rejected",
                     reason: Some(reject_reason_str(reason).to_string()),
                     profile,
+                    residual: None,
                 });
-                overlay.push(OverlayPrimitiveOut {
-                    kind: "caliper",
-                    tone: Some("defect"),
-                    cx: Some(center.x),
-                    cy: Some(center.y),
-                    width: Some(2.0 * half_len),
-                    height: Some(2.0 * half_width),
-                    angle: Some(angle),
-                    ..Default::default()
-                });
+                overlay.push(caliper_box("defect"));
             }
             None => {
                 let edge = cal.edges[0];
@@ -245,27 +279,23 @@ fn caliper_results(
                         polarity: format!("{:?}", edge.polarity).to_lowercase(),
                         x_mm: mm.map(|m| m.0),
                         y_mm: mm.map(|m| m.1),
+                        amplitude: Some(edge.amplitude),
                     }],
+                    start_px,
+                    end_px,
                 };
                 results.push(CaliperResultOut {
                     index: i,
                     status: "hit",
                     reason: None,
                     profile,
+                    residual: fit.map(|f| residual(f, edge.p)),
                 });
-                overlay.push(OverlayPrimitiveOut {
-                    kind: "caliper",
-                    tone: Some("signal"),
-                    cx: Some(center.x),
-                    cy: Some(center.y),
-                    width: Some(2.0 * half_len),
-                    height: Some(2.0 * half_width),
-                    angle: Some(angle),
-                    ..Default::default()
-                });
+                overlay.push(caliper_box("signal"));
                 overlay.push(OverlayPrimitiveOut {
                     kind: "point",
                     tone: Some("signal"),
+                    id: Some(id.clone()),
                     x: Some(edge.p.x),
                     y: Some(edge.p.y),
                     cross: Some(true),
@@ -324,8 +354,8 @@ pub fn measure(state: &AppState, req: MeasureRequest) -> AppResult<MeasureRespon
     let traces = explain_model(&metrology_model, &image.as_view(), &pose);
 
     let mut out_objects = Vec::with_capacity(req.objects.len());
-    for (obj, trace) in req.objects.iter().zip(traces) {
-        let (calipers, cal_overlay) = caliper_results(&trace, metric.as_ref());
+    for (object_index, (obj, trace)) in req.objects.iter().zip(traces).enumerate() {
+        let (calipers, cal_overlay) = caliper_results(&trace, object_index, metric.as_ref());
 
         let raw = match trace.result {
             Err(e) => {
@@ -504,26 +534,50 @@ mod tests {
         let img = disc();
         let traces = explain_model(&model, &img.as_view(), &Similarity2f::identity());
 
-        let (rim, rim_overlay) = caliper_results(&traces[0], None);
+        let (rim, rim_overlay) = caliper_results(&traces[0], 0, None);
         assert_eq!(rim.len(), 8);
         assert!(
             rim.iter()
                 .all(|c| c.status == "hit" && c.profile.edges.len() == 1)
         );
         assert_eq!(rim_overlay.len(), 16, "a box and an edge point per hit");
-        let hits = &traces[0].result.as_ref().expect("the rim fits").hits;
-        for (c, hit) in rim.iter().zip(hits) {
+        let fitted = traces[0].result.as_ref().expect("the rim fits");
+        for (c, hit) in rim.iter().zip(&fitted.hits) {
             assert_eq!(c.profile.edges[0].pos_px, hit.t);
+            assert_eq!(c.profile.edges[0].amplitude, Some(hit.amplitude));
+            // The residual is the edge's distance from the fit, so none exceeds `max_dev`.
+            let r = c.residual.expect("a hit on a fitted object has a residual");
+            assert!(r.abs() <= fitted.max_dev() + 1e-5, "residual {r} > max_dev");
+            // `MetrologyObject::new`'s caliper reaches 10 px either side of the rim.
+            assert_eq!(
+                (c.profile.start_px, c.profile.end_px),
+                (Some(-10.0), Some(10.0))
+            );
+        }
+        // Each box sits on the rim, where its caliper looked, not at the circle's centre,
+        // and its box and edge mark share the caliper's id.
+        for (i, pair) in rim_overlay.chunks(2).enumerate() {
+            let (b, e) = (&pair[0], &pair[1]);
+            assert_eq!((b.kind, e.kind), ("caliper", "point"));
+            let id = format!("caliper-0-{i}");
+            assert_eq!((b.id.as_deref(), e.id.as_deref()), (Some(&*id), Some(&*id)));
+            let r = (b.cx.unwrap() - 64.0).hypot(b.cy.unwrap() - 64.0);
+            assert!(
+                (r - 30.0).abs() < 1e-3,
+                "box {i} centred at radius {r}, not on the rim"
+            );
         }
 
-        let (flat, flat_overlay) = caliper_results(&traces[1], None);
+        let (flat, flat_overlay) = caliper_results(&traces[1], 1, None);
         assert!(traces[1].result.is_err(), "nothing to fit");
         assert_eq!(flat.len(), 3);
         for (i, c) in flat.iter().enumerate() {
             assert_eq!((c.index, c.status), (i, "rejected"));
             assert_eq!(c.reason.as_deref(), Some("no_edge"));
             assert_eq!(c.profile.values.len(), 9);
+            assert_eq!(c.residual, None);
         }
         assert!(flat_overlay.iter().all(|o| o.tone == Some("defect")));
+        assert_eq!(flat_overlay[2].id.as_deref(), Some("caliper-1-2"));
     }
 }

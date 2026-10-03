@@ -96,28 +96,62 @@ def _vm_shape(obj: MeasureObjectIn) -> Any:
     return vm.MetrologyShape.line((obj.ax, obj.ay), (obj.bx, obj.by))
 
 
+def caliper_id(object_index: int, caliper_index: int) -> str:
+    """The id a caliper's overlay primitives carry, so a list row can find them."""
+    return f"caliper-{object_index}-{caliper_index}"
+
+
+def _box_center(placement: vm.CaliperPlacement) -> tuple[float, float]:
+    """Where a caliper's box sits. A radial placement's `center` is its circle's, so its box
+    is `radius` out along the caliper's own axis."""
+    cx, cy = placement.center
+    if placement.radius is not None:
+        cx += placement.radius * math.cos(placement.angle)
+        cy += placement.radius * math.sin(placement.angle)
+    return cx, cy
+
+
+def _residual(fit: vm.MetrologyResult | None, x: float, y: float) -> float | None:
+    """Signed distance from `(x, y)` to the fitted shape: the residual the fit minimised.
+    Outside a circle is positive; for a line, the left of its direction."""
+    if fit is None:
+        return None
+    if fit.kind == "circle" and fit.circle is not None:
+        c = fit.circle
+        return math.hypot(x - c.cx, y - c.cy) - c.r
+    if fit.kind == "line" and fit.line is not None:
+        line = fit.line
+        return line.dx * (y - line.py) - line.dy * (x - line.px)
+    return None
+
+
 def _caliper_results(
     trace: vm.ObjectTrace,
+    object_index: int,
     metric: tuple[vm.CameraModel, np.ndarray, vm.Plane3] | None = None,
 ) -> tuple[list[CaliperResultOut], list[OverlayPrimitiveOut]]:
     """One object's calipers, in caliper order, from its `explain` trace, and the
-    matching overlay."""
+    matching overlay. Each caliper's box and edge mark carry `caliper_id`."""
+    fit = None if isinstance(trace.result, vm.MetrologyError) else trace.result
     results: list[CaliperResultOut] = []
     overlay: list[OverlayPrimitiveOut] = []
     for placement, cal in zip(trace.placements, trace.calipers, strict=True):
-        cx, cy = placement.center
+        cx, cy = _box_center(placement)
         box_angle = placement.angle
         i = placement.caliper_index
+        cid = caliper_id(object_index, i)
         values = [float(v) for v in cal.profile]
+        # Rect and radial calipers sample `±half_len` about their centre, which is where
+        # an edge's `t` is measured from.
+        span = {"start_px": -placement.half_len, "end_px": placement.half_len}
+        box = {
+            "kind": "caliper", "id": cid, "cx": cx, "cy": cy,
+            "width": 2 * placement.half_len, "height": 2 * placement.half_width, "angle": box_angle,
+        }
         if cal.reject is not None:
-            profile = CaliperProfileOut(values=values, step_px=cal.spacing, edges=[])
+            profile = CaliperProfileOut(values=values, step_px=cal.spacing, edges=[], **span)
             results.append(CaliperResultOut(index=i, status="rejected", reason=cal.reject, profile=profile))
-            overlay.append(
-                OverlayPrimitiveOut(
-                    kind="caliper", tone="defect", cx=cx, cy=cy,
-                    width=2 * placement.half_len, height=2 * placement.half_width, angle=box_angle,
-                )
-            )
+            overlay.append(OverlayPrimitiveOut(tone="defect", **box))
             continue
         edge = cal.edges[0]
         mm = _pixel_to_plane_mm(metric, edge.x, edge.y) if metric is not None else None
@@ -127,19 +161,20 @@ def _caliper_results(
                 EdgeMarkOut(
                     pos_px=edge.t,
                     polarity=edge.polarity,
+                    amplitude=edge.amplitude,
                     x_mm=mm[0] if mm is not None else None,
                     y_mm=mm[1] if mm is not None else None,
                 )
             ],
+            **span,
         )
-        results.append(CaliperResultOut(index=i, status="hit", profile=profile))
-        overlay.append(
-            OverlayPrimitiveOut(
-                kind="caliper", tone="signal", cx=cx, cy=cy,
-                width=2 * placement.half_len, height=2 * placement.half_width, angle=box_angle,
+        results.append(
+            CaliperResultOut(
+                index=i, status="hit", profile=profile, residual=_residual(fit, edge.x, edge.y)
             )
         )
-        overlay.append(OverlayPrimitiveOut(kind="point", tone="signal", x=edge.x, y=edge.y, cross=True))
+        overlay.append(OverlayPrimitiveOut(tone="signal", **box))
+        overlay.append(OverlayPrimitiveOut(kind="point", id=cid, tone="signal", x=edge.x, y=edge.y, cross=True))
     return results, overlay
 
 
@@ -189,9 +224,9 @@ async def measure(req: MeasureRequest) -> MeasureResponse:
     )
 
     out_objects: list[MeasureObjectResultOut] = []
-    for obj, trace in zip(req.objects, traces, strict=True):
+    for object_index, (obj, trace) in enumerate(zip(req.objects, traces, strict=True)):
         raw = trace.result
-        calipers, cal_overlay = _caliper_results(trace, metric)
+        calipers, cal_overlay = _caliper_results(trace, object_index, metric)
 
         if isinstance(raw, vm.MetrologyError):
             out_objects.append(

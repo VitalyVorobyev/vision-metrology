@@ -115,6 +115,13 @@ deleted here.
   if a question needs them.
 - **`teach_preview` has no browser counterpart and no contract fixture.** It is covered by
   the transport test and Rust unit tests only.
+- **`CaliperTrace::spacing` is the configured step for rect and radial calipers,** not the
+  distance between their samples. Their `n` samples span `±half_len`, so the samples sit
+  `2·half_len/(n − 1)` apart, which differs from the step whenever `2·half_len` is not a
+  whole number of steps (any fixture scale ≠ 1). The lab draws profiles from the span
+  (`start_px` / `end_px`) and does not depend on it.
+- **The Library's "Run across the set" shows in the browser build,** where batch find is
+  desktop-only, so pressing it reports an error instead of being hidden.
 - **Desktop distribution is unsigned.** A real distribution needs a signing identity and
   macOS notarization.
 

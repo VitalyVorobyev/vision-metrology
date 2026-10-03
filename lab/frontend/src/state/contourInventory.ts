@@ -175,8 +175,8 @@ export function pointsIn(stats: ContourStat[], ids: ReadonlySet<number>): number
   return total;
 }
 
-/** The next id in the list order, wrapping — how `↑`/`↓` walk the inventory. */
-export function stepThrough(order: number[], current: number | null, delta: 1 | -1): number | null {
+/** The next id in the list order, wrapping — how `↑`/`↓` walk an inventory. */
+export function stepThrough<T>(order: readonly T[], current: T | null, delta: 1 | -1): T | null {
   if (order.length === 0) return null;
   if (current === null) return delta > 0 ? order[0]! : order[order.length - 1]!;
   const index = order.indexOf(current);

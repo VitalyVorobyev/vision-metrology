@@ -40,7 +40,7 @@ platform's app-data directory.
 | Recognize | Teach | Draw a region, inspect the extracted contours, keep or drop them, set the datum (origin and 0° direction), build a shape model |
 | | Find | Search the current frame (or, on desktop, every frame) for the model, and work through the matches: score, position, angle, scale and support, sortable and linked to the canvas |
 | | Verify | Compare the model with a found instance, both rectified into the same frame (checker, wipe, difference) |
-| Gauge | Measure | Calipers and fits at the found pose: per-caliper hits, rejection reasons and profiles, in pixels or, with a calibration loaded, millimetres |
+| Gauge | Measure | Calipers and fits at the found pose, in pixels or, with a calibration loaded, millimetres; a caliper list linked to the canvas (hit or rejection reason, edge position, residual against the fit, amplitude) and the selected caliper's profile |
 | | Align | Rectify each found part into a fixed-size, canonically oriented crop |
 | Camera | Motion | Track a window between consecutive frames (subpixel displacement) |
 | | Mosaic | Composite calibrated cameras onto their shared plane (browser only for now) |
@@ -74,6 +74,12 @@ opens them where they are; the browser build uploads a copy.
   clears it. `↑` / `↓` step through the list in its current order, `F` frames the selected
   match and `Esc` clears it. Click a column header to sort by it. The selected match is the
   instance Verify compares.
+- **Calipers (Measure).** The same links for every caliper of every measured object: hover
+  either the row or the caliper's box, click to select, `↑` / `↓` to step, `F` to frame
+  the caliper, `Esc` to clear. Show all calipers, the hits or the rejected ones; the others
+  fade on the image. The selected caliper's intensity profile is drawn below the list,
+  along the caliper in its scan direction, with the nominal edge at 0 and the found edge
+  marked.
 - **Coordinates.** Image coordinates name pixel centres, as everywhere in the library.
 
 **Contour picks belong to one extraction.** Contours are numbered by their position in an

@@ -46,6 +46,7 @@ import {
   sortMatches,
   type MatchSort,
 } from "../../state/matchInventory";
+import { atLeast } from "../../state/rotatedBox";
 import { RecognizeShell } from "../RecognizeShell";
 import { MatchSection } from "./MatchSection";
 
@@ -185,11 +186,7 @@ export function FindPage() {
   const frameMatch = useCallback(
     (index: number) => {
       const stat = stats[index];
-      if (stat === undefined) return;
-      const { x, y, width, height } = stat.bounds;
-      const w = Math.max(width, MIN_FRAME);
-      const h = Math.max(height, MIN_FRAME);
-      canvas.current?.frame({ x: x + (width - w) / 2, y: y + (height - h) / 2, width: w, height: h }, FRAME_PAD);
+      if (stat !== undefined) canvas.current?.frame(atLeast(stat.bounds, MIN_FRAME), FRAME_PAD);
     },
     [stats, canvas],
   );

@@ -161,6 +161,13 @@ The workspace was consolidated from twelve crates into three: `vm-primitives`,
   The selection is the instance Verify compares. On the desktop, Find runs the same search
   across every frame; each frame then shows its own matches, and the frame strip and menu
   mark the frames where the model was not found.
+- Measure lists every caliper of every object, linked to the canvas the same way: hit or
+  rejection reason, edge position, residual against the fit and amplitude, filtered to
+  all, hits or rejected. The selected caliper's profile is drawn along the caliper with
+  the nominal and found edges marked. The measure response gains `residual`, edge
+  `amplitude`, the profile's `start_px` / `end_px`, and an overlay `id` per caliper.
+- Measure drew a circle's caliper boxes at the circle's centre instead of on its rim, and
+  drew the profile's edge rule half a caliper away from the step it marks.
 - Contours on the canvas are `@vitavision/stage2d`'s `PolylineSet`: drawn batched and picked
   through a spatial index, with hover shared with the inventory. Sweeps start from bare
   image, the region or a contour through stage2d's `StageSurface` and `useStageDrag`, and a
