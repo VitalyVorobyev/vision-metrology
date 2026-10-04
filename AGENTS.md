@@ -17,20 +17,17 @@ Trust these over reconstructing state from git history.
 
 ## Rules
 
-- **Run the CONTRIBUTING gates before every commit.** If a hot path changed, also run the
-  affected benches.
-- **Invariants are design constraints.** Breaking one needs an ADR change first.
-- **Parity in the same PR.** New public Rust API ships its vm-python binding, `.pyi` stub
-  and a Python test together (invariant 15). Lab-facing API changes also update the Tauri
-  command and the contract fixtures.
-- **Docs move with the code.** A change to scope or decisions updates `docs/dev/` in the
-  same PR, rewriting the affected entry rather than appending. Finished roadmap items move
-  to `CHANGELOG.md` `[Unreleased]`.
-- **Keep the audiences apart.** User-facing docs and rustdoc carry no plan labels, PR
-  numbers or history.
+- **Gates:** run the [CONTRIBUTING gates](CONTRIBUTING.md#quality-gates) before every
+  commit, and the affected benches when a hot path changed.
+- **Invariants are design constraints:** [system design](docs/dev/system-design.md#invariants).
+- **Parity in the same PR:** [invariant 15](docs/dev/system-design.md#invariants). A lab API
+  change also updates the Tauri command and the contract fixtures
+  ([`lab/contract/README.md`](lab/contract/README.md)).
+- **Docs move with the code:** [invariant 16](docs/dev/system-design.md#invariants) and
+  CONTRIBUTING's [documentation rules](CONTRIBUTING.md#documentation). Finished roadmap
+  items move to `CHANGELOG.md` `[Unreleased]`.
 - **Scoped commits; never revert unrelated changes.**
-- **Shared UI goes upstream.** It lives in the `@vitavision/*` packages (the `lab-ui`
-  repository). A component that a second app needs goes there, not into `lab/`.
+- **Shared UI goes upstream:** [ADR-0015](docs/dev/adr/0015-the-lab.md).
 
 ## Skills
 
