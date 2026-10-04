@@ -323,8 +323,11 @@ pub struct MeasureConfig {
   reference puts it.
 - **`profile.step`** — profile sampling step along the scan axis, in pixels.
   `1.0` is one entry per pixel; oversampling (`0.5`) buys resolution on a
-  sharp edge at proportional cost. `sigma` stays in pixels, so the same
-  `sigma` smooths the same distance at any step.
+  sharp edge at proportional cost. `sigma` stays in pixels and is converted to
+  samples with `step`. A rect, arc or radial caliper spreads its samples evenly over
+  its full span, so they sit slightly more than `step` apart when the span is not a
+  whole number of steps (`Caliper::spacing` gives the exact distance); the smoothing
+  is then wider than `sigma` by the same small factor.
 - **`profile.border`** — sampling behaviour when the caliper overhangs the image.
 - **`profile.off_image`** — `OffImage::Fill` (the default) measures a caliper
   that overhangs the image, sampling the outside with `profile.border`;
