@@ -15,7 +15,7 @@ use vm_primitives::edge::{Edge2DConfig, Hysteresis, SmoothKind, Subpix2D};
 #[derive(Debug, Clone)]
 pub struct EdgeConfig {
     pub smooth_kind: String,
-    /// `None` on either threshold selects the automatic pair.
+    /// `None` on both thresholds selects the automatic pair.
     pub low_thresh: Option<f32>,
     pub high_thresh: Option<f32>,
     pub border_mode: String,

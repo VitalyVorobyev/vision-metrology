@@ -249,8 +249,8 @@ impl Plane3 {
         Self { n, d }
     }
 
-    /// The reference frame's `z = 0` plane — the default `plane_grid_map`
-    /// and `homography_plane_to_image` assume.
+    /// The reference frame's `z = 0` plane, the one `plane_grid_map` maps
+    /// onto.
     #[staticmethod]
     fn xy() -> Self {
         NativePlane3::xy().into()
@@ -403,17 +403,8 @@ pub fn undistort_map(camera: CameraModel, w: usize, h: usize) -> Map {
 
 /// Project points on the reference frame's `z = 0` plane into a camera's
 /// raw (distorted) pixel space: `pose * (x_mm, y_mm, 0)`, perspective
-/// divide, then [`distort_pixel`](vision_metrology::metric::distort_pixel) —
-/// the exact forward geometry [`plane_grid_map`] composes internally,
-/// exposed pointwise/vectorized here for the lab's mosaic compositing.
-///
-/// Choosing which camera "owns" a destination grid pixel under a
-/// nearest-camera-centre priority rule needs, for *every* candidate camera,
-/// where that plane point would land in that camera's own raw pixel space —
-/// not just the one source pixel `plane_grid_map` samples for whichever
-/// camera the caller already picked. This is the tiny binding that makes
-/// that computable in Python without duplicating the distortion formula
-/// there (see `lab/backend/src/vm_lab/routers/mosaic.py`).
+/// divide, then lens distortion, the forward geometry `plane_grid_map`
+/// uses, point by point.
 ///
 /// `points_mm` is an `(N, 2)` `float32` array of `(x_mm, y_mm)` reference-
 /// frame plane coordinates. Returns an `(N, 2)` `float64` array of raw

@@ -1,10 +1,10 @@
 """Type stubs for `vision_metrology` — PyO3 bindings for the vision-metrology
 workspace. See crates/vm-python/README.md for the guide; this file is the
 contract IDEs and mypy see.
-
-Hand-maintained: keep in step with `src/lib.rs`'s `#[pymodule]` registration
-list whenever a class or free function is added, renamed or removed.
 """
+
+# Hand-maintained: keep in step with `src/lib.rs`'s `#[pymodule]` registration
+# list whenever a class or free function is added, renamed or removed.
 
 from __future__ import annotations
 
@@ -991,12 +991,10 @@ def project_plane_points(
     camera: CameraModel, pose: Pose3, points_mm: PointsF32
 ) -> npt.NDArray[np.float64]:
     """Project `(N, 2)` reference-frame `z = 0` plane points (`x_mm, y_mm`)
-    into `camera`'s raw (distorted) pixel space -- the exact forward
-    geometry `plane_grid_map` composes internally, exposed pointwise for
-    mosaic compositing (choosing which of several cameras owns a grid pixel
-    needs every candidate camera's own reprojection, not just the one
-    `plane_grid_map` samples for whichever camera was already picked). A
-    point behind the camera (`z <= 0`) gets a NaN row."""
+    into `camera`'s raw (distorted) pixel space: `pose * (x_mm, y_mm, 0)`,
+    perspective divide, then lens distortion, the forward geometry
+    `plane_grid_map` uses, point by point. Returns `(N, 2)` pixel
+    coordinates; a point behind the camera (`z <= 0`) gets a NaN row."""
 
 def load_rig_extrinsics(source: Union[str, bytes]) -> List[Tuple[CameraModel, Pose3]]:
     """Load a calibration-rs `RigExtrinsicsExport` JSON document (file path
@@ -1040,7 +1038,7 @@ def estimate_scale_moments(
     config: Optional[MomentScaleConfig] = ...,
 ) -> ScaleEstimate:
     """Estimate scale from a segmented scene blob's spatial spread vs. the
-    taught model's own. Works on any model (format 3 or 4)."""
+    taught model's own. Works on any model."""
 
 def estimate_scale_logpolar(
     model: ShapeModel,
@@ -1050,7 +1048,7 @@ def estimate_scale_logpolar(
 ) -> ScaleEstimate:
     """Estimate scale (and, with `config.angle_margin` set, rotation) via
     log-polar ZNCC correlation. Requires `model.teach_point_count > 0`
-    (format-4 teach data)."""
+    (teach data, from format 4 or later)."""
 
 def find_scale_invariant_roi(
     model: ShapeModel,

@@ -86,7 +86,7 @@ impl Default for PinholeIntrinsics {
 /// [`io`](super::io) produces; getting it backwards silently mirrors every
 /// downstream projection through the origin.
 ///
-/// Units are documented per invariant: this module works in **millimetres**.
+/// This module works in **millimetres**.
 /// The reference frame is whatever the calibration solved for (typically a
 /// rig or table frame with a physical target on it); `io` importers convert
 /// meters (`RigExtrinsicsExport`) to mm on import.

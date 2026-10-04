@@ -50,11 +50,11 @@ const fn pol_code(p: Polarity) -> u8 {
 /// search sweep — the hot inner loop `match_shape`'s benches measure — so it
 /// does exactly the arithmetic and nothing else. At `scale < 1` two model
 /// points that were spatially distinct at their build-time grid resolution
-/// (invariant 4's uniform decimation) can round onto the same integer
-/// offset here, which [`score_pose`]'s own doc discusses — no dedup happens
-/// on this path, deliberately, after three designs that tried it were each
-/// measured and rejected.
-// See the scale-invariance ADR under docs/dev/adr/.
+/// can round onto the same integer offset here, which [`score_pose`]'s own
+/// doc discusses; no dedup happens on this path, deliberately.
+// The distinct points come from invariant 4's uniform decimation. Three designs that
+// deduplicated here were each measured and rejected; see the scale-invariance ADR under
+// docs/dev/adr/.
 pub(crate) fn rotate_into(points: &[ModelPoint], angle: f32, scale: f32, out: &mut Vec<RotPoint>) {
     let (sn, cs) = angle.sin_cos();
     out.clear();

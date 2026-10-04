@@ -1,5 +1,14 @@
 //! 1D and 2D edge primitives for high-throughput metrology.
 //!
+//! - [`Edge1DDetector`]: subpixel derivative peaks on a 1-D signal.
+//! - [`LevelCrossing1D`]: level crossings on a 1-D profile — the end levels, every
+//!   interpolated crossing of a level, and an edge refined to its local half-contrast
+//!   crossing.
+//! - [`Edge2DDetector`]: subpixel 2-D edgels; [`DirectionField`]: dense gradient
+//!   directions.
+//! - [`best_edge_pair`]: opposite-polarity edge pairs, such as the two sides of a laser
+//!   stripe.
+//!
 //! Coordinates follow pixel-center convention: sample `signal[i]` is located at
 //! position `x = i`.
 //!
@@ -7,7 +16,7 @@
 //! boundaries) rather than fitting intensity peaks, which is typically more
 //! robust for wide, flat, or saturated stripes.
 //!
-//! Thresholds in [`edge1d::Edge1DConfig`] default to zero. In production,
+//! Thresholds in [`Edge1DConfig`] default to zero. In production,
 //! configure thresholds for your sensor/illumination or add auto-thresholding
 //! on top.
 

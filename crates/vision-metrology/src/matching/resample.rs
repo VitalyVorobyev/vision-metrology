@@ -17,8 +17,8 @@
 //!
 //! Every [`ShapeModel`] already stores its level-0 points *after* grid
 //! decimation (`level(0).points()`), but decimation is exactly what a
-//! different scale needs to redo — invariant 4 requires spatially uniform
-//! decimation, and a cell sized for scale 1.0 is the wrong size at scale
+//! different scale needs to redo — decimation must be spatially uniform,
+//! and a cell sized for scale 1.0 is the wrong size at scale
 //! 0.4 or 2.5. So the model additionally stores the *pre*-decimation level-0
 //! set (`TeachPoint`, format 4) — the same data
 //! [`ShapeModelBuilder::build`]/`from_edgels`/`from_directed_points`/
@@ -38,10 +38,12 @@
 //! uses is simpler and safer than a second implementation of "decimate a
 //! point cloud into levels". Offsets scale cleanly because they are
 //! *differences* from the origin: the pyramid coordinate map
-//! (`(v - (2^l-1)/2) / 2^l`, invariant 2) is affine, so subtracting two
+//! (`(v - (2^l-1)/2) / 2^l`) is affine, so subtracting two
 //! points at the same level cancels its additive term and leaves a clean
 //! `/ 2^l` — which is exactly what dividing a level-0 offset by `2^l` gives
 //! directly, without re-deriving an absolute origin position at every level.
+
+// Uniform decimation is invariant 4; the single pyramid coordinate map is invariant 2.
 
 use vm_primitives::{Edge2DConfig, Error, Point2f};
 

@@ -37,8 +37,8 @@ impl Map {
     /// Build a map from an arbitrary per-pixel `dst → src` function.
     ///
     /// `f(x, y)` is called once per destination pixel with `x`/`y` equal to
-    /// that pixel's **center** coordinate (`x as f32`, `y as f32` — invariant
-    /// 1), and must return the source coordinate to sample from. This is the
+    /// that pixel's **center** coordinate (`x as f32`, `y as f32`), and must
+    /// return the source coordinate to sample from. This is the
     /// general escape hatch: [`Map::affine`], [`Map::projective`] and
     /// [`Map::polar`] are all expressed in terms of it.
     ///
@@ -49,6 +49,7 @@ impl Map {
     /// let map = Map::from_fn(4, 4, |x, y| (x + 1.0, y));
     /// assert_eq!(map.width(), 4);
     /// ```
+    // Pixel centres: invariant 1.
     pub fn from_fn(w: usize, h: usize, f: impl Fn(f32, f32) -> (f32, f32)) -> Self {
         let mut coords = Vec::with_capacity(w.saturating_mul(h));
         for y in 0..h {

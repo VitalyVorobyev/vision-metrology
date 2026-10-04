@@ -193,9 +193,10 @@ fn sequence_to_native(sequence: &[String]) -> PyResult<NativeEdgeSequence> {
 #[pyclass(get_all, set_all, from_py_object)]
 #[derive(Debug, Clone)]
 pub struct MeasureConfig {
-    /// Gaussian sigma of the 1-D derivative-of-Gaussian kernel, in pixels.
+    /// Gaussian sigma of the profile smoothing, in pixels.
     pub sigma: f32,
-    /// Minimum `|DoG response|` for an edge to be reported.
+    /// Minimum `|derivative response|` for an edge to be reported (unused by
+    /// `Locate.midpoint_crossing`).
     pub threshold: f32,
     /// "any", "rising" or "falling".
     pub polarity: String,

@@ -93,8 +93,8 @@ pub fn estimate_scale_moments(
 /// log-polar ZNCC correlation — see the Rust `estimate_scale_logpolar` docs.
 /// `scene` is a `(H, W)` `uint8` array; `approx_center` is `(x, y)`.
 ///
-/// Requires `model.teach_point_count > 0` (format-4 teach data) — raises
-/// :class:`ValueError` otherwise, same requirement as
+/// Requires `model.teach_point_count > 0` (teach data, from format 4 or
+/// later) — raises :class:`ValueError` otherwise, same requirement as
 /// :meth:`ShapeModel.resample_at`.
 #[pyfunction]
 #[pyo3(signature = (model, scene, approx_center, config=None))]

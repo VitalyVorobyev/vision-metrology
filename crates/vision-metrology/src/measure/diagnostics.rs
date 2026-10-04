@@ -4,14 +4,9 @@
 //!
 //! ## Caliper layout
 //!
-//! An overlay (the lab's Measure tab, or any other UI drawing caliper boxes over
-//! an image) needs exactly the geometry [`MetrologyModel::apply`] computes
-//! internally to place each [`Caliper`] — and needs it to draw a
-//! caliper *before* an image is even available, or for calipers that never found
-//! an edge. Duplicating that placement math at the call site risks silently drifting from the actual measurement whenever
-//! [`MetrologyModel`]'s own placement changes. [`layout`] is the shared source:
-//! [`MetrologyModel::apply`] and this function both call the same private
-//! placement code (`model::caliper_placements`), so the two can never disagree.
+//! [`layout`] returns exactly the placements [`MetrologyModel::apply`] measures at.
+//! An overlay can draw each [`Caliper`] from them before an image is available, or for
+//! calipers that found no edge.
 
 use vm_primitives::{Error, ImageView, LevelEdge, Pixel, Similarity2f};
 
@@ -212,12 +207,12 @@ pub struct CaliperPlacement {
 
 /// Every caliper placement for `model`'s objects, mapped through `fixture`.
 ///
-/// `fixture` is normally [`ShapeMatch::pose`](crate::matching::ShapeMatch) —
-/// the same value [`MetrologyModel::apply`] takes. An object whose placement
-/// cannot be computed (fewer than 2 calipers, or a degenerate zero-length
-/// line) contributes no entries rather than failing the whole call — same
-/// reasoning as [`MetrologyModel::apply`] reporting per-object results, just
-/// without an error channel here since layout has nothing to attach one to.
+/// `fixture` is normally `ShapeMatch::pose` — the same value
+/// [`MetrologyModel::apply`] takes. An object whose placement cannot be
+/// computed (fewer than 2 calipers, or a degenerate zero-length line)
+/// contributes no entries rather than failing the whole call — same reasoning
+/// as [`MetrologyModel::apply`] reporting per-object results, just without an
+/// error channel here since layout has nothing to attach one to.
 ///
 /// # Example
 /// ```
@@ -255,9 +250,8 @@ pub fn layout(model: &MetrologyModel, fixture: &Similarity2f) -> Vec<CaliperPlac
     out
 }
 
-/// [`layout`] for a single object not yet added to a [`MetrologyModel`] — the
-/// lab calls this while a model is still being edited, before any object has
-/// been committed.
+/// [`layout`] for a single object. Preview one object's calipers before adding it to
+/// a model.
 pub fn layout_object(obj: &MetrologyObject, fixture: &Similarity2f) -> Vec<CaliperShape> {
     caliper_placements(obj, fixture).unwrap_or_default()
 }
