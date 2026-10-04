@@ -12,10 +12,11 @@ deleted here.
   one dataset before the docs recommend it.
 - **Anisotropic scale.** A 5-DOF search with a different refinement Jacobian. Design it
   from scratch when a use case exists; do not bolt it onto the 4-DOF pose structs.
-- **Quantized directions and a SIMD score loop.** On the cluttered fixture the candidate
-  descent (about 4.2 ms) is per-pose cost. i8 directions with i16 dot products would cut
-  it 3–4×, but the scores stop being bit-comparable to f32. Do it as its own change with
-  a documented tolerance policy.
+- **Quantized directions and a SIMD score loop.** On the cluttered fixture most of the
+  search is the candidate descent, which is per-pose cost
+  ([`docs/performance.md`](../performance.md)). i8 directions with i16 dot products would
+  cut it 3–4×, but the scores stop being bit-comparable to f32. Do it as its own change
+  with a documented tolerance policy.
 - **`PreparedScene` for several models on one scene.** With lazy tiled fields, the
   shareable per-scene work is about 0.15 ms. Revisit only if a multi-model station
   measures the per-model overhead as material.
@@ -24,18 +25,16 @@ deleted here.
 - **Scale search in clutter with no prior.** `find_scale_invariant` needs a segmentable
   ROI or an approximate centre. With neither, the options are a coarse scan at the top
   pyramid level only, or a small bank of models pre-resampled at K scales.
-- **Point-collapse score inflation at `scale < 1`.** Documented and pinned by a test;
-  three fixes were rejected by measurement ([ADR-0013](adr/0013-scale-invariance.md)). A
-  fix has to make the sweep's candidate selection and the reported score agree on whether
-  a duplicate counts.
+- **Point-collapse score inflation at `scale < 1`.** Pinned by a test; the rejected fixes
+  and what a fix must satisfy are in [ADR-0013](adr/0013-scale-invariance.md).
 
 ## Measurement
 
-- **Rect caliper σ uses the nominal step.** `MeasureRect` converts `sigma` from pixels to
-  samples with `step`, not the real spacing `2·half_len/(n−1)`. Fixing it moves the
-  can-end reference numbers, so it needs a deliberate re-baseline.
+- **σ is converted with the nominal `step`** for rect, arc and radial calipers, not the
+  real sample spacing; fixing it moves the can-end reference numbers, so it needs a
+  deliberate re-baseline.
 - **`EdgeSelect::Strongest` breaks ties towards the later edge.** Choosing the earlier one
-  would match the ordered selector planned in Track M; changing it alters existing
+  would match `StrongestInOrder`'s tie rule (earlier wins); changing it alters existing
   results on exact ties.
 - **`MeasureArc` obliquity** is checked against the arc tangent, which is right for
   features crossing the arc. A mode that measures the arc's own edge would check the
@@ -43,10 +42,8 @@ deleted here.
 - **Fuzzy / expected-position scoring.** Prefer an edge near the nominal geometry over an
   equally strong one elsewhere, by scoring candidates against an expected
   position/amplitude profile before `EdgeSelect` (HALCON `fuzzy_measure_pos`).
-- **A bead/stripe tool on `measure`.** It would track a contour with calipers: refine
-  centres from a rough polyline and re-measure from the refined one, and require clean
-  background beyond each edge. These are properties of a tracked contour, not of a single
-  caliper.
+- **A bead/stripe tool on `measure`**, tracking a contour with calipers
+  ([ADR-0008](adr/0008-calipers.md) says why it is not a caliper option).
 - **Variation model (golden template).** Teach a per-pixel mean/σ band from N good parts
   warped to a common pose with `warp::Map`, then flag pixels outside it (HALCON
   `create_variation_model`). No design work started.
@@ -73,30 +70,32 @@ deleted here.
 
 ## Python
 
-- **Polarity strings disagree across the lab's transports.** The lab's `MeasureConfigIn`
-  sends `bright_to_dark` / `dark_to_bright` / `either`. vm-python's `MeasureConfig`
-  constructor rejects those (it accepts `any` / `rising` / `falling`), while its setters
-  silently fall back to `any`. The Tauri command maps both spellings. Align the contract on
-  one spelling, and make the setters validate.
+- **Polarity strings disagree across the lab's transports (latent).** The lab's
+  `MeasureConfigIn` accepts `bright_to_dark` / `dark_to_bright` / `either`, and
+  `routers/measure.py` passes the value straight to `vm.MeasureConfig`, whose constructor
+  accepts only `any` / `rising` / `falling` and raises on the others. The frontend never
+  sends `polarity`, so the mismatch never triggers. vm-python's setters silently fall back
+  to `any`, and the Tauri command maps both spellings. Align the contract on one spelling,
+  and make the setters validate.
 - **`ShapeMatch.matrix()` convention** needs a worked pixel → pose → pixel example in the
   vm-python README.
 - **No `Edge1DDetector` or `LevelCrossing1D` binding.** 1-D detection is reachable only
   through `Caliper`.
-- **Windows wheel smoke test** in `python-wheels.yml`. Wheels are built on Windows but
-  imported only on Linux.
+- **No built wheel is import-tested** on any platform; CI builds the extension from
+  source.
 
 ## Testing
 
-- **Laser extractor over u16/f32.** The generic scan loop makes the full matrix cheap;
-  today u16 and f32 have one cross-check test each.
+- **Laser extractor over u16/f32.** The generic scan loop makes the full matrix cheap.
+  u16 has two tests (rows against u8, transposed columns against gather) and f32 one (rows
+  against u8).
 
 ## Code health
 
-- **Files over the size cap** (invariant 14, code lines excluding tests):
-  - `contour/build.rs` 802
-  - `matching/build.rs` 800
-  - `lsd/detect.rs` 676
-  - `matching/matcher.rs` 649
+- **Files over the size cap** (invariant 14), measured as non-blank, non-comment lines
+  before the test module:
+  - `crates/vision-metrology/src/contour/build.rs`
+  - `crates/vm-python/src/measure_py.rs`
 
   Split them when a change touches them.
 - **The `serde` feature implies `matching`.** Serde derives on non-matching types such as
@@ -105,9 +104,6 @@ deleted here.
 
 ## Lab
 
-- **Mosaic has no Tauri command.** The desktop build reports it as unavailable. Porting
-  `routers/mosaic.py` covers grid auto-fit, nearest-centre priority, the `source_id` map
-  and PNG encoding.
 - **The contour inventory renders every row.** Hundreds of rows are fine. Thousands, at a
   low `min_contrast`, need windowing or a visible cap. The canvas does not share the limit:
   stage2d's `PolylineSet` draws batched paths and picks through a spatial index.
@@ -115,11 +111,6 @@ deleted here.
   if a question needs them.
 - **`teach_preview` has no browser counterpart and no contract fixture.** It is covered by
   the transport test and Rust unit tests only.
-- **`CaliperTrace::spacing` is the configured step for rect and radial calipers,** not the
-  distance between their samples. Their `n` samples span `±half_len`, so the samples sit
-  `2·half_len/(n − 1)` apart, which differs from the step whenever `2·half_len` is not a
-  whole number of steps (any fixture scale ≠ 1). The lab draws profiles from the span
-  (`start_px` / `end_px`) and does not depend on it.
 - **The Library's "Run across the set" shows in the browser build,** where batch find is
   desktop-only, so pressing it reports an error instead of being hidden.
 - **Desktop distribution is unsigned.** A real distribution needs a signing identity and
