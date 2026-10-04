@@ -62,8 +62,8 @@ pub enum Refinement {
 pub enum Contrast {
     /// Absolute Scharr response units on the input pixel scale.
     ///
-    /// What the field always meant. Exact and cheap — nothing is measured from
-    /// the image — but tied to the pixel type it was tuned on.
+    /// Exact and cheap — nothing is measured from the image — but tied to the
+    /// pixel type it was tuned on.
     Raw(f32),
     /// A fraction of the response an ideal step across the image's full
     /// dynamic range would produce.

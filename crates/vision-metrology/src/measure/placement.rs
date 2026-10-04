@@ -22,7 +22,7 @@ pub struct MeasureRect {
     /// Direction of the scan axis, in radians.
     pub angle: f32,
     /// Half-length along the scan axis, in pixels. The profile is
-    /// `2·half_len + 1` samples long.
+    /// `2·half_len + 1` samples long at `step = 1`.
     pub half_len: f32,
     /// Half-width across the scan axis, in pixels. `0.0` samples a single line.
     pub half_width: f32,

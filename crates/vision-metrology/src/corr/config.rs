@@ -163,7 +163,7 @@ pub enum Refine {
 }
 
 impl Default for Refine {
-    /// `LucasKanade { iters: 3 }` — the plan's default iteration count.
+    /// `LucasKanade { iters: 3 }`.
     /// Enum derive(Default) requires a unit default variant, which
     /// `LucasKanade`'s payload rules out, hence the manual impl.
     fn default() -> Self {

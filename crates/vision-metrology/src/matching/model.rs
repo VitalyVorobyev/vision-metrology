@@ -204,12 +204,13 @@ impl ShapeModel {
 
     /// Pyramid pre-filter the model's own levels were built with.
     ///
-    /// Invariant 3: the model build and the scene search must use the **same**
+    /// The model build and the scene search must use the **same**
     /// downsample kernel, or model and scene suffer different aliasing and
     /// their coarse gradient directions disagree for reasons that have nothing
     /// to do with the object. The matcher reads this off the model rather than
     /// from its own config, so a stored model cannot be searched with the
     /// wrong kernel.
+    // Invariant 3.
     #[inline]
     pub fn pre_smooth(&self) -> PreSmooth {
         self.pre_smooth
@@ -354,16 +355,20 @@ mod persist {
     /// Deliberately **not public**: the number is a compatibility check between
     /// this crate's writer and its reader, and every way a caller could act on
     /// it — "is this file loadable?" — is answered by [`ShapeModel::load`]
-    /// returning an error. Exposing it invited callers to build the envelope
-    /// themselves, which is exactly what the opaque byte API removes.
-    ///
-    /// | Version | Change |
-    /// |---|---|
-    /// | 1 | Initial format. `Point2f` / `Vec2f` as `{"x": …, "y": …}`. |
-    /// | 2 | `Point2f` / `Vec2f` became nalgebra aliases, which serialize as flat `[x, y]` arrays. |
-    /// | 3 | The document is an opaque byte string rather than documented JSON, `ModelPoint` / `ShapeModelLevel` fields are read-only, and the model carries the pyramid `PreSmooth` it was built with (invariant 3). |
-    /// | 4 | The model additionally carries its level-0 `teach_points` (pre-decimation edge points), which [`ShapeModel::resample_at`] needs. A format-3 document still loads — `teach_points` defaults to `None` on a document that predates the field — but [`resample_at`](ShapeModel::resample_at) on the result returns [`Error::InvalidConfig`]. |
-    /// | 5 | The model carries its [`reference_angle`](ShapeModel::reference_angle) — the canonical orientation its frame is rotated onto. A format-4 document still loads and reads `0.0`, which is exactly what it meant: model frame and reference image coincide. |
+    /// returning an error.
+    //
+    // Exposing it invited callers to build the envelope themselves, which is exactly
+    // what the opaque byte API removes.
+    //
+    // Format history; this table is its single home:
+    //
+    // | Version | Change |
+    // |---|---|
+    // | 1 | Initial format. `Point2f` / `Vec2f` as `{"x": …, "y": …}`. |
+    // | 2 | `Point2f` / `Vec2f` became nalgebra aliases, which serialize as flat `[x, y]` arrays. |
+    // | 3 | The document is an opaque byte string rather than documented JSON, `ModelPoint` / `ShapeModelLevel` fields are read-only, and the model carries the pyramid `PreSmooth` it was built with (invariant 3). |
+    // | 4 | The model additionally carries its level-0 `teach_points` (pre-decimation edge points), which `ShapeModel::resample_at` needs. A format-3 document still loads — `teach_points` defaults to `None` on a document that predates the field — but `resample_at` on the result returns `Error::InvalidConfig`. |
+    // | 5 | The model carries its `reference_angle` — the canonical orientation its frame is rotated onto. A format-4 document still loads and reads `0.0`, which is exactly what it meant: model frame and reference image coincide. |
     pub(crate) const FORMAT_VERSION: u32 = 5;
 
     /// The oldest format version [`ShapeModel::load`]/[`from_bytes`](ShapeModel::from_bytes)

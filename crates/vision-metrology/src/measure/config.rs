@@ -200,9 +200,10 @@ impl Default for ProfileConfig {
 /// How a caliper extracts edges from its profile.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MeasureConfig {
-    /// Minimum `|DoG response|` for an edge to be reported.
+    /// Minimum `|derivative response|` for an edge to be reported.
+    /// [`Locate::MidpointCrossing`] does not use it.
     ///
-    /// On the input pixel scale, like every other threshold in this workspace:
+    /// On the input pixel scale, like every other threshold in this library:
     /// re-tune for `u16` and `f32` images.
     pub threshold: f32,
     /// Which transitions count.

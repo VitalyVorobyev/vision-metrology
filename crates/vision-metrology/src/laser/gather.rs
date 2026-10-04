@@ -3,15 +3,16 @@
 //! This is the only unsafe code in the laser pipeline. The unchecked indexing
 //! is load-bearing for column-scan throughput (it removes two bounds checks
 //! per element in a per-scanline loop), and its correctness rests entirely on
-//! the two `assert!`s at the top of [`gather_col_segment`]: the asserts, the
-//! `// SAFETY:` comments and the unsafe blocks form one unit and must move
-//! together in any future refactor.
+//! the two `assert!`s at the top of [`gather_col_segment`].
 //!
 //! The gather copies the pixel type as-is rather than widening to `f32`.
 //! Widening here was measured at +21% on `laser_extract_cols_gather_512x1280`
 //! (151 -> 183 us): it quadruples the write traffic on every gather, while the
 //! widening it avoids happens only over the much smaller ROI segment inside the
 //! 1-D detector.
+
+// The asserts, the `// SAFETY:` comments and the unsafe blocks form one unit and must
+// move together in any refactor.
 
 use vm_primitives::{ImageView, Pixel};
 

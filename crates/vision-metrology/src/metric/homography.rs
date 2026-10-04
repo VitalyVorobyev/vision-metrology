@@ -35,9 +35,10 @@ use crate::warp::Map;
 /// what makes the plane-to-image relationship a homography rather than a
 /// full 3-D projection.
 ///
-/// Computed in `f64` (invariant 20): the matrix multiply that builds this
-/// is one-time setup cost, not a per-pixel one, so there is no reason to
-/// pay for `f32`'s precision loss here.
+/// Computed in `f64`: the matrix multiply that builds this is one-time
+/// setup cost, not a per-pixel one, so there is no reason to pay for
+/// `f32`'s precision loss here.
+// Invariant 20.
 fn plane_to_camera_matrix(pose: &Pose3, grid: &PlaneGrid) -> Matrix3<f64> {
     let iso: nalgebra::Isometry3<f64> = nalgebra::convert(*pose);
     let r = iso.rotation.to_rotation_matrix();

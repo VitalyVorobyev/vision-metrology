@@ -9,9 +9,11 @@
 //! 3. Build a `ContourGraph` from the edgels to extract connected components.
 //! 4. For each connected component with ≥ 60 edgels, collect all polyline points
 //!    from all arcs in that component and attempt `fit_circle` with RANSAC.
-//! 5. Collect valid ellipses (semi-axis ratio < 1.2, plausible radius).
-//! 6. Print a JSON measurement report: `[{"cx": …, "cy": …, "a": …, "b": …, "angle": …}, …]`.
-//! 7. Assert that 3 ellipses were found, each centre within 0.02 px and each
+//! 5. Keep fits with a plausible radius, an in-image centre and `rms` ≤ 1 px, and
+//!    drop near-duplicates (centres within 15 px).
+//! 6. Print a JSON measurement report:
+//!    `[{"cx": …, "cy": …, "r": …, "rms": …, "max_dev": …, "n": …}, …]`.
+//! 7. Assert that 3 circles were found, each centre within 0.02 px and each
 //!    radius within 0.10 px of ground truth.
 //!
 //! ## Run
@@ -179,7 +181,7 @@ fn main() {
         graph.edges.len()
     );
 
-    // --- Step 4 + 5: fit ellipses to connected components ---
+    // --- Step 4 + 5: fit circles to connected components ---
     println!("Fitting circles to connected components with >= 60 total edgels...");
     // The targets are circles, so fit circles: three parameters instead of
     // five, and the fit reports the residuals that qualify the measurement.
@@ -235,7 +237,7 @@ fn main() {
         circles.push(fit);
     }
 
-    // Deduplicate: remove near-duplicate ellipses (centres within 15 px).
+    // Deduplicate: remove near-duplicate circles (centres within 15 px).
     let mut deduped: Vec<Fit<Circle2f>> = Vec::new();
     for f in &circles {
         let is_dup = deduped
@@ -266,7 +268,7 @@ fn main() {
             .unwrap_or(0)
     );
 
-    // Match each detected ellipse to the nearest ground-truth circle by centre.
+    // Match each detected circle to the nearest ground-truth circle by centre.
     for c in &CIRCLES {
         let nearest = deduped
             .iter()
@@ -283,7 +285,7 @@ fn main() {
         let r_err = (r_fit - c.r).abs();
 
         // Tolerances are tight on purpose. A synthetic, noise-free, perfectly
-        // round target measured with subpixel edges + a RANSAC ellipse fit
+        // round target measured with subpixel edges + a RANSAC circle fit
         // should land on the centre essentially exactly; anything above a
         // hundredth of a pixel here means a systematic bias, not noise. The
         // previous 5 px / 1.5 px bounds passed happily while multi-scale edgel

@@ -9,9 +9,11 @@
 //!
 //! The `as_chunks::<2>()` formulation hands the optimiser a `[P; 2]` per pair
 //! rather than a slice, so there is no bounds check to elide and the loop
-//! vectorises; it benchmarks at parity with the raw-pointer version it
-//! replaced. (It was `chunks_exact(2)` until clippy 1.98 pointed out that
-//! `as_chunks` says the same thing in the type.)
+//! vectorises.
+
+// It benchmarks at parity with the raw-pointer version it replaced. It was
+// `chunks_exact(2)` until clippy 1.98 pointed out that `as_chunks` says the same thing
+// in the type.
 
 use crate::core::{Error, ImageView, ImageViewMut, Pixel};
 

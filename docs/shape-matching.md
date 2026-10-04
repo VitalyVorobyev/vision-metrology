@@ -217,7 +217,7 @@ the model at that scale and pins its own `scale_range` to a narrow `(0.95, 1.05)
 search that follows costs the same regardless of how far the true scale turned out to be
 from 1.0. On a synthetic scene this is about 2.2–2.4× faster than a wide scan,
 with identical found-rate and accuracy
-([performance and accuracy](performance.md#accuracy-envelopes)).
+([performance and accuracy](performance.md#speed)).
 
 Call `estimate_scale_moments`/`estimate_scale_logpolar` and
 `ShapeModel::resample_at`/`ShapeMatcher::find` directly instead of `find_scale_invariant`
@@ -237,7 +237,7 @@ So a fiducial or a measurement-ROI corner measured on the reference image maps
 into the scene with `pose * p`, no offset arithmetic. `position` is separately
 available as the place the model's own reference point landed.
 
-Positions are level-0 pixel centres, as everywhere in this workspace.
+Positions are level-0 pixel centres, as everywhere in this library.
 
 ## Angle ranges are not wrapped
 

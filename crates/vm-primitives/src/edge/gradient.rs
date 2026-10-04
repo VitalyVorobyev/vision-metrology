@@ -44,9 +44,10 @@ use super::edge2d::SmoothKind;
 /// and [`Edge2DDetector::compute_scharr`](super::edge2d::Edge2DDetector) both
 /// call it instead of each carrying their own expression tree. `sink` decides
 /// what to do with each pixel's raw `(gx, gy, mag)` (normalise-and-gate here,
-/// store as-is in `Edge2DDetector`), so this stays the same cost as either of
-/// the two inline loops it replaces — no intermediate buffer, no branch a
-/// caller that doesn't need it would pay for.
+/// store as-is in `Edge2DDetector`), so it costs what an inline loop would:
+/// no intermediate buffer, no branch a caller that doesn't need it would pay
+/// for.
+// It replaced two inline copies of the kernel, at the same cost.
 #[inline]
 pub(super) fn dense_scharr(
     src: &[f32],

@@ -11,7 +11,7 @@
 //! Drawing reuses the public helpers in `examples/common/overlay.rs`
 //! (`blit`, `dot`, `line`, `rect`, `put_px`, the colour palette) plus a tiny
 //! local bitmap font for score/level labels. Palette and line weights are
-//! deliberately plain — legible and correct first, polish later.
+//! deliberately plain: legible and correct.
 
 use std::path::Path;
 

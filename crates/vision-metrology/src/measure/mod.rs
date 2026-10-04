@@ -12,7 +12,7 @@
 //!
 //! [`Caliper`] places a [`MeasureRect`], [`MeasureArc`], [`MeasureRadial`] or
 //! [`MeasureStrip`] on the image, averages intensity across its width into a 1-D profile,
-//! and runs the existing subpixel [`Edge1DDetector`](vm_primitives::Edge1DDetector) along
+//! and runs the subpixel [`Edge1DDetector`](vm_primitives::Edge1DDetector) along
 //! it. The
 //! cross-averaging is where the precision comes from: `n` interpolated samples
 //! per profile entry drop noise by `√n` while leaving an edge perpendicular to

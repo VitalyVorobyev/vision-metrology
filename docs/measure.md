@@ -14,8 +14,8 @@ ShapeMatcher::find  ->  ShapeMatch::pose  ->  MetrologyModel::apply  ->  Fit + r
 ## What a caliper is
 
 A [`Caliper`] places a geometry on the image, averages intensity *across* it
-into a 1-D profile, and runs the existing subpixel `Edge1DDetector` *along*
-that profile. The averaging is where the precision comes from: `n`
+into a 1-D profile, and runs the subpixel `Edge1DDetector` *along* that
+profile. The averaging is where the precision comes from: `n`
 interpolated samples per profile entry drop noise by `1/√n` while leaving an
 edge perpendicular to the scan exactly as sharp as it was.
 
@@ -51,7 +51,7 @@ let edges = cal.measure(&img.as_view()).expect("an edge");
 println!("edge at {:.3}", edges[0].p.x); // 29.5 — the pixel-centre convention
 ```
 
-## Rect, arc, and radial — and why radial exists
+## Rect, arc, radial and strip
 
 There are four placements, and the choice is about the geometry of the edge
 being crossed, not a style preference:
@@ -84,7 +84,7 @@ whatever radius a sample sits, its cross-offset is applied as an angle
 (`s / radius`), not a straight perpendicular. Every averaged sample lands at
 the *same* radius as the caliper centre, so the profile is never contaminated
 across the edge. The same setup measures **39.990 px** — a twelvefold
-reduction in bias, and it no longer grows with `half_width`.
+reduction in bias, and it does not grow with `half_width`.
 `MetrologyShape::Circle` uses `MeasureRadial` for exactly this reason; reach
 for `MeasureArc` only when the feature you are measuring *crosses* the circle
 rather than *is* the circle.
@@ -141,6 +141,50 @@ OffImage::Reject`, a placement with any sample outside `[0, w − 1] × [0, h �
 is rejected with `RejectReason::OffImage` before edges are searched. The
 default, `OffImage::Fill`, samples the outside with `profile.border` and
 measures anyway. Both apply to every placement, not only strips.
+
+## Bars and gaps: `measure_pairs`
+
+`Caliper::measure_pairs` reads every bar or gap the caliper crosses as one
+[`MeasurePair`]: two opposite-polarity edges, with their midpoint (`center`)
+and the distance between them along the scan (`width`, in pixels). Pairs are
+formed greedily in scan order: each edge is matched with the next edge of the
+opposite polarity, and both are consumed. A pair whose `first` edge is
+`Rising` is a bright bar on a dark ground; one whose `first` edge is `Falling`
+is a dark gap on a bright one.
+
+```rust
+use std::num::NonZeroUsize;
+use vision_metrology::measure::{Caliper, MeasureConfig, MeasureStrip};
+use vision_metrology::{Image, Point2f};
+
+// Two bright bars, on columns 10..20 and 34..50.
+let data: Vec<f32> = (0..9 * 64)
+    .map(|i| {
+        let x = i % 64;
+        if (10..20).contains(&x) || (34..50).contains(&x) { 1.0 } else { 0.0 }
+    })
+    .collect();
+let img = Image::from_vec(64, 9, data).unwrap();
+
+let strip = MeasureStrip {
+    start: Point2f::new(0.0, 4.0),
+    end: Point2f::new(63.0, 4.0),
+    half_width: 0.0,
+    samples: NonZeroUsize::new(64),
+    across: NonZeroUsize::new(1),
+};
+let cfg = MeasureConfig { threshold: 0.01, ..MeasureConfig::default() };
+let mut cal = Caliper::strip(strip, cfg);
+for pair in cal.measure_pairs(&img.as_view()) {
+    println!("centre {:.2}, width {:.2}", pair.center.x, pair.width);
+}
+// centre 14.50, width 10.00
+// centre 41.50, width 16.00
+```
+
+Pairing needs every edge, so `measure_pairs` ignores `select` and `polarity`.
+`locate` still applies, except that `MidpointCrossing` finds a single edge and
+so never forms a pair.
 
 ## Locating the edge
 
@@ -246,9 +290,9 @@ pub struct MeasureConfig {
 }
 ```
 
-- **`threshold`** — the minimum `|DoG response|` to report an edge, on the
-  input pixel scale like every other threshold in this workspace (re-tune for
-  `u16`/`f32`).
+- **`threshold`** — the minimum `|derivative response|` to report an edge, on
+  the input pixel scale like every other threshold in this library (re-tune for
+  `u16`/`f32`). `MidpointCrossing` does not use it.
 - **`polarity`** (`PolaritySelect::{Any, Rising, Falling}`) — which
   transitions count. A caliper that should only ever see a dark-to-bright
   edge and instead reports a bright-to-dark one is a useful signal that
@@ -519,6 +563,72 @@ carries a `FitConfig`, and a robust loss there is what keeps a single
 bad caliper — a scratch, a print defect, a highlight — from moving the fitted
 geometry: it still shows up in `max_dev`, just not in the answer.
 
+A line object is measured the same way. Its calipers sit along the nominal
+segment and scan across it:
+
+```rust
+use vision_metrology::measure::{
+    MetrologyFit, MetrologyModel, MetrologyObject, MetrologyShape,
+};
+use vision_metrology::{Image, Point2f, Similarity2f};
+
+// Dark above row 40 and bright from row 40 down: the edge is at y = 39.5.
+let data: Vec<u8> = (0..128 * 96).map(|i| if i / 128 >= 40 { 200 } else { 20 }).collect();
+let img = Image::from_vec(128, 96, data).unwrap();
+
+let mut model = MetrologyModel::new();
+model.add(MetrologyObject::new(MetrologyShape::Line {
+    a: Point2f::new(20.0, 42.0), // the nominal edge, 2.5 px from the real one
+    b: Point2f::new(108.0, 42.0),
+}));
+let results = model.apply(&img.as_view(), &Similarity2f::identity());
+let MetrologyFit::Line(fit) = &results[0].as_ref().expect("measured").fit else {
+    panic!("a line")
+};
+println!("y = {:.2}, rms = {:.3}", fit.model.p.y, fit.rms); // y = 39.50, rms = 0.000
+```
+
+## Drawing calipers without an image
+
+An overlay that shows where the calipers will sit, before there is an image to
+measure or for calipers that found nothing, needs the same geometry `apply`
+measures at. `measure::diagnostics::layout(&model, &fixture)` returns it: one
+[`CaliperPlacement`] per caliper, with its `object_index`, its `caliper_index`
+within the object, and its `shape`, a `CaliperShape::Rect` (`MeasureRect`, for
+line objects) or a `CaliperShape::Radial` (`MeasureRadial`, for circle
+objects). For a radial caliper, `center` is the circle's centre, not the
+caliper's position on it. `layout_object(&object, &fixture)` gives the
+`CaliperShape`s of one object that is not in a model yet.
+
+```rust
+use vision_metrology::measure::diagnostics::{CaliperShape, layout};
+use vision_metrology::measure::{MetrologyModel, MetrologyObject, MetrologyShape};
+use vision_metrology::{Point2f, Similarity2f, Vec2f};
+
+let mut edge = MetrologyObject::new(MetrologyShape::Line {
+    a: Point2f::new(20.0, 40.0),
+    b: Point2f::new(100.0, 40.0),
+});
+edge.n_calipers = 4;
+let mut model = MetrologyModel::new();
+model.add(edge);
+
+// The part, found 5 px right of where it was taught and turned by 10°.
+let fixture = Similarity2f::new(Vec2f::new(5.0, 0.0), 10f32.to_radians(), 1.0);
+for p in layout(&model, &fixture) {
+    if let CaliperShape::Rect(r) = p.shape {
+        println!("caliper {}: centre ({:.1}, {:.1}), angle {:.3} rad",
+                 p.caliper_index, r.center.x, r.center.y, r.angle);
+    }
+}
+// caliper 0: centre (17.8, 42.9), angle 1.745 rad
+// ...
+```
+
+In Python, `MetrologyModel.layout(x, y, angle=..., scale=..., origin=...)` returns
+`CaliperPlacement`s with the shape flattened into `kind`, `center`, `angle`,
+`half_len`, `half_width` and `radius`.
+
 ## Worked example: `inspect_canend`
 
 `examples/inspect_canend.rs` runs the whole chain on real can-end frames and
@@ -549,7 +659,7 @@ radius 365.2–365.7 px, σ ≈ 0.3 px. The full table is in
 ```text
 cargo run --release -p vision-metrology --example inspect_canend -- \
   --scene-dir /path/to/canend/set1/normal/dome \
-  --roi 420,350,420,320 --rim-radius 367 --tolerance 1.5
+  --roi 420,350,420,320 --rim-radius 367 --tolerance 2
 ```
 
 The can-end dataset is not distributed with this repository.
@@ -570,5 +680,7 @@ fitted primitive through a camera calibration with the `metric` module
 [`MeasureArc`]: ../crates/vision-metrology/src/measure/placement.rs
 [`MeasureRadial`]: ../crates/vision-metrology/src/measure/placement.rs
 [`MeasureStrip`]: ../crates/vision-metrology/src/measure/placement.rs
+[`MeasurePair`]: ../crates/vision-metrology/src/measure/select.rs
+[`CaliperPlacement`]: ../crates/vision-metrology/src/measure/diagnostics.rs
 [`MetrologyModel`]: ../crates/vision-metrology/src/measure/model.rs
 [`ShapeMatch::pose`]: ../crates/vision-metrology/src/matching/matcher.rs

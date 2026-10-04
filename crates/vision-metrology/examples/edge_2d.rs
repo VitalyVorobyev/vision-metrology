@@ -2,7 +2,7 @@
 //!
 //! ## Pipeline
 //! 1. Create a 64×64 u8 image: left half 0, right half 200 (vertical step edge at x=32).
-//! 2. Detect edgels with `Edge2DDetector::detect_u8` using the default config.
+//! 2. Detect edgels with `Edge2DDetector::detect` using the default config.
 //! 3. Print the total edgel count and stats for the first few edgels.
 //! 4. Assert that at least some edgels are detected near x=32.
 //!

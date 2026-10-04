@@ -6,11 +6,13 @@
 //! [`raster`](super::raster) is what makes the raster layer shareable across
 //! nalgebra major versions — see that module's own note.
 //!
-//! Points and vectors are nalgebra *aliases*, not wrappers (invariant 13), so
-//! they cross into `calibration-rs`, `corrmatch` and `chess-corners-rs`
+//! Points and vectors are nalgebra *aliases*, not wrappers, so they cross
+//! into `calibration-rs`, `corrmatch` and `chess-corners-rs`
 //! untouched. The one behaviour that is not nalgebra's is
 //! [`Vec2fExt::normalized_or_zero`], which restores zero-on-degenerate where
 //! nalgebra's `normalize` yields `NaN`.
+
+// Aliases, not wrappers: invariant 13.
 
 mod shapes;
 mod transform;

@@ -8,7 +8,7 @@
 //! 1. Create a 128×128 image (background 0) with two bright rectangles (value 200):
 //!    - Rect A: rows 10–40, cols 20–110  → top/bottom horizontal edges, left/right vertical edges
 //!    - Rect B: rows 55–90, cols 15–60   → additional horizontal and vertical edges
-//! 2. Run `LsdDetector` with `scale = 1.0` (no downscaling) and a relaxed `density_th`.
+//! 2. Run `LsdDetector` with `downscale_levels: 0` (no downscaling) and a relaxed `density_th`.
 //! 3. Print the detected segment count and each segment's endpoints, length, and NFA.
 //! 4. Assert at least 1 segment is detected.
 //!

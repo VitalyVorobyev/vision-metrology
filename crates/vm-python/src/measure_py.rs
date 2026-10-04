@@ -3,8 +3,7 @@
 //! ## `RejectReason`
 //!
 //! `Caliper::measure` returns `Result<&[MeasureEdge], RejectReason>` on the
-//! Rust side — see invariant 21 and the module's own docs on why an empty
-//! result is unrepresentable. The Python mirror raises [`MeasureRejected`],
+//! Rust side; its docs explain why an empty result is unrepresentable. The Python mirror raises [`MeasureRejected`],
 //! a plain exception whose single argument is one of the eight reason strings
 //! (`"profile_too_short"`, `"no_edge"`, `"wrong_polarity"`, `"too_oblique"`,
 //! `"off_image"`, `"incomplete_sequence"`, `"low_contrast"`, `"no_crossing"`):
@@ -21,6 +20,8 @@
 //! [`MetrologyError`] carrying the failure message — a small tagged union in
 //! place of an exception, because the caller needs all the entries, not just
 //! the first problem.
+
+// Reported residuals and rejections: invariant 21.
 
 use std::num::NonZeroUsize;
 
@@ -151,8 +152,8 @@ fn strip_from(
 ///
 /// Construct with [`rect`](Self::rect), [`arc`](Self::arc),
 /// [`radial`](Self::radial) or [`strip`](Self::strip); the matching
-/// `move_to_rect`, `move_to_arc`, `move_to_radial` and `move_to_strip` reposition an
-/// existing caliper, keeping its config and scratch buffers.
+/// `move_to_rect`, `move_to_arc`, `move_to_radial` and `move_to_strip` reposition the
+/// caliper, keeping its config and scratch buffers.
 #[pyclass]
 pub struct Caliper {
     inner: NativeCaliper,
@@ -295,8 +296,8 @@ impl Caliper {
 
     /// Extract edges under the current placement.
     ///
-    /// Raises [`MeasureRejected`] naming the gate that fired when nothing
-    /// was found — see the module docstring.
+    /// Raises `MeasureRejected` when nothing was found; its `args[0]` names
+    /// the gate that fired.
     pub fn measure(
         &mut self,
         py: Python<'_>,
@@ -766,22 +767,17 @@ impl MetrologyModel {
     }
 
     /// Measure every object with the model's nominal geometry mapped through
-    /// the fixture `(x, y, angle, scale)` — typically a matched
-    /// [`ShapeMatch`](crate::types::ShapeMatch)'s own fields — composed with
-    /// `origin`, the model-space point that `(x, y)` names.
+    /// the fixture `(x, y, angle, scale)` — typically a matched `ShapeMatch`'s
+    /// own fields — composed with `origin`, the model-space point that `(x, y)`
+    /// names: a model point `p` lands at `(x, y) + scale·R(angle)·(p − origin)`,
+    /// the pose `ShapeMatch.matrix(origin)` describes.
     ///
-    /// `origin` defaults to `(0, 0)`; pass the taught [`ShapeModel`]'s
-    /// `origin` (the same value handed to [`ShapeMatch.matrix`]) when it is
-    /// nonzero, or the fixture is mis-posed — see the fixture-pose semantics
-    /// on [`ShapeMatch::pose`](crate::matching::ShapeMatch) (the Rust
-    /// `vision_metrology::matching` type this mirrors): `position +
-    /// scale·R(angle)·(point − origin)`, not the origin-less `scale·R(angle)·point +
-    /// (x, y)` this binding built before this fix.
+    /// `origin` defaults to `(0, 0)`; pass the taught `ShapeModel`'s `origin`
+    /// when it is nonzero, or the fixture is mis-posed.
     ///
-    /// Returns one entry per object, in [`add`](Self::add) order: either a
-    /// [`MetrologyResult`] or a [`MetrologyError`] naming why that object
-    /// could not be measured. See the module docstring for why this is a
-    /// list of outcomes rather than raising on the first failure.
+    /// Returns one entry per object, in `add` order: either a `MetrologyResult`
+    /// or a `MetrologyError` naming why that object could not be measured, so
+    /// one failed object does not hide the others.
     #[pyo3(signature = (image, x, y, angle=0.0, scale=1.0, origin=(0.0, 0.0)))]
     #[allow(clippy::too_many_arguments)]
     pub fn apply(

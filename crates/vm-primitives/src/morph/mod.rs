@@ -6,7 +6,7 @@
 //! ## Morphological operations
 //! - [`erode_binary_u8`] / [`dilate_binary_u8`] — parameterized by a [`StructuringElement`].
 //! - [`erode3x3_binary_u8`] / [`dilate3x3_binary_u8`] — convenience wrappers for the
-//!   classic 3×3 square (backward-compatible).
+//!   classic 3×3 square.
 //! - [`open_binary_u8`] / [`close_binary_u8`] — opening and closing.
 //!
 //! ## Distance transform

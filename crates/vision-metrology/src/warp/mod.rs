@@ -7,8 +7,8 @@
 //! trigonometry, matrix multiply, or allocation happens per frame. This is
 //! the "rectify" primitive the metrology chain sits on top of: fixture pose
 //! (`matching`) says *where* the part is, `warp` moves its pixels into a
-//! canonical frame calipers or a future variation-model can then measure
-//! without repeating the geometry per call.
+//! canonical frame calipers can then measure without repeating the geometry
+//! per call.
 //!
 //! ## `dst → src`: read this before calling anything here
 //!

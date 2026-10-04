@@ -1,7 +1,7 @@
 //! Per-stage timing probe for the shape matcher.
 //!
 //! Prints the cost of the pyramid build, each direction-field level, and the
-//! full `find_u8` on a clean and on a cluttered 1280x1024 fixture, plus a
+//! full `ShapeMatcher::find` on a clean and on a cluttered 1280x1024 fixture, plus a
 //! small config sweep on the cluttered scene. Build with
 //! `--features trace-cands` to also see per-level candidate counts and stage
 //! times from inside the matcher on stderr.
@@ -114,7 +114,7 @@ fn main() {
         found += matcher.find(&scene.as_view(), &model, &scfg).len();
     }
     println!(
-        "find_u8 total      : {:8.3} ms   (found {} / 50)",
+        "find total         : {:8.3} ms   (found {} / 50)",
         t.elapsed().as_secs_f64() * 1e3 / 50.0,
         found
     );

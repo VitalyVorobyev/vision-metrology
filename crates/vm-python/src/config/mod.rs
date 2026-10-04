@@ -3,8 +3,7 @@
 //! ## Design notes
 //!
 //! - **Sentinels.** Every "auto"/"unlimited" native `Option<T>` /
-//!   `Option<NonZeroUsize>` maps to a Python `None`, one-to-one with
-//!   invariant 10.
+//!   `Option<NonZeroUsize>` maps to a Python `None`, one-to-one.
 //! - **`Hysteresis`.** `Edge2DConfig::hysteresis: Hysteresis::{Auto, Manual}`
 //!   is *not* exposed as its own enum type. `EdgeConfig.low_thresh` /
 //!   `.high_thresh: Optional[float]` mirror it with the two-field sentinel
