@@ -11,10 +11,16 @@ description: Use this when designing or refactoring public APIs across the works
 * Clear data ownership (views vs owned)
 * Fast internals without leaking complexity
 
+## Binding rules
+
+* Invariants 9, 10, 17 and 19 in `docs/dev/system-design.md`: `'static` public outputs,
+  config struct plus reusable detector with no sentinels, one canonical path per name, one
+  entry point per algorithm.
+* ADR-0006 (a measurement that found nothing is a result) and ADR-0007 (configs say what
+  they mean), in `docs/dev/adr/`.
+
 ## Prefer
 
-* `Detector` structs that own scratch buffers → avoid allocations per call.
-* `Config` structs with safe defaults, but don’t hide “magic” thresholds.
 * `ImageView<T>` / `ImageViewMut<T>` in APIs; keep crates buffer-agnostic.
 * Separate “core algorithm” from “pipeline convenience wrapper”.
 

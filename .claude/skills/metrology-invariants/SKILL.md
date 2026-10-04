@@ -7,8 +7,9 @@ description: Use this when implementing or reviewing anything subpixel (edges, l
 
 ## Coordinate convention
 
-* Integer index `i` corresponds to **pixel center** at `i as f32`.
-* Subpixel values are expressed in the same coordinate system.
+* Invariants 1, 2, 11 and 20 in `docs/dev/system-design.md` bind here: pixel centres, the
+  pyramid coordinate mapping, the default border mode, and f32 storage with f64
+  accumulation. Read them there rather than from a copy.
 
 ## Subpixel outputs
 
