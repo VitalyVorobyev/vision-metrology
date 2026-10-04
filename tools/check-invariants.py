@@ -16,10 +16,10 @@ Checks, over every file tracked by git:
      `invariants 17, 18`, `invariants 2–4`.
   3. No dangling plan labels outside CHANGELOG.md and docs/dev/roadmap.md: `roadmap W7`,
      `roadmap B5`, "the roadmap plan", bare `W7`-style labels in comments and prose,
-     `decision 9g`, `backlog item R3`, `Track 4`, and plan "waves". These name schemes that live only in a past session's
-     plan, so a reader cannot resolve them.
-  4. No mention of the external project the caliper notes once named (matched by the
-     regex in FORBIDDEN_NAME), in any tracked file.
+     `decision 9g`, `backlog item R3`, track labels (`Track 4`, `Track M`), and plan
+     "waves". These name schemes that live only in a past session's plan, so a reader
+     cannot resolve them.
+  4. No mention of an external project name (FORBIDDEN_NAME), in any tracked file.
   5. User-facing text does not link into docs/dev/: the README files, the top-level guides
      under docs/, CHANGELOG.md, lab/README.md, the Python stubs, and rustdoc (`//!`, `///`)
      in the crates' library sources.
@@ -61,7 +61,7 @@ LABELS = [
     (re.compile(r"\broadmap(?:'s)?\s+(?:plan|decision)s?\b", re.IGNORECASE), "roadmap plan reference"),
     (re.compile(r"\bdecision\s+\d+[a-z]?\b", re.IGNORECASE), "plan decision label"),
     (re.compile(r"\bbacklog\s+(?:item\s+)?\*{0,2}R\d+\b", re.IGNORECASE), "backlog item label"),
-    (re.compile(r"\bTrack\s+\d+\b"), "numbered track label"),
+    (re.compile(r"\bTrack\s+[A-Z0-9]+\b"), "track label"),
     (re.compile(r"\bwaves?\b", re.IGNORECASE), "plan wave"),
 ]
 # Bare wave labels ("W6", "W7"): checked in comments and prose only, never in code.
