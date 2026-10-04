@@ -123,8 +123,9 @@ update it when a change moves them.
 - **Audience decides location.**
   - User-facing: `README.md`, crate READMEs, rustdoc (`//!`, `///`), `docs/*.md`,
     `CHANGELOG.md`, `lab/README.md`.
-  - Contributor-facing: this file, `AGENTS.md`, `docs/dev/`, `lab/ARCHITECTURE.md`, and
-    plain `//` comments.
+  - Contributor-facing: this file, `AGENTS.md`, `CLAUDE.md`, `docs/dev/`,
+    `lab/ARCHITECTURE.md`, `lab/contract/README.md`, `.claude/skills/`, plain `//`
+    comments, and test-file headers.
 
   User-facing text never links into `docs/dev/` and never mentions plan labels, PR numbers
   or history. Invariant citations go in `//` comments.
@@ -136,10 +137,10 @@ update it when a change moves them.
 - **Decisions are ADRs**, written to the rules in system design's
   [Decisions](docs/dev/system-design.md#decisions) section.
 - **Finished roadmap items leave `docs/dev/roadmap.md`** for `CHANGELOG.md` `[Unreleased]`.
-- **Invariant numbering** is append-only ([system design](docs/dev/system-design.md#invariants)).
-  `tools/check-invariants.py` checks that every citation resolves, and rejects plan labels
-  outside the roadmap and the changelog, links into `docs/dev/` from user-facing files, and
-  one external project name.
+- **Invariant numbering** is append-only
+  ([system design](docs/dev/system-design.md#invariants)). `tools/check-invariants.py`
+  checks that every citation resolves, and rejects plan labels outside the roadmap and the
+  changelog, links into `docs/dev/` from user-facing files, and one external project name.
 
 ### Illustrations
 
