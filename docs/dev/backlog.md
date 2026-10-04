@@ -91,9 +91,8 @@ deleted here.
   before the first `#[cfg(test)]`. `tools/check-invariants.py` reads this list: it fails
   on an offender missing from it and on a listed file back under the cap.
   - `crates/vision-metrology/src/contour/build.rs`
-  - `crates/vm-python/src/measure_py.rs`
 
-  Split them when a change touches them.
+  Split a listed file when a change touches it.
 - **The `serde` feature implies `matching`.** Serde derives on non-matching types such as
   `CaliperTrace` therefore pull in the matcher. Split model persistence into its own
   feature.
