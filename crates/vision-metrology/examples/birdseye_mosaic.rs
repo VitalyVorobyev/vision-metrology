@@ -1,19 +1,18 @@
 //! Bird's-eye mosaic on real calibrated data.
 //!
 //! Composes two calibrated cameras' rectified views of a shared plane into one grid, with
-//! the same **no-blending, nearest-camera-centre priority** rule `tests/mosaic.rs` verifies
-//! on a synthetic 3-camera fixture (see that file's doc comment for the exact rule and why
-//! it is deliberately duplicated here rather than factored into a library module —
-//! mosaicking is *not* a library module, so this composition helper is re-derived per
-//! consumer, not shared code).
+//! **no blending**: each grid pixel takes the camera, among those whose view covers it,
+//! whose reprojection of that plane point lies closest to its own principal point (ties
+//! go to the lower camera index). Mosaicking is not a library module; this composition
+//! helper is built here from the public `metric` and `warp` primitives.
 //!
-//! ## Dataset: `~/vision/data/25_09_17_Table_Calibration/`
-//! `calibration.json` (the `table_calibration` format `metric::io::import_table_calibration`
-//! parses) plus `cam1/`/`cam2/` PNG folders, each holding the *same* 25 filenames
-//! (`CamN_<Rx>Rx<Ry>Ry<X>X<Y>Y<Z>Z.png`) — a robot-swept calibration-target capture, not a
-//! sequence. This example picks the nominal `+0.0Rx+0.0Ry+0.0X+0.0Y+0.0Z` frame from each
-//! camera folder: identical filename suffix pairs the two cameras' simultaneous shots (the
-//! "if the naming allows pairing" case the plan anticipates), and the all-zero offset is the
+//! ## Dataset: `<dataset>/`
+//! Passed with `--data-dir`. `calibration.json` (the `table_calibration` format
+//! `metric::io::import_table_calibration` parses) plus `cam1/`/`cam2/` PNG folders, each
+//! holding the *same* 25 filenames (`CamN_<Rx>Rx<Ry>Ry<X>X<Y>Y<Z>Z.png`) — a robot-swept
+//! calibration-target capture, not a sequence. This example picks the nominal
+//! `+0.0Rx+0.0Ry+0.0X+0.0Y+0.0Z` frame from each camera folder: an identical filename
+//! suffix pairs the two cameras' simultaneous shots, and the all-zero offset is the
 //! target's nominal, centred pose.
 //!
 //! **Camera-index judgment call.** `calibration.json` names its two cameras `camera0`/
@@ -31,15 +30,11 @@
 //! camera-to-camera extrinsics and a hand-eye transform, but **no target pose**, so the
 //! plane the two cameras share has to be recovered from the images themselves.
 //!
-//! An earlier version of this example guessed it: it took [`common_standoff`] — where the
-//! two cameras' optical axes pass closest — and shifted the reference frame there by a
-//! **pure translation** along camera0's `z`, i.e. it assumed the target is perpendicular to
-//! camera0's optical axis. The distance was about right, the orientation was never measured,
-//! and the result was not a mosaic at all: each camera picked up its own projective error
-//! from being rectified onto the wrong plane, so the two halves of the composite came out at
-//! visibly different scales with the checker grid stepping across the seam.
-//!
-//! What this example does instead ([`estimate_target_plane`]), in two stages:
+//! Assuming the target perpendicular to camera0's optical axis at the cameras'
+//! [`common_standoff`] gets the distance about right but not the orientation. Rectified onto
+//! that wrong plane, each camera picks up its own projective error, and the two halves of
+//! the composite come out at visibly different scales with the checker grid stepping
+//! across the seam. So [`estimate_target_plane`] measures the plane, in two stages:
 //!
 //! **Stage 1 — find the orientation by direct search ([`sweep_tilt`]).** Nothing in the
 //! calibration constrains it, and the tracker cannot bootstrap itself into it: under a plane
@@ -74,8 +69,7 @@
 //! The recovered plane then becomes the mosaic's reference frame: this example composes a
 //! **new** camera-from-(plane) pose `pose ∘ shift` per camera, where `shift` is a full
 //! isometry whose `z = 0` plane *is* the measured target plane, and hands that to the
-//! existing, unmodified `metric`/`warp` API — no library change, per the plan's "the library
-//! already has everything" constraint.
+//! `metric`/`warp` API as it is.
 //!
 //! ## The seam metric is ZNCC, and it gates the run
 //! Registration quality is reported as **ZNCC between the two rectified images over their
@@ -86,7 +80,7 @@
 //! the mosaic is registered or not. ZNCC is a whole-region agreement measure instead: it
 //! reads ~1 when the two views line up and collapses toward 0 when they do not.
 //!
-//! ## Measured (2026-08-20, this dataset, this frame pair, M4 Pro, release, ~16 s)
+//! ## Measured (this dataset, this frame pair, M4 Pro, release, ~16 s)
 //! Run with `WRITE_ASSETS=1` to also regenerate `docs/assets/birdseye-mosaic.png` (every
 //! stage is deterministic — the sweep is exhaustive and the RANSAC uses a fixed-seed
 //! xorshift — so the asset is reproducible run to run).
@@ -101,8 +95,7 @@
 //!   [`SWEEP_TANGENT_STEP`] is set from.
 //! - Estimated target plane, in camera0's frame: `n = (0.1584, 0.5923, 0.7900)`, i.e.
 //!   **37.81° from camera0's optical axis**, piercing that axis at **276.35 mm**. That tilt
-//!   is the whole story: it is far too large for a pure-translation guess to absorb, which is
-//!   why the old version's composite was not a mosaic.
+//!   is far too large for a plane perpendicular to camera0's axis to absorb.
 //! - Convergence: round 1 tracks 44/44 windows and keeps 26 as inliers; rounds 2 and 3 keep
 //!   **all** of them (46/46, 47/47). Last round, on a 2800x2848 grid at 0.0128 mm/px (this
 //!   dataset's own GSD): tracked residual median **0.12 grid px**, fit reprojection p50
@@ -121,11 +114,10 @@
 //!   [`MIN_OVERLAP_ZNCC`] `= 0.75` gate. The remaining gap from 1.0 is resampling, not
 //!   geometry: the gallery grid is a ~3x downsample of a target whose finest features are a
 //!   few pixels wide, and each camera aliases it at its own sub-pixel phase.
-//!   For scale: the plane the old version *assumed* scores **0.0656** on these same two
-//!   frames.
+//!   For scale: the plane perpendicular to camera0's axis at the common standoff scores
+//!   **0.0656** on these same two frames.
 //!
-//! `tests/mosaic.rs` remains the CI-gated accuracy fixture (synthetic, exact geometry); this
-//! example is a real-data demo that now refuses to publish a mosaic it cannot measure as
+//! This is a real-data demo, and it refuses to publish a mosaic it cannot measure as
 //! registered.
 //!
 //! ## Run

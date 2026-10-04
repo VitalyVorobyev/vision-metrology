@@ -2,7 +2,7 @@
 //!
 //! ## Pipeline
 //! 1. Generate a 128×128 grayscale image where `pixel = (x + y) % 256`.
-//! 2. Build a 4-level pyramid with `Pyramid::build_from_u8`.
+//! 2. Build a 4-level pyramid with `Pyramid::new` and `build`.
 //! 3. Print each level's index, (width, height), and mean pixel value.
 //! 4. Assert that each level's dimensions are half those of the previous level.
 //!

@@ -18,8 +18,8 @@
 //! ## Run
 //! ```text
 //! cargo run --release -p vision-metrology --example inspect_canend -- \
-//!   --scene-dir ~/privatedata/canend/set1/normal/dome \
-//!   --roi 420,350,420,320 --rim-radius 367 --tolerance 1.5
+//!   --scene-dir <dataset>/set1/normal/dome \
+//!   --roi 420,350,420,320 --rim-radius 367 --tolerance 2
 //! ```
 //!
 //! Units are **pixels**. The `metric` module converts a fitted primitive to
