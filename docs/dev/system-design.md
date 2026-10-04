@@ -84,7 +84,7 @@ the list is contiguous and that every citation resolves.
     ([ADR-0002](adr/0002-dependency-and-toolchain-policy.md)).
 14. **File size.** Soft cap of about 600 code lines per source file (tests excluded).
     Crossing it means splitting in the same change. Known offenders are listed in
-    `backlog.md`.
+    `backlog.md`, and `tools/check-invariants.py` fails on any other file over 600.
 15. **vm-python parity.** A change that adds public Rust API updates the bindings, the
     `.pyi` stubs and a Python test in the same PR, unless the vm-python README lists the
     item as not bound.

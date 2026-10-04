@@ -87,8 +87,9 @@ deleted here.
 
 ## Code health
 
-- **Files over the size cap** (invariant 14), measured as non-blank, non-comment lines
-  before the test module:
+- **Files over the size cap** (invariant 14), measured as non-blank, non-`//` lines
+  before the first `#[cfg(test)]`. `tools/check-invariants.py` reads this list: it fails
+  on an offender missing from it and on a listed file back under the cap.
   - `crates/vision-metrology/src/contour/build.rs`
   - `crates/vm-python/src/measure_py.rs`
 
