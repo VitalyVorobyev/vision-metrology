@@ -88,8 +88,8 @@ jobs:
     name: MSRV
     runs-on: ubuntu-latest
     env:
-      # Keep in step with `rust-version` in the root Cargo.toml. Currently set
-      # by nalgebra 0.35 rather than by anything in this workspace.
+      # Keep in step with `rust-version` in the root Cargo.toml. corrmatch sets
+      # it (it needs 1.91); nalgebra 0.35 needs only 1.89.
       MSRV: 1.91.0
     steps:
       - name: Checkout

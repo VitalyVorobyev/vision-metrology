@@ -28,9 +28,9 @@ The shape matcher can scan a discrete scale range, but:
     log-polar edge-density rasters with `corr::find`: a uniform scale becomes a row shift,
     Fourier–Mellin without an FFT. It compares edge density because a model stores edge
     points, not a reference image.
-- **Point-collapse inflation at `scale < 1` is documented, not fixed.** It is small (worst
-  measured 0.022 px position, 0.14% scale on a clean fixture). A test pins it as known
-  behaviour.
+- **Point-collapse inflation at `scale < 1` is documented, not fixed.** It is small: the
+  scale rows of [`docs/performance.md`](../../performance.md) include it. A test pins it as
+  known behaviour.
 
 ## Alternatives
 
@@ -40,12 +40,12 @@ The shape matcher can scan a discrete scale range, but:
 - **Three deduplication designs for the point-collapse inflation, each measured and
   rejected:**
   1. Dedup in the rotation step whenever `scale < 1`. Subpixel refinement probes scales below
-     1 even for single-scale models, so this moved the canend baseline.
-  2. Dedup only during the sweep. It cost +35% on the scale-range bench, for scores that only
-     rank candidates.
-  3. Dedup only in the reported score. The sweep and the final score then disagreed: lowering
-     the reported score dropped the true best candidate under `min_score` and promoted a worse
-     one, with position errors up to 0.46 px.
+     1 even for single-scale models, so this moves the can-end baseline.
+  2. Dedup only during the sweep. It slows the scale-range search measurably, for scores
+     that only rank candidates.
+  3. Dedup only in the reported score. The sweep and the final score then disagree: lowering
+     the reported score can drop the true best candidate under `min_score` and promote a
+     worse one, with a position error of a large fraction of a pixel.
 
   A future fix must make the sweep's candidate selection and the reported score agree on
   whether a duplicate counts.
@@ -55,6 +55,6 @@ The shape matcher can scan a discrete scale range, but:
 
 ## Consequences
 
-- Teach points are stored in the model (format 4, ADR-0005). Older models cannot be resampled
-  and say so.
+- Teach points are stored in the model (ADR-0005). A model without them cannot be resampled
+  and says so.
 - Scale-invariant search costs about the same at any range width.

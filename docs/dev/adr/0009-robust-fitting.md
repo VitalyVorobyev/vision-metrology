@@ -14,8 +14,8 @@ needs to know whether a fit can be trusted.
 - **Every fitter starts algebraically and then refines geometrically.** It returns
   `Fit<M>` with `rms`, `max_dev` and `n_used` (invariant 21).
 - **`fit_circle` starts from Taubin**, which is nearly unbiased on short arcs, then runs
-  Gauss–Newton on the true residual `‖p − c‖ − r`. On a 30° arc this is the difference
-  between visible bias and under 0.05 px.
+  Gauss–Newton on the true residual `‖p − c‖ − r`. On short arcs this is the difference
+  between visible bias and a subpixel fit ([`docs/performance.md`](../../performance.md)).
 - **Robust losses (Huber, Tukey) use graduated non-convexity.** `RobustLoss::annealed`
   starts wide and shrinks geometrically. A fixed Tukey radius applied to a contaminated
   start rejects the inliers and keeps whatever the bad start passed through.

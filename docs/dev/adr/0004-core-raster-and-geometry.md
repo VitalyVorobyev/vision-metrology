@@ -23,8 +23,8 @@ the same module. Separately, points and vectors need arithmetic, and the geometr
 
 ## Alternatives
 
-- **Crate-local point and vector structs.** This is a parallel type system: seven conversion
-  functions and about 250 lines of hand-written operators, in contradiction of ADR-0002.
+- **Crate-local point and vector structs.** A parallel type system of conversion functions
+  and hand-written operators, which contradicts ADR-0002.
 - **One flat `core` module.** The nalgebra dependency becomes invisible, and extracting a
   shared raster crate later becomes a rewrite instead of a move.
 
