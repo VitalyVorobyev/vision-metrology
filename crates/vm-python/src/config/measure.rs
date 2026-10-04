@@ -44,12 +44,7 @@ impl Locate {
     #[staticmethod]
     #[pyo3(signature = (refine="parabolic", centroid_radius=2))]
     pub fn gradient_peak(refine: &str, centroid_radius: usize) -> PyResult<Self> {
-        let allowed = ["none", "parabolic", "gaussian", "centroid"];
-        if !allowed.contains(&refine) {
-            return Err(PyValueError::new_err(format!(
-                "refine must be one of {allowed:?}, got '{refine}'"
-            )));
-        }
+        check_name("refine", refine, REFINES)?;
         Ok(Self {
             refine: refine.into(),
             centroid_radius,
@@ -118,9 +113,44 @@ fn positive(name: &str, value: usize) -> PyResult<NonZeroUsize> {
         .ok_or_else(|| PyValueError::new_err(format!("{name} must be at least 1")))
 }
 
+// The names each enumerated string field accepts.
+const REFINES: &[&str] = &["none", "parabolic", "gaussian", "centroid"];
+const POLARITIES: &[&str] = &["any", "rising", "falling"];
+const SELECTS: &[&str] = &["all", "first", "last", "strongest", "in_order"];
+const BORDER_MODES: &[&str] = &["clamp", "reflect101", "constant"];
+const DERIVATIVES: &[&str] = &["dog", "smooth_central"];
+const OFF_IMAGES: &[&str] = &["fill", "reject"];
+/// Polarity names a `sequence` entry accepts; "either" and "any" both mean either.
+const SEQUENCE_POLARITIES: &[&str] = &["rising", "falling", "either", "any"];
+
+/// The `ValueError` for a `name` whose `value` is not one of `allowed`.
+fn not_one_of(name: &str, value: &str, allowed: &[&str]) -> PyErr {
+    PyValueError::new_err(format!("{name} must be one of {allowed:?}, got '{value}'"))
+}
+
+/// `Ok` when `value` is one of `allowed`; otherwise the `ValueError` naming them.
+fn check_name(name: &str, value: &str, allowed: &[&str]) -> PyResult<()> {
+    if allowed.contains(&value) {
+        Ok(())
+    } else {
+        Err(not_one_of(name, value, allowed))
+    }
+}
+
 impl Locate {
     pub fn to_native(&self) -> PyResult<NativeLocate> {
         Ok(match self.kind.as_str() {
+            "gradient_peak" => NativeLocate::GradientPeak {
+                refine: match self.refine.as_str() {
+                    "none" => SubpixRefine::None,
+                    "parabolic" => SubpixRefine::Parabolic3,
+                    "gaussian" => SubpixRefine::Gaussian3,
+                    "centroid" => SubpixRefine::Centroid {
+                        radius: self.centroid_radius,
+                    },
+                    other => return Err(not_one_of("refine", other, REFINES)),
+                },
+            },
             "midpoint_crossing" => NativeLocate::MidpointCrossing {
                 endpoint_samples: positive("endpoint_samples", self.endpoint_samples)?,
                 min_contrast: self.min_contrast,
@@ -132,16 +162,13 @@ impl Locate {
                 max_iter: positive("max_iter", self.max_iter)?,
                 min_contrast: self.min_contrast,
             },
-            _ => NativeLocate::GradientPeak {
-                refine: match self.refine.as_str() {
-                    "none" => SubpixRefine::None,
-                    "gaussian" => SubpixRefine::Gaussian3,
-                    "centroid" => SubpixRefine::Centroid {
-                        radius: self.centroid_radius,
-                    },
-                    _ => SubpixRefine::Parabolic3,
-                },
-            },
+            other => {
+                return Err(not_one_of(
+                    "kind",
+                    other,
+                    &["gradient_peak", "midpoint_crossing", "half_contrast"],
+                ));
+            }
         })
     }
 }
@@ -161,26 +188,31 @@ impl Default for Locate {
     }
 }
 
-/// Polarity names a `sequence` entry accepts; "either" and "any" both mean either.
-const SEQUENCE_POLARITIES: [&str; 4] = ["rising", "falling", "either", "any"];
-
-fn polarity_from(name: &str) -> NativePolaritySelect {
+/// The native polarity for a name of `SEQUENCE_POLARITIES`, which includes every name of
+/// `POLARITIES`.
+fn polarity_from(name: &str) -> PyResult<NativePolaritySelect> {
     match name {
-        "rising" => NativePolaritySelect::Rising,
-        "falling" => NativePolaritySelect::Falling,
-        _ => NativePolaritySelect::Any,
+        "rising" => Ok(NativePolaritySelect::Rising),
+        "falling" => Ok(NativePolaritySelect::Falling),
+        "any" | "either" => Ok(NativePolaritySelect::Any),
+        other => Err(not_one_of("polarity", other, SEQUENCE_POLARITIES)),
     }
+}
+
+/// Whether `sequence` holds at most two names of `SEQUENCE_POLARITIES`.
+fn sequence_names_known(sequence: &[String]) -> bool {
+    sequence.len() <= 2
+        && sequence
+            .iter()
+            .all(|p| SEQUENCE_POLARITIES.contains(&p.as_str()))
 }
 
 /// The native sequence for `select="in_order"`: one or two known polarity names.
 fn sequence_to_native(sequence: &[String]) -> PyResult<NativeEdgeSequence> {
-    let known = sequence
-        .iter()
-        .all(|p| SEQUENCE_POLARITIES.contains(&p.as_str()));
     match sequence {
-        [first, rest @ ..] if known && rest.len() <= 1 => Ok(NativeEdgeSequence {
-            first: polarity_from(first),
-            second: rest.first().map(|p| polarity_from(p)),
+        [first, rest @ ..] if sequence_names_known(sequence) => Ok(NativeEdgeSequence {
+            first: polarity_from(first)?,
+            second: rest.first().map(|p| polarity_from(p)).transpose()?,
         }),
         _ => Err(PyValueError::new_err(format!(
             "select='in_order' needs a sequence of one or two of {SEQUENCE_POLARITIES:?}, \
@@ -190,13 +222,18 @@ fn sequence_to_native(sequence: &[String]) -> PyResult<NativeEdgeSequence> {
 }
 
 /// Mirrors `vision_metrology::measure::MeasureConfig`.
-#[pyclass(get_all, set_all, from_py_object)]
+///
+/// The string fields accept only their listed names: assigning anything else raises
+/// `ValueError`, as the constructor does.
+#[pyclass(get_all, from_py_object)]
 #[derive(Debug, Clone)]
 pub struct MeasureConfig {
     /// Gaussian sigma of the profile smoothing, in pixels.
+    #[pyo3(set)]
     pub sigma: f32,
     /// Minimum `|derivative response|` for an edge to be reported (unused by
     /// `Locate.midpoint_crossing`).
+    #[pyo3(set)]
     pub threshold: f32,
     /// "any", "rising" or "falling".
     pub polarity: String,
@@ -206,19 +243,24 @@ pub struct MeasureConfig {
     /// found in scan order, each the strongest of its polarity after the previous one.
     pub sequence: Vec<String>,
     /// Profile sampling step along the scan axis, in pixels.
+    #[pyo3(set)]
     pub step: f32,
     /// Maximum angle, in degrees, between scan direction and image gradient.
     /// `180.0` disables the obliquity gate.
+    #[pyo3(set)]
     pub max_obliquity_deg: f32,
     /// "clamp", "reflect101" or "constant".
     pub border_mode: String,
+    #[pyo3(set)]
     pub border_constant: f32,
     /// "dog" (derivative of Gaussian) or "smooth_central" (Gaussian, then central
     /// differences).
     pub derivative: String,
     /// Half-width of the smoothing kernel for `derivative="smooth_central"`, in pixels.
+    #[pyo3(set)]
     pub kernel_radius_px: f32,
     /// How each edge is located on the profile.
+    #[pyo3(set)]
     pub locate: Locate,
     /// "fill" (default) measures a caliper that overhangs the image, sampling the outside
     /// with `border_mode`, and reports "off_image" only when no edge is found; "reject"
@@ -263,34 +305,14 @@ impl MeasureConfig {
     ) -> PyResult<Self> {
         let d = Self::default();
         for (name, value, allowed) in [
-            (
-                "polarity",
-                polarity.as_deref(),
-                &["any", "rising", "falling"][..],
-            ),
-            (
-                "select",
-                select.as_deref(),
-                &["all", "first", "last", "strongest", "in_order"][..],
-            ),
-            (
-                "border_mode",
-                border_mode.as_deref(),
-                &["clamp", "reflect101", "constant"][..],
-            ),
-            (
-                "derivative",
-                derivative.as_deref(),
-                &["dog", "smooth_central"][..],
-            ),
-            ("off_image", off_image.as_deref(), &["fill", "reject"][..]),
+            ("polarity", polarity.as_deref(), POLARITIES),
+            ("select", select.as_deref(), SELECTS),
+            ("border_mode", border_mode.as_deref(), BORDER_MODES),
+            ("derivative", derivative.as_deref(), DERIVATIVES),
+            ("off_image", off_image.as_deref(), OFF_IMAGES),
         ] {
-            if let Some(v) = value
-                && !allowed.contains(&v)
-            {
-                return Err(PyValueError::new_err(format!(
-                    "{name} must be one of {allowed:?}, got '{v}'"
-                )));
+            if let Some(v) = value {
+                check_name(name, v, allowed)?;
             }
         }
         let select = select.unwrap_or(d.select);
@@ -330,6 +352,55 @@ impl MeasureConfig {
             self.sigma, self.threshold, self.polarity, self.select
         )
     }
+
+    #[setter]
+    fn set_polarity(&mut self, value: String) -> PyResult<()> {
+        check_name("polarity", &value, POLARITIES)?;
+        self.polarity = value;
+        Ok(())
+    }
+
+    #[setter]
+    fn set_select(&mut self, value: String) -> PyResult<()> {
+        check_name("select", &value, SELECTS)?;
+        self.select = value;
+        Ok(())
+    }
+
+    /// Each entry must be a known polarity name, at most two of them. Whether
+    /// `select="in_order"` has a usable sequence is checked when the config is used, so
+    /// the two fields can be assigned in either order.
+    #[setter]
+    fn set_sequence(&mut self, value: Vec<String>) -> PyResult<()> {
+        if !sequence_names_known(&value) {
+            return Err(PyValueError::new_err(format!(
+                "sequence must hold at most two of {SEQUENCE_POLARITIES:?}, got {value:?}"
+            )));
+        }
+        self.sequence = value;
+        Ok(())
+    }
+
+    #[setter]
+    fn set_border_mode(&mut self, value: String) -> PyResult<()> {
+        check_name("border_mode", &value, BORDER_MODES)?;
+        self.border_mode = value;
+        Ok(())
+    }
+
+    #[setter]
+    fn set_derivative(&mut self, value: String) -> PyResult<()> {
+        check_name("derivative", &value, DERIVATIVES)?;
+        self.derivative = value;
+        Ok(())
+    }
+
+    #[setter]
+    fn set_off_image(&mut self, value: String) -> PyResult<()> {
+        check_name("off_image", &value, OFF_IMAGES)?;
+        self.off_image = value;
+        Ok(())
+    }
 }
 
 impl Default for MeasureConfig {
@@ -354,39 +425,45 @@ impl Default for MeasureConfig {
 }
 
 impl MeasureConfig {
-    /// The native config; fails when `select="in_order"` has no valid `sequence`.
+    /// The native config; fails when `select="in_order"` has no valid `sequence`, or when
+    /// a string field holds a name it does not accept.
     pub fn to_native(&self) -> PyResult<NativeMeasureConfig> {
+        check_name("polarity", &self.polarity, POLARITIES)?;
         Ok(NativeMeasureConfig {
             threshold: self.threshold,
-            polarity: polarity_from(&self.polarity),
+            polarity: polarity_from(&self.polarity)?,
             select: match self.select.as_str() {
+                "all" => NativeEdgeSelect::All,
                 "first" => NativeEdgeSelect::First,
                 "last" => NativeEdgeSelect::Last,
                 "strongest" => NativeEdgeSelect::Strongest,
                 "in_order" => {
                     NativeEdgeSelect::StrongestInOrder(sequence_to_native(&self.sequence)?)
                 }
-                _ => NativeEdgeSelect::All,
+                other => return Err(not_one_of("select", other, SELECTS)),
             },
             locate: self.locate.to_native()?,
             max_obliquity_deg: self.max_obliquity_deg,
             profile: NativeProfileConfig {
                 sigma: self.sigma,
                 derivative: match self.derivative.as_str() {
+                    "dog" => NativeDerivative::DerivativeOfGaussian,
                     "smooth_central" => NativeDerivative::SmoothThenCentral {
                         radius_px: self.kernel_radius_px,
                     },
-                    _ => NativeDerivative::DerivativeOfGaussian,
+                    other => return Err(not_one_of("derivative", other, DERIVATIVES)),
                 },
                 step: self.step,
                 border: match self.border_mode.as_str() {
+                    "clamp" => BorderMode::Clamp,
                     "reflect101" => BorderMode::Reflect101,
                     "constant" => BorderMode::Constant(self.border_constant),
-                    _ => BorderMode::Clamp,
+                    other => return Err(not_one_of("border_mode", other, BORDER_MODES)),
                 },
                 off_image: match self.off_image.as_str() {
+                    "fill" => NativeOffImage::Fill,
                     "reject" => NativeOffImage::Reject,
-                    _ => NativeOffImage::Fill,
+                    other => return Err(not_one_of("off_image", other, OFF_IMAGES)),
                 },
             },
         })

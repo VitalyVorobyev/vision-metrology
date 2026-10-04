@@ -67,13 +67,18 @@ def _pixel_to_plane_mm(metric: tuple[vm.CameraModel, np.ndarray, vm.Plane3], x: 
     return float(out[0]), float(out[1])
 
 
+# The lab's polarity names, read along the scan, as `vm.MeasureConfig` spells them. The
+# desktop command (`commands/measure.rs`, `polarity_from`) maps them the same way.
+_POLARITY = {"bright_to_dark": "falling", "dark_to_bright": "rising", "either": "any", None: "any"}
+
+
 def _measure_config(obj: MeasureObjectIn) -> vm.MeasureConfig:
     # `select="strongest"` matches `MetrologyObject::new`'s Rust default (model.rs): a
     # caliper on a nominal edge reports that edge, not every edge it crosses.
     return vm.MeasureConfig(
         sigma=obj.measure.sigma,
         threshold=obj.measure.threshold,
-        polarity=obj.measure.polarity,
+        polarity=_POLARITY[obj.measure.polarity],
         select="strongest",
         max_obliquity_deg=obj.measure.max_obliquity_deg,
     )

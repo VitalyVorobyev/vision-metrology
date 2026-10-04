@@ -372,7 +372,8 @@ class MeasureConfig:
         "smooth_central" (Gaussian of half-width `kernel_radius_px`, then central
         differences). `off_image` is "fill" (default: sample outside the image with
         `border_mode` and measure) or "reject" (raise `MeasureRejected("off_image")`
-        whenever any sample lies outside the image)."""
+        whenever any sample lies outside the image). The string fields accept only
+        these names, here and on assignment; anything else raises `ValueError`."""
         ...
 
 # ---------------------------------------------------------------------------

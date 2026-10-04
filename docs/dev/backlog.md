@@ -72,13 +72,6 @@ deleted here.
 
 ## Python
 
-- **Polarity strings disagree across the lab's transports (latent).** The lab's
-  `MeasureConfigIn` accepts `bright_to_dark` / `dark_to_bright` / `either`, and
-  `routers/measure.py` passes the value straight to `vm.MeasureConfig`, whose constructor
-  accepts only `any` / `rising` / `falling` and raises on the others. The frontend never
-  sends `polarity`, so the mismatch never triggers. vm-python's setters silently fall back
-  to `any`, and the Tauri command maps both spellings. Align the contract on one spelling,
-  and make the setters validate.
 - **`ShapeMatch.matrix()` convention** needs a worked pixel → pose → pixel example in the
   vm-python README.
 - **No `Edge1DDetector` or `LevelCrossing1D` binding.** 1-D detection is reachable only
