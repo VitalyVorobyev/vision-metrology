@@ -27,23 +27,22 @@ React UI ── LabBackend ─┬─ httpBackend  ── openapi-fetch ──►
 ```
 
 - **`LabBackend` is the only door.** `src/api/backend.ts` defines it, and `getBackend()`
-  picks the implementation through `isTauri()` (`src/api/shell.ts`). Components never call
-  `fetch` or Tauri directly.
+  picks the implementation through `isTauriShell()` (`src/api/shell.ts`). Components
+  never call `fetch` or Tauri directly.
 - **The browser contract is typed.** HTTP types come from `src/api/generated.ts`, which
   `openapi-typescript` generates from `lab/contract/openapi.json`.
 - **All geometry is computed in the backend or command layer.** Responses carry
   source-image pixel coordinates (caliper boxes, edge points, fitted primitives, profiles),
   and the UI only draws them.
-- **Measure is one pass.** `measure::diagnostics::explain_model` (Python:
-  `MetrologyModel.explain`) measures each caliper once. Per object it returns what
-  `MetrologyModel::apply` returns (the fit, its residuals and hits), with every caliper's
-  placement and trace. `routers/measure.py` and `commands/measure.rs` build the caliper
-  list (hit or rejection reason, edge and its amplitude, residual against the fit, profile
-  with the span its samples cover) and the overlay from those traces, so there is no
-  second, per-caliper measurement to drift from the fit. The placements are `apply`'s own:
-  the same code as `measure::diagnostics::layout`. A radial placement's `center` is its
-  circle's, so its box is drawn `radius` out along its axis. Each caliper's box and edge
-  mark carry the id `caliper-<object>-<index>`.
+- **Measure is one pass.** `routers/measure.py` and `commands/measure.rs` call
+  `explain_model` (Python: `MetrologyModel.explain`;
+  [ADR-0006](../docs/dev/adr/0006-absence-is-a-result.md)) and build the caliper list (hit
+  or rejection reason, edge and its amplitude, residual against the fit, profile with the
+  span its samples cover) and the overlay from its traces. The placements are `apply`'s
+  own ([ADR-0008](../docs/dev/adr/0008-calipers.md)); a radial placement's `center` is its
+  circle's, so its box is drawn `radius` out along its axis. The lab uses the default
+  `Locate` ([ADR-0017](../docs/dev/adr/0017-textbook-edge-location.md) has the others).
+  Each caliper's box and edge mark carry the id `caliper-<object>-<index>`.
 - **The overlay type is mirrored.** The backend's `OverlayPrimitiveOut` mirrors stage2d's
   `MeasurePrimitive` field for field (`src/overlay/toMeasurePrimitive.ts`, Tauri
   `types.rs`), `id` included. Changes to it must be additive. `state` is the UI's: the
@@ -58,7 +57,7 @@ React UI ── LabBackend ─┬─ httpBackend  ── openapi-fetch ──►
   behind a small LRU. Dropped files arrive as paths too: the Library's `FileDrop`
   (`@vitavision/workbench`) takes a `PathSource` built on `pickImages` and
   `LabBackend.onFileDrop`, which listens to the webview's native drag and drop.
-  `images_upload` (bytes over IPC) remains for a bare `File`.
+  `images_upload` (bytes over IPC) handles a bare `File`.
 - **Tiers are cached on disk.** The tiers are `thumb` 256, `preview` 1024 and `full`. Each
   is PNG-encoded once into `{app_cache}/tiers/{sha256}/{tier}.png` and served to the
   webview as an `asset:` URL (`convertFileSrc`, scoped to `$APPCACHE`). Keying on the pixel
@@ -67,13 +66,13 @@ React UI ── LabBackend ─┬─ httpBackend  ── openapi-fetch ──►
 - **State.** `src-tauri/src/state.rs` holds the registries (images, models,
   calibrations), rebuilt at startup from the app-data directory. A file it cannot read is
   skipped, not fatal.
-- **Events.** `lab://progress` (`{op, stage, elapsed_ms}`) feeds the status bar, and
-  `lab://batch` reports per-frame batch-find results.
+- **Events.** `lab://progress` (`{op, stage, elapsed_ms}`) feeds the status bar,
+  `lab://batch` reports per-frame batch-find results, and `lab://thumb`
+  (`{image_id, done, total}`) reports each thumbnail `prewarm_thumbnails` renders.
 - **Desktop-only commands** have no HTTP route because a browser cannot read local paths:
-  `images_scan_dir`, `images_open_paths`, `teach_preview` (+ `keep_contours` on
-  `models_create`), `model_geometry`, `model_crop`, `batch_find`.
+  `images_scan_dir`, `images_open_paths`, `prewarm_thumbnails`, `teach_preview`
+  (+ `keep_contours` on `models_create`), `model_geometry`, `model_crop`, `batch_find`.
   `LabBackend.canOpenFiles()` gates them in the UI.
-- **No mosaic command yet.** The desktop backend reports mosaic as unavailable (backlog).
 - **Crash screen.** `shell/CrashScreen.tsx` is an error boundary plus global error
   handlers. It renders with inline styles and no package imports, so it still works when
   the stylesheet or a UI package is what failed.
@@ -167,25 +166,10 @@ DatumLayer       model origin and its 0° arm
 
 ## Contract and fixtures
 
-- **`lab/contract/openapi.json`** is generated from the FastAPI app. After a route or
-  schema change:
-
-  ```bash
-  uv run --directory lab/backend python scripts/export_openapi.py
-  cd lab/frontend && bun run generate:api
-  ```
-
-- **`lab/contract/fixtures/`** holds golden request/response JSON for teach, find,
-  measure, measure in mm, rectify and displacement, over small synthetic images. Two tests
-  replay them:
-  - `lab/backend/tests/test_contract_fixtures.py` against FastAPI;
-  - `lab/frontend/src-tauri/tests/contract_parity.rs` against the Tauri commands.
-
-  Regenerate them with
-  `uv run --directory lab/backend python scripts/export_contract_fixtures.py`. The
-  normalization and tolerance rules are in [contract/README.md](contract/README.md).
-
-Commit the generated files: their diff is the contract changing.
+`lab/contract/openapi.json` (the HTTP contract) and `lab/contract/fixtures/` (golden
+request/response pairs both transports replay) are generated and committed. How to
+regenerate them, the normalization rules and the two replays are in
+[contract/README.md](contract/README.md).
 
 ## Tests
 

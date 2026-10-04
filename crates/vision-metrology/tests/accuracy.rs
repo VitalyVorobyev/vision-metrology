@@ -1,15 +1,14 @@
-//! C1 — accuracy regression suite (`docs/dev/roadmap.md`).
+//! Accuracy regression suite: the accuracy counterpart of the benches.
 //!
-//! Performance has benches; accuracy did not have a comparable harness before
-//! this file. Each row below sweeps a synthetic fixture with a known
+//! Each row below sweeps a synthetic fixture with a known
 //! subpixel/geometric ground truth — antialiased via an analytic Gaussian-CDF
 //! edge profile, per the `tests-synthetic-fixtures` skill — across the
 //! sweep in each row's fixture, and reports the *worst* bias and
-//! standard deviation found anywhere in the grid. Envelopes were measured
-//! once (2026-08-20, with `-- --nocapture` added to the usual `cargo test`
-//! invocation to see each row's numbers) and pinned at roughly 1.5x that
-//! measurement — the exact numbers are in each row's comment below, so a
-//! regression shows up as a failing assertion instead of a silent drift.
+//! standard deviation found anywhere in the grid. Envelopes are pinned at
+//! roughly 1.5x the measured worst case (add `-- --nocapture` to the usual
+//! `cargo test` invocation to see each row's numbers) — the exact numbers are
+//! in each row's comment below, so a regression shows up as a failing
+//! assertion instead of a silent drift.
 //!
 //! Adding an operator is one row in [`ROWS`]: write a `fn() -> Measured` that
 //! runs its own sweep and returns the worst-case bias/sigma, add a row with
@@ -1276,7 +1275,7 @@ struct Row {
 /// | caliper_rect_pixel_integrated (px)   | 0.067               | 0.304            | 0.10            | 0.46              |
 /// | caliper_arc_radial_position (px)     | 0.074               | 0.229            | 0.11            | 0.35              |
 ///
-/// Rows 5-6 are the C1 scale sweep: 12 true scales geometrically spaced 0.5..2.0x, 3 rotations each,
+/// Rows 5-6 are the scale sweep: 12 true scales geometrically spaced 0.5..2.0x, 3 rotations each,
 /// model taught at scale 1.0 with `scale_range = (0.45, 2.1)`. Every scale
 /// found every rotation (100% found-rate — see `BASELINE_FOUND_RATE`'s full
 /// per-scale table, which is also the found-rate regression guard), so

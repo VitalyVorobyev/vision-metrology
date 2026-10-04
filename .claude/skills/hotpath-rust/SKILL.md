@@ -18,7 +18,7 @@ description: Use this when writing performance-critical inner loops (downsample,
 
   * **safe reference implementation**
   * **fast path** (contiguous / common border mode) with minimal branching
-* If using `unsafe`, document invariants right above the block.
+* Each `unsafe` block carries a `// SAFETY:` comment (invariants 6 and 7).
 
 ## Don’t
 

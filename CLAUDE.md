@@ -6,5 +6,4 @@ gates in `CONTRIBUTING.md`.
 - When a requirement is unclear (pixel format, expected ranges, thresholds, tolerances),
   ask for the missing constraint rather than guessing.
 - Prefer a simple baseline API first; optimize once behaviour is locked by tests.
-- Lab UI work that would help another app is done in `../lab-ui` (`@vitavision/*`), then
-  consumed here.
+- Shared UI goes upstream first: [ADR-0015](docs/dev/adr/0015-the-lab.md).

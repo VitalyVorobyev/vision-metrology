@@ -79,8 +79,9 @@ the list is contiguous and that every citation resolves.
 11. **The default border mode is `Clamp`** in core and edge, unless configured otherwise.
 12. **Determinism.** No RNG in library code. Tests use synthetic fixtures, seeded if
     randomness is unavoidable. f32 sort ties are broken explicitly, e.g. `(−score, x, y)`.
-13. **Toolchain.** Edition 2024, MSRV 1.91, nalgebra 0.35 as the workspace dependency.
-    Linear algebra is never re-implemented ([ADR-0002](adr/0002-dependency-and-toolchain-policy.md)).
+13. **Toolchain.** Edition 2024; the MSRV is `rust-version` in the root `Cargo.toml`;
+    nalgebra 0.35 is the workspace dependency. Linear algebra is never re-implemented
+    ([ADR-0002](adr/0002-dependency-and-toolchain-policy.md)).
 14. **File size.** Soft cap of about 600 code lines per source file (tests excluded).
     Crossing it means splitting in the same change. Known offenders are listed in
     `backlog.md`.
@@ -89,7 +90,7 @@ the list is contiguous and that every citation resolves.
     item as not bound.
 16. **Docs as memory.** A change to scope, decisions or invariants updates
     `docs/dev/system-design.md` (and the ADR it touches), `roadmap.md` or `backlog.md` in
-    the same PR.
+    the same PR, rewriting the affected entry rather than appending to it.
 17. **One canonical path per name.** No glob re-exports across crate boundaries. `prelude`
     is a curated convenience, and any crate-root re-export is an explicit list.
     `vision-metrology` re-exports the `vm_primitives` crate, not its contents.
@@ -105,9 +106,11 @@ the list is contiguous and that every citation resolves.
 
 ## Decisions
 
-One file per decision in [`adr/`](adr/), each with context, the decision, the alternatives
-rejected and the consequences. When a decision changes, rewrite its ADR and update its
-status. Do not append a contradicting one.
+One file per decision in [`adr/`](adr/). Each has a Status and a Date, then the sections
+Context, Decision, Alternatives and Consequences. An ADR states the decision as it stands:
+no change log, and no measured numbers, which live in
+[`docs/performance.md`](../performance.md). When a decision changes, rewrite its ADR and
+update its status and date. Do not append a contradicting one.
 
 | ADR | Decision |
 |---|---|
@@ -127,3 +130,4 @@ status. Do not append a contradicting one.
 | [0014](adr/0014-masked-teaching-and-reference-angle.md) | Masked teaching and the model's reference angle |
 | [0015](adr/0015-the-lab.md) | The lab: one frontend, two transports, shared UI packages |
 | [0016](adr/0016-scope-what-we-do-not-build.md) | Scope: what this library deliberately does not build |
+| [0017](adr/0017-textbook-edge-location.md) | Textbook edge location and CaliperBench compatibility |

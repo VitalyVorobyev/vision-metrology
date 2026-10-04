@@ -36,7 +36,8 @@ numbers with the right shape and wrong values, not a crash.
   axis onto the plane (or `y` when `x` is nearly parallel to the normal), completed
   right-handed. At `n = (0, 0, 1)` it reduces to `PlaneGrid`'s own axes.
 - **Planar 3-D is handled by rectifying first**, then matching in the rectified view.
-  Measured on a synthetic tilt sweep of 0–40°, the found position stays within 0.012 px.
+  `tests/metric_rectify.rs` checks it on a synthetic tilt sweep of 0–40°: the model is found
+  at every tilt, at the same position to a small fraction of a pixel.
 
 ## Alternatives
 

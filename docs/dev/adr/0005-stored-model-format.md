@@ -1,7 +1,7 @@
 # ADR-0005: The stored shape model is opaque, read-only and versioned
 
 - Status: Accepted
-- Date: 2026-08-19 (format 5: 2026-08-21)
+- Date: 2026-08-21
 
 ## Context
 
@@ -11,8 +11,8 @@ quantities.
 
 ## Decision
 
-- **Opaque.** The API is `save`/`load` and `to_bytes`/`from_bytes`. The encoding (JSON today)
-  is not a promise, and the format version is `pub(crate)`. `load` refuses a foreign or
+- **Opaque.** The API is `save`/`load` and `to_bytes`/`from_bytes`. The encoding (JSON) is
+  not a promise, and the format version is `pub(crate)`. `load` refuses a foreign or
   too-old document with an error instead of mis-reading it.
 - **Readable, not writable.** `ModelPoint` and `ShapeModelLevel` can be read for overlays but
   not constructed by callers. Point order is load-bearing (greedy termination evaluates a
@@ -22,12 +22,10 @@ quantities.
   which makes invariant 3 impossible to break from the search config.
 - **Breaking bumps are batched; additive bumps are backward-loading.**
   - Format 3 is the minimum that `load` accepts, because below it the document shape differs.
-  - Every later format only adds `#[serde(default)]` fields, and an older document reads the
-    value the field always implicitly meant. Format 4 added `teach_points` (an older model
-    reads none, and resampling refuses cleanly). Format 5 added `reference_angle` (an older
-    model reads 0).
-  - The current format is 5. The per-version table is the doc comment on
-    `matching::model::persist::FORMAT_VERSION`.
+  - Bumps above it are additive: each adds `#[serde(default)]` fields, and an older document
+    reads the value the field always implicitly meant.
+  - The current format is `FORMAT_VERSION`. What each format added is the table in its
+    comment, in `crates/vision-metrology/src/matching/model.rs`.
 
 ## Alternatives
 

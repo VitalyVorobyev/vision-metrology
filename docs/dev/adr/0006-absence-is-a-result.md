@@ -1,7 +1,7 @@
 # ADR-0006: A measurement that found nothing is a result
 
 - Status: Accepted
-- Date: 2026-08-19
+- Date: 2026-10-03
 
 ## Context
 
@@ -20,6 +20,15 @@ results, so the caller cannot tell which item failed.
 - Cheap borrowing accessors (`profile()`, …) stay on the detector. Diagnostic
   **computation** (layout without an image, per-caliper explanation) lives in a
   `diagnostics` module, off the hot path.
+- **Explaining runs the same code, once.** `measure` keeps only what the next call reuses,
+  so its hot path stays allocation-free. `measure::diagnostics::explain` measures through
+  the same `Caliper` and then copies out the intermediates (profile, smoothed profile,
+  derivative, candidates before `select`, level crossings), so its edges and rejection are
+  `measure`'s to the bit. `diagnostics::explain_model` explains a whole model in one pass:
+  it places each caliper with `apply`'s placement code, measures it once through
+  `explain`, and fits through the loop `apply` runs. Each object's result is `apply`'s,
+  with every caliper's placement and trace beside it, so a tool needs no second
+  measurement per caliper.
 - Python raises `MeasureRejected` with the reason as a string.
 
 ## Alternatives

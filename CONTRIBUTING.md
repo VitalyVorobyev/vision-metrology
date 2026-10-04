@@ -25,19 +25,25 @@ CI runs these and more:
 |---|---|
 | Rust quality | fmt, clippy, test, doc |
 | Feature matrix | `cargo hack clippy` over each `vision-metrology` feature and the `vm-primitives` feature powerset |
-| MSRV | `cargo +1.91.0 check --workspace --all-targets --all-features` |
+| MSRV | `cargo check --workspace --all-targets --all-features` on the `rust-version` toolchain of the root `Cargo.toml` |
 | Invariant numbering | `python3 tools/check-invariants.py` |
-| Examples | every self-asserting example in `crates/vision-metrology/examples/` |
+| Examples | the self-asserting examples listed in `ci.yml` |
 | Python bindings | `pip install crates/vm-python`, then `pytest crates/vm-python/tests` |
 | Cross-platform | build and test on Windows and macOS |
-| Lab | frontend typecheck, lint, test and build; desktop crate fmt, clippy and test |
+| Lab | frontend typecheck, lint, test and build; desktop crate fmt, clippy and test, which includes the contract replay |
 
-The lab backend's pytest is not in CI yet; run it locally when touching `lab/backend`.
+CI does not run the lab backend's pytest; run it locally when touching `lab/backend`.
 
-The weekly security workflow runs `cargo audit` and `cargo deny check`, with no ignores. A
-licence missing from `deny.toml`'s allow-list is a deliberate review, not a config fix.
+The other workflows:
+- `audit.yml` runs weekly: `cargo audit` and `cargo deny check`, with no ignores. A licence
+  missing from `deny.toml`'s allow-list is a deliberate review, not a config fix.
+- `bench.yml` runs on demand and writes a criterion table to the job summary. Shared
+  runners make its numbers indicative only.
+- `python-wheels.yml` runs on a published release, or by hand: it builds the wheels and the
+  sdist, and on a release publishes them to PyPI.
+- `publish-docs.yml` publishes the rustdoc to GitHub Pages on every push to `main`.
 
-**MSRV.** It is set in the root `Cargo.toml` and explained in
+**MSRV.** It is `rust-version` in the root `Cargo.toml`, explained in
 [ADR-0002](docs/dev/adr/0002-dependency-and-toolchain-policy.md). Clippy's
 `incompatible_msrv` lint catches `std` items newer than the floor. `rust-toolchain.toml`
 pins day-to-day work to stable, and the MSRV job overrides it.
@@ -59,8 +65,7 @@ pytest tests/
 - **Stubs.** `python/vision_metrology/__init__.pyi` is maintained by hand. Update it in the
   same change as the `#[pymodule]` registration list. A test checks that every stubbed name
   exists at runtime.
-- **Parity.** New public Rust API ships its binding, stub and Python test in the same PR
-  (invariant 15). Deliberate exclusions are listed in the vm-python README.
+- **Parity** is [invariant 15](docs/dev/system-design.md#invariants).
 
 ## Tests
 
@@ -106,7 +111,7 @@ the representative image size is 1280×1024.
 cargo bench -p vm-primitives --bench downsample   # also: edge1d, edge2d, morph
 cargo bench -p vision-metrology --bench match_shape
 # also: build_graph, detect_shape, extract, segment, measure, warp, corr
-cargo bench -p vm-primitives --bench downsample -- downsample2x2_mean_u8_to_f32_1280x1024
+cargo bench -p vm-primitives --bench downsample -- downsample2x2_to_f32_u8_1280x1024
 ```
 
 Add a benchmark when you add or change a hot path, and put before/after numbers in the PR
@@ -118,8 +123,9 @@ update it when a change moves them.
 - **Audience decides location.**
   - User-facing: `README.md`, crate READMEs, rustdoc (`//!`, `///`), `docs/*.md`,
     `CHANGELOG.md`, `lab/README.md`.
-  - Contributor-facing: this file, `AGENTS.md`, `docs/dev/`, `lab/ARCHITECTURE.md`, and
-    plain `//` comments.
+  - Contributor-facing: this file, `AGENTS.md`, `CLAUDE.md`, `docs/dev/`,
+    `lab/ARCHITECTURE.md`, `lab/contract/README.md`, `.claude/skills/`, plain `//`
+    comments, and test-file headers.
 
   User-facing text never links into `docs/dev/` and never mentions plan labels, PR numbers
   or history. Invariant citations go in `//` comments.
@@ -128,12 +134,13 @@ update it when a change moves them.
   - module tables: the crate READMEs;
   - invariants: `docs/dev/system-design.md`;
   - numbers: `docs/performance.md`.
-- **Decisions are ADRs** in `docs/dev/adr/`. When a decision changes, rewrite its ADR; do
-  not append a contradicting one.
-- **Completed roadmap items leave `docs/dev/roadmap.md`** for the changelog.
-- **Invariant numbers are append-only**, because source files cite them.
-  `tools/check-invariants.py` checks that every citation resolves. It also rejects dangling
-  plan labels, and links into `docs/dev/` from user-facing files.
+- **Decisions are ADRs**, written to the rules in system design's
+  [Decisions](docs/dev/system-design.md#decisions) section.
+- **Finished roadmap items leave `docs/dev/roadmap.md`** for `CHANGELOG.md` `[Unreleased]`.
+- **Invariant numbering** is append-only
+  ([system design](docs/dev/system-design.md#invariants)). `tools/check-invariants.py`
+  checks that every citation resolves, and rejects plan labels outside the roadmap and the
+  changelog, links into `docs/dev/` from user-facing files, and one external project name.
 
 ### Illustrations
 
@@ -159,9 +166,7 @@ the rectified views agree (overlap ZNCC at least 0.75).
 
 ## Commits and pull requests
 
-- Keep commits scoped and descriptive. Adjust tests in the same commit as a behaviour
+- Write descriptive commit messages, and adjust tests in the same commit as a behaviour
   change.
-- Do not revert unrelated changes.
-- A change to scope, decisions or invariants updates `docs/dev/` in the same PR
-  (invariant 16).
+- Docs move with the code: [invariant 16](docs/dev/system-design.md#invariants).
 - User-visible changes get a line in `CHANGELOG.md` under `[Unreleased]`.

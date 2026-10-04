@@ -15,10 +15,11 @@ description: Use this when adding or modifying hot paths. Adds a small benchmark
 
 * Use representative sizes (e.g., 1280×1024, 720p, “laser typical”).
 * Avoid random input unless seeded; deterministic data makes diffs meaningful.
-* Name benches by operation and size: `downsample_u8_1280x1024`, `laser_rows_1280x512`.
+* Name benches by operation and size: `downsample2x2_to_f32_u8_1280x1024`,
+  `laser_extract_rows_1280x512`.
 
 ## Report
 
-* If you changed perf behavior, leave a short note in the PR/commit message:
-
-  * what got faster/slower and why (one sentence)
+* If you changed perf behavior, put before/after numbers in the PR description, with one
+  sentence on what got faster or slower and why (the rule is in `CONTRIBUTING.md`,
+  Benchmarks).

@@ -6,7 +6,7 @@
 ## Context
 
 Invariant 10 sets the rule: plain config structs with `Default`, and no sentinel values.
-Applying it across the crate turned up three recurring problems:
+Three problems recur under it:
 
 - configs that mix **what is searched for** with **how hard the search works**;
 - pairs of fields that encode one decision, so half-set combinations are representable and
@@ -18,10 +18,11 @@ Applying it across the crate turned up three recurring problems:
 - **Flat structs, no builders.** A config past about 8 fields keeps its "what" fields at the
   top level and moves the effort fields into a nested `tuning: XTuning` with its own
   `Default`. Examples: `ShapeSearchConfig`, `LaserExtractConfig`.
-- **One decision, one type.** Coupled fields become an enum:
-  - `Hysteresis::{Auto, Manual{low, high}}` replaces two threshold fields;
-  - `SmoothKind` replaces a `pre_smooth: bool` plus a kind;
-  - `CenterSmoothing` replaces a boolean that hid a median-of-5 filter.
+- **One decision, one type.** Coupled fields are one enum:
+  - `Hysteresis::{Auto, Manual { low, high }}`: both thresholds derived, or both given;
+  - `SmoothKind::{None, Binomial3}`: whether to pre-smooth and with what, in one value;
+  - `CenterSmoothing::{None, Median { half_window }}`: the filter and its window are
+    named, not hidden behind a boolean.
 - **Thresholds carry a unit type.** `Contrast::Raw(f32)` is Scharr response on the input
   pixel scale (the default). `Contrast::FractionOfRange(f)` resolves to `f · 16 · (max − min)`
   of the image being processed, where 16 is Scharr's response to an ideal unit step, so it

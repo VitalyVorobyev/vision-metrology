@@ -29,5 +29,5 @@ of the part.
 
 ## Consequences
 
-- The model format gained `reference_angle` (format 5, ADR-0005). Older models read 0.
+- The model stores `reference_angle` (ADR-0005); a model stored without it reads 0.
 - The lab's curated teaching (pick contours → mask) depends on this; ADR-0015 covers the lab.
