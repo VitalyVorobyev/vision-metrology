@@ -838,6 +838,20 @@ def test_caliper_explain_traces_what_measure_returns():
     assert half.levels[0].x * half.spacing + 15.0 == pytest.approx(half.edges[0].x)
 
 
+def test_caliper_spacing_is_the_real_sample_distance():
+    # half_len 10.3 at step 1: 21 samples over 20.6 px, 1.03 px apart.
+    img = make_step_image(96, 96, 40)
+    cfg = vm.MeasureConfig(locate=vm.Locate.midpoint_crossing(min_contrast=10.0))
+    cal = vm.Caliper.rect((41.3, 48.0), 0.0, 10.3, 4.0, config=cfg)
+    trace = cal.explain(img)
+    assert trace.samples == 21
+    assert cal.spacing() == pytest.approx(20.6 / 20)
+    assert trace.spacing == cal.spacing()
+    edge, level = trace.edges[0], trace.levels[0]
+    assert edge.x == pytest.approx(39.5, abs=0.05)
+    assert level.x * trace.spacing - 10.3 == pytest.approx(edge.t, abs=1e-4)
+
+
 def test_fit_line_object_and_function():
     pts = np.array([[float(i), 2.0] for i in range(10)], dtype=np.float32)
     obj = vm.Fitter().fit_line(pts)

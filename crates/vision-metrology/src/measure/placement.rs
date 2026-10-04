@@ -232,13 +232,31 @@ impl Placement {
         (span.max(0.0) / step) as usize + 1
     }
 
-    /// Distance between profile samples, in pixels, for a profile of `n` samples.
-    ///
-    /// A strip's samples are exactly `length / (n − 1)` apart. The other placements
-    /// convert σ with the nominal `step`.
+    /// Distance between profile samples, in pixels, for a profile of `n` samples: the
+    /// scan's extent over `n − 1`, the rate at which [`point_at`](Self::point_at)'s `t`
+    /// advances per sample. `step` when `n < 2`.
     pub(crate) fn spacing(&self, step: f32, n: usize) -> f32 {
+        if n < 2 {
+            return step.max(1e-3);
+        }
+        let denom = (n - 1) as f32;
         match *self {
-            Placement::Strip(s) if n >= 2 => (s.geometry().length / (n - 1) as f64) as f32,
+            Placement::Rect(r) => 2.0 * r.half_len / denom,
+            Placement::Radial(r) => 2.0 * r.half_len / denom,
+            Placement::Arc(a) => a.angle_extent.abs() * a.radius / denom,
+            Placement::Strip(s) => (s.geometry().length / (n - 1) as f64) as f32,
+        }
+    }
+
+    /// The spacing the pixel-unit settings (σ, the derivative kernel radius, the
+    /// half-contrast flank distances and tolerance) are converted to samples with.
+    ///
+    /// A strip uses its real [`spacing`](Self::spacing); rect, arc and radial placements
+    /// use the nominal `step`, which differs from the real spacing when the extent is not
+    /// a whole number of steps.
+    pub(crate) fn sigma_spacing(&self, step: f32, n: usize) -> f32 {
+        match *self {
+            Placement::Strip(_) => self.spacing(step, n),
             _ => step.max(1e-3),
         }
     }

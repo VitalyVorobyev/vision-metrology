@@ -30,9 +30,11 @@ deleted here.
 
 ## Measurement
 
-- **σ is converted with the nominal `step`** for rect, arc and radial calipers, not the
-  real sample spacing; fixing it moves the can-end reference numbers, so it needs a
-  deliberate re-baseline.
+- **Pixel-unit settings convert with the nominal `step`** for rect, arc and radial
+  calipers: σ, the `SmoothThenCentral` radius and the half-contrast flank distances and
+  tolerance go to samples through `Placement::sigma_spacing`, not the real spacing that
+  `Caliper::spacing` reports. Switching them moves the can-end reference numbers, so it
+  needs a deliberate re-baseline.
 - **`EdgeSelect::Strongest` breaks ties towards the later edge.** Choosing the earlier one
   would match `StrongestInOrder`'s tie rule (earlier wins); changing it alters existing
   results on exact ties.

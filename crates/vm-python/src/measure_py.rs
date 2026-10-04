@@ -335,8 +335,10 @@ impl Caliper {
         self.inner.profile().to_vec()
     }
 
-    /// Distance between profile samples, in pixels, at the current placement: it
-    /// converts a `LevelEdge.x` to pixels along the scan.
+    /// Distance between profile samples, in pixels, at the current placement: the
+    /// scan's extent divided by `samples - 1`, which differs from the config's `step`
+    /// whenever the extent is not a whole number of steps. It converts a `LevelEdge.x`
+    /// to pixels along the scan: index `x` sits `x * spacing` from the first sample.
     pub fn spacing(&self) -> f32 {
         self.inner.spacing()
     }
@@ -371,6 +373,7 @@ impl Caliper {
 /// `reject` the reason string `measure` would have raised, or `None`.
 #[pyclass(get_all)]
 pub struct CaliperTrace {
+    /// Distance between profile samples, in pixels, as `Caliper.spacing()` reports it.
     pub spacing: f32,
     pub samples: usize,
     pub across: usize,

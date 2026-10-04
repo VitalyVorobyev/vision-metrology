@@ -685,7 +685,10 @@ class Caliper:
         `Locate.gradient_peak`); `x` is in profile samples."""
         ...
     def spacing(self) -> float:
-        """Distance between profile samples, in pixels."""
+        """Distance between profile samples, in pixels: the scan's extent divided
+        by `samples - 1`, which differs from the config's `step` whenever the
+        extent is not a whole number of steps. Index `x` of the profile (a
+        `LevelEdge.x`) sits `x * spacing` from the first sample."""
         ...
     def explain(self, img: ImageAny) -> CaliperTrace:
         """Measure and keep every intermediate. Never raises `MeasureRejected`:
@@ -694,7 +697,8 @@ class Caliper:
 
 class CaliperTrace:
     """Everything one caliper measurement computed. `edges` and `reject` are
-    exactly what `measure` returns or raises."""
+    exactly what `measure` returns or raises; `spacing` is what
+    `Caliper.spacing()` reports."""
 
     spacing: float
     samples: int
