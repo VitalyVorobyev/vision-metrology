@@ -18,8 +18,8 @@ deleted here.
   cut it 3–4×, but the scores stop being bit-comparable to f32. Do it as its own change
   with a documented tolerance policy.
 - **`PreparedScene` for several models on one scene.** With lazy tiled fields, the
-  shareable per-scene work is about 0.15 ms. Revisit only if a multi-model station
-  measures the per-model overhead as material.
+  shareable per-scene work is a small fraction of one search. Revisit only if a
+  multi-model station measures the per-model overhead as material.
 - **A `rayon` feature.** The top-level angle sweep is the natural fan-out. Results must
   stay deterministic (stable reduction order).
 - **Scale search in clutter with no prior.** `find_scale_invariant` needs a segmentable

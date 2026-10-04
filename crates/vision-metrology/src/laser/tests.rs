@@ -372,10 +372,9 @@ fn stripe_f32(w: usize, h: usize, x_l: f32, x_r: f32) -> Vec<f32> {
 
 #[test]
 fn u16_and_f32_paths_agree_with_u8() {
-    // `extract_line_u16` and `extract_line_f32` had no test at all, and the
-    // row scanners they call hold the unsafe fast paths. The same stripe
-    // through all three entry points must give the same centre, since the
-    // only difference is the input scalar type.
+    // The row scanners hold the unsafe fast paths. The same stripe as u8, u16
+    // and f32 input must give the same centre, since the only difference is
+    // the input scalar type.
     let (w, h) = (64usize, 40usize);
     let (x_l, x_r) = (20.3f32, 25.7f32);
     let img_f = stripe_f32(w, h, x_l, x_r);

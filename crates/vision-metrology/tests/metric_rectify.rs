@@ -31,7 +31,7 @@
 //! Found at every one of the five tilts, score 1.0000 throughout (the
 //! render and the rectify are both noise-free and geometrically exact, so
 //! there is no occlusion/clutter for the score to discount), max position
-//! error **0.012 px** — an order of magnitude inside the plan's 0.1 px
+//! error **0.012 px** — an order of magnitude inside the 0.1 px
 //! acceptance target, and small enough that the residual is almost
 //! certainly the shape matcher's own subpixel-refinement floor rather than
 //! anything rectify-specific. This is the number that answers "does
@@ -232,7 +232,7 @@ fn rectify_first_finds_the_model_at_every_tilt() {
                 eprintln!("{tilt},true,{:.4},{:.4}", m.score, err);
                 // Envelope pinned at ~4x the measured worst case (see the
                 // per-tilt table in this test's doc comment) — comfortably
-                // inside the plan's 0.1 px acceptance target.
+                // inside the 0.1 px acceptance target.
                 assert!(
                     err < 0.05,
                     "tilt {tilt}deg: position error {err} px too large (found {:?}, expected {:?})",
