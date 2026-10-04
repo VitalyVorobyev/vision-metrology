@@ -217,6 +217,4 @@ are relative to 0.1.0.
   - laser stripe centrelines with coarse-to-fine ROI and continuity;
   - 2-D subpixel edgels;
   - a junction-aware contour graph;
-  - binary morphology;
-  - thresholding and connected components;
-  - first Python bindings.
+  - 3×3 binary morphology (erode, dilate, open, close).
