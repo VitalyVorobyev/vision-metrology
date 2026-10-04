@@ -12,7 +12,7 @@
 //! ## What is deliberately *not* here
 //!
 //! There is no `FULL_SCALE` constant. `u8` and `u16` have an obvious full scale,
-//! but an `f32` image in this workspace carries whatever numeric range its
+//! but an `f32` image in this library carries whatever numeric range its
 //! producer chose — [`to_f32`](Pixel::to_f32) on a `u8` yields `0.0..=255.0`,
 //! while a caller's own `f32` buffer may be `0.0..=1.0`. Thresholds therefore
 //! stay absolute and documented per config field rather than being silently

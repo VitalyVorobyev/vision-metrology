@@ -20,7 +20,7 @@ use crate::types::{Circle, Line, MeasureEdge};
 
 /// A nominal primitive to measure, in model space.
 ///
-/// Constructed with the static [`line`](Self::line) / [`circle`](Self::circle)
+/// Constructed with the static `line` / `circle`
 /// methods, matching `vision_metrology::measure::MetrologyShape`.
 #[pyclass(get_all, from_py_object)]
 #[derive(Debug, Clone, Copy)]
@@ -228,8 +228,8 @@ impl MetrologyError {
     }
 }
 
-/// One object's `apply` outcome as a Python object: a [`MetrologyResult`], or a
-/// [`MetrologyError`] carrying the native error's message.
+/// One object's `apply` outcome as a Python object: a `MetrologyResult`, or a
+/// `MetrologyError` carrying the native error's message.
 fn outcome_to_py(
     py: Python<'_>,
     outcome: Result<vision_metrology::measure::MetrologyResult, vm_primitives::Error>,
@@ -246,11 +246,11 @@ fn outcome_to_py(
     })
 }
 
-/// One object of a [`MetrologyModel`], measured and explained — mirrors
+/// One object of a `MetrologyModel`, measured and explained — mirrors
 /// `vision_metrology::measure::diagnostics::ObjectTrace`.
 ///
-/// `result` is what `apply` returns for the object (a [`MetrologyResult`] or a
-/// [`MetrologyError`]); `placements` and `calipers` are parallel lists, one entry per
+/// `result` is what `apply` returns for the object (a `MetrologyResult` or a
+/// `MetrologyError`); `placements` and `calipers` are parallel lists, one entry per
 /// caliper in caliper order. A caliper hit when its trace's `edges` is not empty, and its
 /// first edge is the one the fit used.
 #[pyclass(get_all, skip_from_py_object)]
@@ -272,14 +272,14 @@ impl ObjectTrace {
     }
 }
 
-/// Where one caliper of a [`MetrologyModel`] sits at a fixture pose, without
+/// Where one caliper of a `MetrologyModel` sits at a fixture pose, without
 /// measuring — mirrors `vision_metrology::measure::diagnostics::CaliperPlacement`.
 ///
 /// `kind` is `"rect"` (line objects) or `"radial"` (circle objects); `radius`
 /// is only set for `"radial"` placements, where `center` is the *circle's*
 /// own centre (not the caliper's own position on the circle — see the Rust
 /// `CaliperShape::Radial` docs). Built to be handed straight to
-/// [`Caliper.rect`](Caliper::rect) / [`Caliper.radial`](Caliper::radial):
+/// `Caliper.rect` / `Caliper.radial`:
 /// `Caliper.rect(p.center, p.angle, p.half_len, p.half_width, config)` or
 /// `Caliper.radial(p.center, p.radius, p.angle, p.half_len, p.half_width,
 /// config)`.
@@ -336,8 +336,8 @@ impl From<NativeCaliperPlacement> for CaliperPlacement {
 /// A set of nominal primitives measured together at a fixture pose.
 ///
 /// Mirrors `vision_metrology::measure::MetrologyModel`: `add` a
-/// [`MetrologyObject`] per nominal primitive, then [`apply`](Self::apply) at
-/// the fixture pose (typically a [`ShapeMatch`](crate::types::ShapeMatch)'s
+/// `MetrologyObject` per nominal primitive, then `apply` at
+/// the fixture pose (typically a `ShapeMatch`'s
 /// `x`, `y`, `angle`, `scale`).
 #[pyclass]
 #[derive(Default)]
@@ -353,7 +353,7 @@ impl MetrologyModel {
     }
 
     /// Add an object. Returns its index, which indexes into
-    /// [`apply`](Self::apply)'s result.
+    /// `apply`'s result.
     pub fn add(&mut self, object: MetrologyObject) -> PyResult<usize> {
         let native = object.to_native()?;
         Ok(self.inner.add(native))
@@ -400,8 +400,8 @@ impl MetrologyModel {
         outcomes.into_iter().map(|r| outcome_to_py(py, r)).collect()
     }
 
-    /// Measure every object as [`apply`](Self::apply) does and keep each caliper's
-    /// trace, in one pass: one [`ObjectTrace`] per object, in [`add`](Self::add) order.
+    /// Measure every object as `apply` does and keep each caliper's
+    /// trace, in one pass: one `ObjectTrace` per object, in `add` order.
     /// Same fixture semantics as `apply`, and each `result` is what `apply` returns.
     #[pyo3(signature = (image, x, y, angle=0.0, scale=1.0, origin=(0.0, 0.0)))]
     #[allow(clippy::too_many_arguments)]
@@ -456,7 +456,7 @@ impl MetrologyModel {
     }
 
     /// Where every caliper of every added object sits at the fixture pose,
-    /// without measuring — same fixture semantics as [`apply`](Self::apply).
+    /// without measuring — same fixture semantics as `apply`.
     ///
     /// This is what an overlay should call to draw caliper boxes: it needs no
     /// image, uses the same placement code `apply` does internally (so a

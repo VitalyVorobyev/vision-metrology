@@ -1,4 +1,4 @@
-//! Image segmentation for the `vision-metrology` workspace.
+//! Image segmentation.
 //!
 //! This module provides four segmentation modes:
 //!
@@ -10,7 +10,7 @@
 //! 4. **Edgel region growing** — chamfer-distance driven region fill using a
 //!    `ContourGraph` as the boundary source.
 //!
-//! All public functions follow the workspace conventions:
+//! All public functions follow the library's conventions:
 //! - Pixel centers at `i as f32`.
 //! - Default border mode: `Clamp`.
 //! - Hot paths are allocation-free (per-row or per-scan).

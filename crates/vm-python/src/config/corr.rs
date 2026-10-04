@@ -39,7 +39,7 @@ fn metric_str(m: NativeCorrMetric) -> String {
     }
 }
 
-/// Tagged [`DisplacementConfig`]`.refine` — construct with `Refine.none()`
+/// Tagged `DisplacementConfig.refine` — construct with `Refine.none()`
 /// or `Refine.lucas_kanade(iters=...)`, never a bare string, since the
 /// second variant carries a payload the first does not.
 #[pyclass(frozen, eq, from_py_object)]

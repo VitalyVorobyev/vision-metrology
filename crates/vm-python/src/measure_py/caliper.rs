@@ -16,8 +16,8 @@ use crate::types::{LevelEdge, MeasureEdge, MeasurePair};
 /// A reusable caliper: place it on a rectangle, arc, radial path or strip, then
 /// measure frame after frame.
 ///
-/// Construct with [`rect`](Self::rect), [`arc`](Self::arc),
-/// [`radial`](Self::radial) or [`strip`](Self::strip); the matching
+/// Construct with `rect`, `arc`,
+/// `radial` or `strip`; the matching
 /// `move_to_rect`, `move_to_arc`, `move_to_radial` and `move_to_strip` reposition the
 /// caliper, keeping its config and scratch buffers.
 #[pyclass]
@@ -209,7 +209,7 @@ impl Caliper {
         self.inner.spacing()
     }
 
-    /// Measure and keep every intermediate — see [`CaliperTrace`]. Never raises
+    /// Measure and keep every intermediate — see `CaliperTrace`. Never raises
     /// `MeasureRejected`: a rejection is the trace's `reject`.
     pub fn explain(&mut self, py: Python<'_>, img: &Bound<'_, PyAny>) -> PyResult<CaliperTrace> {
         let any = any_image_from_numpy(py, img)?;

@@ -1,4 +1,4 @@
-//! PyO3 Python extension module for the `vision-metrology` workspace.
+//! PyO3 Python extension module for the `vision-metrology` library.
 //!
 //! ## Module: `vision_metrology`
 //!
@@ -58,7 +58,7 @@ use types::{
 };
 use warp_py::Map;
 
-/// `vision_metrology` — Python bindings for the vision-metrology workspace.
+/// `vision_metrology` — Python bindings for the vision-metrology library.
 #[pymodule]
 fn vision_metrology(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Config types

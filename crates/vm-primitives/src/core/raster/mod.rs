@@ -2,7 +2,7 @@
 //!
 //! Everything here describes how image memory is laid out and read, and
 //! nothing here knows what a point or a transform is. That is a deliberate
-//! boundary rather than an accident of file placement: this workspace is not
+//! boundary rather than an accident of file placement: this library is not
 //! the only consumer of an `ImageView` — other crates carry near-duplicate
 //! image views, some pinned to a different nalgebra major version. A raster
 //! layer that mentions no linear-algebra type at all is the piece that could

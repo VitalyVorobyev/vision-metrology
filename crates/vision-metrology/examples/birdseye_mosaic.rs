@@ -122,8 +122,9 @@
 //!
 //! ## Run
 //! ```text
-//! cargo run --release -p vision-metrology --example birdseye_mosaic
-//! WRITE_ASSETS=1 cargo run --release -p vision-metrology --example birdseye_mosaic
+//! cargo run --release -p vision-metrology --example birdseye_mosaic -- --data-dir <dataset>
+//! WRITE_ASSETS=1 cargo run --release -p vision-metrology --example birdseye_mosaic -- \
+//!   --data-dir <dataset>
 //! ```
 
 use std::path::PathBuf;
@@ -252,17 +253,12 @@ const MIN_OVERLAP_ZNCC: f32 = 0.75;
 struct Cli {
     /// Root of the Table_Calibration dataset (`calibration.json` + `cam1/` + `cam2/`).
     #[arg(long)]
-    data_dir: Option<PathBuf>,
-}
-
-fn default_data_dir() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_default();
-    PathBuf::from(home).join("vision/data/25_09_17_Table_Calibration")
+    data_dir: PathBuf,
 }
 
 fn main() -> Result<()> {
     let args = Cli::parse();
-    let data_dir = args.data_dir.unwrap_or_else(default_data_dir);
+    let data_dir = args.data_dir;
 
     let calib_bytes = std::fs::read(data_dir.join("calibration.json"))
         .with_context(|| format!("reading {}/calibration.json", data_dir.display()))?;

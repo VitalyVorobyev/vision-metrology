@@ -17,7 +17,7 @@ pub struct Map {
     pub(super) height: usize,
     /// Source coordinate for destination pixel `(x, y)`, at index
     /// `y * width + x` — the same row-major layout every raster type in this
-    /// workspace uses.
+    /// library uses.
     pub(super) coords: Vec<Point2f>,
 }
 

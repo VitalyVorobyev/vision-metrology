@@ -159,7 +159,8 @@ changing a picture.
 distributed:
 
 ```bash
-WRITE_ASSETS=1 cargo run --release -p vision-metrology --example birdseye_mosaic
+WRITE_ASSETS=1 cargo run --release -p vision-metrology --example birdseye_mosaic -- \
+  --data-dir <dataset>
 ```
 
 It estimates the target plane from the two frames and refuses to write the asset unless

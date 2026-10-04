@@ -1,5 +1,5 @@
 """Type stubs for `vision_metrology` — PyO3 bindings for the vision-metrology
-workspace. See crates/vm-python/README.md for the guide; this file is the
+library. See crates/vm-python/README.md for the guide; this file is the
 contract IDEs and mypy see.
 """
 

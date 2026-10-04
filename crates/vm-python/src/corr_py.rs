@@ -1,7 +1,7 @@
 //! Python bindings for `corr`: cross-correlation matching (`CorrTemplate` /
 //! `find` / `find_topk`) and inter-frame subpixel `displacement`.
 //!
-//! `u8`-only, unlike most of this workspace's `ImageAny`-dispatched entry
+//! `u8`-only, unlike most of this library's `ImageAny`-dispatched entry
 //! points — corrmatch's published API (0.2.5) is `u8`-only, so a `uint16`/
 //! `float32` array is a `ValueError` here rather than a silent quantization.
 

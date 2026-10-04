@@ -28,7 +28,7 @@ impl Map {
     ///
     /// `dst.len()` must equal `width() * height()`. Out-of-source taps are
     /// filled from `border`, exactly like any other sampling call in this
-    /// workspace; see [`Map::apply_with_mask`] to also learn *which* pixels
+    /// library; see [`Map::apply_with_mask`] to also learn *which* pixels
     /// that happened to.
     ///
     /// # Errors
