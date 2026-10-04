@@ -27,7 +27,7 @@ vision-metrology = "0.1"
 | `laser` | `LaserExtractor`: laser stripe centrelines from opposite-polarity 1-D edge pairs, scanning rows or columns, with ROI and prior tracking |
 | `lsd` | `LsdDetector`: line-segment detection with NFA validation |
 | `matching` | `ShapeModel` + `ShapeMatcher`: gradient-orientation similarity, coarse-to-fine search over translation / rotation / uniform scale, subpixel pose refinement, masked teaching, and canonical-pose crops (`matching::crop`) |
-| `measure` | `Caliper` (rect / arc / radial / strip placements; gradient-peak, midpoint or half-contrast edge location) and `MetrologyModel`: measure a located part and fit the result, with a typed `RejectReason` when a caliper finds nothing, `diagnostics::explain` to trace one measurement, and `diagnostics::layout` for caliper placement |
+| `measure` | `Caliper` (rect / arc / radial / strip placements; gradient-peak, midpoint or half-contrast edge location) and `MetrologyModel`: measure a located part and fit the result, with a typed `RejectReason` when a caliper finds nothing, `diagnostics::explain` to trace one measurement, `diagnostics::explain_model` to trace a whole model in one pass, and `diagnostics::layout` for caliper placement |
 | `metric` | `CameraModel` / `Pose3` / `Plane3` / `PlaneGrid`, exact `pixel_to_plane`, `plane_grid_map` / `undistort_map` for whole images, importers for calibration-rs and `table_calibration` JSON |
 | `scale` | Scale estimation for `matching` (moments / log-polar) and `find_scale_invariant`: estimate once, resample the model, verify in a narrow band |
 | `segment` | Otsu and adaptive thresholding, connected-component labeling with per-component stats, watershed, edgel region growing |
@@ -54,7 +54,7 @@ vision-metrology = { version = "0.1", default-features = false, features = ["mat
 | `scale` | `scale` | `corr`, `matching`, `segment`, `warp` |
 | `segment` | `segment` | `contour` (region growing consumes a `ContourGraph`) |
 | `warp` | `warp` | — |
-| `serde` | `ShapeModel` save/load | `matching` |
+| `serde` | `ShapeModel` save/load; serde derives on `MeasureEdge`, `RejectReason`, `CaliperTrace` (serialize only) and the `metric` camera types | `matching` |
 
 ## Importing
 
@@ -116,7 +116,7 @@ Runnable programs are in
 | `line_segments` | LSD line-segment detection |
 | `segmentation` | Thresholding, labeling, component statistics |
 | `shape_matching` | Building a shape model and locating it, rotated, in a scene |
-| `measure_circles` | Circle metrology: calipers, robust circle fit, `rms` / `max_dev` gating |
+| `measure_circles` | Circle metrology: 2-D edges → contour graph → RANSAC circle fit, `rms` / `max_dev` gating |
 | `laserline` | Laser stripe extraction from a multi-snap image (`--input`) |
 | `inspect_canend` | Locate → fixture → measure → pass/fail on a directory of frames |
 | `align_crops` | Teach → find → rectify into canonical model-frame crops |

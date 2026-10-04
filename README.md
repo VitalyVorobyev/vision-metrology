@@ -91,8 +91,9 @@ More scripts are in [`examples/python/`](examples/python), and the API overview 
 
 - [Shape-based object detection](docs/shape-matching.md): building a model, polarity,
   contrast tuning, reading the score, scale invariance, saving models.
-- [Measuring a located part](docs/measure.md): calipers, rect vs. arc vs. radial
-  placement, the metrology model, reading `RejectReason`.
+- [Measuring a located part](docs/measure.md): calipers, rect, arc, radial and strip
+  placement, where an edge is located (gradient peak, midpoint or half-contrast), the
+  metrology model, reading `RejectReason`, and tracing a failure with `explain`.
 - [Performance and accuracy](docs/performance.md): speed, accuracy envelopes on
   synthetic ground truth, and real-data results.
 - API reference: `cargo doc --open`, or the
@@ -105,10 +106,6 @@ captures, teach a shape model from picked contours, find it across a set, rectif
 with calipers in pixels or millimetres, and see every caliper's hit or rejection reason.
 It runs in a browser (over the Python bindings) or as a desktop app (calling the Rust
 library directly).
-
-## Contributing
-
-Build, test, benchmark and documentation rules are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

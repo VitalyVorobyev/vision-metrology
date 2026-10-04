@@ -44,16 +44,37 @@ metrology = vm.MetrologyModel()
 metrology.add(vm.MetrologyObject(vm.MetrologyShape.circle((cx, cy), 40.0)))
 for m in matches:
     results = metrology.apply(scene, x=m.x, y=m.y, angle=m.angle, scale=m.scale,
-                              origin=model.origin())
+                              origin=model.origin)
     for r in results:  # one result per object, in order
         print(r.kind, r.circle.r, r.rms, len(r.hits))
 ```
 
 A single `Caliper` that finds nothing raises `vm.MeasureRejected`, and `e.args[0]` names
-the reason (`"no_edge"`, `"wrong_polarity"`, `"too_oblique"`, `"off_image"`,
-`"profile_too_short"`). `MetrologyModel.apply` reports a failed object as a
-`MetrologyError` in its slot instead of raising, so one bad object does not hide the
-others.
+the reason: `"profile_too_short"`, `"no_edge"`, `"wrong_polarity"`, `"too_oblique"`,
+`"off_image"`, `"incomplete_sequence"`, `"low_contrast"` or `"no_crossing"`.
+`MetrologyModel.apply` reports a failed object as a `MetrologyError` in its slot instead of
+raising, so one bad object does not hide the others.
+
+Measure a bar's width with one strip caliper: the strongest rising edge, then the
+strongest falling edge after it.
+
+```python
+import numpy as np
+import vision_metrology as vm
+
+img = np.full((48, 64), 20, dtype=np.uint8)
+img[:, 20:41] = 200                     # a bright bar over columns 20 to 40
+
+cfg = vm.MeasureConfig(select="in_order", sequence=["rising", "falling"])
+cal = vm.Caliper.strip((5.0, 24.0), (58.0, 24.0), half_width=4.0, config=cfg)
+rising, falling = cal.measure(img)
+print(rising.x, falling.x, falling.t - rising.t)    # 19.5 40.5 21.0
+
+# `explain` measures and keeps every intermediate. It never raises: a rejection is
+# `trace.reject`.
+trace = cal.explain(img)
+print(trace.reject, len(trace.candidates), trace.edges)
+```
 
 ## Configs
 
@@ -66,23 +87,24 @@ Each Rust config is a Python class with keyword arguments, for example
 - **Contrast thresholds carry their unit.** Use `vm.Contrast.raw(v)` (Scharr response on
   the input pixel scale) or `vm.Contrast.fraction_of_range(f)` (transfers between `uint8`
   and `uint16`).
-- **Hysteresis is a pair of optionals.** `EdgeConfig.low_thresh` / `high_thresh` are both
-  `None` (automatic) or both set.
+- **Hysteresis is a pair of optionals.** With `EdgeConfig.low_thresh` and `high_thresh`
+  both `None` (the default), the thresholds are chosen from each frame. Setting either one
+  fixes both, and the one left at `None` is `0.0`.
 
 ## Coverage
 
 | Rust module | Python |
 |---|---|
-| `edge` (2-D) | `EdgeDetector`, `detect_edges`, `Edgel` |
-| `lsd` | `LsdDetector`, `detect_line_segments`, `LineSegment` |
-| `fit` | `Fitter` (`fit_line`, `fit_circle`, `fit_ellipse`), `fit_line`, `fit_ellipse`, `FitConfig` |
-| `matching` | `ShapeModel` (incl. `save`/`load`), `ShapeMatcher`, `ShapeMatch`, `find_shape_model`, `ShapeModelConfig`, `ShapeSearchConfig`, `Contrast`, `CropSpec` (`ShapeMatch.model_frame_map`) |
-| `measure` | `Caliper` (`rect`/`arc`/`radial`/`strip`, `move_to_*`, `measure`, `measure_pairs`, `profile`, `levels`, `spacing`, `explain`), `CaliperTrace`, `MeasureConfig`, `Locate`, `LevelEdge`, `MetrologyModel` (`apply`, `layout`, `explain`), `ObjectTrace`, `MetrologyObject`, `MetrologyShape`, `MetrologyResult`, `MetrologyError`, `CaliperPlacement`, `MeasureRejected` |
+| `edge` (2-D) | `EdgeDetector`, `detect_edges`, `EdgeConfig`, `Edgel` |
+| `lsd` | `LsdDetector`, `detect_line_segments`, `LsdConfig`, `LineSegment` |
+| `fit` | `Fitter` (`fit_line`, `fit_circle`, `fit_ellipse`), `fit_line`, `fit_ellipse`, `FitConfig`, `Line`, `Circle`, `Ellipse` |
+| `matching` | `ShapeModel` (incl. `save`/`load`, `resample_at`), `ShapeMatcher`, `ShapeMatch`, `find_shape_model`, `ShapeModelConfig`, `ShapeSearchConfig`, `ShapeSearchTuning`, `Contrast`, `CropSpec` (`ShapeMatch.model_frame_map`) |
+| `measure` | `Caliper` (`rect`/`arc`/`radial`/`strip`, `move_to_*`, `measure`, `measure_pairs`, `profile`, `levels`, `spacing`, `explain`), `MeasureEdge`, `MeasurePair`, `CaliperTrace`, `MeasureConfig`, `Locate`, `LevelEdge`, `MetrologyModel` (`apply`, `layout`, `explain`), `ObjectTrace`, `MetrologyObject`, `MetrologyShape`, `MetrologyResult`, `MetrologyError`, `CaliperPlacement`, `MeasureRejected` |
 | `warp` | `Map` (`affine`, `projective`, `polar`, `log_polar`, `apply`, `apply_with_mask`) |
 | `metric` | `CameraModel`, `PinholeIntrinsics`, `BrownConrady5`, `Plane3`, `PlaneGrid`, `pixel_to_plane`, `project_plane_points`, `plane_grid_map`, `undistort_map`, `load_rig_extrinsics`, `load_table_calibration` |
-| `corr` | `CorrTemplate`, `find`, `find_topk`, `displacement`, `CorrConfig`, `CorrTemplateConfig`, `DisplacementConfig`, `Refine` |
-| `scale` | `estimate_scale_moments`, `estimate_scale_logpolar`, `find_scale_invariant_roi`, `find_scale_invariant_center`, `ScaleEstimate` |
-| `segment` | `Segmenter`, `otsu_threshold`, `threshold_binary`, `label_components`, `component_stats` |
+| `corr` | `CorrTemplate`, `find`, `find_topk`, `CorrMatch`, `displacement`, `Displacement`, `CorrConfig`, `CorrSearchTuning`, `CorrTemplateConfig`, `CorrTemplateTuning`, `DisplacementConfig`, `Refine` |
+| `scale` | `estimate_scale_moments`, `estimate_scale_logpolar`, `find_scale_invariant_roi`, `find_scale_invariant_center`, `ScaleEstimate`, `MomentScaleConfig`, `LogPolarScaleConfig`, `ScaleInvariantConfig` |
+| `segment` | `Segmenter`, `otsu_threshold`, `threshold_binary`, `label_components`, `component_stats`, `ComponentStats` |
 | `contour` | `build_contour_graph`, `ContourGraph`, `smooth_polyline` |
 | `morph` | `erode`, `dilate`, `open`, `close`, `thin`, `chamfer_distance` |
 

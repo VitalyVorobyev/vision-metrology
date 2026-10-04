@@ -43,7 +43,7 @@ platform's app-data directory.
 | Gauge | Measure | Calipers and fits at the found pose, in pixels or, with a calibration loaded, millimetres; a caliper list linked to the canvas (hit or rejection reason, edge position, residual against the fit, amplitude) and the selected caliper's profile |
 | | Align | Rectify each found part into a fixed-size, canonically oriented crop |
 | Camera | Motion | Track a window between consecutive frames (subpixel displacement) |
-| | Mosaic | Composite calibrated cameras onto their shared plane (browser only for now) |
+| | Mosaic | Composite calibrated cameras onto their shared plane (browser only) |
 
 The header shows the frames as a strip of thumbnails on every screen: click one, or step
 with `[` / `]`. The menu beside it lists every frame by name. After a search across every
@@ -98,8 +98,5 @@ caliper's axis, not points that can be projected.
 - **Single user.** It is a local workbench with no accounts and no database.
 - **Desktop-only features.** Folder opening, contour curation and batch find exist only in
   the desktop app; a browser page cannot read local paths.
-- **Mosaic is browser-only for now.** The browser composites on the calibration's
+- **Mosaic is browser only.** The browser composites on the calibration's
   reference plane (`z = 0`), which is meaningful only when that plane lies on the target.
-
-Developer documentation (architecture, contract, tests) is in
-[ARCHITECTURE.md](ARCHITECTURE.md).
