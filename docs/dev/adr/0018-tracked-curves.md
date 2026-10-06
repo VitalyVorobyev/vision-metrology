@@ -1,6 +1,6 @@
 # ADR-0018: Tracked curves: a prior, two caliper stages and a regularised normal solve
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-10-06
 
 ## Context
@@ -35,12 +35,16 @@ bead-specific gates out of `Caliper`.
 - **Stations.**
   - The prior is resampled uniformly in arc length, in `f64`. The station count is fixed
     for the call, so station `i` keeps its identity across passes.
-  - Tangents are chords over a ± window. The chord is exact on a circle and smooths a
-    coarse prior's corners.
+  - Tangents are chords over a ± window that shrinks near the ends, so each chord stays
+    centred on its station. A centred chord is exact on a circle and smooths a coarse
+    prior's corners. A chord clamped one-sided at the ends would tilt the end normals by
+    about half the window times the curvature, and a width measured along a tilted normal
+    reads long.
   - The normal is `t.perp()`, and offsets are signed along it.
 - **Edge evidence reuses the caliper.** Each station measures with `Caliper::measure` on a
-  `MeasureStrip`, keeping every candidate edge of either polarity. The tool then picks the
-  pair itself:
+  `MeasureStrip`, keeping every candidate edge of either polarity. An edge located outside
+  the image, in border fill, is dropped: it is not evidence. The tool then picks the pair
+  itself:
   - the polarity order, from the bead's appearance;
   - a width range;
   - the admissible offset window;
@@ -62,8 +66,12 @@ bead-specific gates out of `Caliper`.
   - Rejected stations have zero weight. `ρ` is `fit::RobustLoss`, applied by IRLS.
   - The system is symmetric pentadiagonal and is solved by a banded LDLᵀ in O(N)
     (ADR-0002).
-  - A curvature guard clips the offset window on the concave side and scales the step, so
-    the curve cannot fold.
+  - A curvature guard clips the offset window on the concave side, so no observation asks
+    a station to cross its centre of curvature. The window gates evidence only. Folding
+    is prevented by a step scale α ≤ 1:
+    - no station moves more than 0.9 of the way to its centre of curvature;
+    - every segment between adjacent stations keeps a tenth of its length along its old
+      direction.
 - **Tracking and measuring are separate stages with separate settings.**
   - Tracking evidence establishes where the bead is, with a wide, permissive search.
   - The reported dimensions come from a second set of calipers, placed on the refined curve
@@ -120,6 +128,10 @@ bead-specific gates out of `Caliper`.
 - A width measured along the refined curve's normal is only as good as that curve. The
   residuals and support statistics show when it is not.
 - The penalties act on each pass's increment, so high-frequency error in the prior decays
-  over passes rather than in one.
+  over passes rather than in one. Because they act on the increment, the curve converges
+  towards the measured centres: the regulariser sets how robustly and how fast, and the
+  pass count bounds how much station noise reaches the centreline. `Converged` therefore
+  means the corrections stopped. The final stage's residuals are the evidence that the
+  curve fits.
 - Strips are straight, and on a curved bead their averaging biases the centre towards the
   concave side. The bias grows with the strip's half width and falls with the radius.

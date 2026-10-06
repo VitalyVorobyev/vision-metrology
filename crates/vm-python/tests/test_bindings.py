@@ -1766,3 +1766,184 @@ def test_map_log_polar_places_a_bump_at_its_expected_log_row():
     want_v = (np.log(r0 / r_lo) / np.log(r_hi / r_lo)) * sh - 0.5
     assert abs(peak_u - want_u) < 2.0
     assert abs(peak_v - want_v) < 2.0
+
+
+# ---------------------------------------------------------------------------
+# measure: the bead tracker
+# ---------------------------------------------------------------------------
+
+
+def make_bead(w=240, h=200, width=40.0, sigma=1.2, bg=40.0, fg=180.0, dark=False):
+    """A straight bead through (120, 100) at 20 degrees: a box `width` px across the
+    normal, blurred by a Gaussian of `sigma` px, sampled at pixel centres. Returns the
+    float image (DN), a point on the centreline and the unit tangent."""
+    import math
+
+    t = np.array([math.cos(math.radians(20.0)), math.sin(math.radians(20.0))])
+    n = np.array([-t[1], t[0]])
+    a = np.array([120.0, 100.0])
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float64)
+    d = (xx - a[0]) * n[0] + (yy - a[1]) * n[1]
+    erf = np.vectorize(math.erf)
+
+    def phi(z):
+        return 0.5 * (1.0 + erf(z / math.sqrt(2.0)))
+
+    box = phi((0.5 * width - d) / sigma) - phi((-0.5 * width - d) / sigma)
+    lo, hi = (fg, bg) if dark else (bg, fg)
+    return lo + (hi - lo) * box, a, t
+
+
+def bead_prior(a, t, offset, half_len=80.0, step=8.0):
+    """A straight prior along the bead, `offset` px along +n, as (N, 2) float32."""
+    n = np.array([-t[1], t[0]])
+    s = np.arange(-half_len, half_len + 1e-9, step)
+    return (a + np.outer(s, t) + offset * n).astype(np.float32)
+
+
+def test_bead_config_mirrors_the_native_defaults():
+    cfg = vm.BeadConfig()
+    assert cfg.polarity == "light"
+    assert (cfg.min_width, cfg.max_width, cfg.spacing) == (30.0, 80.0, 4.0)
+    assert cfg.clearance is None and cfg.min_margin is None
+    assert cfg.track.max_offset == 15.0 and cfg.track.half_width == 2.0
+    assert cfg.measure.max_offset == 3.0 and cfg.measure.step == 0.5
+    assert cfg.measure.max_obliquity_deg == 30.0
+    assert cfg.tuning.passes == 3 and cfg.tuning.loss == "huber"
+    assert vm.BeadCaliper().max_offset == 15.0
+
+
+def test_bead_tracker_follows_a_rendered_bead():
+    img, a, t = make_bead()
+    n = np.array([-t[1], t[0]])
+    tracker = vm.BeadTracker(vm.BeadConfig())
+    bead = tracker.track(img.round().astype(np.uint8), bead_prior(a, t, offset=6.0))
+
+    stations = bead.centerline.shape[0]
+    assert bead.centerline.shape == (stations, 2) and bead.centerline.dtype == np.float32
+    assert bead.normals.shape == (stations, 2) and bead.center.shape == (stations, 2)
+    assert bead.width.shape == (stations,) and bead.offset.shape == (stations,)
+    assert bead.reject == [None] * stations
+    assert bead.support == 1.0 and bead.n_used == stations
+    assert bead.stop in ("converged", "pass_limit")
+    assert bead.rejects == {}
+    assert bead.passes[0].solve.correction_max > 5.0
+    assert bead.passes[0].solve.step_scale == 1.0
+
+    # The refined centreline lies on the bead's, and the widths are the bead's.
+    off_line = (bead.centerline - a) @ n
+    assert np.abs(off_line).max() < 0.05, off_line
+    assert np.abs(bead.width - 40.0).max() < 0.1
+    assert abs(bead.width_mean - 40.0) < 0.05 and bead.center_rms < 0.05
+    # Normals are t.perp(); the first edge is on the -n side.
+    assert np.allclose(bead.normals, n, atol=1e-3)
+    assert np.all((bead.second - bead.first) @ n > 0)
+
+
+def test_bead_tracker_rejects_every_station_on_a_flat_image():
+    flat = np.full((200, 240), 100, dtype=np.uint8)
+    _, a, t = make_bead()
+    bead = vm.BeadTracker().track(flat, bead_prior(a, t, offset=0.0))
+    stations = bead.centerline.shape[0]
+    assert bead.stop == "too_few_valid"
+    assert bead.reject == ["no_edge"] * stations
+    assert bead.rejects == {"no_edge": stations}
+    assert np.isnan(bead.width).all() and np.isnan(bead.center).all()
+    assert bead.n_used == 0 and bead.width_mean is None and bead.center_rms is None
+    assert bead.passes[0].n_valid == 0
+    assert bead.passes[0].solve is None, "a pass that never solved has no solve record"
+
+
+def test_bead_tracker_finds_a_dark_bead_only_when_asked():
+    img, a, t = make_bead(dark=True)
+    prior = bead_prior(a, t, offset=-4.0)
+    u8 = img.round().astype(np.uint8)
+    assert vm.BeadTracker().track(u8, prior).stop == "too_few_valid"
+    bead = vm.BeadTracker(vm.BeadConfig(polarity="dark")).track(u8, prior)
+    assert bead.support == 1.0 and abs(bead.width_mean - 40.0) < 0.05
+
+
+def test_bead_tracker_dispatches_on_dtype():
+    img, a, t = make_bead()
+    prior = bead_prior(a, t, offset=6.0)
+    base = vm.BeadTracker().track(img.round().astype(np.uint8), prior)
+    # uint16 is DN x 256 here, so the thresholds scale with it.
+    cfg16 = vm.BeadConfig(
+        track=vm.BeadCaliper(threshold=5.0 * 256),
+        measure=vm.BeadCaliper(
+            max_offset=3.0,
+            half_width=1.0,
+            max_obliquity_deg=30.0,
+            step=0.5,
+            threshold=5.0 * 256,
+        ),
+    )
+    wide = vm.BeadTracker(cfg16).track((img * 256).round().astype(np.uint16), prior)
+    flt = vm.BeadTracker().track(img.astype(np.float32), prior)
+    for other in (wide, flt):
+        assert np.abs(other.centerline - base.centerline).max() < 0.02
+        assert np.abs(other.width - base.width).max() < 0.03
+
+
+def test_bead_config_errors_raise_value_error():
+    with pytest.raises(ValueError):
+        vm.BeadTracker(vm.BeadConfig(min_width=90.0))
+    with pytest.raises(ValueError):
+        vm.BeadConfig(polarity="sideways")
+    with pytest.raises(ValueError):
+        vm.BeadTracker(vm.BeadConfig(track=vm.BeadCaliper(locate=vm.Locate.midpoint_crossing())))
+    with pytest.raises(ValueError):
+        vm.BeadTracker(vm.BeadConfig(tuning=vm.BeadTuning(passes=0)))
+    for bad in (vm.BeadTuning(passes=-1), vm.BeadTuning(irls_iters=-3)):
+        with pytest.raises(ValueError):
+            vm.BeadTracker(vm.BeadConfig(tuning=bad))
+    with pytest.raises(ValueError):
+        vm.BeadTracker(vm.BeadConfig(min_width=0.0))
+    with pytest.raises(ValueError):
+        vm.BeadTracker(vm.BeadConfig(track=vm.BeadCaliper(max_offset=1e9)))
+    with pytest.raises(ValueError):
+        vm.BeadTuning(loss="cauchy")
+    tracker = vm.BeadTracker()
+    with pytest.raises(ValueError):
+        tracker.config = vm.BeadConfig(spacing=0.0)
+    assert tracker.config.spacing == 4.0
+
+    img = np.zeros((32, 32), dtype=np.uint8)
+    for prior in (
+        np.zeros((1, 2), dtype=np.float32),
+        np.zeros((4, 3), dtype=np.float32),
+        np.array([[1.0, 1.0], [np.nan, 2.0]], dtype=np.float32),
+        np.array([[1.0, 1.0], [1.0, 1.0]], dtype=np.float32),
+        np.zeros((4, 2), dtype=np.int32),
+        np.zeros(8, dtype=np.float32),
+        [[1.0, 1.0], [5.0, 5.0]],
+    ):
+        with pytest.raises(ValueError):
+            tracker.track(img, prior)
+
+
+def test_bead_prior_accepts_float64_and_any_layout():
+    img, a, t = make_bead()
+    u8 = img.round().astype(np.uint8)
+    prior = bead_prior(a, t, offset=6.0)
+    base = vm.BeadTracker().track(u8, prior)
+    wide = vm.BeadTracker().track(u8, prior.astype(np.float64))
+    fortran = vm.BeadTracker().track(u8, np.asfortranarray(prior))
+    # Every other row of a twice-as-long prior: a strided view of the same points.
+    doubled = np.repeat(prior, 2, axis=0)[::2]
+    assert not doubled.flags["C_CONTIGUOUS"]
+    strided = vm.BeadTracker().track(u8, doubled)
+    for other in (wide, fortran, strided):
+        assert np.array_equal(other.centerline, base.centerline)
+
+
+def test_bead_caliper_to_measure_config_keeps_every_edge():
+    cal = vm.BeadCaliper(threshold=7.0, sigma=1.5, step=0.5, off_image="reject")
+    m = cal.to_measure_config()
+    assert isinstance(m, vm.MeasureConfig)
+    assert (m.select, m.polarity) == ("all", "any")
+    assert (m.threshold, m.sigma, m.step, m.off_image) == (7.0, 1.5, 0.5, "reject")
+    bad = vm.BeadCaliper()
+    bad.border_mode = "mirror"
+    with pytest.raises(ValueError):
+        bad.to_measure_config()

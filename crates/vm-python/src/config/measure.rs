@@ -117,19 +117,19 @@ fn positive(name: &str, value: usize) -> PyResult<NonZeroUsize> {
 const REFINES: &[&str] = &["none", "parabolic", "gaussian", "centroid"];
 const POLARITIES: &[&str] = &["any", "rising", "falling"];
 const SELECTS: &[&str] = &["all", "first", "last", "strongest", "in_order"];
-const BORDER_MODES: &[&str] = &["clamp", "reflect101", "constant"];
-const DERIVATIVES: &[&str] = &["dog", "smooth_central"];
-const OFF_IMAGES: &[&str] = &["fill", "reject"];
+pub(super) const BORDER_MODES: &[&str] = &["clamp", "reflect101", "constant"];
+pub(super) const DERIVATIVES: &[&str] = &["dog", "smooth_central"];
+pub(super) const OFF_IMAGES: &[&str] = &["fill", "reject"];
 /// Polarity names a `sequence` entry accepts; "either" and "any" both mean either.
 const SEQUENCE_POLARITIES: &[&str] = &["rising", "falling", "either", "any"];
 
 /// The `ValueError` for a `name` whose `value` is not one of `allowed`.
-fn not_one_of(name: &str, value: &str, allowed: &[&str]) -> PyErr {
+pub(super) fn not_one_of(name: &str, value: &str, allowed: &[&str]) -> PyErr {
     PyValueError::new_err(format!("{name} must be one of {allowed:?}, got '{value}'"))
 }
 
 /// `Ok` when `value` is one of `allowed`; otherwise the `ValueError` naming them.
-fn check_name(name: &str, value: &str, allowed: &[&str]) -> PyResult<()> {
+pub(super) fn check_name(name: &str, value: &str, allowed: &[&str]) -> PyResult<()> {
     if allowed.contains(&value) {
         Ok(())
     } else {
@@ -170,6 +170,51 @@ impl Locate {
                 ));
             }
         })
+    }
+}
+
+impl Locate {
+    /// The Python mirror of a native locate mode.
+    pub fn from_native(locate: NativeLocate) -> Self {
+        let d = Self::default();
+        match locate {
+            NativeLocate::GradientPeak { refine } => {
+                let (refine, centroid_radius) = match refine {
+                    SubpixRefine::None => ("none", d.centroid_radius),
+                    SubpixRefine::Parabolic3 => ("parabolic", d.centroid_radius),
+                    SubpixRefine::Gaussian3 => ("gaussian", d.centroid_radius),
+                    SubpixRefine::Centroid { radius } => ("centroid", radius),
+                };
+                Self {
+                    refine: refine.into(),
+                    centroid_radius,
+                    ..d
+                }
+            }
+            NativeLocate::MidpointCrossing {
+                endpoint_samples,
+                min_contrast,
+            } => Self {
+                kind: "midpoint_crossing".into(),
+                endpoint_samples: endpoint_samples.get(),
+                min_contrast,
+                ..d
+            },
+            NativeLocate::HalfContrast {
+                flank_near_px,
+                flank_far_px,
+                tol_px,
+                max_iter,
+                min_contrast,
+            } => Self {
+                kind: "half_contrast".into(),
+                flank_px: (flank_near_px, flank_far_px),
+                tol_px,
+                max_iter: max_iter.get(),
+                min_contrast,
+                ..d
+            },
+        }
     }
 }
 
@@ -219,6 +264,73 @@ fn sequence_to_native(sequence: &[String]) -> PyResult<NativeEdgeSequence> {
              got {sequence:?}"
         ))),
     }
+}
+
+/// The flat Python fields of a native `ProfileConfig`, shared by `MeasureConfig` and
+/// `BeadCaliper`.
+pub(super) struct Profile<'a> {
+    pub sigma: f32,
+    pub step: f32,
+    pub border_mode: &'a str,
+    pub border_constant: f32,
+    pub derivative: &'a str,
+    pub kernel_radius_px: f32,
+    pub off_image: &'a str,
+}
+
+impl Profile<'_> {
+    /// The native profile; fails on a string field holding a name it does not accept.
+    pub(super) fn to_native(&self) -> PyResult<NativeProfileConfig> {
+        Ok(NativeProfileConfig {
+            sigma: self.sigma,
+            derivative: match self.derivative {
+                "dog" => NativeDerivative::DerivativeOfGaussian,
+                "smooth_central" => NativeDerivative::SmoothThenCentral {
+                    radius_px: self.kernel_radius_px,
+                },
+                other => return Err(not_one_of("derivative", other, DERIVATIVES)),
+            },
+            step: self.step,
+            border: match self.border_mode {
+                "clamp" => BorderMode::Clamp,
+                "reflect101" => BorderMode::Reflect101,
+                "constant" => BorderMode::Constant(self.border_constant),
+                other => return Err(not_one_of("border_mode", other, BORDER_MODES)),
+            },
+            off_image: match self.off_image {
+                "fill" => NativeOffImage::Fill,
+                "reject" => NativeOffImage::Reject,
+                other => return Err(not_one_of("off_image", other, OFF_IMAGES)),
+            },
+        })
+    }
+}
+
+/// The names a native profile's enumerated fields take in Python: `(border_mode,
+/// border_constant, derivative, kernel_radius_px, off_image)`.
+pub(super) fn profile_names(
+    p: &NativeProfileConfig,
+) -> (&'static str, f32, &'static str, f32, &'static str) {
+    let (border_mode, border_constant) = match p.border {
+        BorderMode::Clamp => ("clamp", 0.0),
+        BorderMode::Reflect101 => ("reflect101", 0.0),
+        BorderMode::Constant(c) => ("constant", c),
+    };
+    let (derivative, kernel_radius_px) = match p.derivative {
+        NativeDerivative::DerivativeOfGaussian => ("dog", 3.0),
+        NativeDerivative::SmoothThenCentral { radius_px } => ("smooth_central", radius_px),
+    };
+    let off_image = match p.off_image {
+        NativeOffImage::Fill => "fill",
+        NativeOffImage::Reject => "reject",
+    };
+    (
+        border_mode,
+        border_constant,
+        derivative,
+        kernel_radius_px,
+        off_image,
+    )
 }
 
 /// Mirrors `vision_metrology::measure::MeasureConfig`.
@@ -444,28 +556,16 @@ impl MeasureConfig {
             },
             locate: self.locate.to_native()?,
             max_obliquity_deg: self.max_obliquity_deg,
-            profile: NativeProfileConfig {
+            profile: Profile {
                 sigma: self.sigma,
-                derivative: match self.derivative.as_str() {
-                    "dog" => NativeDerivative::DerivativeOfGaussian,
-                    "smooth_central" => NativeDerivative::SmoothThenCentral {
-                        radius_px: self.kernel_radius_px,
-                    },
-                    other => return Err(not_one_of("derivative", other, DERIVATIVES)),
-                },
                 step: self.step,
-                border: match self.border_mode.as_str() {
-                    "clamp" => BorderMode::Clamp,
-                    "reflect101" => BorderMode::Reflect101,
-                    "constant" => BorderMode::Constant(self.border_constant),
-                    other => return Err(not_one_of("border_mode", other, BORDER_MODES)),
-                },
-                off_image: match self.off_image.as_str() {
-                    "fill" => NativeOffImage::Fill,
-                    "reject" => NativeOffImage::Reject,
-                    other => return Err(not_one_of("off_image", other, OFF_IMAGES)),
-                },
-            },
+                border_mode: &self.border_mode,
+                border_constant: self.border_constant,
+                derivative: &self.derivative,
+                kernel_radius_px: self.kernel_radius_px,
+                off_image: &self.off_image,
+            }
+            .to_native()?,
         })
     }
 }

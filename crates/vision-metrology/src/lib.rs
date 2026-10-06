@@ -62,8 +62,9 @@ pub mod prelude {
     };
     #[cfg(feature = "measure")]
     pub use crate::measure::{
-        Caliper, EdgeSelect, MeasureConfig, MeasureEdge, MetrologyFit, MetrologyModel,
-        MetrologyObject, MetrologyResult, MetrologyShape, PolaritySelect, RejectReason,
+        BeadConfig, BeadTracker, Caliper, EdgeSelect, MeasureConfig, MeasureEdge, MetrologyFit,
+        MetrologyModel, MetrologyObject, MetrologyResult, MetrologyShape, PolaritySelect,
+        RejectReason, TrackedBead,
     };
     #[cfg(feature = "metric")]
     pub use crate::metric::{

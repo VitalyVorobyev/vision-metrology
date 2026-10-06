@@ -8,7 +8,7 @@ contract IDEs and mypy see.
 
 from __future__ import annotations
 
-from typing import List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import numpy.typing as npt
@@ -376,6 +376,103 @@ class MeasureConfig:
         these names, here and on assignment; anything else raises `ValueError`."""
         ...
 
+class BeadCaliper:
+    """The caliper one stage of a `BeadTracker` measures with. The default is the
+    tracking stage's (`max_offset` 15 px, `half_width` 2 px); `BeadConfig()` measures
+    with a stricter one. Every strip keeps all edges of both polarities. The string
+    fields take the names `MeasureConfig`'s do; `locate` may not be
+    `Locate.midpoint_crossing()`."""
+
+    max_offset: float
+    half_width: float
+    threshold: float
+    locate: Locate
+    max_obliquity_deg: float
+    sigma: float
+    step: float
+    border_mode: str
+    border_constant: float
+    derivative: str
+    kernel_radius_px: float
+    off_image: str
+    def __init__(
+        self,
+        max_offset: Optional[float] = ...,
+        half_width: Optional[float] = ...,
+        threshold: Optional[float] = ...,
+        locate: Optional[Locate] = ...,
+        max_obliquity_deg: Optional[float] = ...,
+        sigma: Optional[float] = ...,
+        step: Optional[float] = ...,
+        border_mode: Optional[str] = ...,
+        border_constant: Optional[float] = ...,
+        derivative: Optional[str] = ...,
+        kernel_radius_px: Optional[float] = ...,
+        off_image: Optional[str] = ...,
+    ) -> None: ...
+    def to_measure_config(self) -> MeasureConfig:
+        """The `MeasureConfig` each strip of this stage measures with: every edge
+        (`select="all"`) of either polarity (`polarity="any"`)."""
+        ...
+
+class BeadTuning:
+    """How hard a `BeadTracker` works and how stiff its corrections are. `loss` is
+    "none", "huber" (default, `loss_scale` 1 px) or "tukey", applied by `irls_iters`
+    reweighted solves after a least-squares one. Corrections shorter than about
+    `2*pi*bending_px` are suppressed in one pass and decay over passes. `passes` and
+    `irls_iters` must be at least 1, or the config raises `ValueError` when used."""
+
+    passes: int
+    tol: float
+    damping: float
+    tension_px: float
+    bending_px: float
+    loss: str
+    loss_scale: float
+    irls_iters: int
+    tangent_window_px: float
+    min_support: float
+    def __init__(
+        self,
+        passes: Optional[int] = ...,
+        tol: Optional[float] = ...,
+        damping: Optional[float] = ...,
+        tension_px: Optional[float] = ...,
+        bending_px: Optional[float] = ...,
+        loss: Optional[str] = ...,
+        loss_scale: Optional[float] = ...,
+        irls_iters: Optional[int] = ...,
+        tangent_window_px: Optional[float] = ...,
+        min_support: Optional[float] = ...,
+    ) -> None: ...
+
+class BeadConfig:
+    """What a `BeadTracker` tracks and measures. `polarity` is "light" (default) or
+    "dark". `clearance` and `min_margin` are off when `None`. `track`, `measure` and
+    `tuning` are copies: assign a whole new value to change one."""
+
+    polarity: str
+    min_width: float
+    max_width: float
+    spacing: float
+    clearance: Optional[float]
+    min_margin: Optional[float]
+    track: BeadCaliper
+    measure: BeadCaliper
+    tuning: BeadTuning
+    def __init__(
+        self,
+        polarity: Optional[str] = ...,
+        min_width: Optional[float] = ...,
+        max_width: Optional[float] = ...,
+        spacing: Optional[float] = ...,
+        clearance: Optional[float] = ...,
+        min_margin: Optional[float] = ...,
+        track: Optional[BeadCaliper] = ...,
+        measure: Optional[BeadCaliper] = ...,
+        tuning: Optional[BeadTuning] = ...,
+    ) -> None: ...
+
 # ---------------------------------------------------------------------------
 # Result types
 # ---------------------------------------------------------------------------
@@ -726,6 +823,79 @@ class MeasureRejected(Exception):
     """Raised by `Caliper.measure`; `args[0]` is one of `"profile_too_short"`,
     `"no_edge"`, `"wrong_polarity"`, `"too_oblique"`, `"off_image"`,
     `"incomplete_sequence"`, `"low_contrast"`, `"no_crossing"`."""
+
+class BeadSolve:
+    """One pass's solve and the correction it applied. Lengths are in px;
+    `step_scale` is the fraction of the solved correction applied, below 1 when the
+    full step would fold the curve; `irls_iters` counts the reweighted solves after the
+    least-squares one."""
+
+    correction_rms: float
+    correction_max: float
+    residual_rms: float
+    residual_max: float
+    step_scale: float
+    irls_iters: int
+
+class BeadPass:
+    """One tracking pass. `longest_gap` is in px; `solve` is `None` when the pass
+    found too few pairs to solve and left the curve where it was."""
+
+    n_valid: int
+    support: float
+    longest_gap: float
+    solve: Optional[BeadSolve]
+    rejects: Dict[str, int]
+
+class TrackedBead:
+    """A tracked bead, one array row per station of the refined curve. `centerline`
+    is the next call's prior as it stands. `offset`, `width`, `confidence`, `center`,
+    `first` and `second` (the edges on the -n and +n sides) come from the final stage
+    and are NaN where it rejected; `reject` names the reason there. The statistics are
+    `None` without a hit. `stop` is "converged" (the last solved correction was below
+    `tol` and applied in full), "pass_limit" or "too_few_valid"; it says the loop
+    stopped, while `center_rms` and `center_max_dev` say whether the curve sits on the
+    bead. `rejects` counts the final stage's rejections by reason, in a fixed order."""
+
+    centerline: npt.NDArray[np.float32]
+    spacing: float
+    normals: npt.NDArray[np.float32]
+    offset: npt.NDArray[np.float32]
+    width: npt.NDArray[np.float32]
+    confidence: npt.NDArray[np.float32]
+    center: npt.NDArray[np.float32]
+    first: npt.NDArray[np.float32]
+    second: npt.NDArray[np.float32]
+    reject: List[Optional[str]]
+    support: float
+    longest_gap: float
+    n_used: int
+    center_rms: Optional[float]
+    center_max_dev: Optional[float]
+    width_mean: Optional[float]
+    width_std: Optional[float]
+    width_min: Optional[float]
+    width_max: Optional[float]
+    rejects: Dict[str, int]
+    stop: str
+    passes: List[BeadPass]
+
+class BeadTracker:
+    """Tracks a bead along a prior curve and measures its position and width along the
+    refined curve. Raises `ValueError` for an invalid config."""
+
+    config: BeadConfig
+    def __init__(self, config: Optional[BeadConfig] = ...) -> None: ...
+    def track(
+        self, image: ImageAny, prior: Union[PointsF32, npt.NDArray[np.float64]]
+    ) -> TrackedBead:
+        """Track from `prior`, an (N, 2) float32 or float64 polyline in any memory
+        layout. A missing bead is a result
+        with every station rejected; a prior with fewer than two points, a non-finite
+        point or no length raises `ValueError`. Reject reasons are the caliper's
+        (`"no_edge"`, `"off_image"`, ...) or the pair gates' (`"no_pair"`, `"width"`,
+        `"offset"`, `"clearance"`, `"ambiguous"`)."""
+        ...
 
 # ---------------------------------------------------------------------------
 # Detectors, fitters, matchers, segmentation

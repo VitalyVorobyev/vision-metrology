@@ -34,6 +34,7 @@
 
 // Invariant 21: residuals are always reported.
 
+mod bead;
 mod caliper;
 mod config;
 pub mod diagnostics;
@@ -41,6 +42,10 @@ mod model;
 mod placement;
 mod select;
 
+pub use bead::{
+    BeadCaliper, BeadConfig, BeadHit, BeadPass, BeadPolarity, BeadReject, BeadSample, BeadSolve,
+    BeadStats, BeadStop, BeadSummary, BeadTrack, BeadTracker, BeadTuning, TrackedBead,
+};
 pub use caliper::Caliper;
 pub use config::{
     Derivative, EdgeSelect, EdgeSequence, Locate, MeasureConfig, OffImage, PolaritySelect,

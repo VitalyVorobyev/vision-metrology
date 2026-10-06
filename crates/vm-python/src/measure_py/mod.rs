@@ -1,4 +1,4 @@
-//! Python bindings for `measure`: calipers and the metrology model.
+//! Python bindings for `measure`: calipers, the metrology model and the bead tracker.
 //!
 //! ## `RejectReason`
 //!
@@ -35,9 +35,11 @@ use vision_metrology::measure::{
 };
 use vm_primitives::{Point2f, Similarity2f, Vec2f, similarity_from_parts, wrap_angle};
 
+mod bead;
 mod caliper;
 mod model;
 
+pub use bead::{BeadPass, BeadSolve, BeadTracker, TrackedBead};
 pub use caliper::{Caliper, CaliperTrace};
 pub use model::{
     CaliperPlacement, MetrologyError, MetrologyModel, MetrologyObject, MetrologyResult,

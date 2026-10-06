@@ -245,7 +245,7 @@ impl Default for MeasureConfig {
 /// and *which gate* rejected it is the difference between "the part is missing"
 /// and "the search window was too short". Tallied across a scan, the dominant
 /// reason is the fastest route to a misconfigured recipe.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum RejectReason {
     /// The profile was shorter than the detector needs (3 samples).

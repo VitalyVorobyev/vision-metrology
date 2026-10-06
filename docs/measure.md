@@ -675,6 +675,8 @@ fitted primitive through a camera calibration with the `metric` module
 
 - [Shape-based object detection](shape-matching.md) — how `ShapeMatch::pose`,
   the fixture this module applies, is found in the first place.
+- [Tracking a bead](bead.md) — strip calipers along a prior curve, refined into a
+  centreline and measured station by station.
 - [Performance and accuracy](performance.md) — the caliper's measured bias and
   noise envelope, and the can-end reference numbers.
 

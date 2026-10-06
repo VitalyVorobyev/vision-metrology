@@ -30,17 +30,18 @@ use pyo3::prelude::*;
 use pyo3::wrap_pyfunction;
 
 use config::{
-    Contrast, CorrConfig, CorrSearchTuning, CorrTemplateConfig, CorrTemplateTuning,
-    DisplacementConfig, EdgeConfig, FitConfig, Locate, LogPolarScaleConfig, LsdConfig,
-    MeasureConfig, MomentScaleConfig, Refine, ScaleInvariantConfig, ShapeModelConfig,
-    ShapeSearchConfig, ShapeSearchTuning,
+    BeadCaliper, BeadConfig, BeadTuning, Contrast, CorrConfig, CorrSearchTuning,
+    CorrTemplateConfig, CorrTemplateTuning, DisplacementConfig, EdgeConfig, FitConfig, Locate,
+    LogPolarScaleConfig, LsdConfig, MeasureConfig, MomentScaleConfig, Refine, ScaleInvariantConfig,
+    ShapeModelConfig, ShapeSearchConfig, ShapeSearchTuning,
 };
 use corr_py::{CorrMatch, CorrTemplate, Displacement, displacement, find, find_topk};
 use detector::EdgeDetector;
 use match_py::{CropSpec, ShapeMatcher, ShapeModel};
 use measure_py::{
-    Caliper, CaliperPlacement, CaliperTrace, MeasureRejected, MetrologyError, MetrologyModel,
-    MetrologyObject, MetrologyResult, MetrologyShape, ObjectTrace,
+    BeadPass, BeadSolve, BeadTracker, Caliper, CaliperPlacement, CaliperTrace, MeasureRejected,
+    MetrologyError, MetrologyModel, MetrologyObject, MetrologyResult, MetrologyShape, ObjectTrace,
+    TrackedBead,
 };
 use metric_py::{
     BrownConrady5, CameraModel, PinholeIntrinsics, Plane3, PlaneGrid, load_rig_extrinsics,
@@ -71,6 +72,9 @@ fn vision_metrology(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ShapeSearchConfig>()?;
     m.add_class::<MeasureConfig>()?;
     m.add_class::<Locate>()?;
+    m.add_class::<BeadCaliper>()?;
+    m.add_class::<BeadTuning>()?;
+    m.add_class::<BeadConfig>()?;
     m.add_class::<CropSpec>()?;
     m.add_class::<CorrTemplateTuning>()?;
     m.add_class::<CorrTemplateConfig>()?;
@@ -91,6 +95,7 @@ fn vision_metrology(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Segmenter>()?;
     m.add_class::<Caliper>()?;
     m.add_class::<MetrologyModel>()?;
+    m.add_class::<BeadTracker>()?;
     m.add_class::<Map>()?;
     m.add_class::<CorrTemplate>()?;
 
@@ -119,6 +124,9 @@ fn vision_metrology(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<CaliperPlacement>()?;
     m.add_class::<CaliperTrace>()?;
     m.add_class::<ObjectTrace>()?;
+    m.add_class::<TrackedBead>()?;
+    m.add_class::<BeadPass>()?;
+    m.add_class::<BeadSolve>()?;
     m.add_class::<CorrMatch>()?;
     m.add_class::<Displacement>()?;
     m.add_class::<ScaleEstimate>()?;

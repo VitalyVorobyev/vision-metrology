@@ -193,6 +193,10 @@ name = "corrmatch_bridge"
 required-features = ["corr", "matching"]
 
 [[test]]
+name = "bead"
+required-features = ["measure"]
+
+[[test]]
 name = "caliper_bits"
 required-features = ["measure"]
 

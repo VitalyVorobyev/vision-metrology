@@ -94,6 +94,8 @@ More scripts are in [`examples/python/`](examples/python), and the API overview 
 - [Measuring a located part](docs/measure.md): calipers, rect, arc, radial and strip
   placement, where an edge is located (gradient peak, midpoint or half-contrast), the
   metrology model, reading `RejectReason`, and tracing a failure with `explain`.
+- [Tracking a bead](docs/bead.md): a prior curve refined by strip calipers, the pair gates,
+  the regulariser, reading the quality statistics, and moving a prior from frame to frame.
 - [Performance and accuracy](docs/performance.md): speed, accuracy envelopes on
   synthetic ground truth, and real-data results.
 - API reference: `cargo doc --open`, or the
