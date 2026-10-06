@@ -437,6 +437,9 @@ In Python, `model.explain(img, x, y, angle=..., scale=..., origin=...)` takes
 `apply`'s arguments and returns `ObjectTrace`s whose `result` is a
 `MetrologyResult` or a `MetrologyError`.
 
+A bead tracker's run is explained the same way, every station of every pass, with
+`measure::diagnostics::explain_bead` ([Tracking a bead](bead.md#seeing-why)).
+
 ## Running CaliperBench
 
 [CaliperBench](https://github.com/VitalyVorobyev/caliperbench) scores edge

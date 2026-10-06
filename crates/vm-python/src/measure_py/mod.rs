@@ -36,10 +36,12 @@ use vision_metrology::measure::{
 use vm_primitives::{Point2f, Similarity2f, Vec2f, similarity_from_parts, wrap_angle};
 
 mod bead;
+mod bead_trace;
 mod caliper;
 mod model;
 
 pub use bead::{BeadPass, BeadSolve, BeadTracker, TrackedBead};
+pub use bead_trace::{BeadPassTrace, BeadStationTrace, BeadTrace};
 pub use caliper::{Caliper, CaliperTrace};
 pub use model::{
     CaliperPlacement, MetrologyError, MetrologyModel, MetrologyObject, MetrologyResult,

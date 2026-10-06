@@ -98,6 +98,12 @@ are relative to 0.1.0.
     reason); and a `BeadTrack` (one `BeadPass` per pass, with a `BeadSolve` when the pass
     solved, and `BeadStop::{Converged, PassLimit, TooFewValid}`). `BeadReject` and
     `BeadStop` have `as_str`.
+  - `measure::diagnostics::explain_bead` tracks once, through the same code as `track`,
+    and returns a `BeadTrace`: `track`'s result to the bit; one `BeadPassTrace` per pass
+    with each station's `BeadStationTrace` (point, tangent, normal, offset window, strip,
+    `CaliperTrace`, and pair or rejection), the solve's weights and the corrections
+    applied; and the final stage's stations. With the `serde` feature, `BeadTrace` and
+    `MeasureStrip` serialize.
   - `RejectReason` derives `Hash`. With the `serde` feature, `MeasurePair` and the bead
     results (de)serialize. The prelude gains `BeadTracker`, `BeadConfig` and
     `TrackedBead`.
@@ -105,6 +111,9 @@ are relative to 0.1.0.
     and a `float32` or `float64` prior, `vm.TrackedBead` (per-station arrays, reject
     strings, statistics, and `vm.BeadPass` records with an optional `vm.BeadSolve`),
     `vm.BeadConfig`, `vm.BeadCaliper` (`to_measure_config`) and `vm.BeadTuning`.
+    `BeadTracker.explain(image, prior)` returns a `vm.BeadTrace`: each pass as a
+    `vm.BeadPassTrace` of per-station arrays with a `vm.CaliperTrace` per station, and the
+    final stage as `vm.BeadStationTrace`s.
 - **Robust fitting** (`fit`): `fit_line`, `fit_circle` (Taubin then Gauss–Newton) and
   `fit_ellipse`, with `RobustLoss::{Huber, Tukey}` (annealed) and `RansacConfig`. Every fit
   reports `rms`, `max_dev` and `n_used`.

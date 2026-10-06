@@ -28,7 +28,11 @@ results, so the caller cannot tell which item failed.
   it places each caliper with `apply`'s placement code, measures it once through
   `explain`, and fits through the loop `apply` runs. Each object's result is `apply`'s,
   with every caliper's placement and trace beside it, so a tool needs no second
-  measurement per caliper.
+  measurement per caliper. `diagnostics::explain_bead` runs the bead tracker once, through
+  the run `BeadTracker::track` uses, with a tracing probe in place of the one that only
+  measures: every strip is measured through `explain`. Its result is `track`'s to the bit,
+  with each station's strip, caliper trace and pair or rejection beside it, in every pass
+  and in the final stage.
 - Python raises `MeasureRejected` with the reason as a string.
 
 ## Alternatives

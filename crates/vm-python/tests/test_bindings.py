@@ -1937,6 +1937,69 @@ def test_bead_prior_accepts_float64_and_any_layout():
         assert np.array_equal(other.centerline, base.centerline)
 
 
+def test_bead_tracker_explain_returns_the_track_result_with_its_evidence():
+    img, a, t = make_bead()
+    u8 = img.round().astype(np.uint8)
+    # A break in the bead, a few stations wide: those stations find no edge.
+    u8[:, 150:170] = 40
+    prior = bead_prior(a, t, offset=6.0)
+    trace = vm.BeadTracker().explain(u8, prior)
+    bead = vm.BeadTracker().track(u8, prior)
+
+    r = trace.result
+    assert isinstance(r, vm.TrackedBead)
+    arrays = ("centerline", "normals", "offset", "width", "confidence", "center", "first", "second")
+    for name in arrays:
+        np.testing.assert_array_equal(getattr(r, name), getattr(bead, name), err_msg=name)
+    for name in ("reject", "stop", "rejects", "support", "n_used", "width_mean"):
+        assert getattr(r, name) == getattr(bead, name), name
+    assert "no_edge" in r.reject and None in r.reject
+
+    n = r.centerline.shape[0]
+    assert len(trace.passes) == len(r.passes) > 1
+    for p in trace.passes:
+        for arr in (p.points, p.tangents, p.normals, p.windows, p.strip_starts, p.strip_ends):
+            assert arr.shape == (n, 2) and arr.dtype == np.float32
+        for arr in (p.observed, p.weights, p.corrections):
+            assert arr.shape == (n,) and arr.dtype == np.float32
+        assert len(p.reject) == n and len(p.calipers) == n
+        assert all(isinstance(c, vm.CaliperTrace) for c in p.calipers)
+        rejected = np.array([x is not None for x in p.reject])
+        assert rejected.any() and not rejected.all()
+        assert np.isnan(p.observed[rejected]).all() and not np.isnan(p.observed[~rejected]).any()
+        assert (p.weights[rejected] == 0).all()
+        # n = t.perp(), and each strip runs through its station along the normal.
+        np.testing.assert_array_equal(p.normals[:, 0], -p.tangents[:, 1])
+        mid = 0.5 * (p.strip_starts + p.strip_ends)
+        assert np.abs(mid - p.points).max() < 1e-3
+        assert np.all(p.windows[:, 0] < 0) and np.all(p.windows[:, 1] > 0)
+    first = trace.passes[0]
+    assert np.abs(first.corrections).max() == r.passes[0].solve.correction_max
+
+    assert len(trace.measure) == n
+    for i, st in enumerate(trace.measure):
+        assert st.point == tuple(r.centerline[i]) and st.reject == r.reject[i]
+        if st.reject is None:
+            assert st.pair.width == r.width[i] and st.offset == r.offset[i]
+            assert st.caliper.reject is None and len(st.caliper.edges) >= 2
+        else:
+            assert st.pair is None and st.offset is None and st.confidence is None
+    gap = r.reject.index("no_edge")
+    assert trace.measure[gap].caliper.reject == "no_edge"
+
+
+def test_bead_tracker_explain_never_raises_on_a_missing_bead():
+    flat = np.full((200, 240), 100, dtype=np.uint8)
+    _, a, t = make_bead()
+    trace = vm.BeadTracker().explain(flat, bead_prior(a, t, offset=0.0))
+    assert trace.result.stop == "too_few_valid"
+    [p] = trace.passes
+    assert (p.weights == 0).all() and (p.corrections == 0).all() and np.isnan(p.observed).all()
+    assert all(st.reject == "no_edge" for st in trace.measure)
+    with pytest.raises(ValueError):
+        vm.BeadTracker().explain(flat, np.zeros((1, 2), dtype=np.float32))
+
+
 def test_bead_caliper_to_measure_config_keeps_every_edge():
     cal = vm.BeadCaliper(threshold=7.0, sigma=1.5, step=0.5, off_image="reject")
     m = cal.to_measure_config()

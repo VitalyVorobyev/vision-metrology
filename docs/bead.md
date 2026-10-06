@@ -276,6 +276,89 @@ fn bead_ok(bead: &TrackedBead) -> bool {
   - `Caliper(NoEdge)`: the threshold, or a missing bead;
   - `Clearance`: a distractor.
 
+## Seeing why
+
+`track` keeps only what the next call reuses. When a station is rejected, or the curve
+is not where you expect it, `measure::diagnostics::explain_bead` tracks once more and keeps
+every station's evidence:
+
+```rust
+use vision_metrology::measure::BeadTracker;
+use vision_metrology::measure::diagnostics::explain_bead;
+use vision_metrology::{Error, ImageView, Point2f};
+
+fn why(
+    tracker: &mut BeadTracker,
+    img: &ImageView<'_, u8>,
+    prior: &[Point2f],
+) -> Result<(), Error> {
+    let trace = explain_bead(tracker, img, prior)?;
+    for (i, st) in trace.measure.iter().enumerate() {
+        let Err(reason) = st.hit else { continue };
+        println!(
+            "station {i}: {} (window {:?} px, {} edges on the strip)",
+            reason.as_str(),
+            st.window,
+            st.caliper.edges.len()
+        );
+    }
+    Ok(())
+}
+```
+
+| `BeadTrace` field | What it holds |
+|---|---|
+| `result` | what `track` returns for the same tracker, image and prior, to the bit |
+| `passes` | one `BeadPassTrace` per tracking pass: its `stations`, and per station the `weights` the solve gave the observations and the `corrections` the pass applied |
+| `measure` | the final stage's stations, parallel to `result.samples` |
+
+Each `BeadStationTrace` holds:
+- the station's `point`, `tangent` and `normal`;
+- the `window`, the offsets `(lo, hi)` a pair's midpoint had to fall in;
+- the `strip` its caliper measured, from `−n` to `+n`, with the station at its middle;
+- the caliper's whole `CaliperTrace` ([Seeing why](measure.md#seeing-why)). An edge's `t`
+  is its distance from the strip's start, so its offset from the station is `t` minus
+  half the strip's length;
+- the `hit`: the pair, or the gate that rejected every pair.
+
+A tracking pass's stations are where the pass measured, before it moved the curve. A
+pass's support, rejections and solve are the same entry of `result.track.passes`.
+
+Reading a rejected station:
+- **`Caliper(..)`.** The caliper's own reason: read its trace as for any caliper.
+  `Caliper(OffImage)` with edges in the trace means every edge lay in border fill.
+- **`NoPair`, `Width`.** `caliper.edges` holds every edge the gates paired, with its
+  polarity and position. Look for the bead's two edges and their distance.
+- **`Offset`.** A pair of a valid width is there, but its midpoint is outside `window`:
+  the curve is further from the bead than the stage's reach. In a tracking pass that is
+  the prior's error. In the final stage, the tracking did not bring the curve there.
+- **`Clearance`, `Ambiguous`.** Another edge lies within `clearance` of the pair, or a
+  second pair scores nearly as well; `caliper.edges` shows which.
+- **A hit with a weight near 0 in a pass** was an outlier to the robust loss: its pair
+  disagrees with its neighbours'.
+
+`explain_bead` runs the tracker once, through the same code as `track`, with every strip
+measured through `diagnostics::explain`. Its result is `track`'s to the bit, and the
+tracker's later results are unchanged. It allocates a caliper trace per station and
+pass, so it belongs in a tool that shows why a bead measured what it did, not in the
+inspection loop. With the `serde` feature, a `BeadTrace` serializes.
+
+In Python, `tracker.explain(image, prior)` takes `track`'s arguments. Each pass is arrays,
+one row per station; the final stage is a list of `BeadStationTrace`:
+
+```python
+trace = tracker.explain(image, prior)
+trace.result               # the TrackedBead that track() returns
+p = trace.passes[0]
+p.points, p.normals, p.windows        # (N, 2) float32
+p.observed, p.weights, p.corrections  # (N,) float32; observed is NaN where rejected
+p.reject[i], p.calipers[i].edges      # why station i was rejected, and what it saw
+st = trace.measure[i]                 # the final stage's station i
+st.reject, st.window, st.caliper.candidates
+```
+
+A rejected station is part of the trace and never raises.
+
 ## From frame to frame
 
 The refined centreline is a polyline in image coordinates, so the previous result is the
