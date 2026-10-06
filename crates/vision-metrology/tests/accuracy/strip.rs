@@ -37,8 +37,8 @@ use vision_metrology::{Image, Point2f, SubpixRefine};
 
 use super::{Measured, mean_std};
 
-const LO: f64 = 40.0;
-const HI: f64 = 200.0;
+pub(super) const LO: f64 = 40.0;
+pub(super) const HI: f64 = 200.0;
 const PSF_SIGMAS: [f64; 4] = [0.0, 0.6, 1.2, 2.5];
 const ANGLES_DEG: [f64; 4] = [0.0, 10.0, 30.0, 45.0];
 const PHASES: [f64; 4] = [0.0, 0.25, 0.5, 0.75];
@@ -107,7 +107,12 @@ fn normal(deg: f64) -> (f64, f64) {
 
 /// A noise-free `size × size` image, in DN, of parallel straight edges along `n`:
 /// `LO + (HI − LO)·Σ sign·coverage(n·p − distance)` over `(distance, sign)` steps.
-fn render_steps(size: usize, n: (f64, f64), steps: &[(f64, f64)], sigma: f64) -> Vec<f64> {
+pub(super) fn render_steps(
+    size: usize,
+    n: (f64, f64),
+    steps: &[(f64, f64)],
+    sigma: f64,
+) -> Vec<f64> {
     let mut out = Vec::with_capacity(size * size);
     for y in 0..size {
         for x in 0..size {
