@@ -39,7 +39,7 @@ mod bead;
 mod caliper;
 mod model;
 
-pub use bead::{BeadPass, BeadTracker, TrackedBead};
+pub use bead::{BeadPass, BeadSolve, BeadTracker, TrackedBead};
 pub use caliper::{Caliper, CaliperTrace};
 pub use model::{
     CaliperPlacement, MetrologyError, MetrologyModel, MetrologyObject, MetrologyResult,

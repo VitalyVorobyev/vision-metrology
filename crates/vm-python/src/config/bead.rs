@@ -16,7 +16,8 @@ use vision_metrology::measure::{
 };
 
 use super::measure::{
-    BORDER_MODES, DERIVATIVES, Locate, OFF_IMAGES, Profile, check_name, not_one_of, profile_names,
+    BORDER_MODES, DERIVATIVES, Locate, MeasureConfig, OFF_IMAGES, Profile, check_name, not_one_of,
+    profile_names,
 };
 
 const POLARITIES: &[&str] = &["light", "dark"];
@@ -107,6 +108,28 @@ impl BeadCaliper {
         })
     }
 
+    /// The `MeasureConfig` each strip of this stage measures with: every edge
+    /// (`select="all"`) of either polarity (`polarity="any"`). Raises `ValueError` when a
+    /// string field holds a name it does not accept.
+    pub fn to_measure_config(&self) -> PyResult<MeasureConfig> {
+        self.to_native()?;
+        Ok(MeasureConfig {
+            sigma: self.sigma,
+            threshold: self.threshold,
+            polarity: "any".into(),
+            select: "all".into(),
+            sequence: Vec::new(),
+            step: self.step,
+            max_obliquity_deg: self.max_obliquity_deg,
+            border_mode: self.border_mode.clone(),
+            border_constant: self.border_constant,
+            derivative: self.derivative.clone(),
+            kernel_radius_px: self.kernel_radius_px,
+            locate: self.locate.clone(),
+            off_image: self.off_image.clone(),
+        })
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "BeadCaliper(max_offset={}, half_width={}, threshold={}, sigma={}, step={})",
@@ -168,8 +191,9 @@ impl BeadCaliper {
 #[derive(Debug, Clone)]
 pub struct BeadTuning {
     /// The most tracking passes (at least 1).
-    pub passes: usize,
-    /// Stop once a pass moves no station by more than this, in px.
+    pub passes: i64,
+    /// Stop ("converged") once a pass's solved correction is below this at every station,
+    /// in px, and was applied in full.
     pub tol: f32,
     /// Trust in the prior: a penalty on each correction's size; dimensionless.
     pub damping: f32,
@@ -181,8 +205,8 @@ pub struct BeadTuning {
     pub loss: String,
     /// The loss constant in px, for "huber" and "tukey".
     pub loss_scale: f32,
-    /// The most reweighted solves per pass (at least 1).
-    pub irls_iters: usize,
+    /// The most reweighted solves per pass after the first, least-squares one (at least 1).
+    pub irls_iters: i64,
     /// Half-length of each tangent's chord, in px of arc length.
     pub tangent_window_px: f32,
     /// The fraction of stations, in [0, 1], that must find the bead for a pass to move the
@@ -199,14 +223,14 @@ impl BeadTuning {
         loss_scale=None, irls_iters=None, tangent_window_px=None, min_support=None
     ))]
     pub fn new(
-        passes: Option<usize>,
+        passes: Option<i64>,
         tol: Option<f32>,
         damping: Option<f32>,
         tension_px: Option<f32>,
         bending_px: Option<f32>,
         loss: Option<String>,
         loss_scale: Option<f32>,
-        irls_iters: Option<usize>,
+        irls_iters: Option<i64>,
         tangent_window_px: Option<f32>,
         min_support: Option<f32>,
     ) -> PyResult<Self> {
@@ -251,23 +275,25 @@ impl BeadTuning {
             NativeRobustLoss::Tukey { c } => ("tukey", c),
         };
         Self {
-            passes: n.passes.get(),
+            passes: n.passes.get() as i64,
             tol: n.tol,
             damping: n.damping,
             tension_px: n.tension_px,
             bending_px: n.bending_px,
             loss: loss.into(),
             loss_scale,
-            irls_iters: n.irls_iters.get(),
+            irls_iters: n.irls_iters.get() as i64,
             tangent_window_px: n.tangent_window_px,
             min_support: n.min_support,
         }
     }
 
     fn to_native(&self) -> PyResult<NativeBeadTuning> {
-        let count = |name: &str, v: usize| {
-            NonZeroUsize::new(v)
-                .ok_or_else(|| PyValueError::new_err(format!("{name} must be at least 1")))
+        let count = |name: &str, v: i64| {
+            usize::try_from(v)
+                .ok()
+                .and_then(NonZeroUsize::new)
+                .ok_or_else(|| PyValueError::new_err(format!("{name} must be at least 1, got {v}")))
         };
         Ok(NativeBeadTuning {
             passes: count("passes", self.passes)?,

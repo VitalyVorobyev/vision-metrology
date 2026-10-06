@@ -1,33 +1,48 @@
-//! `BeadTracker`, `TrackedBead` and `BeadPass`.
+//! `BeadTracker`, `TrackedBead`, `BeadPass` and `BeadSolve`.
 
-use numpy::ndarray::Array2;
-use numpy::{IntoPyArray, PyArray1, PyArray2, PyReadonlyArray2, PyUntypedArrayMethods};
+use numpy::ndarray::{Array2, ArrayView2};
+use numpy::{IntoPyArray, PyArray1, PyArray2, PyReadonlyArray2};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use vision_metrology::measure::{
-    BeadPass as NativeBeadPass, BeadReject, BeadTracker as NativeBeadTracker,
-    TrackedBead as NativeTrackedBead,
+    BeadPass as NativeBeadPass, BeadReject, BeadSolve as NativeBeadSolve,
+    BeadTracker as NativeBeadTracker, TrackedBead as NativeTrackedBead,
 };
 use vm_primitives::Point2f;
 
 use crate::config::BeadConfig;
 use crate::convert::{any_image_from_numpy, with_any_image};
 
-/// The prior: an `(N, 2)` `float32` array of `(x, y)` rows.
-fn prior_from_numpy(prior: &PyReadonlyArray2<'_, f32>) -> PyResult<Vec<Point2f>> {
-    let shape = prior.shape();
-    if shape.len() != 2 || shape[1] != 2 {
+/// The rows of an `(N, 2)` array as points, in any memory layout.
+fn rows_to_points<T: Copy>(
+    a: ArrayView2<'_, T>,
+    f32_of: impl Fn(T) -> f32,
+) -> PyResult<Vec<Point2f>> {
+    if a.ncols() != 2 {
         return Err(PyValueError::new_err(format!(
-            "prior must be an (N, 2) float32 array, got shape {shape:?}"
+            "prior must have shape (N, 2), got {:?}",
+            a.shape()
         )));
     }
-    let slice = prior
-        .as_slice()
-        .map_err(|e| PyValueError::new_err(format!("prior array not C-contiguous: {e}")))?;
-    Ok((0..shape[0])
-        .map(|i| Point2f::new(slice[2 * i], slice[2 * i + 1]))
+    Ok(a.rows()
+        .into_iter()
+        .map(|r| Point2f::new(f32_of(r[0]), f32_of(r[1])))
         .collect())
+}
+
+/// The prior: an `(N, 2)` `float32` or `float64` array of `(x, y)` rows, in any memory
+/// layout; `float64` is rounded to `float32`.
+fn prior_from_numpy(prior: &Bound<'_, PyAny>) -> PyResult<Vec<Point2f>> {
+    if let Ok(a) = prior.extract::<PyReadonlyArray2<'_, f32>>() {
+        rows_to_points(a.as_array(), |v| v)
+    } else if let Ok(a) = prior.extract::<PyReadonlyArray2<'_, f64>>() {
+        rows_to_points(a.as_array(), |v| v as f32)
+    } else {
+        Err(PyValueError::new_err(
+            "prior must be a 2-D (N, 2) float32 or float64 numpy array",
+        ))
+    }
 }
 
 /// Reject counts as a dict, in the fixed reason order.
@@ -47,22 +62,56 @@ fn rows(py: Python<'_>, xy: Vec<f32>) -> PyResult<Py<PyArray2<f32>>> {
     Ok(arr.into_pyarray(py).unbind())
 }
 
-/// One tracking pass — mirrors `vision_metrology::measure::BeadPass`.
+/// One pass's solve and the correction it applied — mirrors
+/// `vision_metrology::measure::BeadSolve`.
 ///
-/// Lengths are in px. `step_scale` is the fraction of the solved correction applied (0
-/// when the pass did not move the curve); `rejects` counts the stations rejected, by
-/// reason.
+/// Lengths are in px. `step_scale` is the fraction of the solved correction applied, below
+/// 1 when the full step would fold the curve; `irls_iters` counts the reweighted solves
+/// after the first, least-squares one.
 #[pyclass(get_all, skip_from_py_object)]
-pub struct BeadPass {
-    pub n_valid: usize,
-    pub support: f32,
-    pub longest_gap: f32,
+#[derive(Debug, Clone, Copy)]
+pub struct BeadSolve {
     pub correction_rms: f32,
     pub correction_max: f32,
     pub residual_rms: f32,
     pub residual_max: f32,
     pub step_scale: f32,
     pub irls_iters: usize,
+}
+
+impl From<NativeBeadSolve> for BeadSolve {
+    fn from(s: NativeBeadSolve) -> Self {
+        Self {
+            correction_rms: s.correction_rms,
+            correction_max: s.correction_max,
+            residual_rms: s.residual_rms,
+            residual_max: s.residual_max,
+            step_scale: s.step_scale,
+            irls_iters: s.irls_iters,
+        }
+    }
+}
+
+#[pymethods]
+impl BeadSolve {
+    fn __repr__(&self) -> String {
+        format!(
+            "BeadSolve(correction_max={:.4}, residual_rms={:.4}, step_scale={:.3})",
+            self.correction_max, self.residual_rms, self.step_scale
+        )
+    }
+}
+
+/// One tracking pass — mirrors `vision_metrology::measure::BeadPass`.
+///
+/// `longest_gap` is in px; `solve` is `None` when the pass found too few pairs to solve
+/// and left the curve where it was; `rejects` counts the stations rejected, by reason.
+#[pyclass(get_all, skip_from_py_object)]
+pub struct BeadPass {
+    pub n_valid: usize,
+    pub support: f32,
+    pub longest_gap: f32,
+    pub solve: Option<BeadSolve>,
     pub rejects: Py<PyDict>,
 }
 
@@ -72,12 +121,7 @@ impl BeadPass {
             n_valid: p.n_valid,
             support: p.support,
             longest_gap: p.longest_gap,
-            correction_rms: p.correction_rms,
-            correction_max: p.correction_max,
-            residual_rms: p.residual_rms,
-            residual_max: p.residual_max,
-            step_scale: p.step_scale,
-            irls_iters: p.irls_iters,
+            solve: p.solve.map(BeadSolve::from),
             rejects: rejects_dict(py, &p.rejects)?,
         })
     }
@@ -87,8 +131,10 @@ impl BeadPass {
 impl BeadPass {
     fn __repr__(&self) -> String {
         format!(
-            "BeadPass(n_valid={}, correction_max={:.4}, residual_rms={:.4}, step_scale={:.3})",
-            self.n_valid, self.correction_max, self.residual_rms, self.step_scale
+            "BeadPass(n_valid={}, support={:.3}, solve={:?})",
+            self.n_valid,
+            self.support,
+            self.solve.map(|s| s.correction_max)
         )
     }
 }
@@ -218,7 +264,8 @@ impl TrackedBead {
 /// `vision_metrology::measure::BeadTracker`.
 ///
 /// `BeadTracker(config)` raises `ValueError` for an invalid config. `track(image, prior)`
-/// takes a `uint8`, `uint16` or `float32` image and an `(N, 2)` `float32` prior, and
+/// takes a `uint8`, `uint16` or `float32` image and an `(N, 2)` `float32` or `float64`
+/// prior, and
 /// raises `ValueError` for a prior with fewer than two points, a non-finite point or no
 /// length; a bead that is not there is a `TrackedBead` with every station rejected.
 #[pyclass]
@@ -259,9 +306,9 @@ impl BeadTracker {
         &mut self,
         py: Python<'_>,
         image: &Bound<'_, PyAny>,
-        prior: PyReadonlyArray2<'_, f32>,
+        prior: &Bound<'_, PyAny>,
     ) -> PyResult<TrackedBead> {
-        let prior = prior_from_numpy(&prior)?;
+        let prior = prior_from_numpy(prior)?;
         let any = any_image_from_numpy(py, image)?;
         let bead = with_any_image!(any, view => self.inner.track(&view, &prior))
             .map_err(|e| PyValueError::new_err(e.to_string()))?;

@@ -410,11 +410,17 @@ class BeadCaliper:
         kernel_radius_px: Optional[float] = ...,
         off_image: Optional[str] = ...,
     ) -> None: ...
+    def to_measure_config(self) -> MeasureConfig:
+        """The `MeasureConfig` each strip of this stage measures with: every edge
+        (`select="all"`) of either polarity (`polarity="any"`)."""
+        ...
 
 class BeadTuning:
     """How hard a `BeadTracker` works and how stiff its corrections are. `loss` is
-    "none", "huber" (default, `loss_scale` 1 px) or "tukey". Corrections shorter than
-    about `2*pi*bending_px` are suppressed in one pass."""
+    "none", "huber" (default, `loss_scale` 1 px) or "tukey", applied by `irls_iters`
+    reweighted solves after a least-squares one. Corrections shorter than about
+    `2*pi*bending_px` are suppressed in one pass and decay over passes. `passes` and
+    `irls_iters` must be at least 1, or the config raises `ValueError` when used."""
 
     passes: int
     tol: float
@@ -818,19 +824,27 @@ class MeasureRejected(Exception):
     `"no_edge"`, `"wrong_polarity"`, `"too_oblique"`, `"off_image"`,
     `"incomplete_sequence"`, `"low_contrast"`, `"no_crossing"`."""
 
-class BeadPass:
-    """One tracking pass. Lengths are in px; `step_scale` is the fraction of the
-    solved correction applied (0 when the pass did not move the curve)."""
+class BeadSolve:
+    """One pass's solve and the correction it applied. Lengths are in px;
+    `step_scale` is the fraction of the solved correction applied, below 1 when the
+    full step would fold the curve; `irls_iters` counts the reweighted solves after the
+    least-squares one."""
 
-    n_valid: int
-    support: float
-    longest_gap: float
     correction_rms: float
     correction_max: float
     residual_rms: float
     residual_max: float
     step_scale: float
     irls_iters: int
+
+class BeadPass:
+    """One tracking pass. `longest_gap` is in px; `solve` is `None` when the pass
+    found too few pairs to solve and left the curve where it was."""
+
+    n_valid: int
+    support: float
+    longest_gap: float
+    solve: Optional[BeadSolve]
     rejects: Dict[str, int]
 
 class TrackedBead:
@@ -838,8 +852,10 @@ class TrackedBead:
     is the next call's prior as it stands. `offset`, `width`, `confidence`, `center`,
     `first` and `second` (the edges on the -n and +n sides) come from the final stage
     and are NaN where it rejected; `reject` names the reason there. The statistics are
-    `None` without a hit. `stop` is "converged", "pass_limit" or "too_few_valid";
-    `rejects` counts the final stage's rejections by reason, in a fixed order."""
+    `None` without a hit. `stop` is "converged" (the last solved correction was below
+    `tol` and applied in full), "pass_limit" or "too_few_valid"; it says the loop
+    stopped, while `center_rms` and `center_max_dev` say whether the curve sits on the
+    bead. `rejects` counts the final stage's rejections by reason, in a fixed order."""
 
     centerline: npt.NDArray[np.float32]
     spacing: float
@@ -870,8 +886,11 @@ class BeadTracker:
 
     config: BeadConfig
     def __init__(self, config: Optional[BeadConfig] = ...) -> None: ...
-    def track(self, image: ImageAny, prior: PointsF32) -> TrackedBead:
-        """Track from `prior`, an (N, 2) float32 polyline. A missing bead is a result
+    def track(
+        self, image: ImageAny, prior: Union[PointsF32, npt.NDArray[np.float64]]
+    ) -> TrackedBead:
+        """Track from `prior`, an (N, 2) float32 or float64 polyline in any memory
+        layout. A missing bead is a result
         with every station rejected; a prior with fewer than two points, a non-finite
         point or no length raises `ValueError`. Reject reasons are the caliper's
         (`"no_edge"`, `"off_image"`, ...) or the pair gates' (`"no_pair"`, `"width"`,

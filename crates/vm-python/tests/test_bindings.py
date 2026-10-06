@@ -1827,7 +1827,8 @@ def test_bead_tracker_follows_a_rendered_bead():
     assert bead.support == 1.0 and bead.n_used == stations
     assert bead.stop in ("converged", "pass_limit")
     assert bead.rejects == {}
-    assert bead.passes[0].correction_max > 5.0
+    assert bead.passes[0].solve.correction_max > 5.0
+    assert bead.passes[0].solve.step_scale == 1.0
 
     # The refined centreline lies on the bead's, and the widths are the bead's.
     off_line = (bead.centerline - a) @ n
@@ -1850,6 +1851,7 @@ def test_bead_tracker_rejects_every_station_on_a_flat_image():
     assert np.isnan(bead.width).all() and np.isnan(bead.center).all()
     assert bead.n_used == 0 and bead.width_mean is None and bead.center_rms is None
     assert bead.passes[0].n_valid == 0
+    assert bead.passes[0].solve is None, "a pass that never solved has no solve record"
 
 
 def test_bead_tracker_finds_a_dark_bead_only_when_asked():
@@ -1892,6 +1894,13 @@ def test_bead_config_errors_raise_value_error():
         vm.BeadTracker(vm.BeadConfig(track=vm.BeadCaliper(locate=vm.Locate.midpoint_crossing())))
     with pytest.raises(ValueError):
         vm.BeadTracker(vm.BeadConfig(tuning=vm.BeadTuning(passes=0)))
+    for bad in (vm.BeadTuning(passes=-1), vm.BeadTuning(irls_iters=-3)):
+        with pytest.raises(ValueError):
+            vm.BeadTracker(vm.BeadConfig(tuning=bad))
+    with pytest.raises(ValueError):
+        vm.BeadTracker(vm.BeadConfig(min_width=0.0))
+    with pytest.raises(ValueError):
+        vm.BeadTracker(vm.BeadConfig(track=vm.BeadCaliper(max_offset=1e9)))
     with pytest.raises(ValueError):
         vm.BeadTuning(loss="cauchy")
     tracker = vm.BeadTracker()
@@ -1905,6 +1914,36 @@ def test_bead_config_errors_raise_value_error():
         np.zeros((4, 3), dtype=np.float32),
         np.array([[1.0, 1.0], [np.nan, 2.0]], dtype=np.float32),
         np.array([[1.0, 1.0], [1.0, 1.0]], dtype=np.float32),
+        np.zeros((4, 2), dtype=np.int32),
+        np.zeros(8, dtype=np.float32),
+        [[1.0, 1.0], [5.0, 5.0]],
     ):
         with pytest.raises(ValueError):
             tracker.track(img, prior)
+
+
+def test_bead_prior_accepts_float64_and_any_layout():
+    img, a, t = make_bead()
+    u8 = img.round().astype(np.uint8)
+    prior = bead_prior(a, t, offset=6.0)
+    base = vm.BeadTracker().track(u8, prior)
+    wide = vm.BeadTracker().track(u8, prior.astype(np.float64))
+    fortran = vm.BeadTracker().track(u8, np.asfortranarray(prior))
+    # Every other row of a twice-as-long prior: a strided view of the same points.
+    doubled = np.repeat(prior, 2, axis=0)[::2]
+    assert not doubled.flags["C_CONTIGUOUS"]
+    strided = vm.BeadTracker().track(u8, doubled)
+    for other in (wide, fortran, strided):
+        assert np.array_equal(other.centerline, base.centerline)
+
+
+def test_bead_caliper_to_measure_config_keeps_every_edge():
+    cal = vm.BeadCaliper(threshold=7.0, sigma=1.5, step=0.5, off_image="reject")
+    m = cal.to_measure_config()
+    assert isinstance(m, vm.MeasureConfig)
+    assert (m.select, m.polarity) == ("all", "any")
+    assert (m.threshold, m.sigma, m.step, m.off_image) == (7.0, 1.5, 0.5, "reject")
+    bad = vm.BeadCaliper()
+    bad.border_mode = "mirror"
+    with pytest.raises(ValueError):
+        bad.to_measure_config()

@@ -100,7 +100,7 @@ Each Rust config is a Python class with keyword arguments, for example
 | `fit` | `Fitter` (`fit_line`, `fit_circle`, `fit_ellipse`), `fit_line`, `fit_ellipse`, `FitConfig`, `Line`, `Circle`, `Ellipse` |
 | `matching` | `ShapeModel` (incl. `save`/`load`, `resample_at`), `ShapeMatcher`, `ShapeMatch`, `find_shape_model`, `ShapeModelConfig`, `ShapeSearchConfig`, `ShapeSearchTuning`, `Contrast`, `CropSpec` (`ShapeMatch.model_frame_map`) |
 | `measure` | `Caliper` (`rect`/`arc`/`radial`/`strip`, `move_to_*`, `measure`, `measure_pairs`, `profile`, `levels`, `spacing`, `explain`), `MeasureEdge`, `MeasurePair`, `CaliperTrace`, `MeasureConfig`, `Locate`, `LevelEdge`, `MetrologyModel` (`apply`, `layout`, `explain`), `ObjectTrace`, `MetrologyObject`, `MetrologyShape`, `MetrologyResult`, `MetrologyError`, `CaliperPlacement`, `MeasureRejected` |
-| `measure` (bead) | `BeadTracker` (`track`, `config`), `TrackedBead` (per-station arrays, reject strings, statistics), `BeadPass`, `BeadConfig`, `BeadCaliper`, `BeadTuning` |
+| `measure` (bead) | `BeadTracker` (`track`, `config`), `TrackedBead` (per-station arrays, reject strings, statistics), `BeadPass`, `BeadSolve`, `BeadConfig`, `BeadCaliper` (`to_measure_config`), `BeadTuning` |
 | `warp` | `Map` (`affine`, `projective`, `polar`, `log_polar`, `apply`, `apply_with_mask`) |
 | `metric` | `CameraModel`, `PinholeIntrinsics`, `BrownConrady5`, `Plane3`, `PlaneGrid`, `pixel_to_plane`, `project_plane_points`, `plane_grid_map`, `undistort_map`, `load_rig_extrinsics`, `load_table_calibration` |
 | `corr` | `CorrTemplate`, `find`, `find_topk`, `CorrMatch`, `displacement`, `Displacement`, `CorrConfig`, `CorrSearchTuning`, `CorrTemplateConfig`, `CorrTemplateTuning`, `DisplacementConfig`, `Refine` |

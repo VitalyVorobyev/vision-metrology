@@ -39,7 +39,7 @@ use corr_py::{CorrMatch, CorrTemplate, Displacement, displacement, find, find_to
 use detector::EdgeDetector;
 use match_py::{CropSpec, ShapeMatcher, ShapeModel};
 use measure_py::{
-    BeadPass, BeadTracker, Caliper, CaliperPlacement, CaliperTrace, MeasureRejected,
+    BeadPass, BeadSolve, BeadTracker, Caliper, CaliperPlacement, CaliperTrace, MeasureRejected,
     MetrologyError, MetrologyModel, MetrologyObject, MetrologyResult, MetrologyShape, ObjectTrace,
     TrackedBead,
 };
@@ -126,6 +126,7 @@ fn vision_metrology(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ObjectTrace>()?;
     m.add_class::<TrackedBead>()?;
     m.add_class::<BeadPass>()?;
+    m.add_class::<BeadSolve>()?;
     m.add_class::<CorrMatch>()?;
     m.add_class::<Displacement>()?;
     m.add_class::<ScaleEstimate>()?;
