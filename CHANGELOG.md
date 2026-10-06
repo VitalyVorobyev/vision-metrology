@@ -170,6 +170,11 @@ are relative to 0.1.0.
 
 - **Contour graphs shattered into fragments** because the edgel mask was not thinned.
   `ContourBuildConfig::thin` (on by default) thins it before tracing.
+- **A reused `Edge1DDetector` could differ from a fresh one**, because it kept its kernel
+  for any σ within `f32::EPSILON` of the cached one, and it allocated a new kernel for any
+  other σ. It now compares σ exactly and refills its kernel buffers in place, so a caliper
+  moved across strips of slightly different spacing no longer allocates, and a reused
+  detector matches a fresh one bit for bit.
 
 ### Lab
 

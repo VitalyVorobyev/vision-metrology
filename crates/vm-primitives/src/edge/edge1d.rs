@@ -138,16 +138,15 @@ impl Edge1DDetector {
         self.ensure_kernel(sigma, None);
     }
 
-    /// Build the kernel for `sigma` and, if given, an explicit radius; reuse the
-    /// cached one when both already match.
+    /// Build the kernel for `sigma` and, if given, an explicit radius, refilling the
+    /// cached buffers in place; keep the cached kernel when both already match.
     fn ensure_kernel(&mut self, sigma: f32, radius: Option<usize>) {
-        let default_radius = || ((3.0 * sigma).ceil() as usize).max(1);
-        let want_radius = radius.unwrap_or_else(default_radius);
-        if (sigma - self.kernel.sigma).abs() > f32::EPSILON || want_radius != self.kernel.radius {
-            self.kernel = match radius {
-                Some(r) => DoGKernel1D::with_radius(sigma, r),
-                None => DoGKernel1D::new(sigma),
-            };
+        let radius = radius.unwrap_or_else(|| DoGKernel1D::default_radius(sigma));
+        // Exact: a σ one ulp away gets its own kernel, so a reused detector gives the
+        // bits a fresh one gives (invariant 12). Refilling in place keeps a caliper moved
+        // across strips of slightly different spacing allocation-free (invariant 6).
+        if sigma.to_bits() != self.kernel.sigma.to_bits() || radius != self.kernel.radius {
+            self.kernel.rebuild(sigma, radius);
         }
     }
 
@@ -624,6 +623,74 @@ mod tests {
             let mut fresh = Edge1DDetector::new(sigma);
             let b = nearest_peak_x(&fresh.detect_in(&sig, &cfg), EdgePolarity::Rising, x_l);
             assert_eq!(a, b, "sigma {sigma}");
+        }
+    }
+
+    fn bits(v: &[f32]) -> Vec<u32> {
+        v.iter().map(|x| x.to_bits()).collect()
+    }
+
+    fn peak_bits(peaks: &[crate::EdgePeak]) -> Vec<(usize, u32, u32, EdgePolarity)> {
+        peaks
+            .iter()
+            .map(|p| (p.idx, p.x.to_bits(), p.value.to_bits(), p.polarity))
+            .collect()
+    }
+
+    /// The kernel caches compare σ exactly: over σ, σ + 1 ulp, σ, 2σ, σ a reused detector
+    /// gives the response and peaks a fresh detector gives at each σ, bit for bit.
+    #[test]
+    fn reused_detector_matches_a_fresh_one_bit_for_bit() {
+        let sigma = 1.2f32;
+        let up = f32::from_bits(sigma.to_bits() + 1);
+        let sig = blur(&stripe_signal(96, 20.3, 35.7), sigma);
+        let central = Derivative1D::SmoothThenCentral {
+            radius: NonZeroUsize::new(4).expect("nonzero"),
+        };
+        for derivative in [Derivative1D::DerivativeOfGaussian, central] {
+            let cfg = |sigma| Edge1DConfig {
+                sigma,
+                derivative,
+                pos_thresh: 0.005,
+                neg_thresh: 0.005,
+                ..Edge1DConfig::default()
+            };
+            let fresh = |s: f32| {
+                let mut det = Edge1DDetector::new(s);
+                let peaks = peak_bits(det.detect_in_ref(&sig, &cfg(s)));
+                (bits(det.response()), peaks)
+            };
+            // One ulp of σ moves the response, so reusing the σ kernel at σ + 1 ulp shows.
+            assert_ne!(fresh(sigma).0, fresh(up).0, "{derivative:?}");
+
+            let mut reused = Edge1DDetector::new(sigma);
+            for s in [sigma, up, sigma, 2.0 * sigma, sigma] {
+                let peaks = peak_bits(reused.detect_in_ref(&sig, &cfg(s)));
+                let got = (bits(reused.response()), peaks);
+                assert_eq!(got, fresh(s), "{derivative:?} at σ = {s:e}");
+            }
+        }
+    }
+
+    /// A new σ refills the kernel in place: at the same or a smaller radius its buffers
+    /// are neither moved nor grown.
+    #[test]
+    fn a_new_sigma_reuses_the_kernel_buffers() {
+        let mut det = Edge1DDetector::new(2.0);
+        let buffers = |d: &Edge1DDetector| {
+            let k = &d.kernel;
+            (k.g.as_ptr(), k.g.capacity(), k.dg.as_ptr(), k.dg.capacity())
+        };
+        let before = buffers(&det);
+        // Radii 6, 3, 6, 6: σ in samples of a strip 0.02 px longer, a smaller kernel,
+        // and back.
+        for s in [1.999_000_5f32, 1.0, 1.75, 2.0] {
+            det.set_sigma(s);
+            assert_eq!(det.kernel.sigma.to_bits(), s.to_bits());
+            let fresh = DoGKernel1D::new(s);
+            assert_eq!(bits(&det.kernel.g), bits(&fresh.g), "σ = {s}");
+            assert_eq!(bits(&det.kernel.dg), bits(&fresh.dg), "σ = {s}");
+            assert_eq!(buffers(&det), before, "σ = {s}");
         }
     }
 
