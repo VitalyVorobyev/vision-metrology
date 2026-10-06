@@ -102,8 +102,9 @@ pub struct BeadTuning {
     pub loss: RobustLoss,
     /// The most reweighted solves per pass.
     pub irls_iters: NonZeroUsize,
-    /// Half-length, in pixels of arc length, of the chord each tangent is taken over.
-    /// Longer chords smooth a coarse prior's corners.
+    /// Half-length, in pixels of arc length, of the chord each tangent is taken over; it
+    /// shrinks near the ends so the chord stays centred. Longer chords smooth a coarse
+    /// prior's corners; on a curve whose curvature changes, they tilt the normal.
     pub tangent_window_px: f32,
     /// The fraction of stations, in `[0, 1]`, that must find the bead for a pass to move
     /// the curve.

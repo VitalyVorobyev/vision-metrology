@@ -23,6 +23,7 @@
 //!   the Rust split one-to-one: the top-level fields say *what* is being
 //!   searched for, `tuning`'s six fields say *how hard* the search works.
 
+mod bead;
 mod corr;
 mod edge;
 mod fit;
@@ -31,6 +32,7 @@ mod matching;
 mod measure;
 mod scale;
 
+pub use bead::{BeadCaliper, BeadConfig, BeadTuning};
 pub use corr::{
     CorrConfig, CorrSearchTuning, CorrTemplateConfig, CorrTemplateTuning, DisplacementConfig,
     Refine,

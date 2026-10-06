@@ -8,9 +8,11 @@
 //!   The first and last stations stay on the prior's ends' normals: the tracker moves the
 //!   curve sideways, it does not find where the bead starts or ends.
 //! - **Tangent and normal.** A station's tangent `t` is the chord over
-//!   `±tangent_window_px` of arc length (one-sided at the ends), pointing towards the
-//!   curve's end. Its normal is `n = t.perp() = (−t_y, t_x)`; with y down, that is to the
-//!   right of travel as drawn on screen. Reversing the prior reverses `t` and `n`.
+//!   `±tangent_window_px` of arc length, pointing towards the curve's end. Near the ends
+//!   the window shrinks so the chord stays centred on the station; the two end stations
+//!   take the chord to their neighbour. Its normal is `n = t.perp() = (−t_y, t_x)`; with
+//!   y down, that is to the right of travel as drawn on screen. Reversing the prior
+//!   reverses `t` and `n`.
 //! - **Offsets** are signed distances along `+n`, in pixels. A pair's `first` edge is on
 //!   the `−n` side and its `second` on the `+n` side.
 //! - **Polarity.** Each strip scans from `−n` to `+n`. A [`BeadPolarity::Light`] bead is a

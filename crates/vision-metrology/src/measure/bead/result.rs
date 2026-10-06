@@ -234,3 +234,14 @@ pub enum BeadStop {
     /// the curve where it was.
     TooFewValid,
 }
+
+impl BeadStop {
+    /// A stable snake_case name: `"converged"`, `"pass_limit"` or `"too_few_valid"`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Converged => "converged",
+            Self::PassLimit => "pass_limit",
+            Self::TooFewValid => "too_few_valid",
+        }
+    }
+}
