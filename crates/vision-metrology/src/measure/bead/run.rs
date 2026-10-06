@@ -173,10 +173,22 @@ fn measure_station<P: Pixel, R: Probe>(
     cal.set_strip(strip);
     let hit = match probe.measure(cal, img, edges) {
         Ok(()) => {
-            sort_edges(edges);
-            // The station's position along the strip, from the strip's own `f64` geometry.
-            let center_t = 0.5 * strip.geometry().length;
-            choose(edges, center_t, pose.window, g)
+            // An edge located in border fill is not evidence: a strip off the image would
+            // otherwise find whatever the border mode extends from the image's edge.
+            let (w, h) = (
+                img.width().saturating_sub(1) as f32,
+                img.height().saturating_sub(1) as f32,
+            );
+            edges.retain(|e| e.p.x >= 0.0 && e.p.y >= 0.0 && e.p.x <= w && e.p.y <= h);
+            if edges.is_empty() {
+                Err(BeadReject::Caliper(RejectReason::OffImage))
+            } else {
+                sort_edges(edges);
+                // The station's position along the strip, from the strip's own `f64`
+                // geometry.
+                let center_t = 0.5 * strip.geometry().length;
+                choose(edges, center_t, pose.window, g)
+            }
         }
         Err(reason) => Err(BeadReject::Caliper(reason)),
     };

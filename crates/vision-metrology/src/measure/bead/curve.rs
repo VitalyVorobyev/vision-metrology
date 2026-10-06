@@ -121,18 +121,28 @@ fn at(pts: &[V2], h: f64, s: f64) -> V2 {
     lerp(pts[k], pts[k + 1], u - k as f64)
 }
 
-/// Fill `tan` with each station's unit tangent: the chord from arc length `s − window` to
-/// `s + window`, clamped to the curve, so one-sided at the ends. Exact on a circle. A
-/// station whose chord has no length takes its nearest neighbour's tangent; `(1, 0)` when
-/// none has one.
+/// Fill `tan` with each station's unit tangent: the chord from arc length `s − r` to
+/// `s + r`, where `r = min(window, s, L − s)` shrinks near the ends so the chord stays
+/// symmetric, which makes it exact on a circle. The two end stations take the one-sided
+/// chord to their neighbour. A clamped full-window chord would tilt an end normal by about
+/// `κ·window/2`, and a width measured along it by `1/cos` of that.
+///
+/// A station whose chord has no length takes its nearest neighbour's tangent; `(1, 0)`
+/// when none has one.
 pub(super) fn chord_tangents(pts: &[V2], h: f64, window: f64, tan: &mut Vec<V2>) {
     let n = pts.len();
     let length = h * (n - 1) as f64;
     tan.clear();
     for i in 0..n {
         let s = i as f64 * h;
-        let a = at(pts, h, (s - window).max(0.0));
-        let b = at(pts, h, (s + window).min(length));
+        let r = window.min(s).min(length - s);
+        let (a, b) = if i == 0 {
+            (pts[0], pts[1])
+        } else if i == n - 1 {
+            (pts[n - 2], pts[n - 1])
+        } else {
+            (at(pts, h, s - r), at(pts, h, s + r))
+        };
         let d = sub(b, a);
         let norm = d[0].hypot(d[1]);
         tan.push(if norm > 1e-12 {

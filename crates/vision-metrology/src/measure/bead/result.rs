@@ -63,7 +63,9 @@ pub struct BeadHit {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub enum BeadReject {
-    /// The strip's caliper found no edge, and says why.
+    /// The strip's caliper found no edge, and says why. [`RejectReason::OffImage`] also
+    /// covers a strip whose every edge lies outside the image, in border fill: an edge
+    /// there is not evidence, so the tracker drops it before pairing.
     Caliper(RejectReason),
     /// No edge of the bead's leading polarity is followed by one of the trailing polarity.
     NoPair,
