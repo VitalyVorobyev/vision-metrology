@@ -95,15 +95,16 @@ are relative to 0.1.0.
     `BeadSample` per station with a `BeadHit` (a `MeasurePair`, its offset and confidence)
     or a `BeadReject` (`Caliper(RejectReason)`, `NoPair`, `Width`, `Offset`, `Clearance`,
     `Ambiguous`); a `BeadSummary` (support, longest gap, `BeadStats`, rejections by
-    reason); and a `BeadTrack` (one `BeadPass` per pass, and
-    `BeadStop::{Converged, PassLimit, TooFewValid}`). `BeadReject` and `BeadStop` have
-    `as_str`.
+    reason); and a `BeadTrack` (one `BeadPass` per pass, with a `BeadSolve` when the pass
+    solved, and `BeadStop::{Converged, PassLimit, TooFewValid}`). `BeadReject` and
+    `BeadStop` have `as_str`.
   - `RejectReason` derives `Hash`. With the `serde` feature, `MeasurePair` and the bead
     results (de)serialize. The prelude gains `BeadTracker`, `BeadConfig` and
     `TrackedBead`.
-  - Python: `vm.BeadTracker(config).track(image, prior)` with `config` read and assigned,
-    `vm.TrackedBead` (per-station arrays, reject strings, statistics and `vm.BeadPass`
-    records), `vm.BeadConfig`, `vm.BeadCaliper` and `vm.BeadTuning`.
+  - Python: `vm.BeadTracker(config).track(image, prior)` with `config` read and assigned
+    and a `float32` or `float64` prior, `vm.TrackedBead` (per-station arrays, reject
+    strings, statistics, and `vm.BeadPass` records with an optional `vm.BeadSolve`),
+    `vm.BeadConfig`, `vm.BeadCaliper` (`to_measure_config`) and `vm.BeadTuning`.
 - **Robust fitting** (`fit`): `fit_line`, `fit_circle` (Taubin then Gauss–Newton) and
   `fit_ellipse`, with `RobustLoss::{Huber, Tukey}` (annealed) and `RansacConfig`. Every fit
   reports `rms`, `max_dev` and `n_used`.

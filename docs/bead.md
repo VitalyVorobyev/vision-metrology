@@ -20,8 +20,13 @@ refined stations ─► stricter strips ─► one hit or reason per station + s
 ## When to use it
 
 - **The bead follows a curve, and you have a prior for it.** Each station measures along
-  its own normal, so the tool follows any open curve, and a prior that is off by up to the
-  tracking reach (15 px by default) converges onto the bead.
+  its own normal, so the tool follows any open curve.
+  - A prior that is translated, rotated or smoothly bent by up to the tracking reach
+    (15 px by default) converges onto the bead in a few passes. Smoothly means
+    wavelengths well above `2π·bending_px`, about 50 px by default.
+  - Local error in the prior converges much more slowly, because each pass suppresses
+    short corrections ([The regulariser](#the-regulariser)). Examples are a kink, a bump
+    shorter than that, or the chords of a coarse polygon on a bend.
 - **Use a [`Caliper`](measure.md) or a `MetrologyModel` instead** for the edges of a
   located part: lines and circles in the part's own frame.
 - **Use `laser` instead** for a stripe that stays roughly parallel to an image axis: it
@@ -95,7 +100,13 @@ stations and only measures: there is no regularisation and no feedback into the 
 Keeping the stages apart is what lets the search be generous while the reported
 dimensions stay strict:
 - a pair that only the wide tracking search accepts cannot reach the result;
-- each caliper keeps its own profile length and smoothing kernel across stations.
+- each stage keeps its own caliper, whose profile length is fixed for the stage.
+
+A strip's endpoints are stored in `f32`, so the spacing of its samples, and with it σ in
+samples, differs between stations by a few ulps. Each caliper therefore refills its
+smoothing kernel in place at every station. That costs no allocation, and occasionally
+the kernel radius changes by one sample. The effect on an edge position stays around
+1e-4 px.
 
 Each strip is a [`MeasureStrip`](measure.md#strips) along the station's normal, long
 enough for a pair at the stage's reach:
@@ -122,7 +133,9 @@ every gate, in this order:
 3. **`Width`.** The pair is narrower than `min_width` or wider than `max_width` (inclusive).
 4. **`Offset`.** The pair's midpoint is outside the stage's window, `±max_offset` from the
    station. On a bend, the window's concave side stops at `0.9 / |κ|`, short of the centre
-   of curvature, so a correction can never fold the curve.
+   of curvature, so no observation asks the curve to cross it. The window gates
+   evidence; the step scale ([below](#the-regulariser)) is what keeps a step from
+   folding the curve.
 5. **`Clearance`.** This gate runs only when `clearance` is set. Another edge lies within
    `clearance` px outside either edge of the pair. Use it when a distractor beside the
    bead would otherwise sit close enough to bias an edge. A station there is rejected
@@ -156,27 +169,42 @@ and moves each station by `dᵢ` along its normal. In plain terms:
 - **Stations without a pair have weight 0.** The penalties bridge them, so a gap is filled
   smoothly from both sides.
 - **`loss` (`ρ`) is robust.** The default is Huber with a 1 px constant, so one wrong pair
-  pulls the curve far less than its offset; Tukey removes it. They are applied by
-  reweighted solves (`irls_iters`).
+  pulls the curve far less than its offset; Tukey removes it. A pass first solves by
+  least squares, then reweights up to `irls_iters` times; Tukey anneals from the largest
+  residual down to its constant over those solves. A robust loss also down-weights a
+  large local error of the prior's own, which is one reason that error decays slowly.
 - **`damping` (`λ0`) is trust in the prior.** At 0, the default, nothing holds the curve
   back from the data.
 - **`tension_px` (`ℓ1`) and `bending_px` (`ℓ2`) penalise the correction's slope and
   curvature, not the bead's.** The tracker has no preferred shape: a translated or rotated
   prior is corrected in one pass at nearly full strength.
 - **The bending length sets the shortest correction a pass makes.** A correction that
-  varies along the curve with angular frequency `ω` passes at `1 / (1 + ℓ1²ω² + ℓ2⁴ω⁴)`. A
-  correction whose wavelength is shorter than about `2π·ℓ2` is suppressed; a longer one
-  passes. The default `ℓ2` of 8 px puts that boundary at about 50 px. A bead cannot bend on
-  a scale much shorter than its own width, so a shorter correction is noise or a wrong
-  pair.
+  varies along the curve with angular frequency `ω` passes at
+  `1 / (1 + λ0 + ℓ1²ω² + ℓ2⁴ω⁴)`. A correction whose wavelength is shorter than about
+  `2π·ℓ2` is suppressed; a longer one passes. The default `ℓ2` of 8 px puts that boundary
+  at about 50 px. A bead cannot bend on a scale much shorter than its own width, so a
+  short correction is more often noise or a wrong pair than the bead.
+- **The penalties act on each pass's correction, not on the curve.** The curve keeps
+  converging towards the measured centres over passes. The regulariser sets how robustly
+  and how fast. A short-scale error in the prior shrinks by the suppressed fraction each
+  pass, so it takes many passes, while station noise is held back in every pass, so the
+  pass count bounds how much of it reaches the centreline.
 - **The penalties are lengths, so the result does not depend on `spacing`.** The energy is
   the discretisation of a continuous one. Halving the spacing doubles the stations, not
   the stiffness.
 
-Then the pass takes the step: a step scale below 1 shortens it if the full step would fold
-the curve. The moved stations are resampled to the same `N`, and the loop runs again,
-up to `passes` times. It stops early, `Converged`, once a pass moves no station by more
-than `tol`.
+Then the pass takes the step. A step scale below 1 shortens it if the full step would
+fold the curve:
+- no station may move more than 0.9 of the way to its centre of curvature;
+- no segment between adjacent stations may keep less than a tenth of its length along its
+  old direction.
+
+The moved stations are resampled to the same `N`, and the loop runs again, up to `passes`
+times. It stops early, `Converged`, once a pass's solved correction is below `tol` at every
+station and was applied in full. `Converged` says the loop stopped moving the curve, not
+that the curve sits on the bead. A coarse prior can stop moving while its short-scale
+error remains, and the final stage's `center_rms` and `center_max_dev` are the evidence
+of fit.
 
 A pass that finds the bead at fewer than `min_support` of its stations, or at none, does not
 move the curve. The loop then stops with `TooFewValid`, and the final stage still runs on
@@ -186,7 +214,10 @@ The tuning defaults:
 - **`tension_px` 2.** It keeps a long gap or a bare end from tilting the curve, at a cost
   of a fraction of a percent on a rotated prior.
 - **`bending_px` 8.** It gave the most accurate curve on noisy beads with a smooth prior.
-  Shorter values follow a coarse polygon prior's chords more closely but pass more noise.
+  - For a coarse or locally wrong prior, use a shorter bending length, 2 to 4 px, or more
+    passes, or both. A shorter length corrects short-scale error in fewer passes but
+    passes more noise into the curve.
+  - Either way, read `center_max_dev` to see whether the curve sits on the bead.
 - **`tangent_window_px` 10.** Shorter is noisier on a coarse prior. Longer tilts the
   normals where the curvature changes, and a tilted normal makes the width read long, by
   `1/cos` of the tilt.
@@ -205,9 +236,10 @@ The tuning defaults:
     (how far the measured midpoints sit from the refined curve), and the width's mean,
     standard deviation, minimum and maximum;
   - `rejects`: the stations rejected, counted by reason.
-- **`track`**: one `BeadPass` per tracking pass (its support and gap, the correction it
-  applied, the residual of the evidence against the solved correction, its step scale and
-  rejections), and `stop`, why the loop ended.
+- **`track`**: one `BeadPass` per tracking pass, and `stop`, why the loop ended. A pass
+  has its support, gap and rejections. Its `solve` is `None` when it found too few pairs
+  to solve. Otherwise `solve` holds the correction it applied, the residual of the
+  evidence against the solved correction, its step scale and its reweighted solves.
 
 Gate an inspection on these, not on the curve alone:
 
@@ -221,15 +253,23 @@ fn bead_ok(bead: &TrackedBead) -> bool {
     bead.track.stop != BeadStop::TooFewValid
         && bead.summary.support >= 0.95
         && bead.summary.longest_gap <= 20.0      // px: the longest allowed interruption
-        && stats.center_rms <= 0.25              // px: the curve sits on the measurements
+        && stats.center_rms <= 0.25              // px: the curve sits on the measurements...
+        && stats.center_max_dev <= 0.5           // ...everywhere, not just on average
         && stats.width_min >= 45.0
         && stats.width_max <= 55.0
 }
 ```
 
-- **A large `center_rms`** means the refined curve is not where the final stage measured
-  the bead. Either the tracking did not converge (check `track.stop` and the last pass's
-  `correction_max`), or the bead has structure shorter than `2π·bending_px`.
+- **A large `center_rms` or `center_max_dev`** means the refined curve is not where the
+  final stage measured the bead. There are three causes:
+  - the tracking ran out of passes (`track.stop`, and the last pass's
+    `solve.correction_max`);
+  - the prior carried a local error that the bending length suppresses (shorten
+    `bending_px` or add passes);
+  - the bead has structure shorter than `2π·bending_px`.
+
+  A station whose curve is off by more than the final stage's reach is rejected with
+  `Offset` instead.
 - **A rejection reason that dominates `rejects`** usually names the misconfiguration:
   - `Width`: the width range;
   - `Offset`: the reach;
@@ -291,8 +331,10 @@ fn shifted(
 }
 ```
 
-The prior only has to be within the tracking reach. The tracker does the rest, and
-`summary` says whether it managed.
+A prior moved this way is off by a translation or a smooth deformation. When that is
+within the tracking reach, the tracker converges in a few passes. Error in the prior's
+own shape converges more slowly ([When to use it](#when-to-use-it)). Either way,
+`summary` says whether the curve sits on the bead.
 
 ## Python
 
@@ -326,10 +368,12 @@ raises `ValueError`. A missing bead does not raise: every station is rejected.
 - **Strips are straight.** On a bend of radius `R`, averaging `±half_width` along a
   straight strip pulls the measured centre towards the concave side by about
   `half_width² / (6R)`. Keep `half_width` small on tight bends.
-- **High-frequency error in the prior decays over passes, not in one.** The penalties act
-  on each pass's correction. A coarse polygon prior on a tight bend leaves its chords'
-  short-scale error in the curve, and `center_rms` shows what remains. A previous result
-  or a densely sampled path makes a better prior.
+- **Short-scale error in the prior decays over passes, not in one.** This includes a kink,
+  a bump narrower than `2π·bending_px`, or a coarse polygon's chords on a bend. The
+  penalties act on each pass's correction. With the defaults such an error can remain
+  after the last pass, and even under `Converged`, because each correction is too small
+  to apply. `center_rms` and `center_max_dev` show what remains. A shorter
+  `bending_px`, more passes, a previous result or a densely sampled path all help.
 - **Thresholds are on the input pixel scale.** Scale `threshold` with the image, e.g. by
   256 for a `u16` image that holds 8-bit data shifted up.
 - **`Locate::HalfContrast` is fragile near distractors.** It refines every edge on the
