@@ -2,16 +2,17 @@
 //!
 //! Run with `cargo bench -p vision-metrology --bench measure`.
 //!
-//! ## Measured numbers (2026-10-03, release, `lto = "thin"`, `codegen-units = 1`)
+//! ## Measured numbers (2026-10-06, release, `lto = "thin"`, `codegen-units = 1`)
 //!
 //! | Benchmark                                | Time      |
 //! |-------------------------------------------|-----------|
-//! | `caliper_rect_pos_1280x1024`               | ~1.40 µs  |
-//! | `metrology_model_apply_96_calipers`        | ~215 µs   |
+//! | `caliper_rect_pos_1280x1024`               | ~1.38 µs  |
+//! | `metrology_model_apply_96_calipers`        | ~210 µs   |
 //! | `caliper_strip_40px_81s_parabolic`         | ~0.52 µs  |
 //! | `caliper_strip_40px_81s_midpoint`          | ~0.48 µs  |
-//! | `caliper_strip_40px_81s_half_contrast`     | ~0.79 µs  |
-//! | `caliper_strip_400px_801s_w15_a15`         | ~34.4 µs  |
+//! | `caliper_strip_40px_81s_half_contrast`     | ~0.78 µs  |
+//! | `caliper_strip_400px_801s_w15_a15`         | ~33.8 µs  |
+//! | `caliper_strip_40px_81s_jittered`          | ~0.61 µs  |
 //!
 //! The single-caliper number is the cost of one `Caliper::measure` scan on a
 //! 1280×1024 synthetic edge scene — a caliper only touches the pixels under
@@ -28,6 +29,11 @@
 //! the parabolic bench's two edges, so the difference is the cost of a smoothing pass
 //! and two flank-and-crossing iterations; the midpoint bench runs the same strip over a
 //! step, since a bar returns to its starting level.
+//!
+//! The jittered bench moves one caliper between two strips 0.02 px apart in length on
+//! every call, as a tracker does, with the default derivative of Gaussian. σ in samples
+//! changes each time, so the detector refills its kernel in place: about 50 ns over the
+//! same strip held still (~0.56 µs), and no allocation.
 //!
 //! Re-run and update this table whenever `measure`'s hot path changes.
 
@@ -222,10 +228,42 @@ fn bench_caliper_strip(c: &mut Criterion) {
     });
 }
 
+/// One caliper moved back and forth between two strips 0.02 px apart in length, the way
+/// a tracker moves one caliper along a curve. σ in samples changes on every call, so
+/// every call rebuilds the detector's kernel (the default derivative of Gaussian: σ of
+/// 1 px is about two samples, radius 6).
+fn bench_caliper_strip_jittered(c: &mut Criterion) {
+    let bar = bar_scene_f32(96, 96, 40, 60);
+    let view = bar.as_view();
+    let strips = [
+        strip((28.0, 48.3), (68.0, 48.3), 0.0, 81, 1),
+        strip((28.0, 48.3), (68.02, 48.31), 0.0, 81, 1),
+    ];
+    let cfg = MeasureConfig {
+        threshold: 0.01,
+        profile: ProfileConfig {
+            off_image: OffImage::Reject,
+            ..ProfileConfig::default()
+        },
+        ..MeasureConfig::default()
+    };
+    let mut cal = Caliper::strip(strips[0], cfg);
+    let mut which = 0;
+    c.bench_function("caliper_strip_40px_81s_jittered", |b| {
+        b.iter(|| {
+            which ^= 1;
+            cal.set_strip(strips[which]);
+            let edges = cal.measure(black_box(&view)).expect("two edges");
+            black_box(edges.len());
+        });
+    });
+}
+
 criterion_group!(
     benches,
     bench_caliper_rect_pos,
     bench_metrology_model_apply_96_calipers,
-    bench_caliper_strip
+    bench_caliper_strip,
+    bench_caliper_strip_jittered
 );
 criterion_main!(benches);

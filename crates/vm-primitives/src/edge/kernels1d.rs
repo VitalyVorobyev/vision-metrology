@@ -27,7 +27,7 @@ impl DoGKernel1D {
             sigma.is_finite() && sigma > 0.0,
             "sigma must be > 0 and finite"
         );
-        Self::with_radius(sigma, ((3.0 * sigma).ceil() as usize).max(1))
+        Self::with_radius(sigma, Self::default_radius(sigma))
     }
 
     /// Construct a kernel pair with an explicit half-width `radius` (in samples)
@@ -36,6 +36,28 @@ impl DoGKernel1D {
     /// # Panics
     /// Panics when `sigma <= 0`, `sigma` is not finite, or `radius == 0`.
     pub fn with_radius(sigma: f32, radius: usize) -> Self {
+        let mut k = Self {
+            sigma,
+            radius,
+            g: Vec::new(),
+            dg: Vec::new(),
+        };
+        k.rebuild(sigma, radius);
+        k
+    }
+
+    /// The half-width [`new`](Self::new) uses: `ceil(3·sigma)`, at least 1.
+    pub(crate) fn default_radius(sigma: f32) -> usize {
+        ((3.0 * sigma).ceil() as usize).max(1)
+    }
+
+    /// Refill both kernels for `sigma` and `radius` in place. The coefficients are the
+    /// ones [`with_radius`](Self::with_radius) builds, bit for bit; the buffers keep their
+    /// capacity, so a rebuild at the same or a smaller radius does not allocate.
+    ///
+    /// # Panics
+    /// Panics when `sigma <= 0`, `sigma` is not finite, or `radius == 0`.
+    pub(crate) fn rebuild(&mut self, sigma: f32, radius: usize) {
         assert!(
             sigma.is_finite() && sigma > 0.0,
             "sigma must be > 0 and finite"
@@ -44,7 +66,9 @@ impl DoGKernel1D {
         let len = 2 * radius + 1;
 
         let sigma2 = sigma * sigma;
-        let mut g = vec![0.0f32; len];
+        let g = &mut self.g;
+        g.clear();
+        g.resize(len, 0.0);
         for (i, gi) in g.iter_mut().enumerate() {
             let x = i as isize - radius as isize;
             let xf = x as f32;
@@ -52,23 +76,21 @@ impl DoGKernel1D {
         }
 
         let sum_g: f32 = g.iter().sum();
-        for gi in &mut g {
+        for gi in g.iter_mut() {
             *gi /= sum_g;
         }
 
-        let mut dg = vec![0.0f32; len];
+        let dg = &mut self.dg;
+        dg.clear();
+        dg.resize(len, 0.0);
         for (i, dgi) in dg.iter_mut().enumerate() {
             let x = i as isize - radius as isize;
             let xf = x as f32;
             *dgi = -(xf / sigma2) * g[i];
         }
 
-        Self {
-            sigma,
-            radius,
-            g,
-            dg,
-        }
+        self.sigma = sigma;
+        self.radius = radius;
     }
 }
 
@@ -90,6 +112,21 @@ mod tests {
             let pos = k.radius + i;
             let neg = k.radius - i;
             assert!((k.dg[pos] + k.dg[neg]).abs() < 1e-6);
+        }
+    }
+
+    /// Whatever the buffers held before, a rebuilt kernel is the one `with_radius`
+    /// builds, bit for bit.
+    #[test]
+    fn rebuild_matches_a_fresh_kernel() {
+        let bits = |v: &[f32]| v.iter().map(|x| x.to_bits()).collect::<Vec<_>>();
+        let mut k = DoGKernel1D::new(3.0);
+        for (sigma, radius) in [(1.2f32, 4), (0.7, 2), (2.5, 8), (1.2, 4)] {
+            k.rebuild(sigma, radius);
+            let fresh = DoGKernel1D::with_radius(sigma, radius);
+            assert_eq!((k.sigma.to_bits(), k.radius), (sigma.to_bits(), radius));
+            assert_eq!(bits(&k.g), bits(&fresh.g), "σ = {sigma}, radius {radius}");
+            assert_eq!(bits(&k.dg), bits(&fresh.dg), "σ = {sigma}, radius {radius}");
         }
     }
 }
