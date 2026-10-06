@@ -44,8 +44,6 @@ deleted here.
 - **Fuzzy / expected-position scoring.** Prefer an edge near the nominal geometry over an
   equally strong one elsewhere, by scoring candidates against an expected
   position/amplitude profile before `EdgeSelect` (HALCON `fuzzy_measure_pos`).
-- **A bead/stripe tool on `measure`**, tracking a contour with calipers
-  ([ADR-0008](adr/0008-calipers.md) says why it is not a caliper option).
 - **Variation model (golden template).** Teach a per-pixel mean/σ band from N good parts
   warped to a common pose with `warp::Map`, then flag pixels outside it (HALCON
   `create_variation_model`). No design work started.
@@ -93,6 +91,8 @@ deleted here.
   - `crates/vision-metrology/src/contour/build.rs`
 
   Split a listed file when a change touches it.
+- **`fit/circle.rs` hand-rolls a 3×3 solve** (`solve3`, Gaussian elimination with
+  pivoting) that nalgebra provides. ADR-0002 says to use nalgebra's.
 - **The `serde` feature implies `matching`.** Serde derives on non-matching types such as
   `CaliperTrace` therefore pull in the matcher. Split model persistence into its own
   feature.

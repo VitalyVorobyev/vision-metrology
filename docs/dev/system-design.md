@@ -80,7 +80,8 @@ the list is contiguous and that every citation resolves.
 12. **Determinism.** No RNG in library code. Tests use synthetic fixtures, seeded if
     randomness is unavoidable. f32 sort ties are broken explicitly, e.g. `(−score, x, y)`.
 13. **Toolchain.** Edition 2024; the MSRV is `rust-version` in the root `Cargo.toml`;
-    nalgebra 0.35 is the workspace dependency. Linear algebra is never re-implemented
+    nalgebra 0.35 is the workspace dependency. Linear algebra that nalgebra provides is
+    never re-implemented; a structured solve it lacks lives beside its only caller
     ([ADR-0002](adr/0002-dependency-and-toolchain-policy.md)).
 14. **File size.** Soft cap of about 600 code lines per source file (tests excluded).
     Crossing it means splitting in the same change. Known offenders are listed in
@@ -131,3 +132,4 @@ update its status and date. Do not append a contradicting one.
 | [0015](adr/0015-the-lab.md) | The lab: one frontend, two transports, shared UI packages |
 | [0016](adr/0016-scope-what-we-do-not-build.md) | Scope: what this library deliberately does not build |
 | [0017](adr/0017-textbook-edge-location.md) | Textbook edge location and CaliperBench compatibility |
+| [0018](adr/0018-tracked-curves.md) | Tracked curves: a prior, two caliper stages and a regularised normal solve |

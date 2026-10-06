@@ -9,10 +9,42 @@ scheduled lives in [`backlog.md`](backlog.md).
 
 The measurement chain runs end to end on real data: rectify → locate → fixture → calipers
 → robust fit → millimetres → pass/fail ([system design](system-design.md)). The work ahead
-is the first release, then the remaining gaps: accuracy coverage, blob features,
-`filter`, the lab's package catch-up and bindings.
+is the bead tracker, then the first release, then the remaining gaps: accuracy coverage,
+blob features, `filter`, the lab's package catch-up and bindings.
 
 ---
+
+## M10: bead tracking, `in progress`
+
+A bead/stripe tool on `measure` that refines a prior centreline from caliper edge pairs and
+measures on the refined curve ([ADR-0018](adr/0018-tracked-curves.md)). The release waits
+for it, so the API review covers it.
+
+- `measure::BeadTracker`:
+  - prior → arc-length stations → strip calipers along the normals → bead edge pairs
+    → robust, regularised normal-offset solve → final calipers;
+  - a typed result or rejection per station, and quality statistics (support, gaps,
+    corrections, residuals, width);
+  - `diagnostics::explain_bead`, which returns `track`'s result to the bit;
+  - Python parity.
+- `Edge1DDetector` reuses its kernel buffers and compares σ exactly. Without that, a caliper
+  moved across strips allocates per strip.
+- Anti-aliased ribbon fixtures with continuous truth: line, arc, S-curve, sine; varying
+  width; blur, noise, gradients, distractors, highlights, gaps, the image border.
+- Accuracy rows for the final centre, the final width and the tracked curve. A
+  convergence-basin sweep against translation, rotation, smooth and local deformation of
+  the prior.
+- A bench at 100–300 poses: search length, 1 vs 3 passes, valid vs partly invalid.
+- An example with an overlay, a user guide page, and a Python example.
+- Offline tooling under `tools/`:
+  - a robustness evaluation on DamSegment crack masks, whose truth is pixel-level only;
+  - an evaluation of ridge-based acquisition (no prior), ending in a recorded decision.
+
+**Accept:**
+- each accuracy row has an envelope at about 1.5× the measured value;
+- the basins and bench numbers are in `docs/performance.md`;
+- the example runs in CI;
+- the acquisition decision is recorded in ADR-0018.
 
 ## R: first release (v0.2.0), `in progress`
 
