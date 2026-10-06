@@ -229,6 +229,127 @@ straight bead 30 px wide whose prior is 2 px off and bent by a further 1 px, ave
   - With two passes each, every basin is wider than a fixed 3 px over the same 6 passes,
     at the same noise; it converges even from the polygon of the arc's two ends.
 
+## Real data: bead tracking on DamSegment cracks
+
+A crack in concrete is a dark line a few pixels wide, with rough walls, in a textured
+surface. Cracks test whether the tracker locks onto a real curvilinear structure from a
+perturbed prior and follows it. The data is DamSegment, by V. Gharehbaghi, C. R. Bennett,
+R. Lequesne, H. Zhao and J. Li: Mendeley Data,
+[doi:10.17632/z5z6gtt5t4.1](https://doi.org/10.17632/z5z6gtt5t4.1), licensed
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). It holds 1500 photographs of
+concrete, 640×640, in Easy, Medium and Hard sets of 500, with hand-drawn crack masks.
+
+**The reference.** Each crack mask is skeletonised and split at its junctions into
+non-branching paths of at least 80 px: 8680 paths (995, 2793 and 4892 per set). The
+reference width is the mask's, `2·EDT − 1`. The masks are rasterised polygons, about
+twice as wide as the dark line, and their centreline lies a pixel or two from it. The
+reference is pixel-level, so these numbers measure robustness, not subpixel accuracy:
+the synthetic rows above measure that.
+
+**The runs.** Each path is tracked from itself and from 22 perturbations of it, 199,640
+calls in all:
+- translations of 1 to 12 px;
+- rotations that move its ends by 2 to 12 px;
+- a sine of wavelength `L/2` with an amplitude of 1 to 6 px;
+- a Gaussian bump, σ 10 px, 2 to 12 px high;
+- Douglas–Peucker polygons of 10 and 6 vertices;
+- a quarter of its length cut off one end.
+
+The image is BT.601 luma. The config is the default, except:
+- `polarity` dark;
+- a width range of `max(2, w/4)` to `2w` for a mask width `w`;
+- a reach (`track.max_offset`) of 8 px and a `spacing` of 2 px;
+- a `threshold` of 3;
+- no obliquity gate in the final stage.
+
+**What counts.** A station is *on the crack* within half the mask's width of its
+centreline, plus 1 px. A call is *locked* when 90% of its stations are on the crack. It is
+*converged* when 90% lie within 1 px of the curve tracked from the unperturbed path, a
+test that needs no annotation.
+
+From the 18 perturbations within the reach (displacements up to 8 px, the polygons and the
+truncation):
+
+| Set | Paths | Centre from the mask's centreline, median / p95 | Support | Width, measured / mask | Locked from the path itself | Locked | Converged | Time per call |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Easy | 995 | 1.59 / 5.69 px | 91% | 6.3 / 10.9 px | 91% | 87% | 62% | 0.45 ms |
+| Medium | 2793 | 1.74 / 5.02 px | 90% | 4.8 / 9.5 px | 92% | 88% | 74% | 0.34 ms |
+| Hard | 4892 | 1.33 / 4.09 px | 86% | 3.9 / 6.6 px | 89% | 83% | 82% | 0.23 ms |
+| all | 8680 | 1.51 / 4.78 px | 88% | 4.4 / 8.2 px | 90% | 85% | 77% | 0.27 ms |
+
+The basin, over all three sets. The last column counts the calls that did not lock but
+still report a support of at least 0.5:
+
+| Perturbation of the prior | Prior on the crack | Locked | Converged | Not locked, support ≥ 0.5 |
+|---|---:|---:|---:|---:|
+| translation, 2 px | 99% | 89% | 82% | 10% |
+| translation, 4 px | 45% | 87% | 69% | 12% |
+| translation, 6 px | 7% | 78% | 54% | 20% |
+| translation, 8 px (the reach) | 1% | 51% | 29% | 42% |
+| translation, 10 px | 0% | 21% | 10% | 55% |
+| translation, 12 px | 0% | 6% | 2% | 51% |
+| rotation, ends moved 8 px | 6% | 72% | 48% | 26% |
+| rotation, ends moved 12 px | 1% | 28% | 12% | 67% |
+| sine, amplitude 6 px | 14% | 83% | 57% | 16% |
+| bump, 8 px high | 31% | 85% | 80% | 14% |
+| bump, 12 px high | 15% | 62% | 50% | 35% |
+| polygon of 6 vertices | 97% | 90% | 88% | 9% |
+
+Against scikit-image's `active_contour`, on 120 of the paths (40 per set) from the same
+priors within the reach. The snake is open, with free ends, `w_line = −1` and
+scikit-image's other defaults, on the luma smoothed by a Gaussian of σ 3 px:
+
+| Method | Centre, median / p95 | On the crack | Locked | Converged | Time per call |
+|---|---:|---:|---:|---:|---:|
+| `BeadTracker` | 1.37 / 4.78 px | 96% | 86% | 76% | 0.31 ms |
+| `active_contour` | 1.56 / 13.18 px | 82% | 64% | 92% | 523 ms |
+
+How to read them:
+- **The reference is good to about 1.5 px.** From the path itself, the tracked curve sits
+  a median 1.46 px from the mask's centreline. That includes an offset of 0.6 px in +y and
+  none in x, roughly uniform over the image. On a synthetic line the same config reads
+  the centre exactly, so the offset is the annotation's registration or the cracks'
+  lighting, not the tracker. The 10% of paths that do not lock even from themselves are
+  mostly narrow masks: in the ones inspected, the tracker sits on the dark line and the
+  mask's centreline runs beside it. The masks are about twice as wide as the dark line
+  the tracker measures, so the width column is a sanity check, not an error.
+- **The tracker locks to about its reach, but where exactly it ends depends on the prior.**
+  - Locked stays at 87% from a 4 px translation and 78% from 6 px, and falls past the
+    8 px reach.
+  - Converged falls faster. From 4 px off, 69% of calls end within 1 px of the curve
+    tracked from the path itself.
+  - A strip on rough concrete can hold more than one dark pair, and the score favours the
+    pair nearer the station, so the prior decides between them.
+  - Three passes almost never bring every station's correction under `tol` on a rough
+    crack: 99.9% of calls stop on `PassLimit`. On a subset of 387 paths, 6 or 10 passes
+    raise converged by 6 to 12 points and lower locked by 2 to 3.
+- **Failure is mostly silent.** 91% of the calls that do not lock still report a support
+  of at least 0.5: a median of 0.84, against 0.94 for a call that locked. Neither
+  support, `center_rms` nor `longest_gap` tells the two apart well.
+  - Beyond the reach, the tracker takes the next dark structure for the crack: a pit, a
+    shadow, a parallel crack. It measures that structure as it would the bead.
+  - The synthetic fixtures have nothing beyond the reach to lock onto. On a textured
+    surface, keep the prior within the reach, or check the result some other way.
+- **The library's defaults for the final stage suit clean edges, not rough ones.** With
+  the default threshold of 5 and the final stage's obliquity gate of 30°, support falls
+  from 88% to 55%, while locked and converged do not change: the final stage only
+  measures. Most of the lost
+  stations are `NoPair`, where one edge of the pair fails the obliquity gate: a rough
+  crack wall's gradient direction is not a reliable test. Most of the rest are
+  `Caliper(NoEdge)`, below the threshold.
+- **`active_contour`** converges more consistently, 92%, and from further: 45% of its calls
+  lock from a 10 px translation, against 21%.
+  - Its free ends slide along the crack and past it, in some calls off the image, so only
+    64% of its calls stay on the crack.
+  - It takes 523 ms per call, median: up to 2500 iterations on one core.
+- **Speed.** A call takes 0.27 ms, median, and 0.89 ms at p95, through the Python bindings.
+  That is 4.2 µs per station, for a median of 64 stations, each measured in 3 tracking
+  passes and the final stage.
+
+The dataset is not distributed with this repository.
+[`tools/bead_eval/README.md`](../tools/bead_eval/README.md) downloads it and reproduces the
+numbers.
+
 ## Real data: shape matching
 
 `examples/pose_audit` checks every recovered pose against corrmatch's masked ZNCC of the

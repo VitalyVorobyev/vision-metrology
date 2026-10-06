@@ -482,6 +482,9 @@ raises `ValueError`. A missing bead does not raise: every station is rejected.
   edge location, and `RejectReason`.
 - [Performance and accuracy](performance.md): the tracker's speed, its accuracy on
   synthetic beads, its convergence basins, and the bending length's trade-off.
+- [Bead tracking on real cracks](performance.md#real-data-bead-tracking-on-damsegment-cracks):
+  how often the tracker locks onto a concrete crack from a perturbed prior, and how it
+  fails when it does not.
 
 [`BeadTracker`]: ../crates/vision-metrology/src/measure/bead/mod.rs
 [`TrackedBead`]: ../crates/vision-metrology/src/measure/bead/result.rs

@@ -1,0 +1,6 @@
+matplotlib>=3.8
+maturin>=1.7,<2
+numpy>=1.26
+pillow>=10.0
+scikit-image>=0.22
+scipy>=1.11
