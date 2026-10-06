@@ -43,6 +43,14 @@ use vm_primitives::{Hysteresis, Subpix2D};
 #[path = "accuracy/strip.rs"]
 mod strip;
 
+// The bead fixture: a ribbon along a curve, with continuous truth.
+#[path = "../examples/common/ribbon.rs"]
+mod ribbon;
+
+// The bead fixture's checks, against `strip`'s closed form among others.
+#[path = "accuracy/bead.rs"]
+mod bead;
+
 // ── shared fixtures ──────────────────────────────────────────────────────
 
 /// A tiny seeded xorshift64* — deterministic noise without an external RNG
