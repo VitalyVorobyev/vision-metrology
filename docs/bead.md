@@ -147,7 +147,9 @@ every gate, in this order:
 5. **`Clearance`.** This gate runs only when `clearance` is set. Another edge lies within
    `clearance` px outside either edge of the pair. Use it when a distractor beside the
    bead would otherwise sit close enough to bias an edge. A station there is rejected
-   rather than measured.
+   rather than measured. The gate sees a distractor only as an edge of its own: one
+   within a couple of pixels of the bead's edge merges with it, and that edge is pulled
+   towards it unseen.
 
 When no pair survives, the reason is the gate that removed the last one. The surviving
 pairs are scored by their weaker edge, discounted by their offset:
