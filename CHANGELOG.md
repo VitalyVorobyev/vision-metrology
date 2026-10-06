@@ -79,6 +79,31 @@ are relative to 0.1.0.
     `MeasureConfig(select="in_order", sequence=[...], derivative=..., kernel_radius_px=...,
     off_image=...)`, `vm.Locate.{gradient_peak, midpoint_crossing, half_contrast}`,
     `MetrologyModel.{apply, layout, explain}`, `vm.CaliperTrace` and `vm.ObjectTrace`.
+- **Bead tracking** (`measure`).
+  - `BeadTracker` refines a prior polyline from caliper evidence and measures the bead
+    along the refined curve. Stations uniform in arc length, a strip caliper along each
+    station's normal, the bead's edge pair chosen through typed gates, one robust,
+    regularised solve for the normal corrections (a banded `LDLᵀ` in `f64` under IRLS)
+    with a fold guard, and a separate, stricter final stage that measures without moving
+    the curve.
+  - `BeadConfig`: `polarity` (`BeadPolarity::{Light, Dark}`), `min_width`, `max_width`,
+    `spacing`, `clearance`, `min_margin`, a `BeadCaliper` per stage (`track`, `measure`;
+    `BeadCaliper::to_measure_config`) and `BeadTuning` (passes, tolerance, damping, the
+    tension and bending lengths, the `RobustLoss`, IRLS iterations, the tangent window and
+    the minimum support).
+  - `TrackedBead`: the refined `centerline`, which is the next frame's prior; one
+    `BeadSample` per station with a `BeadHit` (a `MeasurePair`, its offset and confidence)
+    or a `BeadReject` (`Caliper(RejectReason)`, `NoPair`, `Width`, `Offset`, `Clearance`,
+    `Ambiguous`); a `BeadSummary` (support, longest gap, `BeadStats`, rejections by
+    reason); and a `BeadTrack` (one `BeadPass` per pass, and
+    `BeadStop::{Converged, PassLimit, TooFewValid}`). `BeadReject` and `BeadStop` have
+    `as_str`.
+  - `RejectReason` derives `Hash`. With the `serde` feature, `MeasurePair` and the bead
+    results (de)serialize. The prelude gains `BeadTracker`, `BeadConfig` and
+    `TrackedBead`.
+  - Python: `vm.BeadTracker(config).track(image, prior)` with `config` read and assigned,
+    `vm.TrackedBead` (per-station arrays, reject strings, statistics and `vm.BeadPass`
+    records), `vm.BeadConfig`, `vm.BeadCaliper` and `vm.BeadTuning`.
 - **Robust fitting** (`fit`): `fit_line`, `fit_circle` (Taubin then Gauss–Newton) and
   `fit_ellipse`, with `RobustLoss::{Huber, Tukey}` (annealed) and `RansacConfig`. Every fit
   reports `rms`, `max_dev` and `n_used`.
@@ -121,7 +146,8 @@ are relative to 0.1.0.
   `gradient_integer` and `midpoint_crossing` methods return the same rows as
   CaliperBench's baselines (a golden cross-check pins it). Python scripts are in
   `examples/python/`.
-- **Docs:** guides for shape matching and measurement, and a performance and accuracy page.
+- **Docs:** guides for shape matching, measurement and bead tracking, and a performance and
+  accuracy page.
 - An accuracy regression suite with pinned envelopes; its strip and caliper rows run on
   CaliperBench's pixel-integrated image model: each `Locate` method on steps, bar centre
   and width, oblique strips, and rect, arc and radial calipers. Benches for matching,
