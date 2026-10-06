@@ -29,6 +29,7 @@ mod result;
 mod run;
 mod solve;
 mod stats;
+mod trace;
 
 #[cfg(test)]
 mod tests;
@@ -40,6 +41,8 @@ pub use result::{
     BeadHit, BeadPass, BeadReject, BeadSample, BeadSolve, BeadStats, BeadStop, BeadSummary,
     BeadTrack, TrackedBead,
 };
+// Reached only through `measure::diagnostics` (invariant 17).
+pub use trace::{BeadPassTrace, BeadStationTrace, BeadTrace, explain_bead};
 
 use super::{Caliper, MeasureStrip};
 
@@ -148,6 +151,17 @@ impl BeadTracker {
         img: &ImageView<'_, P>,
         prior: &[Point2f],
     ) -> Result<TrackedBead, Error> {
+        self.run(img, prior, &mut run::Quiet)
+    }
+
+    /// The one run behind [`track`](Self::track) and
+    /// [`explain_bead`](super::diagnostics::explain_bead): they differ only in `probe`.
+    fn run<P: Pixel, R: run::Probe>(
+        &mut self,
+        img: &ImageView<'_, P>,
+        prior: &[Point2f],
+        probe: &mut R,
+    ) -> Result<TrackedBead, Error> {
         run::run(
             &self.cfg,
             &mut self.track,
@@ -155,7 +169,7 @@ impl BeadTracker {
             &mut self.scratch,
             img,
             prior,
-            &mut run::Quiet,
+            probe,
         )
     }
 }

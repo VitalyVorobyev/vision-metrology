@@ -896,6 +896,66 @@ class BeadTracker:
         (`"no_edge"`, `"off_image"`, ...) or the pair gates' (`"no_pair"`, `"width"`,
         `"offset"`, `"clearance"`, `"ambiguous"`)."""
         ...
+    def explain(
+        self, image: ImageAny, prior: Union[PointsF32, npt.NDArray[np.float64]]
+    ) -> BeadTrace:
+        """`track` with every station's evidence kept: `result` is what `track`
+        returns for the same arguments. A rejected station is part of the trace,
+        never an exception; a bad prior raises `ValueError` as in `track`."""
+        ...
+
+class BeadTrace:
+    """A bead tracker's run, explained. `result` is what `track` returns;
+    `passes` has one `BeadPassTrace` per tracking pass, parallel to
+    `result.passes`; `measure` has one `BeadStationTrace` per station of the
+    final stage, parallel to `result`'s arrays."""
+
+    result: TrackedBead
+    passes: List[BeadPassTrace]
+    measure: List[BeadStationTrace]
+
+class BeadPassTrace:
+    """One tracking pass, one array row or list entry per station, as the pass
+    measured it, before it moved it. `points`, `tangents`, `normals`,
+    `strip_starts` and `strip_ends` are (N, 2) `(x, y)`; `windows` is (N, 2) of
+    `(lo, hi)`, the offsets in px along the normal that a pair's midpoint had to
+    fall in. `observed` is each station's pair offset, NaN where it was
+    rejected; `weights` is the weight each observation carried in the pass's
+    last solve, 0 at a rejected station; `corrections` is the correction the
+    pass applied, in px along the normal. `reject` names each rejection (`None`
+    at a hit), and `calipers` holds each strip's `CaliperTrace`."""
+
+    points: npt.NDArray[np.float32]
+    tangents: npt.NDArray[np.float32]
+    normals: npt.NDArray[np.float32]
+    windows: npt.NDArray[np.float32]
+    strip_starts: npt.NDArray[np.float32]
+    strip_ends: npt.NDArray[np.float32]
+    observed: npt.NDArray[np.float32]
+    weights: npt.NDArray[np.float32]
+    corrections: npt.NDArray[np.float32]
+    reject: List[Optional[str]]
+    calipers: List[CaliperTrace]
+
+class BeadStationTrace:
+    """One station of the final stage, explained. Points and directions are
+    `(x, y)`; the strip scans from `strip_start`, its -n end, to `strip_end`;
+    `window` is `(lo, hi)` in px along the normal. `caliper` is everything the
+    strip's caliper computed. At a hit `pair`, `offset` and `confidence`
+    describe the bead's pair and `reject` is `None`; at a rejection they are
+    `None` and `reject` names the reason."""
+
+    point: Tuple[float, float]
+    tangent: Tuple[float, float]
+    normal: Tuple[float, float]
+    window: Tuple[float, float]
+    strip_start: Tuple[float, float]
+    strip_end: Tuple[float, float]
+    caliper: CaliperTrace
+    pair: Optional[MeasurePair]
+    offset: Optional[float]
+    confidence: Optional[float]
+    reject: Optional[str]
 
 # ---------------------------------------------------------------------------
 # Detectors, fitters, matchers, segmentation

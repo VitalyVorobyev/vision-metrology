@@ -114,6 +114,7 @@ pub struct MeasureRadial {
 /// assert!((edges[0].t - 15.5).abs() < 1e-3 && (edges[1].t - 47.5).abs() < 1e-3);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct MeasureStrip {
     /// First end of the scan, in image coordinates.
     pub start: Point2f,

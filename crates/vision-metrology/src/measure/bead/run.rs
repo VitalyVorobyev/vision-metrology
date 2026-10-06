@@ -1,7 +1,8 @@
 //! The two-stage run: tracking passes that move the curve, then the final measurement.
 //!
 //! The algorithm is written once, over a [`Probe`] that performs each caliper measurement
-//! and is told what each station and pass did. [`Quiet`] only measures.
+//! and is told what each station and pass did. [`Quiet`] only measures; the tracing probe
+//! in `trace.rs` measures through `diagnostics::explain` and records everything.
 
 use std::num::NonZeroUsize;
 
@@ -21,38 +22,45 @@ use super::solve::{Penalty, SolveScratch, solve_offsets};
 use super::stats::{Tally, bead_stats, longest_run_missing};
 use crate::measure::{Caliper, MeasureEdge, MeasureStrip, RejectReason};
 
-/// Where one station measures: its point, its unit normal, and the window `[lo, hi]` its
-/// pair's centre offset must fall in, in pixels along the normal.
+/// Where one station measures: its point, its unit tangent and normal, and the window
+/// `[lo, hi]` its pair's centre offset must fall in, in pixels along the normal.
 #[derive(Debug, Clone, Copy)]
 pub(super) struct Pose {
     pub point: V2,
+    pub tangent: V2,
     pub normal: V2,
     pub window: (f64, f64),
 }
 
 /// What the run reports to, and measures through.
 pub(super) trait Probe {
+    /// What a measurement leaves for its station's report.
+    type Seen;
+
     /// Measure with `cal` as placed, and leave its edges in `edges`.
     fn measure<P: Pixel>(
         &mut self,
         cal: &mut Caliper,
         img: &ImageView<'_, P>,
         edges: &mut Vec<MeasureEdge>,
-    ) -> Result<(), RejectReason>;
+    ) -> (Result<(), RejectReason>, Self::Seen);
 
-    /// Station `i` measured: in tracking pass `pass`, or in the final stage when `None`.
+    /// Station `i` measured, in tracking pass `pass` or in the final stage when `None`:
+    /// where, what `measure` saw there, and the pair or the reason.
     fn station(
         &mut self,
         _pass: Option<usize>,
         _i: usize,
         _pose: &Pose,
         _strip: &MeasureStrip,
+        _seen: Self::Seen,
         _hit: &Result<BeadHit, BeadReject>,
     ) {
     }
 
     /// Tracking pass `pass` solved: the last IRLS weights (0 at an invalid station) and the
-    /// correction applied to each station, in pixels along its normal.
+    /// correction applied to each station, in pixels along its normal. A pass with too
+    /// few pairs to solve reports zeros for both.
     fn solved(&mut self, _pass: usize, _weights: &[f64], _corrections: &[f64]) {}
 }
 
@@ -61,15 +69,17 @@ pub(super) trait Probe {
 pub(super) struct Quiet;
 
 impl Probe for Quiet {
+    type Seen = ();
+
     fn measure<P: Pixel>(
         &mut self,
         cal: &mut Caliper,
         img: &ImageView<'_, P>,
         edges: &mut Vec<MeasureEdge>,
-    ) -> Result<(), RejectReason> {
+    ) -> (Result<(), RejectReason>, ()) {
         edges.clear();
-        edges.extend_from_slice(cal.measure(img)?);
-        Ok(())
+        let measured = cal.measure(img).map(|found| edges.extend_from_slice(found));
+        (measured, ())
     }
 }
 
@@ -165,7 +175,8 @@ fn measure_station<P: Pixel, R: Probe>(
 ) -> Result<BeadHit, BeadReject> {
     let strip = spec.place(pose);
     cal.set_strip(strip);
-    let hit = match probe.measure(cal, img, edges) {
+    let (measured, seen) = probe.measure(cal, img, edges);
+    let hit = match measured {
         Ok(()) => {
             // An edge located in border fill is not evidence: a strip off the image would
             // otherwise find whatever the border mode extends from the image's edge.
@@ -186,7 +197,7 @@ fn measure_station<P: Pixel, R: Probe>(
         }
         Err(reason) => Err(BeadReject::Caliper(reason)),
     };
-    probe.station(station.0, station.1, pose, &strip, &hit);
+    probe.station(station.0, station.1, pose, &strip, seen, &hit);
     hit
 }
 
@@ -194,6 +205,7 @@ fn measure_station<P: Pixel, R: Probe>(
 fn pose_at(s: &Scratch, i: usize, reach: f64) -> Pose {
     Pose {
         point: s.pts[i],
+        tangent: s.tan[i],
         normal: s.normals[i],
         window: offset_window(s.kappa[i], reach),
     }

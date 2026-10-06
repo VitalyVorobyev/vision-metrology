@@ -22,6 +22,9 @@
 //!   passes rather than in one: the defaults leave pinned residuals that the final stage
 //!   reports, and a shorter bending length converges. A kinked prior is stepped by less
 //!   than the full correction, without folding, and its error falls pass by pass.
+//! - **Explaining.** `diagnostics::explain_bead` returns `track`'s result to the bit on a
+//!   scene with hits, rejections and ambiguous stations, with every station of every
+//!   pass and of the final stage traced, and leaves the tracker as it was.
 //!
 //! Stations within `END_MARGIN` px of a ribbon end, or of a gap's end, carry no truth
 //! (the fixture cuts the ribbon square there) and are left out of accuracy checks.
@@ -33,11 +36,12 @@ use std::f64::consts::TAU;
 use std::num::NonZeroUsize;
 
 use ribbon::{Curve, P2, Raster, Ribbon, Scene, Step, Stripe, Width};
+use vision_metrology::measure::diagnostics::{BeadStationTrace, explain, explain_bead};
 use vision_metrology::measure::{
-    BeadCaliper, BeadConfig, BeadPolarity, BeadReject, BeadStop, BeadTracker, BeadTuning,
+    BeadCaliper, BeadConfig, BeadPolarity, BeadReject, BeadStop, BeadTracker, BeadTuning, Caliper,
     RejectReason, TrackedBead,
 };
-use vision_metrology::{Error, Image, Point2f};
+use vision_metrology::{Error, Image, Point2f, Vec2f};
 
 const SIZE: (usize, usize) = (340, 280);
 const BG: f64 = 40.0;
@@ -678,4 +682,217 @@ fn a_kinked_prior_is_stepped_without_folding() {
         last = center;
     }
     assert!(last < 0.65, "after 6 passes: {last}");
+}
+
+// ── explaining a run ─────────────────────────────────────────────────────
+
+/// The line bead with a gap at arc length 150..175, crossed at a shallow angle by a step
+/// 80 DN brighter on its +n side, tracked with `min_margin` 0.7:
+/// - in the gap, the step's edge has no partner, and the stations find no pair;
+/// - where the step runs near the bead's −n edge, its edge and the bead's +n edge make a
+///   second pair whose score is close enough to the bead's that the margin gate rejects
+///   the station as ambiguous;
+/// - everywhere else the bead is found.
+fn troubled() -> (Image<u8>, Vec<Point2f>, BeadConfig) {
+    let ribbon = bead(line()).gap(150.0, 175.0);
+    let (len, t, n) = (
+        ribbon.length(),
+        ribbon.curve.tangent(0.0),
+        ribbon.curve.normal(0.0),
+    );
+    // The step's edge crosses the bead at its middle, (s − L/2)/3 px along the normal at
+    // arc length s.
+    let tilt = (1.0f64 / 3.0).atan();
+    let dir = t * tilt.cos() + n * tilt.sin();
+    let step = Step {
+        point: ribbon.curve.center(0.5 * len),
+        normal: dir.perp(),
+        contrast: 80.0,
+    };
+    let img = Scene::new(SIZE.0, SIZE.1, ribbon.clone(), BG, FG, SIGMA)
+        .step(step)
+        .render()
+        .to_u8();
+    let cfg = BeadConfig {
+        min_margin: Some(0.7),
+        ..BeadConfig::default()
+    };
+    (img, perturbed(&ribbon), cfg)
+}
+
+/// How many of `stations` found the bead, were rejected by a gate before the margin, and
+/// were ambiguous.
+fn kinds(stations: &[BeadStationTrace]) -> (usize, usize, usize) {
+    let ambiguous = Err(BeadReject::Ambiguous);
+    let hits = stations.iter().filter(|s| s.hit.is_ok()).count();
+    let unclear = stations.iter().filter(|s| s.hit == ambiguous).count();
+    (hits, stations.len() - hits - unclear, unclear)
+}
+
+#[test]
+fn explaining_returns_what_track_returns() {
+    let (img, prior, cfg) = troubled();
+    let mut tracker = BeadTracker::new(cfg).expect("valid");
+    let trace = explain_bead(&mut tracker, &img.as_view(), &prior).expect("tracked");
+    let tracked = track(cfg, &img, &prior);
+    assert_eq!(trace.result, tracked);
+    // `Debug` prints each float's shortest round-trip form, so equal text is equal bits,
+    // signed zeros included.
+    assert_eq!(format!("{:?}", trace.result), format!("{tracked:?}"));
+
+    // The scene has every kind of station, in the passes and in the final stage.
+    // Measured: 30 hits, 6 rejected and 13 ambiguous in the first pass; 38, 7 and 4 in
+    // the final stage.
+    let first = kinds(&trace.passes[0].stations);
+    let last = kinds(&trace.measure);
+    eprintln!("hits, rejected, ambiguous: first pass {first:?}, final stage {last:?}");
+    for (hits, rejected, ambiguous) in [first, last] {
+        assert!(
+            hits > 20 && rejected >= 4 && ambiguous >= 2,
+            "{first:?} {last:?}"
+        );
+    }
+}
+
+#[test]
+fn the_trace_holds_every_station_of_every_pass() {
+    let (img, prior, cfg) = troubled();
+    let mut tracker = BeadTracker::new(cfg).expect("valid");
+    let trace = explain_bead(&mut tracker, &img.as_view(), &prior).expect("tracked");
+    let bead = &trace.result;
+    let n = bead.samples.len();
+    assert_eq!(trace.passes.len(), bead.track.passes.len());
+    assert!(trace.passes.len() > 1);
+    assert_eq!(trace.measure.len(), n);
+
+    let stage = |stations: &[BeadStationTrace], half_width: f32| {
+        for (i, st) in stations.iter().enumerate() {
+            // n = t.perp(), exactly.
+            assert_eq!(st.normal, Vec2f::new(-st.tangent.y, st.tangent.x), "{i}");
+            assert!(
+                st.window.0 < 0.0 && st.window.1 > 0.0,
+                "{i}: {:?}",
+                st.window
+            );
+            // The strip runs through the station along its normal, from −n to +n.
+            let mid = Point2f::from((st.strip.start.coords + st.strip.end.coords) * 0.5);
+            assert!((mid - st.point).norm() < 1e-3, "{i}");
+            let along = (st.strip.end - st.strip.start).normalize();
+            assert!((along - st.normal).norm() < 1e-5, "{i}");
+            assert_eq!(st.strip.half_width, half_width);
+            // A caliper rejection is the station's; a hit's edges are the caliper's.
+            match st.caliper.reject {
+                Some(r) => assert_eq!(st.hit, Err(BeadReject::Caliper(r)), "{i}"),
+                None => assert!(!st.caliper.edges.is_empty(), "{i}"),
+            }
+            if let Ok(hit) = st.hit {
+                assert!(st.caliper.edges.contains(&hit.pair.first), "{i}");
+                assert!(st.caliper.edges.contains(&hit.pair.second), "{i}");
+            }
+        }
+    };
+    for (k, (p, rec)) in trace.passes.iter().zip(&bead.track.passes).enumerate() {
+        assert_eq!(p.stations.len(), n, "pass {k}");
+        assert_eq!(p.weights.len(), n, "pass {k}");
+        assert_eq!(p.corrections.len(), n, "pass {k}");
+        stage(&p.stations, cfg.track.half_width);
+        let valid = p.stations.iter().filter(|s| s.hit.is_ok()).count();
+        assert_eq!(valid, rec.n_valid, "pass {k}");
+        for (st, &w) in p.stations.iter().zip(&p.weights) {
+            assert!(
+                st.hit.is_ok() || w == 0.0,
+                "pass {k}: a rejected station weighs {w}"
+            );
+            assert!((0.0..=1.0).contains(&w), "pass {k}: weight {w}");
+        }
+        let solve = rec.solve.expect("every pass solved");
+        let largest = p.corrections.iter().fold(0.0f32, |m, c| m.max(c.abs()));
+        assert_eq!(largest, solve.correction_max, "pass {k}");
+    }
+    // The next pass measured where this one moved the curve: resampling slides a station
+    // along the curve, not across it.
+    let (p0, p1, mid) = (&trace.passes[0], &trace.passes[1], n / 2);
+    let (before, after) = (&p0.stations[mid], &p1.stations[mid]);
+    let moved = before.point + before.normal * p0.corrections[mid];
+    let (across, along) = (
+        (after.point - moved).dot(&before.normal),
+        (after.point - moved).dot(&before.tangent),
+    );
+    // Measured: a 4.72 px correction, then 0.06 px across and 0.74 px along.
+    assert!(p0.corrections[mid].abs() > 3.0);
+    assert!(
+        across.abs() < 0.15 && along.abs() < 2.0,
+        "{across} / {along}"
+    );
+
+    // The final stage is the result's samples, with the evidence beside them.
+    stage(&trace.measure, cfg.measure.half_width);
+    for (st, smp) in trace.measure.iter().zip(&bead.samples) {
+        assert_eq!(
+            (st.point, st.normal, st.hit),
+            (smp.point, smp.normal, smp.hit)
+        );
+    }
+    // Each caliper trace is `explain` of a caliper of the stage's config at that strip.
+    for st in trace.measure.iter().step_by(5) {
+        let mut alone = Caliper::strip(st.strip, cfg.measure.to_measure_config());
+        assert_eq!(explain(&mut alone, &img.as_view()), st.caliper);
+    }
+}
+
+#[test]
+fn explaining_leaves_the_tracker_as_it_was() {
+    let (img, prior, cfg) = troubled();
+    let fresh = track(cfg, &img, &prior);
+    let mut tracker = BeadTracker::new(cfg).expect("valid");
+    let first = explain_bead(&mut tracker, &img.as_view(), &prior).expect("tracked");
+    let after = tracker.track(&img.as_view(), &prior).expect("tracked");
+    assert_eq!(format!("{after:?}"), format!("{fresh:?}"));
+    // Explaining again, after tracking, gives the same trace.
+    let again = explain_bead(&mut tracker, &img.as_view(), &prior).expect("tracked");
+    assert_eq!(again, first);
+}
+
+#[test]
+fn a_missing_bead_is_explained_station_by_station() {
+    let ribbon = bead(line());
+    let prior = perturbed(&ribbon);
+    let flat = Image::from_vec(SIZE.0, SIZE.1, vec![100u8; SIZE.0 * SIZE.1]).expect("image");
+    let mut tracker = BeadTracker::new(BeadConfig::default()).expect("valid");
+    let trace = explain_bead(&mut tracker, &flat.as_view(), &prior).expect("a result");
+    assert_eq!(trace.result.track.stop, BeadStop::TooFewValid);
+    // One pass, which found nothing and so neither weighed nor moved any station.
+    let [pass] = trace.passes.as_slice() else {
+        panic!("{} passes", trace.passes.len())
+    };
+    let n = trace.result.samples.len();
+    assert_eq!(pass.weights, vec![0.0; n]);
+    assert_eq!(pass.corrections, vec![0.0; n]);
+    let no_edge = Err(BeadReject::Caliper(RejectReason::NoEdge));
+    for st in pass.stations.iter().chain(&trace.measure) {
+        assert_eq!(st.hit, no_edge);
+        assert_eq!(st.caliper.reject, Some(RejectReason::NoEdge));
+        assert!(st.caliper.candidates.is_empty());
+    }
+    // A bad prior fails as `track` does.
+    let p = Point2f::new(2.0, 3.0);
+    assert_eq!(
+        explain_bead(&mut tracker, &flat.as_view(), &[p]).unwrap_err(),
+        Error::InsufficientData { need: 2, got: 1 }
+    );
+}
+
+#[cfg(feature = "serde")]
+#[test]
+fn a_bead_trace_serializes() {
+    let (img, prior, cfg) = troubled();
+    let mut tracker = BeadTracker::new(cfg).expect("valid");
+    let trace = explain_bead(&mut tracker, &img.as_view(), &prior).expect("tracked");
+    let v = serde_json::to_value(&trace).expect("serializable");
+    let n = trace.result.samples.len();
+    assert_eq!(v["measure"].as_array().map(Vec::len), Some(n));
+    assert_eq!(v["passes"][0]["weights"].as_array().map(Vec::len), Some(n));
+    let st = &v["passes"][0]["stations"][0];
+    assert!(st["strip"]["start"].is_array() && st["caliper"]["profile"].is_array());
+    assert!(st["hit"].get("Ok").is_some() || st["hit"].get("Err").is_some());
 }

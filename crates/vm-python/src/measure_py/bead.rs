@@ -5,12 +5,14 @@ use numpy::{IntoPyArray, PyArray1, PyArray2, PyReadonlyArray2};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
+use vision_metrology::measure::diagnostics::explain_bead;
 use vision_metrology::measure::{
     BeadPass as NativeBeadPass, BeadReject, BeadSolve as NativeBeadSolve,
     BeadTracker as NativeBeadTracker, TrackedBead as NativeTrackedBead,
 };
 use vm_primitives::Point2f;
 
+use super::bead_trace::BeadTrace;
 use crate::config::BeadConfig;
 use crate::convert::{any_image_from_numpy, with_any_image};
 
@@ -55,7 +57,7 @@ fn rejects_dict<'py>(py: Python<'py>, rejects: &[(BeadReject, usize)]) -> PyResu
 }
 
 /// `(N, 2)` rows as a `float32` array.
-fn rows(py: Python<'_>, xy: Vec<f32>) -> PyResult<Py<PyArray2<f32>>> {
+pub(super) fn rows(py: Python<'_>, xy: Vec<f32>) -> PyResult<Py<PyArray2<f32>>> {
     let n = xy.len() / 2;
     let arr =
         Array2::from_shape_vec((n, 2), xy).map_err(|e| PyValueError::new_err(e.to_string()))?;
@@ -175,7 +177,7 @@ pub struct TrackedBead {
 }
 
 impl TrackedBead {
-    fn from_native(py: Python<'_>, b: NativeTrackedBead) -> PyResult<Self> {
+    pub(super) fn from_native(py: Python<'_>, b: NativeTrackedBead) -> PyResult<Self> {
         let n = b.samples.len();
         let (mut normals, mut center, mut first, mut second) = (
             Vec::with_capacity(2 * n),
@@ -265,9 +267,9 @@ impl TrackedBead {
 ///
 /// `BeadTracker(config)` raises `ValueError` for an invalid config. `track(image, prior)`
 /// takes a `uint8`, `uint16` or `float32` image and an `(N, 2)` `float32` or `float64`
-/// prior, and
-/// raises `ValueError` for a prior with fewer than two points, a non-finite point or no
-/// length; a bead that is not there is a `TrackedBead` with every station rejected.
+/// prior, and raises `ValueError` for a prior with fewer than two points, a non-finite
+/// point or no length; a bead that is not there is a `TrackedBead` with every station
+/// rejected. `explain(image, prior)` takes the same arguments and raises the same way.
 #[pyclass]
 pub struct BeadTracker {
     inner: NativeBeadTracker,
@@ -313,5 +315,20 @@ impl BeadTracker {
         let bead = with_any_image!(any, view => self.inner.track(&view, &prior))
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         TrackedBead::from_native(py, bead)
+    }
+
+    /// Track as `track` does and keep every station's evidence — see `BeadTrace`. A
+    /// rejected station is part of the trace, never an exception.
+    pub fn explain(
+        &mut self,
+        py: Python<'_>,
+        image: &Bound<'_, PyAny>,
+        prior: &Bound<'_, PyAny>,
+    ) -> PyResult<BeadTrace> {
+        let prior = prior_from_numpy(prior)?;
+        let any = any_image_from_numpy(py, image)?;
+        let trace = with_any_image!(any, view => explain_bead(&mut self.inner, &view, &prior))
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        BeadTrace::from_native(py, trace)
     }
 }

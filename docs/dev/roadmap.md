@@ -20,8 +20,6 @@ blob features, `filter`, the lab's package catch-up and bindings.
 the refined curve ([ADR-0018](adr/0018-tracked-curves.md)), with Python parity and a user
 guide. The release waits for the rest, so the API review covers it.
 
-- `diagnostics::explain_bead`, which returns `track`'s result to the bit, with Python
-  parity. The run already goes through a probe for it.
 - Accuracy rows for the final centre, the final width and the tracked curve. A
   convergence-basin sweep against translation, rotation, smooth and local deformation of
   the prior.

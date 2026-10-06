@@ -1,6 +1,7 @@
 //! Seeing what a caliper did: [`explain`] traces one measurement, [`explain_model`] traces
-//! every caliper of a [`MetrologyModel`] along with its fits, and [`layout`] places a
-//! model's calipers at a fixture pose without measuring.
+//! every caliper of a [`MetrologyModel`] along with its fits, [`explain_bead`] traces every
+//! station of a [`BeadTracker`](super::BeadTracker) run, and [`layout`] places a model's
+//! calipers at a fixture pose without measuring.
 //!
 //! ## Caliper layout
 //!
@@ -10,6 +11,7 @@
 
 use vm_primitives::{Error, ImageView, LevelEdge, Pixel, Similarity2f};
 
+pub use super::bead::{BeadPassTrace, BeadStationTrace, BeadTrace, explain_bead};
 pub use super::model::CaliperShape;
 use super::model::{caliper_placements, measure_placed, placeholder_rect};
 use super::{Caliper, MeasureEdge, MetrologyModel, MetrologyObject, MetrologyResult, RejectReason};
