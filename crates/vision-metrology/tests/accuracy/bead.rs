@@ -15,11 +15,31 @@
 //!   the sine's arc length matches a dense polyline, and the S-bend is C¹ at its join.
 //! - **Rendering.** The bead level, its edges, gaps, square ends and a distractor step land
 //!   where the truth says, and a scene renders bit-identically for the same seed.
+//!
+//! The tracker rows run `measure::BeadTracker` over a grid of these scenes: a line at
+//! 17°, an arc of radius 150 px and a sine of amplitude 8 px and period 160 px; bead
+//! widths 8, 30 and 60 px; a blur of σ 0.8 or 1.5 px; 0, 2 or 5 DN of seeded Gaussian
+//! noise (5 trials when noisy) on 140 DN of contrast, quantised to `u8`. The config is
+//! the default with a width range of `w/2` to `3w/2`. The prior is the truth moved 2 px
+//! along the normal and bent by a further 1 px sine over the bead's length, and it stops
+//! `2σ + half_width + 2` px short of each end of the ribbon, whose square ends put pixels
+//! without truth under a strip there. A cell pools its
+//! stations over trials; a row reports the worst cell's |mean| and spread:
+//! - `bead_center_normal`: the final stage's pair centre, its signed distance from the
+//!   true centreline;
+//! - `bead_width`: the final stage's width minus the true width;
+//! - `bead_track_curve`: the refined station, its signed distance from the true
+//!   centreline.
 
 use std::f64::consts::TAU;
+use std::sync::OnceLock;
 
-use super::ribbon::{Curve, P2, Ribbon, Scene, Step, Stripe, Width};
+use vision_metrology::Point2f;
+use vision_metrology::measure::{BeadConfig, BeadTracker};
+
+use super::ribbon::{Curve, P2, Raster, Ribbon, Scene, Step, Stripe, Width};
 use super::strip::{HI, LO, render_steps};
+use super::{Measured, mean_std};
 
 /// The straight-ribbon cross-check's worst pixel, in DN at 160 DN contrast. Measured:
 /// 6.6e-5 DN, the 4 × 4 quadrature's error (a 6 × 6 rule gives 1.9e-6 DN). About 1.5× that.
@@ -325,4 +345,174 @@ fn a_scene_renders_bit_identically_for_one_seed() {
             assert!((f32::from(q8) - v).abs() <= 0.5 && (f32::from(q16) / 256.0 - v).abs() <= 0.01);
         }
     }
+}
+
+// ── the tracker ──────────────────────────────────────────────────────────
+
+const TRACK_BG: f64 = 40.0;
+const TRACK_FG: f64 = 180.0;
+const TRACK_WIDTHS: [f64; 3] = [8.0, 30.0, 60.0];
+const TRACK_SIGMAS: [f64; 2] = [0.8, 1.5];
+const TRACK_NOISES_DN: [f64; 3] = [0.0, 2.0, 5.0];
+const TRACK_TRIALS: u64 = 5;
+
+/// A curve built at an origin.
+type MakeCurve = fn(P2) -> Curve;
+
+/// A curve of each kind, built at `origin` (the line's start, the sine's origin, the
+/// arc's top-left corner).
+fn track_curves() -> [(&'static str, MakeCurve); 3] {
+    [
+        ("line", |o| {
+            Curve::line(o, o + P2::polar(17f64.to_radians()) * 200.0)
+        }),
+        // From −2.2 to −0.9 rad: the arc's top is 150 px above its centre, its left end
+        // 88 px left of it.
+        ("arc", |o| {
+            Curve::arc(o + P2::new(88.3, 150.0), 150.0, -2.2, 1.3)
+        }),
+        ("sine", |o| {
+            Curve::sine(o, P2::polar(0.1), 200.0, 8.0, 160.0)
+        }),
+    ]
+}
+
+/// The curve of `make` moved so that a bead of half-width `reach` px, blur included, fits
+/// inside the smallest image around it, and that image's size.
+fn fitted(make: MakeCurve, reach: f64) -> (Curve, usize, usize) {
+    let probe = make(P2::new(0.0, 0.0));
+    let len = probe.length();
+    let (mut lo, mut hi) = (P2::new(f64::MAX, f64::MAX), P2::new(f64::MIN, f64::MIN));
+    for k in 0..=200 {
+        let c = probe.center(len * f64::from(k) / 200.0);
+        lo = P2::new(lo.x.min(c.x), lo.y.min(c.y));
+        hi = P2::new(hi.x.max(c.x), hi.y.max(c.y));
+    }
+    let margin = reach.ceil() + 2.0;
+    let origin = P2::new(margin - lo.x, margin - lo.y);
+    let size = |span: f64| (span + 2.0 * margin).ceil() as usize + 1;
+    (make(origin), size(hi.x - lo.x), size(hi.y - lo.y))
+}
+
+/// One scene of the sweep, rendered once: a curve, a bead width and a blur.
+struct TrackScene {
+    label: String,
+    ribbon: Ribbon,
+    clean: Raster,
+    prior: Vec<Point2f>,
+}
+
+impl TrackScene {
+    fn new(name: &str, make: MakeCurve, w: f64, sigma: f64, cfg: &BeadConfig) -> Self {
+        let (curve, width, height) = fitted(make, 0.5 * w + 6.0 * sigma);
+        let ribbon = Ribbon::new(curve, Width::Const(w));
+        let len = ribbon.length();
+        // The prior stops short of the square ends, where the pixels carry no truth: no
+        // strip line comes within a pixel of them.
+        let end = 2.0 * sigma + f64::from(cfg.track.half_width) + 2.0;
+        let n = ((len - 2.0 * end) / 4.0).ceil() as usize;
+        let prior = (0..=n)
+            .map(|k| {
+                let s = end + (len - 2.0 * end) * k as f64 / n as f64;
+                let bend = 2.0 + (TAU * s / len).sin();
+                (ribbon.curve.center(s) + ribbon.curve.normal(s) * bend).point()
+            })
+            .collect();
+        let clean = Scene::new(width, height, ribbon.clone(), TRACK_BG, TRACK_FG, sigma).render();
+        Self {
+            label: format!("{name} w {w} σ {sigma}"),
+            ribbon,
+            clean,
+            prior,
+        }
+    }
+}
+
+/// One cell's errors, px, pooled over its stations and trials.
+#[derive(Default)]
+struct TrackErrors {
+    center: Vec<f32>,
+    width: Vec<f32>,
+    curve: Vec<f32>,
+}
+
+impl TrackErrors {
+    /// Track `scene` under `noise` DN, seeded by `seed`, and pool every station.
+    fn add(&mut self, tracker: &mut BeadTracker, scene: &TrackScene, noise: f64, seed: u64) {
+        let img = scene.clean.noisy(noise, seed).to_u8();
+        let got = tracker
+            .track(&img.as_view(), &scene.prior)
+            .unwrap_or_else(|e| panic!("{} at {noise} DN: {e:?}", scene.label));
+        let ribbon = &scene.ribbon;
+        for smp in &got.samples {
+            self.curve.push(ribbon.nearest(smp.point).1 as f32);
+            if let Ok(hit) = smp.hit {
+                let (s, d) = ribbon.nearest(hit.pair.center);
+                self.center.push(d as f32);
+                self.width
+                    .push((f64::from(hit.pair.width) - ribbon.width(s)) as f32);
+            }
+        }
+    }
+}
+
+/// The worst cells of the tracker sweep: centre, width and refined curve. Run once, for
+/// the three rows that report it.
+fn track_sweep() -> &'static [Measured; 3] {
+    static SWEEP: OnceLock<[Measured; 3]> = OnceLock::new();
+    SWEEP.get_or_init(|| {
+        let mut cells: [Vec<(f32, f32)>; 3] = Default::default();
+        let mut cell = 0u64;
+        for (name, make) in track_curves() {
+            for &w in &TRACK_WIDTHS {
+                let cfg = BeadConfig {
+                    min_width: (0.5 * w) as f32,
+                    max_width: (1.5 * w) as f32,
+                    ..BeadConfig::default()
+                };
+                let mut tracker = BeadTracker::new(cfg).expect("a valid config");
+                for &sigma in &TRACK_SIGMAS {
+                    let scene = TrackScene::new(name, make, w, sigma, &cfg);
+                    for &noise in &TRACK_NOISES_DN {
+                        cell += 1;
+                        let trials = if noise > 0.0 { TRACK_TRIALS } else { 1 };
+                        let mut errs = TrackErrors::default();
+                        for trial in 0..trials {
+                            errs.add(&mut tracker, &scene, noise, cell << 8 | trial);
+                        }
+                        // Nearly every station must hit, or the rows would describe a few.
+                        let (hits, n) = (errs.center.len(), errs.curve.len());
+                        assert!(
+                            hits * 20 >= n * 19,
+                            "{} at {noise} DN: {hits} hits of {n} stations",
+                            scene.label
+                        );
+                        let errors = [&errs.center, &errs.width, &errs.curve];
+                        let [c, wd, cv] = errors.map(|e| mean_std(e));
+                        eprintln!(
+                            "bead {} at {noise} DN: centre {:+.4} ± {:.4}, width {:+.4} ± \
+                             {:.4}, curve {:+.4} ± {:.4} ({hits} hits of {n})",
+                            scene.label, c.0, c.1, wd.0, wd.1, cv.0, cv.1
+                        );
+                        for (k, m) in [c, wd, cv].into_iter().enumerate() {
+                            cells[k].push(m);
+                        }
+                    }
+                }
+            }
+        }
+        cells.map(|c| Measured::worst_of(c.into_iter()))
+    })
+}
+
+pub(super) fn bead_center_normal_sweep() -> Measured {
+    track_sweep()[0]
+}
+
+pub(super) fn bead_width_sweep() -> Measured {
+    track_sweep()[1]
+}
+
+pub(super) fn bead_track_curve_sweep() -> Measured {
+    track_sweep()[2]
 }

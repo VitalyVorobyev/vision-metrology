@@ -151,17 +151,19 @@ are relative to 0.1.0.
 - **Examples:** one per module (`pyramid`, `edge_1d`, `edge_2d`, `contour_graph`,
   `morphology`, `line_segments`, `segmentation`, `laserline`, `shape_matching`,
   `measure_circles`); end-to-end programs (`inspect_canend`, `align_crops`, `pose_audit`,
-  `birdseye_mosaic`); and `caliperbench_run`, which runs strip calipers over a
-  CaliperBench requests file through its JSONL protocol. Its `gradient_parabolic`,
-  `gradient_integer` and `midpoint_crossing` methods return the same rows as
-  CaliperBench's baselines (a golden cross-check pins it). Python scripts are in
+  `birdseye_mosaic`); `bead_track`, which tracks a synthetic bead from a perturbed prior
+  and draws its rejected stations by reason; and `caliperbench_run`, which runs strip
+  calipers over a CaliperBench requests file through its JSONL protocol. Its
+  `gradient_parabolic`, `gradient_integer` and `midpoint_crossing` methods return the same
+  rows as CaliperBench's baselines (a golden cross-check pins it). Python scripts are in
   `examples/python/`.
 - **Docs:** guides for shape matching, measurement and bead tracking, and a performance and
   accuracy page.
 - An accuracy regression suite with pinned envelopes; its strip and caliper rows run on
   CaliperBench's pixel-integrated image model: each `Locate` method on steps, bar centre
-  and width, oblique strips, and rect, arc and radial calipers. Benches for matching,
-  measure, warp, corr, segment, LSD with fitting, morph and edge1d.
+  and width, oblique strips, and rect, arc and radial calipers; its bead rows pin the
+  tracker's centre, width and refined curve. Benches for matching, measure, bead tracking,
+  warp, corr, segment, LSD with fitting, morph and edge1d.
 
 ### Changed
 

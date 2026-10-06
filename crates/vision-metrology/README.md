@@ -118,6 +118,7 @@ Runnable programs are in
 | `segmentation` | Thresholding, labeling, component statistics |
 | `shape_matching` | Building a shape model and locating it, rotated, in a scene |
 | `measure_circles` | Circle metrology: 2-D edges → contour graph → RANSAC circle fit, `rms` / `max_dev` gating |
+| `bead_track` | Tracking a bead from a perturbed prior past a gap and a distractor; rejected stations by reason |
 | `laserline` | Laser stripe extraction from a multi-snap image (`--input`) |
 | `inspect_canend` | Locate → fixture → measure → pass/fail on a directory of frames |
 | `align_crops` | Teach → find → rectify into canonical model-frame crops |

@@ -110,7 +110,7 @@ the representative image size is 1280×1024.
 ```bash
 cargo bench -p vm-primitives --bench downsample   # also: edge1d, edge2d, morph
 cargo bench -p vision-metrology --bench match_shape
-# also: build_graph, detect_shape, extract, segment, measure, warp, corr
+# also: build_graph, detect_shape, extract, segment, measure, bead, warp, corr
 cargo bench -p vm-primitives --bench downsample -- downsample2x2_to_f32_u8_1280x1024
 ```
 

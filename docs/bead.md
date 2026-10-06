@@ -17,13 +17,21 @@ prior ─► stations ─► strips along the normals ─► edge pairs ─► r
 refined stations ─► stricter strips ─► one hit or reason per station + statistics   (final stage)
 ```
 
+![Bead tracking: an S-shaped bead with a gap and a brighter step beside one edge, tracked from a prior 4 px off with a bump in it](assets/bead-tracking.png)
+
+The prior is grey, the final stage's strips faint blue, the refined centreline green and
+the final edges yellow. The rejected stations are red at the gap, where the strips find no
+edge, and orange at the start, where the step lies within `clearance` of the bead's edge.
+`examples/bead_track.rs` draws the same overlay for a scene of its own.
+
 ## When to use it
 
 - **The bead follows a curve, and you have a prior for it.** Each station measures along
   its own normal, so the tool follows any open curve.
   - A prior that is translated, rotated or smoothly bent by up to the tracking reach
     (15 px by default) converges onto the bead in a few passes. Smoothly means
-    wavelengths well above `2π·bending_px`, about 50 px by default.
+    wavelengths well above `2π·bending_px`, about 25 px by default. The measured basins
+    are in [performance and accuracy](performance.md#bead-tracking-convergence).
   - Local error in the prior converges much more slowly, because each pass suppresses
     short corrections ([The regulariser](#the-regulariser)). Examples are a kink, a bump
     shorter than that, or the chords of a coarse polygon on a bend.
@@ -104,9 +112,9 @@ dimensions stay strict:
 
 A strip's endpoints are stored in `f32`, so the spacing of its samples, and with it σ in
 samples, differs between stations by a few ulps. Each caliper therefore refills its
-smoothing kernel in place at every station. That costs no allocation, and occasionally
-the kernel radius changes by one sample. The effect on an edge position stays around
-1e-4 px.
+smoothing kernel in place at most stations. That costs no allocation and little time
+([speed](performance.md#speed)), and occasionally the kernel radius changes by one
+sample. The effect on an edge position stays around 1e-4 px.
 
 Each strip is a [`MeasureStrip`](measure.md#strips) along the station's normal, long
 enough for a pair at the stage's reach:
@@ -181,8 +189,8 @@ and moves each station by `dᵢ` along its normal. In plain terms:
 - **The bending length sets the shortest correction a pass makes.** A correction that
   varies along the curve with angular frequency `ω` passes at
   `1 / (1 + λ0 + ℓ1²ω² + ℓ2⁴ω⁴)`. A correction whose wavelength is shorter than about
-  `2π·ℓ2` is suppressed; a longer one passes. The default `ℓ2` of 8 px puts that boundary
-  at about 50 px. A bead cannot bend on a scale much shorter than its own width, so a
+  `2π·ℓ2` is suppressed; a longer one passes. The default `ℓ2` of 4 px puts that boundary
+  at about 25 px. A bead cannot bend on a scale much shorter than its own width, so a
   short correction is more often noise or a wrong pair than the bead.
 - **The penalties act on each pass's correction, not on the curve.** The curve keeps
   converging towards the measured centres over passes. The regulariser sets how robustly
@@ -213,10 +221,12 @@ the curve as it stands.
 The tuning defaults:
 - **`tension_px` 2.** It keeps a long gap or a bare end from tilting the curve, at a cost
   of a fraction of a percent on a rotated prior.
-- **`bending_px` 8.** It gave the most accurate curve on noisy beads with a smooth prior.
-  - For a coarse or locally wrong prior, use a shorter bending length, 2 to 4 px, or more
-    passes, or both. A shorter length corrects short-scale error in fewer passes but
-    passes more noise into the curve.
+- **`bending_px` 4.** It balances local error in the prior against noise in the curve
+  ([the bending length](performance.md#the-bending-length)).
+  - For a coarse or locally wrong prior, use a shorter bending length, 2 or 3 px. A
+    shorter length corrects short-scale error in fewer passes but passes more noise into
+    the curve. More passes help less.
+  - For a smooth prior on a noisy bead, a longer one, up to 8 px, gives a quieter curve.
   - Either way, read `center_max_dev` to see whether the curve sits on the bead.
 - **`tangent_window_px` 10.** Shorter is noisier on a coarse prior. Longer tilts the
   normals where the curvature changes, and a tilted normal makes the width read long, by
@@ -468,6 +478,8 @@ raises `ValueError`. A missing bead does not raise: every station is rejected.
 
 - [Measuring a located part](measure.md): the caliper and strip the tracker is built on,
   edge location, and `RejectReason`.
+- [Performance and accuracy](performance.md): the tracker's speed, its accuracy on
+  synthetic beads, its convergence basins, and the bending length's trade-off.
 
 [`BeadTracker`]: ../crates/vision-metrology/src/measure/bead/mod.rs
 [`TrackedBead`]: ../crates/vision-metrology/src/measure/bead/result.rs

@@ -40,6 +40,30 @@ Other operators:
 | `corr::find`, VGA scene, 64×64 template, rotation off / on | 4.60 / 22.1 ms |
 | `corr::displacement`, 320×97 window, quadratic / + Lucas–Kanade | 1.60 / 1.71 ms |
 
+Bead tracking on a 1280×1024 frame: an S-shaped bead 50 px wide and 1080 px long, its
+prior 2 px off and bent by a further 1 px, every configured pass run:
+
+| Operation | Time |
+|---|---|
+| `track`, 100 stations, 1 pass | 0.44 ms |
+| `track`, 300 stations, 1 pass | 1.30 ms |
+| `track`, 300 stations, 3 passes | 2.54 ms |
+| `track`, 300 stations, 3 passes, reach ±30 px | 2.97 ms |
+| `track`, 300 stations, 3 passes, 30% of the bead in gaps and a distractor beside it | 2.58 ms |
+| `explain_bead`, 300 stations, 3 passes | 3.60 ms |
+
+Where the time goes, in the 3-pass case:
+- **Each strip costs about 2.1 µs.** A call measures one strip per station in each pass and
+  once more in the final stage: 1200 strips here.
+- **The caliper is nearly all of it.** Sampling the strips' profiles takes 75% of the time,
+  and smoothing them and locating their edges 21%. The solves, the pairing and the curve
+  geometry take about 3%.
+- **Most strips refill the caliper's smoothing kernel.** A strip's sample spacing differs
+  from the last one's by a few ulps, so 955 of the 1200 strips refill the kernel in place,
+  about 37 ns each: 1.4% of the call.
+- **A longer reach lengthens every tracking strip, and a gap costs as much as the bead.**
+  The strips in a gap are sampled all the same.
+
 ## Accuracy envelopes
 
 Each row sweeps a synthetic fixture with known subpixel ground truth. It reports the worst
@@ -112,6 +136,98 @@ How to read them:
 - **Radial and arc calipers.** `MeasureRadial` reads the disc's radius with at most 0.022
   px of bias at any caliper width, which is the reason it averages along the arc.
   `MeasureArc` reads a spoke's position along the arc to 0.074 px.
+
+### The bead tracker
+
+`BeadTracker` with the default config tracks the bead fixture of `tests/accuracy/bead.rs`:
+- a line at 17°, an arc of radius 150 px, or a sine of amplitude 8 px and period 160 px;
+- a light bead 8, 30 or 60 px wide, blurred by σ 0.8 or 1.5 px across the centreline and
+  integrated over each pixel;
+- seeded Gaussian noise of 0, 2 or 5 DN on 140 DN of contrast, quantized to 8 bits;
+- a prior 2 px off the centreline and bent by a further 1 px over the bead's length.
+
+The width range is half to one and a half times the bead's width. A cell pools every
+station of 5 noisy trials.
+
+| Quantity | Unit | Worst \|bias\| | Worst σ | Envelope (bias / σ) |
+|---|---|---:|---:|---|
+| final centre, distance from the true centreline | px | 0.0113 | 0.0869 | 0.017 / 0.13 |
+| final width, minus the true width | px | 0.0213 | 0.1696 | 0.032 / 0.25 |
+| refined centreline, distance from the true one | px | 0.0119 | 0.0487 | 0.018 / 0.073 |
+
+How to read them:
+- **The worst cell is σ 1.5 px with 5 DN of noise, in every row.** Without noise, every bias
+  is under 0.011 px and every spread under 0.016 px, at every width.
+- **The refined centreline is quieter than the final centres.** A final centre is one
+  station's pair; the curve is the regularised solve over all of them.
+- **On the arc, the curve sits up to 0.01 px towards the centre of curvature.** A tracking
+  strip averages lines up to 2 px either side of its station, and on a bend a straight
+  strip reads the centre towards the concave side ([limitations](bead.md#limitations)).
+  On a 50 px bead along the same arc, a tracking `half_width` of 0 instead of 2 takes the
+  curve's mean offset from 0.010 to 0.004 px.
+
+## Bead tracking: convergence
+
+The basins are pinned by `tests/bead.rs`, which fails if one shrinks by more than 10%.
+
+**The fixtures.** The arc (R = 150 px, 210 px long) and a sine (amplitude 12 px, period
+160 px, 253 px long), each with a bead 30 px wide, blurred by σ 1.2 px, under 2 DN of
+noise. They are tracked with the default config, except that `min_width` is 20 px.
+
+**The perturbations.** The prior is the true centreline from 15 px in from each end,
+moved off it by one of the perturbations below.
+
+**Converging** means that after the default 3 passes every refined station is within
+0.1 px of the true centreline. A basin is the largest perturbation that converges.
+
+| Perturbation of the prior | Arc | Sine |
+|---|---:|---:|
+| translation along the normal, either way | 15.0 px | 15.0 px |
+| rotation about its midpoint | 21.0° | 15.9° |
+| a sine of wavelength `L/2` along the normal (105 and 126 px) | 7.2 px | 12.8 px |
+| a sine of wavelength `L/4` (53 and 63 px) | 3.3 px | 4.1 px |
+| a Gaussian bump at the middle, σ 5 px of arc | 0.91 px | 0.69 px |
+| a Gaussian bump, σ 15 px | 15.5 px | 16.4 px |
+| 5 px of translation, plus a rotation | 16.9° | 16.3° |
+| 5 px of translation, plus a bump of σ 15 px | 10.3 px | 10.0 px |
+
+How to read it:
+- **A translation converges up to the tracking reach, `track.max_offset`.** Beyond it, every
+  station is rejected: with `Offset`, then with `NoPair` once a strip holds only one of
+  the bead's edges, then with `Caliper(NoEdge)`. At no translation tried, up to 80 px,
+  does a station take anything but the bead for a hit.
+- **A rotation converges well beyond the reach at the ends.** 21° moves the arc's ends by
+  38 px. A rotation is a straight correction, which the bending penalty does not resist,
+  so the stations within reach carry the rest.
+- **Local error is what the bending length decides.** A bump 5 px wide converges only
+  below 1 px.
+- **Past a rotation's or a sine's basin, the stations left off the bead are at the curve's
+  ends;** past a bump's, they are at the bump.
+
+### The bending length
+
+The local-deformation basins on the arc, and the noise the refined centreline keeps on a
+straight bead 30 px wide whose prior is 2 px off and bent by a further 1 px, averaged over
+8 seeds:
+
+| `bending_px` | Bump σ 5 px | Bump σ 15 px | Sine at `L/4` | Coarsest polygon | Curve rms / max, 2 DN | Curve rms / max, 5 DN |
+|---|---:|---:|---:|---:|---:|---:|
+| 8 | 0.22 px | 3.0 px | 0.62 px | a vertex every 14 px | 0.009 / 0.023 px | 0.021 / 0.049 px |
+| 4 (default) | 0.91 px | 15.5 px | 3.3 px | every 17 px | 0.011 / 0.027 px | 0.028 / 0.064 px |
+| 3 | 2.0 px | 15.5 px | 9.6 px | every 32 px | 0.013 / 0.030 px | 0.030 / 0.071 px |
+| 2 | 13.2 px | 15.5 px | 10.5 px | its two ends | 0.014 / 0.033 px | 0.034 / 0.079 px |
+
+- **A shorter bending length widens every local basin and lets more noise into the curve.**
+  The noise columns do not change with more passes, because the curve converges in fewer.
+- **More passes help little.** With 6 passes instead of 3, no basin widens by more than
+  1.7 px, except that `bending_px` 2 then converges from a bump of σ 15 px as tall as
+  24 px, beyond the reach.
+- **A schedule that shortens the bending length from call to call pays only with more
+  passes.** It was tried by feeding each result to the next call as its prior.
+  - 8, 4 and 2 px with one pass each lets in the noise of 3 px, but its local basins are
+    no wider than those of a fixed 3 px over the same 3 passes, and some narrower.
+  - With two passes each, every basin is wider than a fixed 3 px over the same 6 passes,
+    at the same noise; it converges even from the polygon of the arc's two ends.
 
 ## Real data: shape matching
 

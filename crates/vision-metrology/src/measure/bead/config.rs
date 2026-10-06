@@ -121,7 +121,7 @@ impl Default for BeadTuning {
             tol: 0.05,
             damping: 0.0,
             tension_px: 2.0,
-            bending_px: 8.0,
+            bending_px: 4.0,
             loss: RobustLoss::Huber { k: 1.0 },
             irls_iters: NonZeroUsize::new(5).expect("non-zero"),
             tangent_window_px: 10.0,

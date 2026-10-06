@@ -110,6 +110,11 @@ harness = false
 required-features = ["measure"]
 
 [[bench]]
+name = "bead"
+harness = false
+required-features = ["measure"]
+
+[[bench]]
 name = "warp"
 harness = false
 required-features = ["warp"]
@@ -175,6 +180,11 @@ required-features = ["corr", "metric"]
 [[example]]
 name = "caliperbench_run"
 required-features = ["measure"]
+
+# The shared overlay helpers draw shape matches too, so they need `matching`.
+[[example]]
+name = "bead_track"
+required-features = ["matching", "measure"]
 
 [[test]]
 name = "shape_matching"
