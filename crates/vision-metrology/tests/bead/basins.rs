@@ -91,8 +91,8 @@ enum Perturbation {
     Translate,
     /// `m` degrees about the prior's midpoint.
     Rotate,
-    /// `m·sin(2π·waves·s/L)` px along the normal.
-    Sine { waves: f64 },
+    /// `m·sin(2π·cycles·s/L)` px along the normal.
+    Sine { cycles: f64 },
     /// `m·exp(−(s − L/2)²/(2σ_b²))` px along the normal.
     Bump { sigma: f64 },
     /// [`SHIFT`] px along the normal, then `m` degrees about the midpoint.
@@ -111,7 +111,7 @@ impl Perturbation {
         let bend = |s: f64| match self {
             Self::Translate => m,
             Self::Rotate => 0.0,
-            Self::Sine { waves } => m * (TAU * waves * s / len).sin(),
+            Self::Sine { cycles } => m * (TAU * cycles * s / len).sin(),
             Self::Bump { sigma } => bump(m, sigma, s),
             Self::ShiftRotate => SHIFT,
             Self::ShiftBump => SHIFT + bump(m, 15.0, s),
@@ -233,8 +233,8 @@ fn basin_of(f: &Fixture, method: &mut Method, p: Perturbation) -> f64 {
 const PINNED: [(Perturbation, f64, f64); 8] = [
     (Perturbation::Translate, 15.0, 15.0),
     (Perturbation::Rotate, 21.0, 15.9),
-    (Perturbation::Sine { waves: 2.0 }, 7.22, 12.78),
-    (Perturbation::Sine { waves: 4.0 }, 3.31, 4.12),
+    (Perturbation::Sine { cycles: 2.0 }, 7.22, 12.78),
+    (Perturbation::Sine { cycles: 4.0 }, 3.31, 4.12),
     (Perturbation::Bump { sigma: 5.0 }, 0.91, 0.69),
     (Perturbation::Bump { sigma: 15.0 }, 15.47, 16.41),
     (Perturbation::ShiftRotate, 16.9, 16.3),
@@ -370,7 +370,7 @@ fn measure_the_bending_length() {
     for mut m in methods() {
         let b5 = basin_of(&arc_f, &mut m, Perturbation::Bump { sigma: 5.0 });
         let b15 = basin_of(&arc_f, &mut m, Perturbation::Bump { sigma: 15.0 });
-        let l4 = basin_of(&arc_f, &mut m, Perturbation::Sine { waves: 4.0 });
+        let l4 = basin_of(&arc_f, &mut m, Perturbation::Sine { cycles: 4.0 });
         let poly = basin(5.0, 1.0, 200.0, |v| {
             m.converges(&arc_f, &polygon(&arc_f.ribbon, v))
         });
