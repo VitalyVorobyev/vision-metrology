@@ -1283,6 +1283,18 @@ struct Row {
 /// | caliper_rect_pixel_integrated (px)   | 0.067               | 0.304            | 0.10            | 0.46              |
 /// | caliper_arc_radial_position (px)     | 0.074               | 0.229            | 0.11            | 0.35              |
 ///
+/// The bead tracker rows (`accuracy/bead.rs`, measured 2026-10-06) track the ribbon
+/// fixture's line, arc and sine with beads 8, 30 and 60 px wide, blurred by σ 0.8 or
+/// 1.5 px, under 0, 2 or 5 DN of noise, from a prior 2 px off and bent by a further 1 px.
+/// Every worst cell is σ 1.5 px at 5 DN; noise-free, every bias is under 0.011 px and
+/// every spread under 0.016 px:
+///
+/// | Row                                 | measured \|bias\| | measured sigma | envelope bias | envelope sigma |
+/// |--------------------------------------|-------------------:|----------------:|---------------:|-----------------:|
+/// | bead_center_normal (px)              | 0.0113              | 0.0869           | 0.017           | 0.13              |
+/// | bead_width (px)                      | 0.0213              | 0.1696           | 0.032           | 0.25              |
+/// | bead_track_curve (px)                | 0.0119              | 0.0487           | 0.018           | 0.073             |
+///
 /// Rows 5-6 are the scale sweep: 12 true scales geometrically spaced 0.5..2.0x, 3 rotations each,
 /// model taught at scale 1.0 with `scale_range = (0.45, 2.1)`. Every scale
 /// found every rotation (100% found-rate — see `BASELINE_FOUND_RATE`'s full
@@ -1510,6 +1522,27 @@ const ROWS: &[Row] = &[
         measure: strip::arc_radial_sweep,
         bias_envelope: 0.11,
         sigma_envelope: 0.35,
+    },
+    Row {
+        // Measured: |bias| 0.0113, sigma 0.0869. ~1.5x, rounded.
+        name: "bead_center_normal",
+        measure: bead::bead_center_normal_sweep,
+        bias_envelope: 0.017,
+        sigma_envelope: 0.13,
+    },
+    Row {
+        // Measured: |bias| 0.0213, sigma 0.1696. ~1.5x, rounded.
+        name: "bead_width",
+        measure: bead::bead_width_sweep,
+        bias_envelope: 0.032,
+        sigma_envelope: 0.25,
+    },
+    Row {
+        // Measured: |bias| 0.0119, sigma 0.0487. ~1.5x, rounded.
+        name: "bead_track_curve",
+        measure: bead::bead_track_curve_sweep,
+        bias_envelope: 0.018,
+        sigma_envelope: 0.073,
     },
 ];
 

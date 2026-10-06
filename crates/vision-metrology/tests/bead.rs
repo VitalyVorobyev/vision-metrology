@@ -16,7 +16,9 @@
 //! - **Absence and trouble.** A flat image or the wrong polarity is an `Ok` result with
 //!   every station rejected; a bead leaving the image is rejected there with typed
 //!   reasons; a gap is bridged and reported; a distractor step beside an edge is rejected
-//!   by the clearance gate; a highlight inside the bead leaves the outer edges chosen.
+//!   by the clearance gate, and without it pulls the edge only when within a few pixels;
+//!   a highlight inside the bead leaves the outer edges chosen; a background gradient
+//!   moves nothing; a width that varies along the bead is measured where it is.
 //! - **Spacing.** The refined curve does not depend on the station spacing.
 //! - **Short-scale error in the prior.** A local bump and a coarse polygon decay over
 //!   passes rather than in one: the defaults leave pinned residuals that the final stage
@@ -25,12 +27,18 @@
 //! - **Explaining.** `diagnostics::explain_bead` returns `track`'s result to the bit on a
 //!   scene with hits, rejections and ambiguous stations, with every station of every
 //!   pass and of the final stage traced, and leaves the tracker as it was.
+//! - **Convergence basins** (`bead/basins.rs`). How far a prior may be translated,
+//!   rotated, bent or bumped and still converge, pinned; no false lock beyond the reach.
 //!
 //! Stations within `END_MARGIN` px of a ribbon end, or of a gap's end, carry no truth
 //! (the fixture cuts the ribbon square there) and are left out of accuracy checks.
 
 #[path = "../examples/common/ribbon.rs"]
 mod ribbon;
+
+// How far a prior may be off and still converge.
+#[path = "bead/basins.rs"]
+mod basins;
 
 use std::f64::consts::TAU;
 use std::num::NonZeroUsize;
@@ -52,7 +60,7 @@ const WIDTH: f64 = 50.0;
 const END_MARGIN: f64 = 10.0;
 
 /// The refined centreline's worst distance from the truth, px, on a noise-free `u8` render
-/// with the default config. Measured: 0.023 (line), 0.042 (arc), 0.039 (sine).
+/// with the default config. Measured: 0.019 (line), 0.025 (arc), 0.029 (sine).
 const CENTER_TOL: f64 = 0.06;
 /// The final stage's worst width error, px, on the same renders. Measured: 0.017 (line),
 /// 0.019 (arc), 0.024 (sine).
@@ -180,7 +188,7 @@ fn noise_moves_the_curve_by_little() {
         let got = track(BeadConfig::default(), &img, &perturbed(&ribbon));
         let (center, width, _) = errors(&got, &ribbon);
         eprintln!("{name} at 3 DN: centre max {center:.4} px, width max err {width:.4} px");
-        // Measured: centre 0.045 (line) and 0.053 (sine) px, width 0.21 and 0.14 px.
+        // Measured: centre 0.041 (line) and 0.065 (sine) px, width 0.21 and 0.14 px.
         assert!(center < 0.08, "{name}: centre {center:.4}");
         assert!(width < 0.3, "{name}: width {width:.4}");
     }
@@ -246,7 +254,7 @@ fn pixel_types_agree() {
             dw = dw.max((ha.pair.width - hb.pair.width).abs());
         }
         eprintln!("u8 vs {name}: centreline {dc:.4} px, width {dw:.4} px");
-        // Measured: 0.003 px and 0.014 px against either, u8's rounding.
+        // Measured: 0.004 px and 0.014 px against either, u8's rounding.
         assert!(dc < 0.02 && dw < 0.03, "u8 vs {name}: {dc} / {dw}");
     }
 }
@@ -478,6 +486,85 @@ fn a_highlight_inside_the_bead_keeps_the_outer_edges() {
     }
 }
 
+#[test]
+fn without_clearance_a_distractor_near_an_edge_pulls_it() {
+    // The step touches the bead's +n edge at its start and diverges to 30 px at its end.
+    let (ribbon, img) = line_with_step(0.0);
+    let got = track(BeadConfig::default(), &img, &perturbed(&ribbon));
+    assert_eq!(got.summary.support, 1.0);
+    let (mut near, mut far) = (0.0f64, 0.0f64);
+    for smp in &got.samples {
+        let (s, _) = ribbon.nearest(smp.point);
+        let gap = 30.0 * s / ribbon.length();
+        let hit = smp.hit.expect("a hit");
+        let width = f64::from(hit.pair.width) - WIDTH;
+        let center = ribbon.nearest(hit.pair.center).1;
+        if gap < 3.0 {
+            // The step's rising edge pushes the bead's falling one inwards.
+            near = near.min(width);
+            assert!(
+                width < 0.0 && center < 0.0,
+                "gap {gap:.1}: {width} / {center}"
+            );
+        } else if gap > 7.0 {
+            far = far.max(width.abs()).max(center.abs());
+        }
+    }
+    eprintln!("a step beside the edge: width {near:.3} px within 3 px, {far:.3} beyond 7 px");
+    // Measured: up to 0.43 px short within 3 px of the step; beyond 7 px, within 0.017 px.
+    // Nearer than about 5 px, use `clearance`.
+    assert!(near < -0.25 && near > -0.8, "{near}");
+    assert!(far < 0.03, "{far}");
+}
+
+#[test]
+fn a_background_gradient_leaves_the_bead_in_place() {
+    // The background rises from 20 DN to 133 DN across the image, nearly the bead's
+    // 120 DN of contrast, and nothing clips.
+    for (name, curve) in [("line", line()), ("sine", sine())] {
+        let ribbon = bead(curve);
+        let img = Scene::new(SIZE.0, SIZE.1, ribbon.clone(), 20.0, 140.0, SIGMA)
+            .gradient(P2::new(0.0, 0.0), P2::new(0.25, 0.1))
+            .render()
+            .to_u8();
+        let got = track(BeadConfig::default(), &img, &perturbed(&ribbon));
+        let (center, width, _) = errors(&got, &ribbon);
+        eprintln!("gradient, {name}: centre {center:.4} px, width {width:.4} px");
+        // Measured: 0.021 (line) and 0.028 (sine) px, widths 0.021 and 0.025 px: a linear
+        // background adds a constant to the derivative, which moves no peak.
+        assert_eq!(got.summary.support, 1.0, "{name}");
+        assert!(
+            center < CENTER_TOL && width < WIDTH_TOL,
+            "{name}: {center} / {width}"
+        );
+    }
+}
+
+#[test]
+fn a_varying_width_is_measured_station_by_station() {
+    // From 35 px at the start to 65 px at the end.
+    for (name, curve) in [("line", line()), ("arc", arc()), ("sine", sine())] {
+        let ribbon = Ribbon::new(curve, Width::Linear { w0: 35.0, w1: 65.0 });
+        let img = render(&ribbon).to_u8();
+        let got = track(BeadConfig::default(), &img, &perturbed(&ribbon));
+        let (center, width, n) = errors(&got, &ribbon);
+        let stats = got.summary.stats.expect("hits");
+        eprintln!(
+            "35 to 65 px, {name}: centre {center:.4} px, width {width:.4} px, {:.2} to {:.2}",
+            stats.width_min, stats.width_max
+        );
+        // Measured: centre 0.012, 0.022 and 0.039 px; width 0.019, 0.027 and 0.038 px.
+        assert_eq!(got.summary.support, 1.0, "{name}");
+        assert!(n > 40 && center < CENTER_TOL, "{name}: {center}");
+        assert!(width < 0.06, "{name}: {width}");
+        // The prior starts and ends 15 px in.
+        assert!(
+            stats.width_min < 38.0 && stats.width_max > 62.0,
+            "{name}: {stats:?}"
+        );
+    }
+}
+
 /// The curve's signed distance from the true centreline at arc length `s`, linear between
 /// the stations of `curve`; `(s, d)` from `nearest`, in increasing `s`.
 fn offset_at(curve: &[(f64, f64)], s: f64) -> f64 {
@@ -516,7 +603,7 @@ fn the_curve_does_not_depend_on_the_spacing() {
         .map(|&(s, d)| (d - offset_at(&coarse, s)).abs())
         .fold(0.0f64, f64::max);
     eprintln!("spacing 2 vs 4: curves {worst:.4} px apart");
-    // Measured: 0.017 px.
+    // Measured: 0.014 px.
     assert!(worst < 0.05, "spacing 2 and 4 differ by {worst} px");
 }
 
@@ -582,18 +669,28 @@ fn a_local_bump_in_the_prior_decays_over_passes() {
         (got, center, max_dev)
     };
 
-    // Measured: 1.72 px left after the default 3 passes, 0.76 px after 10.
+    // Measured: 0.215 px left after the default 3 passes. With up to 6, the corrections
+    // stop after 5 with 0.125 px left: `Converged` says they stopped, not that the curve
+    // fits.
     let (three, center, max_dev) = run(BeadConfig::default());
     eprintln!("bump, defaults: {center:.3} px after 3 passes");
     assert_eq!(three.track.stop, BeadStop::PassLimit);
-    assert!(center > 1.2 && center < 2.6, "{center}");
+    assert!(center > 0.15 && center < 0.32, "{center}");
     assert!(
         (max_dev - center).abs() < 0.1,
         "the final stage sees it: {max_dev}"
     );
+    let (six, more, _) = run(tuned(4.0, 6, false));
+    eprintln!("bump, defaults: {more:.3} px, {:?}", six.track.stop);
+    assert_eq!(six.track.stop, BeadStop::Converged);
+    assert!(more > 0.08 && more < 0.19, "{more}");
+
+    // Measured: 1.72 px left after 3 passes with bending_px = 8, 0.76 px after 10.
+    let (_, stiff, _) = run(tuned(8.0, 3, false));
     let (_, ten, _) = run(tuned(8.0, 10, false));
-    eprintln!("bump, defaults: {ten:.3} px after 10 passes");
-    assert!(ten < 0.6 * center && ten < 1.15, "{ten}");
+    eprintln!("bump, bending_px 8: {stiff:.3} px after 3 passes, {ten:.3} px after 10");
+    assert!(stiff > 1.2 && stiff < 2.6, "{stiff}");
+    assert!(ten < 0.6 * stiff && ten < 1.15, "{ten}");
 
     // Measured: 0.056 px with bending_px = 3 and up to 6 passes, converged.
     let (short, center, max_dev) = run(tuned(3.0, 6, false));
@@ -604,8 +701,8 @@ fn a_local_bump_in_the_prior_decays_over_passes() {
 
 #[test]
 fn a_coarse_polygon_prior_converges_only_with_a_short_bending_length() {
-    // The arc's chords, a vertex every 40 px: their 1.3 px sagitta varies along the curve
-    // faster than the default bending length passes.
+    // Six vertices on the arc, one every 40 px: the chords' 1.3 px sagitta varies along
+    // the curve faster than the default bending length passes.
     let ribbon = bead(arc());
     let img = render(&ribbon).to_u8();
     let len = ribbon.length();
@@ -616,6 +713,7 @@ fn a_coarse_polygon_prior_converges_only_with_a_short_bending_length() {
             ribbon.curve.center(s).point()
         })
         .collect();
+    assert_eq!(polygon.len(), 6);
     let run = |cfg: BeadConfig| {
         let got = track(cfg, &img, &polygon);
         let (center, _, _) = errors(&got, &ribbon);
@@ -623,17 +721,20 @@ fn a_coarse_polygon_prior_converges_only_with_a_short_bending_length() {
         (got, center, max_dev)
     };
 
-    // Measured: the defaults report `Converged` after 4 of 10 passes with the curve still
-    // 0.41 px off. Convergence says the corrections stopped, not that the curve fits.
-    let (got, center, max_dev) = run(tuned(8.0, 10, false));
-    eprintln!(
-        "40 px polygon, defaults: {center:.3} px, {:?} after {} passes",
-        got.track.stop,
-        got.track.passes.len()
-    );
-    assert_eq!(got.track.stop, BeadStop::Converged);
-    assert!(center > 0.3 && center < 0.6, "{center}");
-    assert!(max_dev > 0.3, "the final stage sees it: {max_dev}");
+    // Measured: with up to 10 passes, the defaults report `Converged` after 3 with the
+    // curve still 0.160 px off, and bending_px = 8 after 4 with 0.41 px. Convergence says
+    // the corrections stopped, not that the curve fits.
+    for (bending_px, lo, hi) in [(4.0, 0.11, 0.24), (8.0, 0.3, 0.6)] {
+        let (got, center, max_dev) = run(tuned(bending_px, 10, false));
+        eprintln!(
+            "40 px polygon, bending_px {bending_px}: {center:.3} px, {:?} after {} passes",
+            got.track.stop,
+            got.track.passes.len()
+        );
+        assert_eq!(got.track.stop, BeadStop::Converged);
+        assert!(center > lo && center < hi, "{bending_px}: {center}");
+        assert!(max_dev > lo, "the final stage sees it: {max_dev}");
+    }
 
     // Measured: 0.044 px with bending_px = 2.
     let (got, center, max_dev) = run(tuned(2.0, 6, false));

@@ -38,6 +38,13 @@ deleted here.
 - **`EdgeSelect::Strongest` breaks ties towards the later edge.** Choosing the earlier one
   would match `StrongestInOrder`'s tie rule (earlier wins); changing it alters existing
   results on exact ties.
+- **σ in samples is not constant along a bead stage.** A strip's endpoints are stored in
+  `f32`, so its sample spacing, and σ in samples with it, differs between a bead tracker's
+  stations by a few ulps. The caliper refills its kernel in place at most stations: 955 of
+  the 1200 strips of the 300-station, 3-pass bench, about 37 ns each, 1.4% of the call.
+  The radius can flip between neighbours (3↔4), and edge positions move by about 1e-4 px.
+  A nominal-spacing option on strips, which converts σ with `step` as rect calipers do,
+  would remove both.
 - **`MeasureArc` obliquity** is checked against the arc tangent, which is right for
   features crossing the arc. A mode that measures the arc's own edge would check the
   radial direction.

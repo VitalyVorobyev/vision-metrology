@@ -23,12 +23,20 @@ use vision_metrology::laser::{LaserExtractConfig, LaserExtractor};
 use vision_metrology::matching::{
     Refinement, ShapeMatcher, ShapeModelBuilder, ShapeModelConfig, ShapeSearchConfig,
 };
-use vision_metrology::measure::{Caliper, MeasureConfig, MeasureRect};
+use vision_metrology::measure::diagnostics::explain_bead;
+use vision_metrology::measure::{
+    BeadConfig, BeadReject, BeadStop, BeadTracker, Caliper, MeasureConfig, MeasureRect,
+};
 use vision_metrology::{Edgel, Image, Point2f, Pyramid, Rect2f, Vec2f, Vec2fExt};
 
+#[path = "common/bead_draw.rs"]
+mod bead_draw;
 #[path = "common/overlay.rs"]
 mod overlay;
+#[path = "common/ribbon.rs"]
+mod ribbon;
 use overlay::{CYAN, GREEN, ORANGE, RED, YELLOW, blit, dot, line, put_px};
+use ribbon::{Curve, P2, Ribbon, Scene, Step, Stripe, Width};
 
 const OUT_DIR: &str = "docs/assets";
 const BG: image::Rgb<u8> = image::Rgb([24, 24, 28]);
@@ -41,6 +49,7 @@ fn main() {
     circle_fit_illustration();
     contour_graph_illustration();
     pyramid_levels_illustration();
+    bead_tracking_illustration();
 }
 
 fn save(img: &image::RgbImage, name: &str) {
@@ -483,6 +492,93 @@ fn pyramid_levels_illustration() {
         x_off += lw + GAP;
     }
     save(&canvas, "pyramid-levels.png");
+}
+
+// ── (g) bead tracking ───────────────────────────────────────────────────────
+
+/// A light S-shaped bead with a gap, a brighter step leaving one edge at its start and a
+/// highlight inside, tracked with `clearance` from a prior 4 px off with a 4 px bump.
+/// Drawn twice the size: the prior grey, the final strips faint, the refined centreline
+/// green, the final edges yellow, and the rejected stations red (no edge, at the gap) or
+/// orange (clearance, beside the step).
+fn bead_tracking_illustration() {
+    const W: usize = 360;
+    const H: usize = 220;
+    const WIDTH: f64 = 30.0;
+    const GAP: (f64, f64) = (150.0, 172.0);
+
+    let ribbon = Ribbon::new(
+        Curve::s_bend(P2::new(30.0, 170.0), 0.0, 180.0, -0.8),
+        Width::Const(WIDTH),
+    )
+    .gap(GAP.0, GAP.1);
+    let len = ribbon.length();
+    // The step: 4 px outside the +n edge where the prior starts, leaving it at 8°.
+    let (t, n) = (ribbon.curve.tangent(8.0), ribbon.curve.normal(8.0));
+    let tilt = 8f64.to_radians();
+    let step = Step {
+        point: ribbon.curve.center(8.0) + n * (0.5 * WIDTH + 4.0),
+        normal: (t * tilt.cos() + n * tilt.sin()).perp(),
+        contrast: 60.0,
+    };
+    let img = Scene::new(W, H, ribbon.clone(), 30.0, 160.0, 1.2)
+        .gradient(P2::new(0.0, 0.0), P2::new(0.08, 0.05))
+        .highlight(Stripe {
+            offset: -5.0,
+            width: 4.0,
+            contrast: 40.0,
+        })
+        .step(step)
+        .render()
+        .noisy(1.5, 3)
+        .to_u8();
+    let k = ((len - 16.0) / 8.0).ceil() as usize;
+    let prior: Vec<Point2f> = (0..=k)
+        .map(|i| {
+            let s = 8.0 + (len - 16.0) * i as f64 / k as f64;
+            let bump = 4.0 * (-(s - 0.75 * len).powi(2) / (2.0 * 12.0 * 12.0)).exp();
+            (ribbon.curve.center(s) + ribbon.curve.normal(s) * (4.0 + bump)).point()
+        })
+        .collect();
+
+    let cfg = BeadConfig {
+        min_width: 20.0,
+        max_width: 45.0,
+        clearance: Some(8.0),
+        ..BeadConfig::default()
+    };
+    let mut tracker = BeadTracker::new(cfg).expect("a valid config");
+    let trace = explain_bead(&mut tracker, &img.as_view(), &prior).expect("a trackable prior");
+    let bead = &trace.result;
+    assert_ne!(bead.track.stop, BeadStop::TooFewValid);
+    assert!(
+        (0.7..0.95).contains(&bead.summary.support),
+        "support {}",
+        bead.summary.support
+    );
+    let (mut clearance, mut caliper) = (0, 0);
+    for smp in &bead.samples {
+        let (s, d) = ribbon.nearest(smp.point);
+        match smp.hit {
+            Ok(_) if (s - GAP.0).abs() > 10.0 && (s - GAP.1).abs() > 10.0 => {
+                assert!(d.abs() < 0.1, "the refined curve is {d} px off at s = {s}");
+            }
+            Ok(_) => {}
+            Err(BeadReject::Clearance) => clearance += 1,
+            Err(BeadReject::Caliper(_)) => caliper += 1,
+            Err(other) => panic!("s = {s}: rejected by {}", other.as_str()),
+        }
+    }
+    assert!(clearance >= 3 && caliper >= 3, "{clearance} / {caliper}");
+
+    let canvas = bead_draw::draw(&img, &prior, &trace);
+    let zoomed = image::imageops::resize(
+        &canvas,
+        2 * W as u32,
+        2 * H as u32,
+        image::imageops::FilterType::Nearest,
+    );
+    save(&zoomed, "bead-tracking.png");
 }
 
 // ── tiny bitmap font, for score/level labels ────────────────────────────────
