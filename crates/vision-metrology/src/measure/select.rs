@@ -26,6 +26,7 @@ pub struct MeasureEdge {
 
 /// A pair of opposite-polarity edges, i.e. one bar or gap.
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MeasurePair {
     /// The earlier edge along the scan axis.
     pub first: MeasureEdge,

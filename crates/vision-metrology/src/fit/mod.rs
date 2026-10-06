@@ -115,7 +115,7 @@ impl RobustLoss {
 
     /// IRLS weight for a residual of `r` pixels.
     #[inline]
-    fn weight(self, r: f32) -> f64 {
+    pub(crate) fn weight(self, r: f32) -> f64 {
         let r = r.abs() as f64;
         match self {
             Self::None => 1.0,
