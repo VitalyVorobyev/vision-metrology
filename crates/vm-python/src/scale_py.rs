@@ -3,7 +3,7 @@
 //! `find_scale_invariant_center` ("estimate-then-verify").
 //!
 //! `u8`-only, like `corr` — both estimators build on `segment`/`corr`,
-//! which are `u8`-only in this workspace already.
+//! which are `u8`-only in this library already.
 //!
 //! `ScaleHint` (a Rust enum) is two functions here instead of one function
 //! plus a tagged-union argument: `find_scale_invariant_roi` (moments) and
@@ -117,7 +117,7 @@ pub fn estimate_scale_logpolar(
     Ok(est.into())
 }
 
-/// Estimate scale via [`estimate_scale_moments`] over `roi`, resample
+/// Estimate scale via `estimate_scale_moments` over `roi`, resample
 /// `model` at that estimate, and verify in a narrow band — the whole
 /// estimate-then-verify strategy as one call. Returns a list of
 /// `ShapeMatch`, empty (not an error) when nothing scores above
@@ -139,8 +139,8 @@ pub fn find_scale_invariant_roi<'py>(
     PyList::new(py, out.into_iter().map(ShapeMatch::from))
 }
 
-/// Same as [`find_scale_invariant_roi`], estimating scale via
-/// [`estimate_scale_logpolar`] around `center` instead of segmenting `roi`.
+/// Same as `find_scale_invariant_roi`, estimating scale via
+/// `estimate_scale_logpolar` around `center` instead of segmenting `roi`.
 #[pyfunction]
 #[pyo3(signature = (model, scene, center, config=None))]
 pub fn find_scale_invariant_center<'py>(

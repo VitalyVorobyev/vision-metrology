@@ -1,0 +1,486 @@
+//! The metrology model: shapes, objects, results, traces and placements.
+
+use pyo3::prelude::*;
+
+use vision_metrology::measure::diagnostics::{
+    CaliperPlacement as NativeCaliperPlacement, CaliperShape as NativeCaliperShape,
+    explain_model as native_explain_model, layout as native_layout,
+};
+use vision_metrology::measure::{
+    MetrologyModel as NativeMetrologyModel, MetrologyObject as NativeMetrologyObject,
+    MetrologyShape as NativeMetrologyShape,
+};
+use vm_primitives::Point2f;
+
+use super::caliper::CaliperTrace;
+use super::pose_from;
+use crate::config::{FitConfig, MeasureConfig};
+use crate::convert::{any_image_from_numpy, with_any_image};
+use crate::types::{Circle, Line, MeasureEdge};
+
+/// A nominal primitive to measure, in model space.
+///
+/// Constructed with the static `line` / `circle`
+/// methods, matching `vision_metrology::measure::MetrologyShape`.
+#[pyclass(get_all, from_py_object)]
+#[derive(Debug, Clone, Copy)]
+pub struct MetrologyShape {
+    kind: &'static str,
+    a: (f32, f32),
+    b: (f32, f32),
+    center: (f32, f32),
+    radius: f32,
+    arc: Option<(f32, f32)>,
+}
+
+#[pymethods]
+impl MetrologyShape {
+    /// A line segment from `a` to `b`; calipers scan perpendicular to it.
+    #[staticmethod]
+    pub fn line(a: (f32, f32), b: (f32, f32)) -> Self {
+        Self {
+            kind: "line",
+            a,
+            b,
+            center: (0.0, 0.0),
+            radius: 0.0,
+            arc: None,
+        }
+    }
+
+    /// A circle (or arc, when `arc = (start, extent)` in radians is given);
+    /// calipers scan radially.
+    #[staticmethod]
+    #[pyo3(signature = (center, radius, arc=None))]
+    pub fn circle(center: (f32, f32), radius: f32, arc: Option<(f32, f32)>) -> Self {
+        Self {
+            kind: "circle",
+            a: (0.0, 0.0),
+            b: (0.0, 0.0),
+            center,
+            radius,
+            arc,
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        match self.kind {
+            "line" => format!("MetrologyShape.line({:?}, {:?})", self.a, self.b),
+            _ => format!(
+                "MetrologyShape.circle({:?}, {:.3}, arc={:?})",
+                self.center, self.radius, self.arc
+            ),
+        }
+    }
+}
+
+impl MetrologyShape {
+    fn to_native(self) -> NativeMetrologyShape {
+        match self.kind {
+            "line" => NativeMetrologyShape::Line {
+                a: Point2f::new(self.a.0, self.a.1),
+                b: Point2f::new(self.b.0, self.b.1),
+            },
+            _ => NativeMetrologyShape::Circle {
+                center: Point2f::new(self.center.0, self.center.1),
+                radius: self.radius,
+                arc: self.arc,
+            },
+        }
+    }
+}
+
+/// One nominal primitive plus how to measure it — mirrors
+/// `vision_metrology::measure::MetrologyObject`.
+#[pyclass(get_all, set_all, from_py_object)]
+#[derive(Clone)]
+pub struct MetrologyObject {
+    pub shape: MetrologyShape,
+    pub n_calipers: usize,
+    pub caliper_len: f32,
+    pub caliper_width: f32,
+    pub measure: MeasureConfig,
+    pub fit: FitConfig,
+}
+
+#[pymethods]
+impl MetrologyObject {
+    /// A sensible default for `shape`: 32 calipers, +/-10 px search, +/-5 px
+    /// averaging, strongest edge per caliper.
+    #[new]
+    #[pyo3(signature = (shape, n_calipers=None, caliper_len=None, caliper_width=None, measure=None, fit=None))]
+    pub fn new(
+        shape: MetrologyShape,
+        n_calipers: Option<usize>,
+        caliper_len: Option<f32>,
+        caliper_width: Option<f32>,
+        measure: Option<MeasureConfig>,
+        fit: Option<FitConfig>,
+    ) -> Self {
+        Self {
+            shape,
+            n_calipers: n_calipers.unwrap_or(32),
+            caliper_len: caliper_len.unwrap_or(10.0),
+            caliper_width: caliper_width.unwrap_or(5.0),
+            measure: measure.unwrap_or_else(|| MeasureConfig {
+                select: "strongest".to_string(),
+                ..MeasureConfig::default()
+            }),
+            fit: fit.unwrap_or_default(),
+        }
+    }
+}
+
+impl MetrologyObject {
+    fn to_native(&self) -> PyResult<NativeMetrologyObject> {
+        Ok(NativeMetrologyObject {
+            shape: self.shape.to_native(),
+            n_calipers: self.n_calipers,
+            caliper_len: self.caliper_len,
+            caliper_width: self.caliper_width,
+            measure: self.measure.to_native()?,
+            fit: self.fit.to_native()?,
+        })
+    }
+}
+
+/// The fit plus the caliper edges it came from — mirrors
+/// `vision_metrology::measure::MetrologyResult`.
+#[pyclass(get_all, skip_from_py_object)]
+#[derive(Clone)]
+pub struct MetrologyResult {
+    /// `"line"` or `"circle"`.
+    pub kind: &'static str,
+    pub line: Option<Line>,
+    pub circle: Option<Circle>,
+    pub rms: f32,
+    pub max_dev: f32,
+    pub n_used: usize,
+    pub hits: Vec<MeasureEdge>,
+}
+
+#[pymethods]
+impl MetrologyResult {
+    fn __repr__(&self) -> String {
+        format!(
+            "MetrologyResult(kind='{}', rms={:.4}, max_dev={:.4}, n_used={})",
+            self.kind, self.rms, self.max_dev, self.n_used
+        )
+    }
+}
+
+impl From<vision_metrology::measure::MetrologyResult> for MetrologyResult {
+    fn from(r: vision_metrology::measure::MetrologyResult) -> Self {
+        let rms = r.rms();
+        let max_dev = r.max_dev();
+        let n_used = r.n_used();
+        let hits = r.hits.into_iter().map(MeasureEdge::from).collect();
+        match r.fit {
+            vision_metrology::measure::MetrologyFit::Line(f) => Self {
+                kind: "line",
+                line: Some(Line {
+                    px: f.model.p.x,
+                    py: f.model.p.y,
+                    dx: f.model.dir.x,
+                    dy: f.model.dir.y,
+                    rms: f.rms,
+                    max_dev: f.max_dev,
+                    n_used: f.n_used,
+                }),
+                circle: None,
+                rms,
+                max_dev,
+                n_used,
+                hits,
+            },
+            vision_metrology::measure::MetrologyFit::Circle(f) => Self {
+                kind: "circle",
+                line: None,
+                circle: Some(Circle {
+                    cx: f.model.center.x,
+                    cy: f.model.center.y,
+                    r: f.model.radius,
+                    rms: f.rms,
+                    max_dev: f.max_dev,
+                    n_used: f.n_used,
+                }),
+                rms,
+                max_dev,
+                n_used,
+                hits,
+            },
+        }
+    }
+}
+
+/// A `MetrologyObject` that could not be measured; carries the native
+/// `Error`'s message.
+#[pyclass(get_all, skip_from_py_object)]
+#[derive(Clone)]
+pub struct MetrologyError {
+    pub message: String,
+}
+
+#[pymethods]
+impl MetrologyError {
+    fn __repr__(&self) -> String {
+        format!("MetrologyError({:?})", self.message)
+    }
+}
+
+/// One object's `apply` outcome as a Python object: a `MetrologyResult`, or a
+/// `MetrologyError` carrying the native error's message.
+fn outcome_to_py(
+    py: Python<'_>,
+    outcome: Result<vision_metrology::measure::MetrologyResult, vm_primitives::Error>,
+) -> PyResult<Py<PyAny>> {
+    Ok(match outcome {
+        Ok(res) => Py::new(py, MetrologyResult::from(res))?.into(),
+        Err(e) => Py::new(
+            py,
+            MetrologyError {
+                message: e.to_string(),
+            },
+        )?
+        .into(),
+    })
+}
+
+/// One object of a `MetrologyModel`, measured and explained — mirrors
+/// `vision_metrology::measure::diagnostics::ObjectTrace`.
+///
+/// `result` is what `apply` returns for the object (a `MetrologyResult` or a
+/// `MetrologyError`); `placements` and `calipers` are parallel lists, one entry per
+/// caliper in caliper order. A caliper hit when its trace's `edges` is not empty, and its
+/// first edge is the one the fit used.
+#[pyclass(get_all, skip_from_py_object)]
+pub struct ObjectTrace {
+    pub object_index: usize,
+    pub result: Py<PyAny>,
+    pub placements: Vec<CaliperPlacement>,
+    pub calipers: Vec<Py<CaliperTrace>>,
+}
+
+#[pymethods]
+impl ObjectTrace {
+    fn __repr__(&self) -> String {
+        format!(
+            "ObjectTrace(object_index={}, calipers={})",
+            self.object_index,
+            self.calipers.len()
+        )
+    }
+}
+
+/// Where one caliper of a `MetrologyModel` sits at a fixture pose, without
+/// measuring — mirrors `vision_metrology::measure::diagnostics::CaliperPlacement`.
+///
+/// `kind` is `"rect"` (line objects) or `"radial"` (circle objects); `radius`
+/// is only set for `"radial"` placements, where `center` is the *circle's*
+/// own centre (not the caliper's own position on the circle — see the Rust
+/// `CaliperShape::Radial` docs). Built to be handed straight to
+/// `Caliper.rect` / `Caliper.radial`:
+/// `Caliper.rect(p.center, p.angle, p.half_len, p.half_width, config)` or
+/// `Caliper.radial(p.center, p.radius, p.angle, p.half_len, p.half_width,
+/// config)`.
+#[pyclass(get_all, skip_from_py_object)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CaliperPlacement {
+    pub object_index: usize,
+    pub caliper_index: usize,
+    pub kind: &'static str,
+    pub center: (f32, f32),
+    pub angle: f32,
+    pub half_len: f32,
+    pub half_width: f32,
+    pub radius: Option<f32>,
+}
+
+#[pymethods]
+impl CaliperPlacement {
+    fn __repr__(&self) -> String {
+        format!(
+            "CaliperPlacement(object_index={}, caliper_index={}, kind='{}', center={:?}, angle={:.4})",
+            self.object_index, self.caliper_index, self.kind, self.center, self.angle
+        )
+    }
+}
+
+impl From<NativeCaliperPlacement> for CaliperPlacement {
+    fn from(p: NativeCaliperPlacement) -> Self {
+        match p.shape {
+            NativeCaliperShape::Rect(r) => Self {
+                object_index: p.object_index,
+                caliper_index: p.caliper_index,
+                kind: "rect",
+                center: (r.center.x, r.center.y),
+                angle: r.angle,
+                half_len: r.half_len,
+                half_width: r.half_width,
+                radius: None,
+            },
+            NativeCaliperShape::Radial(r) => Self {
+                object_index: p.object_index,
+                caliper_index: p.caliper_index,
+                kind: "radial",
+                center: (r.center.x, r.center.y),
+                angle: r.angle,
+                half_len: r.half_len,
+                half_width: r.half_width,
+                radius: Some(r.radius),
+            },
+        }
+    }
+}
+
+/// A set of nominal primitives measured together at a fixture pose.
+///
+/// Mirrors `vision_metrology::measure::MetrologyModel`: `add` a
+/// `MetrologyObject` per nominal primitive, then `apply` at
+/// the fixture pose (typically a `ShapeMatch`'s
+/// `x`, `y`, `angle`, `scale`).
+#[pyclass]
+#[derive(Default)]
+pub struct MetrologyModel {
+    inner: NativeMetrologyModel,
+}
+
+#[pymethods]
+impl MetrologyModel {
+    #[new]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Add an object. Returns its index, which indexes into
+    /// `apply`'s result.
+    pub fn add(&mut self, object: MetrologyObject) -> PyResult<usize> {
+        let native = object.to_native()?;
+        Ok(self.inner.add(native))
+    }
+
+    /// How many objects have been added.
+    #[getter]
+    pub fn num_objects(&self) -> usize {
+        self.inner.objects().len()
+    }
+
+    /// Measure every object with the model's nominal geometry mapped through
+    /// the fixture `(x, y, angle, scale)` — typically a matched `ShapeMatch`'s
+    /// own fields — composed with `origin`, the model-space point that `(x, y)`
+    /// names: a model point `p` lands at `(x, y) + scale·R(angle)·(p − origin)`,
+    /// the pose `ShapeMatch.matrix(origin)` describes.
+    ///
+    /// `origin` defaults to `(0, 0)`; pass the taught `ShapeModel`'s `origin`
+    /// when it is nonzero, or the fixture is mis-posed.
+    ///
+    /// Returns one entry per object, in `add` order: either a `MetrologyResult`
+    /// or a `MetrologyError` naming why that object could not be measured, so
+    /// one failed object does not hide the others.
+    #[pyo3(signature = (image, x, y, angle=0.0, scale=1.0, origin=(0.0, 0.0)))]
+    #[allow(clippy::too_many_arguments)]
+    pub fn apply(
+        &mut self,
+        py: Python<'_>,
+        image: &Bound<'_, PyAny>,
+        x: f32,
+        y: f32,
+        angle: f32,
+        scale: f32,
+        origin: (f32, f32),
+    ) -> PyResult<Vec<Py<PyAny>>> {
+        let any = any_image_from_numpy(py, image)?;
+        let fixture = pose_from(
+            Point2f::new(x, y),
+            angle,
+            scale,
+            Point2f::new(origin.0, origin.1),
+        );
+        let outcomes = with_any_image!(any, view => self.inner.apply(&view, &fixture));
+        outcomes.into_iter().map(|r| outcome_to_py(py, r)).collect()
+    }
+
+    /// Measure every object as `apply` does and keep each caliper's
+    /// trace, in one pass: one `ObjectTrace` per object, in `add` order.
+    /// Same fixture semantics as `apply`, and each `result` is what `apply` returns.
+    #[pyo3(signature = (image, x, y, angle=0.0, scale=1.0, origin=(0.0, 0.0)))]
+    #[allow(clippy::too_many_arguments)]
+    pub fn explain(
+        &self,
+        py: Python<'_>,
+        image: &Bound<'_, PyAny>,
+        x: f32,
+        y: f32,
+        angle: f32,
+        scale: f32,
+        origin: (f32, f32),
+    ) -> PyResult<Vec<ObjectTrace>> {
+        let any = any_image_from_numpy(py, image)?;
+        let fixture = pose_from(
+            Point2f::new(x, y),
+            angle,
+            scale,
+            Point2f::new(origin.0, origin.1),
+        );
+        let traces =
+            with_any_image!(any, view => native_explain_model(&self.inner, &view, &fixture));
+        traces
+            .into_iter()
+            .enumerate()
+            .map(|(object_index, t)| {
+                let placements = t
+                    .placements
+                    .into_iter()
+                    .enumerate()
+                    .map(|(caliper_index, shape)| {
+                        CaliperPlacement::from(NativeCaliperPlacement {
+                            object_index,
+                            caliper_index,
+                            shape,
+                        })
+                    })
+                    .collect();
+                let calipers = t
+                    .calipers
+                    .into_iter()
+                    .map(|c| Py::new(py, CaliperTrace::from_native(py, c)))
+                    .collect::<PyResult<_>>()?;
+                Ok(ObjectTrace {
+                    object_index,
+                    result: outcome_to_py(py, t.result)?,
+                    placements,
+                    calipers,
+                })
+            })
+            .collect()
+    }
+
+    /// Where every caliper of every added object sits at the fixture pose,
+    /// without measuring — same fixture semantics as `apply`.
+    ///
+    /// This is what an overlay should call to draw caliper boxes: it needs no
+    /// image, uses the same placement code `apply` does internally (so a
+    /// caller can never draw a caliper somewhere the actual measurement did
+    /// not look), and works even for objects that will go on to reject every
+    /// caliper.
+    #[pyo3(signature = (x, y, angle=0.0, scale=1.0, origin=(0.0, 0.0)))]
+    pub fn layout(
+        &self,
+        x: f32,
+        y: f32,
+        angle: f32,
+        scale: f32,
+        origin: (f32, f32),
+    ) -> Vec<CaliperPlacement> {
+        let fixture = pose_from(
+            Point2f::new(x, y),
+            angle,
+            scale,
+            Point2f::new(origin.0, origin.1),
+        );
+        native_layout(&self.inner, &fixture)
+            .into_iter()
+            .map(CaliperPlacement::from)
+            .collect()
+    }
+}

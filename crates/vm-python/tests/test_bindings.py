@@ -744,6 +744,48 @@ def test_caliper_in_order_selection_reads_a_bar_and_names_a_missing_edge():
         vm.Caliper.rect((48.0, 48.0), 0.0, 40.0, 8.0, config=cfg)
 
 
+@pytest.mark.parametrize(
+    ("field", "valid", "invalid"),
+    [
+        ("polarity", ["any", "rising", "falling"], ["either", "bright_to_dark", "Rising"]),
+        ("select", ["all", "first", "last", "strongest", "in_order"], ["best", ""]),
+        ("border_mode", ["clamp", "reflect101", "constant"], ["wrap"]),
+        ("derivative", ["dog", "smooth_central"], ["sobel"]),
+        ("off_image", ["fill", "reject"], ["clip"]),
+    ],
+)
+def test_measure_config_string_fields_validate_on_assignment(field, valid, invalid):
+    cfg = vm.MeasureConfig()
+    for name in valid:
+        setattr(cfg, field, name)
+        assert getattr(cfg, field) == name
+    kept = getattr(cfg, field)
+    for name in invalid:
+        with pytest.raises(ValueError, match=field) as exc_info:
+            setattr(cfg, field, name)
+        # The message lists what is allowed, and the field keeps its value.
+        assert all(f'"{v}"' in str(exc_info.value) for v in valid)
+        assert getattr(cfg, field) == kept
+
+
+def test_measure_config_sequence_validates_its_names_on_assignment():
+    cfg = vm.MeasureConfig(select="in_order", sequence=["rising"])
+    cfg.sequence = ["falling", "either"]
+    assert cfg.sequence == ["falling", "either"]
+    for bad in (["up"], ["rising", "falling", "rising"]):
+        with pytest.raises(ValueError, match="sequence"):
+            cfg.sequence = bad
+    assert cfg.sequence == ["falling", "either"]
+    # A valid assignment is what the caliper then uses.
+    cfg.polarity = "rising"
+    cfg.sequence = ["rising"]
+    bar = np.zeros((96, 96), dtype=np.uint8)
+    bar[:, 30:60] = 200
+    edges = vm.Caliper.rect((48.0, 48.0), 0.0, 40.0, 8.0, config=cfg).measure(bar)
+    assert [e.polarity for e in edges] == ["rising"]
+    assert abs(edges[0].x - 29.5) < 0.1
+
+
 def test_caliper_midpoint_crossing_reads_one_edge_and_names_each_gate():
     """CaliperBench's midpoint method: the mean of the end levels, crossed nearest
     the middle; contrast is checked before polarity, polarity before the crossing."""
@@ -836,6 +878,20 @@ def test_caliper_explain_traces_what_measure_returns():
     half = vm.Caliper.rect((45.0, 48.0), 0.0, 30.0, 6.0, config=cfg).explain(bar)
     assert len(half.levels) == 2
     assert half.levels[0].x * half.spacing + 15.0 == pytest.approx(half.edges[0].x)
+
+
+def test_caliper_spacing_is_the_real_sample_distance():
+    # half_len 10.3 at step 1: 21 samples over 20.6 px, 1.03 px apart.
+    img = make_step_image(96, 96, 40)
+    cfg = vm.MeasureConfig(locate=vm.Locate.midpoint_crossing(min_contrast=10.0))
+    cal = vm.Caliper.rect((41.3, 48.0), 0.0, 10.3, 4.0, config=cfg)
+    trace = cal.explain(img)
+    assert trace.samples == 21
+    assert cal.spacing() == pytest.approx(20.6 / 20)
+    assert trace.spacing == cal.spacing()
+    edge, level = trace.edges[0], trace.levels[0]
+    assert edge.x == pytest.approx(39.5, abs=0.05)
+    assert level.x * trace.spacing - 10.3 == pytest.approx(edge.t, abs=1e-4)
 
 
 def test_fit_line_object_and_function():

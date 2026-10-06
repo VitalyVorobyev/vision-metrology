@@ -152,8 +152,14 @@ impl Caliper {
 
     /// Distance between profile samples, in pixels, at the current placement and config.
     ///
-    /// `step` for rect, arc and radial placements; `length / (samples − 1)` for a strip.
-    /// It converts a profile index, such as [`LevelEdge::x`], to pixels along the scan.
+    /// The scan's extent divided by `samples − 1`, where the extent is `2·half_len` for a
+    /// rect or radial placement, `|angle_extent|·radius` of arc length for an arc and the
+    /// length for a strip. It differs from
+    /// [`ProfileConfig::step`](super::ProfileConfig::step) whenever the extent is not a
+    /// whole number of steps; a profile shorter than two samples reports `step`.
+    ///
+    /// It converts a profile index, such as [`LevelEdge::x`], to pixels along the scan:
+    /// index `x` sits `x · spacing` from the first sample.
     pub fn spacing(&self) -> f32 {
         let step = self.cfg.profile.step;
         self.placement
@@ -175,7 +181,11 @@ impl Caliper {
     /// with the current config. Off the hot path: it allocates both, and leaves every
     /// result of the last call as it was.
     pub(crate) fn smoothed_and_response(&mut self) -> (Vec<f32>, Vec<f32>) {
-        let det_cfg = self.detector_config(self.spacing(), SubpixRefine::Parabolic3);
+        let step = self.cfg.profile.step;
+        let spacing = self
+            .placement
+            .sigma_spacing(step, self.placement.profile_len(step));
+        let det_cfg = self.detector_config(spacing, SubpixRefine::Parabolic3);
         let smoothed = self.det.smooth_in_ref(&self.profile, &det_cfg).to_vec();
         let _ = self.det.detect_in_ref(&self.profile, &det_cfg);
         (smoothed, self.det.response().to_vec())
@@ -294,7 +304,7 @@ impl Caliper {
             return Some(RejectReason::ProfileTooShort);
         }
         // `sigma` and the level methods' distances are in pixels, the profile in samples.
-        let spacing = self.placement.spacing(self.cfg.profile.step, n);
+        let spacing = self.placement.sigma_spacing(self.cfg.profile.step, n);
         let found = match self.cfg.locate {
             Locate::GradientPeak { refine } => self
                 .gradient_candidates(spacing, refine)
@@ -1638,6 +1648,109 @@ mod tests {
                 measure(&near_start, textbook(half_contrast(0.0))),
                 Err(RejectReason::NoCrossing)
             );
+        }
+    }
+
+    /// `spacing()` on placements whose extent is not a whole number of steps: the real
+    /// distance between samples, the rate at which an edge's `t` advances per profile index.
+    mod spacing {
+        use std::num::NonZeroUsize;
+
+        use super::super::Caliper;
+        use crate::measure::{Locate, MeasureArc, MeasureConfig, MeasureRect};
+        use vm_primitives::{Image, Point2f};
+
+        fn midpoint() -> MeasureConfig {
+            MeasureConfig {
+                locate: Locate::MidpointCrossing {
+                    endpoint_samples: NonZeroUsize::new(3).expect("nonzero"),
+                    min_contrast: 10.0,
+                },
+                ..MeasureConfig::default()
+            }
+        }
+
+        /// A rect of `half_len = 10.3` at `step = 1` takes 21 samples over 20.6 px: they
+        /// are 1.03 px apart, not 1.
+        #[test]
+        fn a_rect_reports_the_real_sample_distance() {
+            let img = super::step_image(96, 96, 40);
+            let rect = MeasureRect {
+                center: Point2f::new(41.3, 48.0),
+                angle: 0.0,
+                half_len: 10.3,
+                half_width: 4.0,
+            };
+            let mut cal = Caliper::rect(rect, midpoint());
+            let edges = cal.measure(&img.as_view()).expect("an edge").to_vec();
+            let n = cal.profile().len();
+            assert_eq!(n, 21);
+            let spacing = cal.spacing();
+            assert!((spacing - 20.6 / 20.0).abs() < 1e-6, "spacing {spacing}");
+            let gap = (rect.sample_point(1, n, 0.0) - rect.sample_point(0, n, 0.0)).norm();
+            assert!(
+                (spacing - gap).abs() < 1e-5,
+                "spacing {spacing}, samples {gap} apart"
+            );
+
+            // The crossing at x = 39.5 is `level.x · spacing` from the first sample.
+            assert!(
+                (edges[0].p.x - 39.5).abs() < 0.05,
+                "edge at {}",
+                edges[0].p.x
+            );
+            let level = cal.levels()[0];
+            let t = level.x * spacing - rect.half_len;
+            assert!(
+                (t - edges[0].t).abs() < 1e-4,
+                "t {t}, edge t {}",
+                edges[0].t
+            );
+            assert!(
+                (rect.center.x + t - edges[0].p.x).abs() < 1e-4,
+                "x {}",
+                rect.center.x + t
+            );
+        }
+
+        /// An arc of radius 30 over 0.75 rad is 22.5 px of arc length in 23 samples.
+        #[test]
+        fn an_arc_reports_the_real_arc_length_between_samples() {
+            // Dark above row 64, bright from row 64 on: the arc crosses it at y = 63.5.
+            let data: Vec<u8> = (0..128 * 128)
+                .map(|i| if i / 128 >= 64 { 200 } else { 20 })
+                .collect();
+            let img = Image::from_vec(128, 128, data).expect("valid image");
+            let arc = MeasureArc {
+                center: Point2f::new(64.0, 64.0),
+                radius: 30.0,
+                angle_start: -0.375,
+                angle_extent: 0.75,
+                half_width: 2.0,
+            };
+            let mut cal = Caliper::arc(arc, midpoint());
+            let edges = cal.measure(&img.as_view()).expect("an edge").to_vec();
+            let n = cal.profile().len();
+            assert_eq!(n, 23);
+            let spacing = cal.spacing();
+            assert!((spacing - 22.5 / 22.0).abs() < 1e-6, "spacing {spacing}");
+
+            assert!(
+                (edges[0].p.y - 63.5).abs() < 0.05,
+                "edge at {}",
+                edges[0].p.y
+            );
+            let level = cal.levels()[0];
+            let t = level.x * spacing;
+            assert!(
+                (t - edges[0].t).abs() < 1e-4,
+                "t {t}, edge t {}",
+                edges[0].t
+            );
+            // Arc length from the start to the crossing, from the crossing's own angle.
+            let phi = ((edges[0].p.y - 64.0) / 30.0).asin();
+            let expected = (phi - arc.angle_start) * arc.radius;
+            assert!((t - expected).abs() < 1e-3, "t {t}, expected {expected}");
         }
     }
 }

@@ -23,7 +23,7 @@ use crate::warp::Map;
 /// produce a map that looks plausible (right shape, roughly right pixels)
 /// while being subtly, silently wrong. See `crate::warp`'s own module docs
 /// for the same `dst → src` convention used by every other map builder in
-/// this workspace.
+/// this library.
 ///
 /// Destination and source share `camera`'s intrinsics/pixel grid — this
 /// builds the "same field of view, distortion removed" map, not a resize.

@@ -21,7 +21,8 @@ use super::{Caliper, MeasureEdge, MetrologyModel, MetrologyObject, MetrologyResu
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct CaliperTrace {
-    /// Distance between profile samples, in pixels.
+    /// Distance between profile samples, in pixels, as [`Caliper::spacing`] reports it:
+    /// a level's `x · spacing` is its distance along the scan from the first sample.
     pub spacing: f32,
     /// Number of profile samples.
     pub samples: usize,

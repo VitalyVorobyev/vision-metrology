@@ -30,9 +30,11 @@ deleted here.
 
 ## Measurement
 
-- **σ is converted with the nominal `step`** for rect, arc and radial calipers, not the
-  real sample spacing; fixing it moves the can-end reference numbers, so it needs a
-  deliberate re-baseline.
+- **Pixel-unit settings convert with the nominal `step`** for rect, arc and radial
+  calipers: σ, the `SmoothThenCentral` radius and the half-contrast flank distances and
+  tolerance go to samples through `Placement::sigma_spacing`, not the real spacing that
+  `Caliper::spacing` reports. Switching them moves the can-end reference numbers, so it
+  needs a deliberate re-baseline.
 - **`EdgeSelect::Strongest` breaks ties towards the later edge.** Choosing the earlier one
   would match `StrongestInOrder`'s tie rule (earlier wins); changing it alters existing
   results on exact ties.
@@ -70,13 +72,6 @@ deleted here.
 
 ## Python
 
-- **Polarity strings disagree across the lab's transports (latent).** The lab's
-  `MeasureConfigIn` accepts `bright_to_dark` / `dark_to_bright` / `either`, and
-  `routers/measure.py` passes the value straight to `vm.MeasureConfig`, whose constructor
-  accepts only `any` / `rising` / `falling` and raises on the others. The frontend never
-  sends `polarity`, so the mismatch never triggers. vm-python's setters silently fall back
-  to `any`, and the Tauri command maps both spellings. Align the contract on one spelling,
-  and make the setters validate.
 - **`ShapeMatch.matrix()` convention** needs a worked pixel → pose → pixel example in the
   vm-python README.
 - **No `Edge1DDetector` or `LevelCrossing1D` binding.** 1-D detection is reachable only
@@ -92,12 +87,12 @@ deleted here.
 
 ## Code health
 
-- **Files over the size cap** (invariant 14), measured as non-blank, non-comment lines
-  before the test module:
+- **Files over the size cap** (invariant 14), measured as non-blank, non-`//` lines
+  before the first `#[cfg(test)]`. `tools/check-invariants.py` reads this list: it fails
+  on an offender missing from it and on a listed file back under the cap.
   - `crates/vision-metrology/src/contour/build.rs`
-  - `crates/vm-python/src/measure_py.rs`
 
-  Split them when a change touches them.
+  Split a listed file when a change touches it.
 - **The `serde` feature implies `matching`.** Serde derives on non-matching types such as
   `CaliperTrace` therefore pull in the matcher. Split model persistence into its own
   feature.

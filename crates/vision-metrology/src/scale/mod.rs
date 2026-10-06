@@ -42,7 +42,7 @@
 //!
 //! # `u8`-only, like `corr`
 //!
-//! Both estimators take `ImageView<'_, u8>`, matching this workspace's
+//! Both estimators take `ImageView<'_, u8>`, matching this library's
 //! established convention (`corr`, `segment::otsu_threshold_u8`) rather than
 //! adding a third `Pixel`-generic threshold/correlation implementation.
 //! `find_scale_invariant` is `u8`-only for the same reason, even

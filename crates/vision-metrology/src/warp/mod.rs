@@ -33,14 +33,14 @@
 //!
 //! ## Pixel centers
 //!
-//! Per the workspace-wide convention, integer destination pixel
+//! Per the library-wide convention, integer destination pixel
 //! `(i, j)` means the coordinate `(i as f32, j as f32)` — its center, not its
 //! corner. Every builder here evaluates its mapping at exactly that point.
 //!
 //! ## Validity is first-class
 //!
 //! [`Map::apply`] fills every destination pixel — out-of-source taps fall
-//! back to `border`, same as any other sampling call in this workspace.
+//! back to `border`, same as any other sampling call in this library.
 //! [`Map::apply_with_mask`] additionally reports, per destination pixel,
 //! whether the sample is real image data or border fill: `255` iff **every**
 //! interpolation tap it read (the one tap for [`Interp::Nearest`], all four

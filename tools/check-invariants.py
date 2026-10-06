@@ -23,6 +23,12 @@ Checks, over every file tracked by git:
   5. User-facing text does not link into docs/dev/: the README files, the top-level guides
      under docs/, CHANGELOG.md, lab/README.md, the Python stubs, and rustdoc (`//!`, `///`)
      in the crates' library sources.
+  6. Invariant 14's size cap, over the `.rs` files under `crates/*/src/` and
+     `lab/frontend/src-tauri/src/`. A file's count is its non-blank lines that are not
+     `//` comments (`//`, `///`, `//!`), up to its first `#[cfg(test)]` line. A file over
+     SIZE_CAP must be listed in docs/dev/backlog.md's size-cap item (the "Code health"
+     bullet naming the size cap, with one backticked path per offender), and a listed
+     file must still be over the cap.
 
 Retiring an invariant is still allowed — keep its number and mark the entry
 `**(retired)**`, saying what replaced it. That keeps the list contiguous and every old
@@ -77,6 +83,13 @@ DEV_LINK = re.compile(r"docs/dev/|\]\((?:\./)?dev/")
 RUSTDOC = re.compile(r"^\s*//[/!]")
 COMMENT = re.compile(r"^\s*(?://|#|\*|/\*|<!--)")
 
+# Invariant 14: code lines per source file, counted up to the test module.
+SIZE_CAP = 600
+BACKLOG_REL = "docs/dev/backlog.md"
+TEST_MODULE = re.compile(r"^\s*#\[cfg\(test\)\]")
+TAURI_SRC = "lab/frontend/src-tauri/src/"
+BACKTICKED_RS = re.compile(r"`([^`\s]+\.rs)`")
+
 
 def tracked_files() -> list[str]:
     out = subprocess.run(
@@ -106,6 +119,41 @@ def is_user_facing(rel: str) -> bool:
 def is_library_source(rel: str) -> bool:
     p = PurePosixPath(rel)
     return len(p.parts) > 3 and p.parts[0] == "crates" and p.parts[2] == "src" and p.suffix == ".rs"
+
+
+def is_size_capped(rel: str) -> bool:
+    return is_library_source(rel) or (rel.startswith(TAURI_SRC) and rel.endswith(".rs"))
+
+
+def code_lines(text: str) -> int:
+    """Non-blank, non-`//`-comment lines before the first `#[cfg(test)]` line."""
+    count = 0
+    for line in text.splitlines():
+        if TEST_MODULE.match(line):
+            break
+        stripped = line.strip()
+        if stripped and not stripped.startswith("//"):
+            count += 1
+    return count
+
+
+def size_cap_allowed(text: str) -> list[str]:
+    """The paths listed in backlog.md's size-cap item: the top-level bullet under
+    `## Code health` that names the size cap, through its nested lines."""
+    lines = text.splitlines()
+    start = next((i for i, l in enumerate(lines) if l.strip() == "## Code health"), None)
+    if start is None:
+        return []
+    paths: list[str] = []
+    inside = False
+    for line in lines[start + 1:]:
+        if line.startswith("## "):
+            break
+        if line.startswith("- "):
+            inside = "size cap" in line.lower()
+        if inside:
+            paths.extend(BACKTICKED_RS.findall(line))
+    return paths
 
 
 def parse_invariants(text: str) -> list[int]:
@@ -147,6 +195,8 @@ def main() -> int:
     labels: list[str] = []
     names: list[str] = []
     links: list[str] = []
+    sizes: list[str] = []
+    counts: dict[str, int] = {}
 
     if not numbers:
         numbering.append(f"{SPEC_REL}: the '## Invariants' section has no numbered items")
@@ -171,6 +221,9 @@ def main() -> int:
             content = path.read_text(encoding="utf-8")
         except (UnicodeDecodeError, OSError):
             continue
+
+        if is_size_capped(rel):
+            counts[rel] = code_lines(content)
 
         suffix = PurePosixPath(rel).suffix
         text_file = suffix in TEXT_SUFFIXES
@@ -212,12 +265,32 @@ def main() -> int:
             ):
                 links.append(f"{where}: user-facing text links into docs/dev/")
 
+    backlog = REPO / BACKLOG_REL
+    allowed = size_cap_allowed(backlog.read_text(encoding="utf-8")) if backlog.is_file() else []
+    over = {rel: n for rel, n in sorted(counts.items()) if n > SIZE_CAP}
+    for rel, n in over.items():
+        if rel not in allowed:
+            sizes.append(
+                f"{rel}: {n} code lines, over the cap of {SIZE_CAP}: "
+                f"split it, or list it in {BACKLOG_REL}"
+            )
+    for rel in allowed:
+        if rel not in over:
+            n = counts.get(rel)
+            what = (
+                "not a tracked source file it checks"
+                if n is None
+                else f"{n} code lines, at or under the cap of {SIZE_CAP}"
+            )
+            sizes.append(f"{BACKLOG_REL}: lists {rel} ({what}): remove it from the list")
+
     sections = [
         ("invariant numbering", numbering),
         ("invariant citations", citations),
         ("dangling plan labels", labels),
         ("external project name", names),
         ("user-facing links into docs/dev/", links),
+        (f"size cap of {SIZE_CAP} code lines (invariant 14)", sizes),
     ]
     failed = [(title, items) for title, items in sections if items]
     if failed:
@@ -230,6 +303,8 @@ def main() -> int:
         return 1
 
     print(f"documentation check OK: {len(numbers)} invariants, all citations resolve")
+    for rel, n in over.items():
+        print(f"  over the size cap, listed in {BACKLOG_REL}: {rel} ({n} code lines)")
     return 0
 
 

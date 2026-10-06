@@ -1,5 +1,5 @@
 """Type stubs for `vision_metrology` — PyO3 bindings for the vision-metrology
-workspace. See crates/vm-python/README.md for the guide; this file is the
+library. See crates/vm-python/README.md for the guide; this file is the
 contract IDEs and mypy see.
 """
 
@@ -372,7 +372,8 @@ class MeasureConfig:
         "smooth_central" (Gaussian of half-width `kernel_radius_px`, then central
         differences). `off_image` is "fill" (default: sample outside the image with
         `border_mode` and measure) or "reject" (raise `MeasureRejected("off_image")`
-        whenever any sample lies outside the image)."""
+        whenever any sample lies outside the image). The string fields accept only
+        these names, here and on assignment; anything else raises `ValueError`."""
         ...
 
 # ---------------------------------------------------------------------------
@@ -685,7 +686,10 @@ class Caliper:
         `Locate.gradient_peak`); `x` is in profile samples."""
         ...
     def spacing(self) -> float:
-        """Distance between profile samples, in pixels."""
+        """Distance between profile samples, in pixels: the scan's extent divided
+        by `samples - 1`, which differs from the config's `step` whenever the
+        extent is not a whole number of steps. Index `x` of the profile (a
+        `LevelEdge.x`) sits `x * spacing` from the first sample."""
         ...
     def explain(self, img: ImageAny) -> CaliperTrace:
         """Measure and keep every intermediate. Never raises `MeasureRejected`:
@@ -694,7 +698,8 @@ class Caliper:
 
 class CaliperTrace:
     """Everything one caliper measurement computed. `edges` and `reject` are
-    exactly what `measure` returns or raises."""
+    exactly what `measure` returns or raises; `spacing` is what
+    `Caliper.spacing()` reports."""
 
     spacing: float
     samples: int

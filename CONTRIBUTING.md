@@ -141,6 +141,7 @@ update it when a change moves them.
   ([system design](docs/dev/system-design.md#invariants)). `tools/check-invariants.py`
   checks that every citation resolves, and rejects plan labels outside the roadmap and the
   changelog, links into `docs/dev/` from user-facing files, and one external project name.
+  It also enforces the size cap of invariant 14 against the list in `backlog.md`.
 
 ### Illustrations
 
@@ -158,7 +159,8 @@ changing a picture.
 distributed:
 
 ```bash
-WRITE_ASSETS=1 cargo run --release -p vision-metrology --example birdseye_mosaic
+WRITE_ASSETS=1 cargo run --release -p vision-metrology --example birdseye_mosaic -- \
+  --data-dir <dataset>
 ```
 
 It estimates the target plane from the two frames and refuses to write the asset unless

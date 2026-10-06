@@ -143,7 +143,7 @@ impl Line {
     }
 }
 
-/// One edge found by a [`Caliper`](crate::measure_py::Caliper).
+/// One edge found by a `Caliper`.
 #[pyclass(get_all, skip_from_py_object)]
 #[derive(Debug, Clone, Copy)]
 pub struct MeasureEdge {

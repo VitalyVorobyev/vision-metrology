@@ -7,7 +7,7 @@
 //! in Python and copy image data before calling into this module.
 //!
 //! ## Dtype dispatch
-//! Every algorithm in this workspace that is generic over `vm_primitives::Pixel`
+//! Every algorithm in this library that is generic over `vm_primitives::Pixel`
 //! (sealed over `u8`/`u16`/`f32`) is bound the same way here: [`AnyImage`] holds
 //! whichever concrete `Image<P>` the input array's dtype selected, and
 //! [`with_any_image!`] runs one generic function body against it — the same
@@ -71,7 +71,7 @@ pub fn any_image_from_numpy<'py>(py: Python<'py>, img: &Bound<'py, PyAny>) -> Py
 }
 
 /// Run `$body` with `$view` bound to the `ImageView<'_, P>` inside an
-/// [`AnyImage`], once per pixel type.
+/// `AnyImage`, once per pixel type.
 ///
 /// `$body` is written once in source but expanded three times — each
 /// expansion is monomorphized independently against its own concrete `P`,
