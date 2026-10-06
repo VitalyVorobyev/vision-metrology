@@ -5,8 +5,8 @@
 //! - **Stations.** The prior is resampled to `N` stations uniform in arc length,
 //!   `round(L / spacing) + 1` of them (at least 2) for a prior of length `L`. `N` is fixed
 //!   for the call, so station `i` keeps its identity from pass to pass and in the result.
-//!   The first and last stations stay on the prior's ends' normals: the tracker moves the
-//!   curve sideways, it does not find where the bead starts or ends.
+//!   Each pass moves every station, the two ends included, along its current normal: the
+//!   tracker moves the curve sideways and does not find where the bead starts or ends.
 //! - **Tangent and normal.** A station's tangent `t` is the chord over
 //!   `±tangent_window_px` of arc length, pointing towards the curve's end. Near the ends
 //!   the window shrinks so the chord stays centred on the station; the two end stations
@@ -37,8 +37,8 @@ use vm_primitives::{Error, ImageView, Pixel, Point2f};
 
 pub use config::{BeadCaliper, BeadConfig, BeadPolarity, BeadTuning};
 pub use result::{
-    BeadHit, BeadPass, BeadReject, BeadSample, BeadStats, BeadStop, BeadSummary, BeadTrack,
-    TrackedBead,
+    BeadHit, BeadPass, BeadReject, BeadSample, BeadSolve, BeadStats, BeadStop, BeadSummary,
+    BeadTrack, TrackedBead,
 };
 
 use super::{Caliper, MeasureStrip};

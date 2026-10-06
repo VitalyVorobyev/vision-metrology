@@ -191,7 +191,7 @@ pub struct BeadTrack {
     pub stop: BeadStop,
 }
 
-/// One tracking pass: its evidence, its solve, and the correction it applied.
+/// One tracking pass: its evidence and, when it had enough, its solve.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
@@ -202,22 +202,33 @@ pub struct BeadPass {
     pub support: f32,
     /// The longest run of stations without a pair, in pixels of arc length.
     pub longest_gap: f32,
+    /// The solve and the correction it applied; `None` when the pass found too few pairs
+    /// to solve and left the curve where it was.
+    pub solve: Option<BeadSolve>,
+    /// Stations rejected, counted by reason, as in [`BeadSummary::rejects`].
+    pub rejects: Vec<(BeadReject, usize)>,
+}
+
+/// One pass's solve and the correction it applied to the stations.
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub struct BeadSolve {
     /// RMS of the correction applied to the stations, in pixels.
     pub correction_rms: f32,
     /// The largest correction applied, in pixels.
     pub correction_max: f32,
     /// RMS, over the valid stations, of the observed offset minus the solved one, in
-    /// pixels: how far the smooth correction stays from the evidence.
+    /// pixels: how far the smooth correction stays from this pass's evidence.
     pub residual_rms: f32,
     /// The largest such residual, in pixels.
     pub residual_max: f32,
-    /// The fraction of the solved correction applied, in `[0, 1]`: less than 1 when the
-    /// full step would fold the curve, 0 when the pass did not move it.
+    /// The fraction of the solved correction applied, in `(0, 1]`: less than 1 when the
+    /// full step would fold the curve.
     pub step_scale: f32,
-    /// Reweighted solves run.
+    /// Reweighted solves run after the first, least-squares one; 0 with
+    /// [`RobustLoss::None`](crate::fit::RobustLoss::None).
     pub irls_iters: usize,
-    /// Stations rejected, counted by reason, as in [`BeadSummary::rejects`].
-    pub rejects: Vec<(BeadReject, usize)>,
 }
 
 /// Why the tracking loop stopped.
@@ -225,7 +236,11 @@ pub struct BeadPass {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub enum BeadStop {
-    /// A pass moved no station by more than [`BeadTuning::tol`](super::BeadTuning::tol).
+    /// The last pass's solved correction was below
+    /// [`BeadTuning::tol`](super::BeadTuning::tol) at every station, and was applied in
+    /// full. It says the loop stopped moving the curve, not that the curve sits on the
+    /// bead: the final stage's [`BeadStats::center_rms`] and
+    /// [`BeadStats::center_max_dev`] are the evidence of fit.
     Converged,
     /// Every pass ran.
     PassLimit,

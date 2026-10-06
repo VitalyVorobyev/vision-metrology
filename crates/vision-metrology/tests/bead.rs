@@ -18,6 +18,10 @@
 //!   reasons; a gap is bridged and reported; a distractor step beside an edge is rejected
 //!   by the clearance gate; a highlight inside the bead leaves the outer edges chosen.
 //! - **Spacing.** The refined curve does not depend on the station spacing.
+//! - **Short-scale error in the prior.** A local bump and a coarse polygon decay over
+//!   passes rather than in one: the defaults leave pinned residuals that the final stage
+//!   reports, and a shorter bending length converges. A kinked prior is stepped by less
+//!   than the full correction, without folding, and its error falls pass by pass.
 //!
 //! Stations within `END_MARGIN` px of a ribbon end, or of a gap's end, carry no truth
 //! (the fixture cuts the ribbon square there) and are left out of accuracy checks.
@@ -26,13 +30,14 @@
 mod ribbon;
 
 use std::f64::consts::TAU;
+use std::num::NonZeroUsize;
 
 use ribbon::{Curve, P2, Raster, Ribbon, Scene, Step, Stripe, Width};
 use vision_metrology::measure::{
-    BeadCaliper, BeadConfig, BeadPolarity, BeadReject, BeadStop, BeadTracker, RejectReason,
-    TrackedBead,
+    BeadCaliper, BeadConfig, BeadPolarity, BeadReject, BeadStop, BeadTracker, BeadTuning,
+    RejectReason, TrackedBead,
 };
-use vision_metrology::{Image, Point2f};
+use vision_metrology::{Error, Image, Point2f};
 
 const SIZE: (usize, usize) = (340, 280);
 const BG: f64 = 40.0;
@@ -150,7 +155,10 @@ fn a_perturbed_prior_converges_onto_the_bead() {
         assert!(width < WIDTH_TOL, "{name}: width off by {width:.4} px");
         // The first pass carries the prior's error; the loop then converges.
         let first = &got.track.passes[0];
-        assert!(first.correction_max > 5.0, "{name}: {first:?}");
+        assert!(
+            first.solve.expect("solved").correction_max > 5.0,
+            "{name}: {first:?}"
+        );
         assert_eq!(got.track.stop, BeadStop::Converged, "{name}");
         assert!(
             stats.center_rms < 0.05 && stats.center_max_dev < 0.1,
@@ -319,11 +327,13 @@ fn a_bead_leaving_the_image_is_rejected_where_it_leaves() {
     for smp in &got.samples {
         let x = smp.point.x;
         if x > SIZE.0 as f32 + 5.0 {
+            // Every edge such a strip finds is in border fill.
             off += 1;
-            match smp.hit {
-                Err(BeadReject::Caliper(_) | BeadReject::NoPair | BeadReject::Width) => {}
-                other => panic!("station at x = {x} off the image: {other:?}"),
-            }
+            assert_eq!(
+                smp.hit,
+                Err(BeadReject::Caliper(RejectReason::OffImage)),
+                "station at x = {x}"
+            );
         } else if x < SIZE.0 as f32 - 60.0 {
             let hit = smp.hit.expect("a hit inside the image");
             assert!((hit.pair.center.y - 140.0).abs() < 0.05, "x = {x}: {hit:?}");
@@ -511,14 +521,19 @@ fn bad_priors_are_errors() {
     let img = Image::from_vec(8, 8, vec![0u8; 64]).expect("image");
     let mut tracker = BeadTracker::new(BeadConfig::default()).expect("valid");
     let p = Point2f::new(2.0, 3.0);
-    for prior in [
-        vec![],
-        vec![p],
-        vec![p, p, p],
-        vec![p, Point2f::new(f32::NAN, 1.0)],
-    ] {
-        assert!(tracker.track(&img.as_view(), &prior).is_err(), "{prior:?}");
-    }
+    let mut fails = |prior: &[Point2f]| tracker.track(&img.as_view(), prior).unwrap_err();
+    // Too few points to place stations on.
+    assert_eq!(fails(&[]), Error::InsufficientData { need: 2, got: 0 });
+    assert_eq!(fails(&[p]), Error::InsufficientData { need: 2, got: 1 });
+    // Points enough, but no curve: a prior of length zero, or one with a NaN in it.
+    assert_eq!(
+        fails(&[p, p, p]),
+        Error::Degenerate("bead prior has zero length")
+    );
+    assert_eq!(
+        fails(&[p, Point2f::new(f32::NAN, 1.0)]),
+        Error::Degenerate("bead prior has a non-finite point")
+    );
     let bad = BeadConfig {
         min_width: 90.0,
         ..BeadConfig::default()
@@ -526,4 +541,141 @@ fn bad_priors_are_errors() {
     assert!(BeadTracker::new(bad).is_err());
     assert!(tracker.set_config(bad).is_err());
     assert_eq!(tracker.config(), &BeadConfig::default());
+}
+
+/// The default config with `bending_px` and `passes` set, and `tol` tiny when `all_passes`.
+fn tuned(bending_px: f32, passes: usize, all_passes: bool) -> BeadConfig {
+    let d = BeadConfig::default();
+    BeadConfig {
+        tuning: BeadTuning {
+            bending_px,
+            passes: NonZeroUsize::new(passes).expect("at least one pass"),
+            tol: if all_passes { 1e-6 } else { d.tuning.tol },
+            ..d.tuning
+        },
+        ..d
+    }
+}
+
+// The penalties act on each pass's correction, so a deviation of the prior shorter than
+// about 2π·bending_px decays over passes rather than in one. The two cases below pin how
+// far the defaults get, and that a shorter bending length converges; the final stage's
+// `center_max_dev` reports what is left either way.
+
+#[test]
+fn a_local_bump_in_the_prior_decays_over_passes() {
+    // An 8 px Gaussian bump, σ = 8 px of arc, on the straight bead.
+    let ribbon = bead(line());
+    let img = render(&ribbon).to_u8();
+    let len = ribbon.length();
+    let prior = prior(&ribbon, 15.0, len - 15.0, P2::new(0.0, 0.0), |s| {
+        8.0 * (-(s - 0.5 * len).powi(2) / (2.0 * 8.0 * 8.0)).exp()
+    });
+    let run = |cfg: BeadConfig| {
+        let got = track(cfg, &img, &prior);
+        let (center, _, _) = errors(&got, &ribbon);
+        let max_dev = f64::from(got.summary.stats.expect("hits").center_max_dev);
+        (got, center, max_dev)
+    };
+
+    // Measured: 1.72 px left after the default 3 passes, 0.76 px after 10.
+    let (three, center, max_dev) = run(BeadConfig::default());
+    eprintln!("bump, defaults: {center:.3} px after 3 passes");
+    assert_eq!(three.track.stop, BeadStop::PassLimit);
+    assert!(center > 1.2 && center < 2.6, "{center}");
+    assert!(
+        (max_dev - center).abs() < 0.1,
+        "the final stage sees it: {max_dev}"
+    );
+    let (_, ten, _) = run(tuned(8.0, 10, false));
+    eprintln!("bump, defaults: {ten:.3} px after 10 passes");
+    assert!(ten < 0.6 * center && ten < 1.15, "{ten}");
+
+    // Measured: 0.056 px with bending_px = 3 and up to 6 passes, converged.
+    let (short, center, max_dev) = run(tuned(3.0, 6, false));
+    eprintln!("bump, bending_px 3: {center:.3} px, {:?}", short.track.stop);
+    assert_eq!(short.track.stop, BeadStop::Converged);
+    assert!(center < 0.085 && max_dev < 0.1, "{center} / {max_dev}");
+}
+
+#[test]
+fn a_coarse_polygon_prior_converges_only_with_a_short_bending_length() {
+    // The arc's chords, a vertex every 40 px: their 1.3 px sagitta varies along the curve
+    // faster than the default bending length passes.
+    let ribbon = bead(arc());
+    let img = render(&ribbon).to_u8();
+    let len = ribbon.length();
+    let n = ((len - 30.0) / 40.0).round() as usize;
+    let polygon: Vec<Point2f> = (0..=n)
+        .map(|k| {
+            let s = 15.0 + (len - 30.0) * k as f64 / n as f64;
+            ribbon.curve.center(s).point()
+        })
+        .collect();
+    let run = |cfg: BeadConfig| {
+        let got = track(cfg, &img, &polygon);
+        let (center, _, _) = errors(&got, &ribbon);
+        let max_dev = f64::from(got.summary.stats.expect("hits").center_max_dev);
+        (got, center, max_dev)
+    };
+
+    // Measured: the defaults report `Converged` after 4 of 10 passes with the curve still
+    // 0.41 px off. Convergence says the corrections stopped, not that the curve fits.
+    let (got, center, max_dev) = run(tuned(8.0, 10, false));
+    eprintln!(
+        "40 px polygon, defaults: {center:.3} px, {:?} after {} passes",
+        got.track.stop,
+        got.track.passes.len()
+    );
+    assert_eq!(got.track.stop, BeadStop::Converged);
+    assert!(center > 0.3 && center < 0.6, "{center}");
+    assert!(max_dev > 0.3, "the final stage sees it: {max_dev}");
+
+    // Measured: 0.044 px with bending_px = 2.
+    let (got, center, max_dev) = run(tuned(2.0, 6, false));
+    eprintln!(
+        "40 px polygon, bending_px 2: {center:.3} px, {:?}",
+        got.track.stop
+    );
+    assert!(center < 0.07 && max_dev < 0.07, "{center} / {max_dev}");
+}
+
+#[test]
+fn a_kinked_prior_is_stepped_without_folding() {
+    // A tent 14 px high and 60 px wide on the straight bead, seen with a 2 px tangent
+    // window: the curvature concentrates at the apex, and the full first correction would
+    // reverse a segment there, so the fold guard shortens it.
+    let ribbon = bead(line());
+    let img = render(&ribbon).to_u8();
+    let len = ribbon.length();
+    let prior = prior(&ribbon, 15.0, len - 15.0, P2::new(0.0, 0.0), |s| {
+        14.0 * (1.0 - (s - 0.5 * len).abs() / 30.0).max(0.0)
+    });
+    let mut last = f64::INFINITY;
+    for passes in [1, 2, 3, 6] {
+        let mut cfg = tuned(8.0, passes, true);
+        cfg.tuning.tangent_window_px = 2.0;
+        let got = track(cfg, &img, &prior);
+        let (center, _, _) = errors(&got, &ribbon);
+        let scale = got.track.passes[0].solve.expect("solved").step_scale;
+        // Adjacent segments never turn back on each other.
+        let turn = got
+            .centerline
+            .windows(3)
+            .map(|w| (w[1] - w[0]).normalize().dot(&(w[2] - w[1]).normalize()))
+            .fold(1.0f32, f32::min);
+        eprintln!(
+            "kinked prior, {passes} passes: {center:.3} px, first step {scale:.3}, turn cos \
+             {turn:.3}"
+        );
+        // Measured: a first step of 0.668; 5.49, 1.26, 0.75 and 0.42 px; turn cos ≥ 0.95.
+        assert!(scale < 0.8, "first step {scale}");
+        assert!(
+            turn > 0.9,
+            "{passes} passes: adjacent segments turn by acos {turn}"
+        );
+        assert!(center < last, "{passes} passes: {center} after {last}");
+        last = center;
+    }
+    assert!(last < 0.65, "after 6 passes: {last}");
 }

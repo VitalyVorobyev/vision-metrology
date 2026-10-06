@@ -9,9 +9,10 @@ use vm_primitives::{Error, Point2f};
 /// A point or a vector, `[x, y]`, in pixels.
 pub(super) type V2 = [f64; 2];
 
-/// The share of a station's room a correction may use before the curve folds: offsets on
-/// the concave side stop at `FOLD / |κ|`, and a step keeps every segment at least
-/// `1 − FOLD` of its length along its old direction.
+/// The share of a station's room a correction may use before the curve folds. Evidence on
+/// the concave side stops at `FOLD / |κ|`; a step moves no station more than `FOLD` of the
+/// way to its centre of curvature, and keeps every segment at least `1 − FOLD` of its
+/// length along its old direction.
 pub(super) const FOLD: f64 = 0.9;
 
 /// The most stations one call may place.
@@ -185,8 +186,9 @@ pub(super) fn curvature(tan: &[V2], h: f64, kappa: &mut Vec<f64>) {
 }
 
 /// The window `[lo, hi]` a pair's centre offset may fall in at curvature `kappa`: `±reach`,
-/// clipped on the concave side to `FOLD / |κ|` so the curve cannot be pulled past its
-/// centre of curvature.
+/// clipped on the concave side to `FOLD / |κ|`, so no observation asks a station to cross
+/// its centre of curvature. It gates evidence only; [`step_scale`] keeps a step from
+/// folding the curve.
 pub(super) fn offset_window(kappa: f64, reach: f64) -> (f64, f64) {
     let fold = if kappa != 0.0 {
         FOLD / kappa.abs()
@@ -200,10 +202,18 @@ pub(super) fn offset_window(kappa: f64, reach: f64) -> (f64, f64) {
     }
 }
 
-/// The largest `α ≤ 1` for which moving each station by `α·d[i]` along `normals[i]` keeps
-/// every segment at least `1 − FOLD` of its length along its old direction.
-pub(super) fn step_scale(pts: &[V2], normals: &[V2], d: &[f64]) -> f64 {
+/// The largest `α ≤ 1` for which moving each station by `α·d[i]` along `normals[i]`
+/// cannot fold the curve:
+/// - no station moves more than `FOLD` of the way to its centre of curvature,
+///   `1 − κᵢ·α·dᵢ ≥ 1 − FOLD`, with `κ` from the chord tangents;
+/// - every segment keeps at least `1 − FOLD` of its length along its old direction.
+pub(super) fn step_scale(pts: &[V2], normals: &[V2], kappa: &[f64], d: &[f64]) -> f64 {
     let mut alpha: f64 = 1.0;
+    for (&k, &di) in kappa.iter().zip(d) {
+        if k * di > FOLD {
+            alpha = alpha.min(FOLD / (k * di));
+        }
+    }
     for i in 0..pts.len().saturating_sub(1) {
         let seg = sub(pts[i + 1], pts[i]);
         let (a, b) = (normals[i], normals[i + 1]);

@@ -9,7 +9,7 @@
 //!
 //! the discretisation, at station spacing `h`, of `∫ w ρ + λ0 d² + ℓ1² d′² + ℓ2⁴ d″² ds`, so
 //! the answer does not depend on `h`. On uniform data the correction passes a component of
-//! angular frequency `ω` by `1 / (1 + ℓ1²ω² + ℓ2⁴ω⁴)`.
+//! angular frequency `ω` by `1 / (1 + λ0 + ℓ1²ω² + ℓ2⁴ω⁴)`.
 //!
 //! `ρ` is applied by iteratively reweighted least squares. Each weighted problem is a
 //! symmetric positive definite pentadiagonal system, factored by a banded `LDLᵀ` in `O(N)`.
@@ -170,6 +170,7 @@ pub(super) struct SolveScratch {
 /// What one pass's solve did.
 #[derive(Debug, Clone, Copy)]
 pub(super) struct Solved {
+    /// Reweighted solves run after the first, least-squares one.
     pub irls_iters: usize,
     /// RMS and largest `|d̂ − d|` over the valid stations.
     pub residual_rms: f64,
@@ -178,8 +179,10 @@ pub(super) struct Solved {
 
 /// Solve for the corrections `s.d` from the observations `obs`, read where `valid`.
 ///
-/// Up to `irls_iters` solves: least squares, then each reweighted by `loss` on the last
-/// residuals (Tukey annealed from the largest residual, as the fitters do). `None` when a
+/// A least-squares solve, then up to `irls_iters` solves reweighted by `loss` on the last
+/// residuals, as the fitters do: Tukey anneals from the largest least-squares residual
+/// down to its constant, and the loop stops early once the corrections settle at the
+/// final constant. `RobustLoss::None` stops after the first solve. `None` when a
 /// factorisation loses positive definiteness.
 pub(super) fn solve_offsets(
     obs: &[f64],
@@ -193,10 +196,10 @@ pub(super) fn solve_offsets(
     s.weights
         .extend(valid.iter().map(|&v| if v { 1.0 } else { 0.0 }));
     solve_weighted(obs, p, s)?;
-    let mut iters = 1;
+    let mut iters = 0;
     let max_residual = residuals(obs, valid, &s.d).1;
     if loss != RobustLoss::None {
-        for k in 0..irls_iters.saturating_sub(1) {
+        for k in 0..irls_iters {
             let step = loss.annealed(k, max_residual as f32);
             for ((w, (&o, &d)), &v) in s.weights.iter_mut().zip(obs.iter().zip(&s.d)).zip(valid) {
                 *w = if v { step.weight((o - d) as f32) } else { 0.0 };

@@ -7,14 +7,15 @@ use std::num::NonZeroUsize;
 
 use vm_primitives::{Error, ImageView, Pixel, Point2f, Vec2f};
 
-use super::config::{BeadCaliper, BeadConfig};
+use super::config::{BeadCaliper, BeadConfig, strip_extent};
 use super::curve::{
     V2, arc_lengths, chord_tangents, curvature, load_prior, offset_window, perp, resample,
     station_count, step_scale,
 };
 use super::pairing::{Gates, choose, sort_edges};
 use super::result::{
-    BeadHit, BeadPass, BeadReject, BeadSample, BeadStop, BeadSummary, BeadTrack, TrackedBead,
+    BeadHit, BeadPass, BeadReject, BeadSample, BeadSolve, BeadStop, BeadSummary, BeadTrack,
+    TrackedBead,
 };
 use super::solve::{Penalty, SolveScratch, solve_offsets};
 use super::stats::{Tally, bead_stats, longest_run_missing};
@@ -103,23 +104,16 @@ struct StripSpec {
 }
 
 impl StripSpec {
-    /// Long enough to hold a pair at the stage's offset reach, its clearance and the
-    /// smoothing kernel: `max_offset + max_width/2 + clearance + 3σ + step`, rounded up so
-    /// that the length is a whole number of steps.
+    /// The stage's strips, as [`strip_extent`] sizes them; the config's validation caps
+    /// the counts.
     fn new(c: &BeadCaliper, cfg: &BeadConfig) -> Self {
-        let step = f64::from(c.profile.step);
-        let reach = f64::from(c.max_offset)
-            + 0.5 * f64::from(cfg.max_width)
-            + f64::from(cfg.clearance.unwrap_or(0.0))
-            + 3.0 * f64::from(c.profile.sigma)
-            + step;
-        let steps = (2.0 * reach / step).ceil();
-        let half_width = c.half_width;
+        let e = strip_extent(c, cfg);
+        let count = |v: f64| NonZeroUsize::new(v as usize).unwrap_or(NonZeroUsize::MIN);
         Self {
-            half_len: 0.5 * steps * step,
-            half_width,
-            samples: NonZeroUsize::new(steps as usize + 1).unwrap_or(NonZeroUsize::MIN),
-            across: NonZeroUsize::new((2.0 * half_width) as usize + 1).unwrap_or(NonZeroUsize::MIN),
+            half_len: e.half_len,
+            half_width: c.half_width,
+            samples: count(e.samples),
+            across: count(e.across),
         }
     }
 
@@ -267,12 +261,7 @@ pub(super) fn run<P: Pixel, R: Probe>(
             n_valid,
             support: support as f32,
             longest_gap: gap as f32,
-            correction_rms: 0.0,
-            correction_max: 0.0,
-            residual_rms: 0.0,
-            residual_max: 0.0,
-            step_scale: 0.0,
-            irls_iters: 0,
+            solve: None,
             rejects: tally.to_vec(),
         };
         if n_valid == 0 || support < f64::from(t.min_support) {
@@ -301,7 +290,8 @@ pub(super) fn run<P: Pixel, R: Probe>(
             &mut s.solve,
         )
         .ok_or(Error::Degenerate("bead solve lost positive definiteness"))?;
-        let alpha = step_scale(&s.pts, &s.normals, &s.solve.d);
+        let alpha = step_scale(&s.pts, &s.normals, &s.kappa, &s.solve.d);
+        let solved_max = s.solve.d.iter().fold(0.0f64, |m, d| m.max(d.abs()));
         s.applied.clear();
         s.applied.extend(s.solve.d.iter().map(|&d| alpha * d));
         let (mut sum2, mut max) = (0.0f64, 0.0f64);
@@ -316,14 +306,18 @@ pub(super) fn run<P: Pixel, R: Probe>(
         resample(&s.src, &s.cum, n, &mut s.pts);
         h = moved / (n - 1) as f64;
 
-        record.correction_rms = (sum2 / n as f64).sqrt() as f32;
-        record.correction_max = max as f32;
-        record.residual_rms = solved.residual_rms as f32;
-        record.residual_max = solved.residual_max as f32;
-        record.step_scale = alpha as f32;
-        record.irls_iters = solved.irls_iters;
+        record.solve = Some(BeadSolve {
+            correction_rms: (sum2 / n as f64).sqrt() as f32,
+            correction_max: max as f32,
+            residual_rms: solved.residual_rms as f32,
+            residual_max: solved.residual_max as f32,
+            step_scale: alpha as f32,
+            irls_iters: solved.irls_iters,
+        });
         passes.push(record);
-        if max < f64::from(t.tol) {
+        // Judged on the solved correction, so a step the fold guard shortened is never
+        // taken for convergence.
+        if alpha == 1.0 && solved_max < f64::from(t.tol) {
             stop = BeadStop::Converged;
             break;
         }

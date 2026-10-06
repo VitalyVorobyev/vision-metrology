@@ -147,11 +147,22 @@ fn the_step_scale_keeps_the_curve_from_folding() {
     let (r, step) = (20.0, 0.1);
     let pts = polygon(r, step, 21);
     let normals: Vec<V2> = pts.iter().map(|p| [-p[0] / r, -p[1] / r]).collect();
-    let alpha = step_scale(&pts, &normals, &[30.0; 21]);
+    let kappa = [1.0 / r; 21];
+    let alpha = step_scale(&pts, &normals, &kappa, &[30.0; 21]);
+    assert!((alpha * 30.0 - 0.9 * r).abs() < 1e-9, "α = {alpha}");
+    // The polyline's own segments say the same without the curvature.
+    let alpha = step_scale(&pts, &normals, &[0.0; 21], &[30.0; 21]);
     assert!((alpha * 30.0 - 0.9 * r).abs() < 1e-9, "α = {alpha}");
     // Outwards, or by less than the margin, the full step is taken.
-    assert_eq!(step_scale(&pts, &normals, &[-30.0; 21]), 1.0);
-    assert_eq!(step_scale(&pts, &normals, &[1.0; 21]), 1.0);
+    assert_eq!(step_scale(&pts, &normals, &kappa, &[-30.0; 21]), 1.0);
+    assert_eq!(step_scale(&pts, &normals, &kappa, &[1.0; 21]), 1.0);
+
+    // A sharp turn that the stations themselves straddle: on a straight row of stations a
+    // uniform step changes no segment, so only the chord curvature catches it.
+    let row: Vec<V2> = (0..5).map(|i| [4.0 * i as f64, 0.0]).collect();
+    let up = vec![[0.0, 1.0]; 5];
+    let alpha = step_scale(&row, &up, &[0.0, 0.0, 0.2, 0.0, 0.0], &[10.0; 5]);
+    assert!((alpha - 0.9 / 2.0).abs() < 1e-12, "α = {alpha}");
 }
 
 // ── the banded solve ────────────────────────────────────────────────────
@@ -245,11 +256,19 @@ fn passed_amplitude(h: f64, omega: f64, tuning: &BeadTuning) -> f64 {
 
 #[test]
 fn the_regulariser_passes_a_frequency_whatever_the_spacing() {
-    let tuning = BeadTuning::default();
-    let (l1, l2) = (f64::from(tuning.tension_px), f64::from(tuning.bending_px));
+    // Some damping too, so the response's λ0 term is checked.
+    let tuning = BeadTuning {
+        damping: 0.2,
+        ..BeadTuning::default()
+    };
+    let (l0, l1, l2) = (
+        f64::from(tuning.damping),
+        f64::from(tuning.tension_px),
+        f64::from(tuning.bending_px),
+    );
     for wavelength in [25.0, 50.0, 100.0, 300.0] {
         let omega = TAU / wavelength;
-        let want = 1.0 / (1.0 + (l1 * omega).powi(2) + (l2 * omega).powi(4));
+        let want = 1.0 / (1.0 + l0 + (l1 * omega).powi(2) + (l2 * omega).powi(4));
         // At fewer than about 10 stations per wavelength the differences stop
         // approximating the derivatives.
         for h in [1.0, 2.0, 4.0]
@@ -268,25 +287,34 @@ fn the_regulariser_passes_a_frequency_whatever_the_spacing() {
 
 /// The correction at a station observed `outlier` px off a smooth bead, everything else
 /// observing 0.5 px.
-fn pulled_by_outlier(loss: RobustLoss) -> f64 {
+fn pulled_by_outlier(loss: RobustLoss, irls_iters: usize) -> f64 {
     let n = 101;
     let mut obs = vec![0.5; n];
     obs[50] = 10.5;
     let mut s = SolveScratch::default();
     let p = Penalty::new(0.0, 2.0, 8.0, 4.0);
-    solve_offsets(&obs, &vec![true; n], p, loss, 5, &mut s).expect("solved");
+    let solved = solve_offsets(&obs, &vec![true; n], p, loss, irls_iters, &mut s).expect("solved");
+    let reweighted = if loss == RobustLoss::None { 0 } else { 1 };
+    assert!(solved.irls_iters >= reweighted && solved.irls_iters <= irls_iters);
     (s.d[50] - 0.5).abs()
 }
 
 #[test]
 fn irls_rejects_one_gross_outlier() {
-    let plain = pulled_by_outlier(RobustLoss::None);
-    let huber = pulled_by_outlier(RobustLoss::Huber { k: 1.0 });
-    let tukey = pulled_by_outlier(RobustLoss::Tukey { c: 2.0 });
+    let plain = pulled_by_outlier(RobustLoss::None, 5);
+    let huber = pulled_by_outlier(RobustLoss::Huber { k: 1.0 }, 5);
+    let tukey = pulled_by_outlier(RobustLoss::Tukey { c: 2.0 }, 5);
     eprintln!("pulled by a 10 px outlier: none {plain:.3}, huber {huber:.3}, tukey {tukey:.4}");
     assert!(plain > 0.5, "least squares follows the outlier: {plain}");
     assert!(huber < plain / 5.0, "Huber bounds it: {huber} vs {plain}");
     assert!(tukey < 0.01, "Tukey removes it: {tukey}");
+    // One reweighted solve already applies the loss.
+    let once = pulled_by_outlier(RobustLoss::Huber { k: 1.0 }, 1);
+    eprintln!("Huber after one reweighted solve: {once:.3}");
+    assert!(
+        once < plain / 2.0,
+        "one reweighted solve: {once} vs {plain}"
+    );
 }
 
 // ── pairing ──────────────────────────────────────────────────────────────
@@ -469,6 +497,10 @@ fn invalid_configs_are_rejected() {
             min_width: 90.0,
             ..d
         },
+        BeadConfig {
+            min_width: 0.0,
+            ..d
+        },
         BeadConfig { spacing: 0.0, ..d },
         BeadConfig {
             spacing: f32::NAN,
@@ -543,6 +575,56 @@ fn invalid_configs_are_rejected() {
             "case {k} should be invalid"
         );
     }
+    // `min_width = 0` names itself rather than failing on a half-contrast flank.
+    let zero = BeadConfig {
+        min_width: 0.0,
+        ..d
+    };
+    assert_eq!(
+        validate(&zero),
+        Err(Error::InvalidConfig(
+            "bead min_width must be finite and positive"
+        ))
+    );
+}
+
+#[test]
+fn absurd_strips_are_rejected_before_they_allocate() {
+    let d = BeadConfig::default();
+    for max_offset in [1e6f32, 1e9, 1e19, f32::MAX] {
+        let cfg = BeadConfig {
+            track: BeadCaliper {
+                max_offset,
+                ..d.track
+            },
+            ..d
+        };
+        assert!(
+            matches!(validate(&cfg), Err(Error::InvalidConfig(m)) if m.contains("2^22")),
+            "max_offset {max_offset}"
+        );
+    }
+    let fine_wide = BeadConfig {
+        measure: BeadCaliper {
+            half_width: 20_000.0,
+            ..d.measure
+        },
+        ..d
+    };
+    assert!(validate(&fine_wide).is_err());
+    // A generous but sane strip passes: 400 px wide beads at a 0.25 px step.
+    let big = BeadConfig {
+        max_width: 400.0,
+        measure: BeadCaliper {
+            profile: crate::measure::ProfileConfig {
+                step: 0.25,
+                ..d.measure.profile
+            },
+            ..d.measure
+        },
+        ..d
+    };
+    assert!(validate(&big).is_ok());
 }
 
 #[test]

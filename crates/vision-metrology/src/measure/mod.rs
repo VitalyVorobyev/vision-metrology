@@ -43,8 +43,8 @@ mod placement;
 mod select;
 
 pub use bead::{
-    BeadCaliper, BeadConfig, BeadHit, BeadPass, BeadPolarity, BeadReject, BeadSample, BeadStats,
-    BeadStop, BeadSummary, BeadTrack, BeadTracker, BeadTuning, TrackedBead,
+    BeadCaliper, BeadConfig, BeadHit, BeadPass, BeadPolarity, BeadReject, BeadSample, BeadSolve,
+    BeadStats, BeadStop, BeadSummary, BeadTrack, BeadTracker, BeadTuning, TrackedBead,
 };
 pub use caliper::Caliper;
 pub use config::{

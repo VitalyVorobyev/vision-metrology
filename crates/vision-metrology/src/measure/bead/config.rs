@@ -86,7 +86,9 @@ impl BeadCaliper {
 pub struct BeadTuning {
     /// The most tracking passes: measure, solve, move, resample.
     pub passes: NonZeroUsize,
-    /// The loop stops once a pass moves no station by more than this, in pixels.
+    /// The loop stops, [`BeadStop::Converged`](super::BeadStop::Converged), once a pass's
+    /// solved correction is below this at every station, in pixels, and was applied in
+    /// full.
     pub tol: f32,
     /// Trust in the prior, `λ0`: a penalty on the size of each correction, relative to a
     /// station's data weight of 1. Dimensionless; `0.0` lets data move the curve freely.
@@ -100,7 +102,8 @@ pub struct BeadTuning {
     /// How each station's observation is weighted against the curve, with its constant in
     /// pixels. A robust loss keeps a wrong pair from pulling the curve.
     pub loss: RobustLoss,
-    /// The most reweighted solves per pass.
+    /// The most reweighted solves per pass, after the first, least-squares one. Tukey
+    /// anneals over them from the largest residual down to its constant.
     pub irls_iters: NonZeroUsize,
     /// Half-length, in pixels of arc length, of the chord each tangent is taken over; it
     /// shrinks near the ends so the chord stays centred. Longer chords smooth a coarse
@@ -135,7 +138,7 @@ impl Default for BeadTuning {
 pub struct BeadConfig {
     /// Whether the bead is lighter or darker than its background.
     pub polarity: BeadPolarity,
-    /// The narrowest pair, in pixels, inclusive.
+    /// The narrowest pair, in pixels, inclusive; positive.
     pub min_width: f32,
     /// The widest pair, in pixels, inclusive.
     pub max_width: f32,
@@ -200,12 +203,43 @@ fn non_negative(v: f32, what: &'static str) -> Result<(), Error> {
     }
 }
 
+/// The most samples, along times across, one strip may average.
+const MAX_STRIP_SAMPLES: f64 = (1u64 << 22) as f64;
+
+/// A stage's strip geometry, with the counts in `f64` so an absurd config cannot overflow
+/// them before validation rejects it.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct StripExtent {
+    /// Half the strip's length, in pixels.
+    pub half_len: f64,
+    /// Samples along the strip, both ends included.
+    pub samples: f64,
+    /// Lines across it.
+    pub across: f64,
+}
+
+/// The strips a stage measures with: long enough to hold a pair at the stage's offset
+/// reach, its clearance and the smoothing kernel,
+/// `max_offset + max_width/2 + clearance + 3σ + step` each side, rounded up so that the
+/// length is a whole number of steps; about one line per pixel across.
+pub(super) fn strip_extent(c: &BeadCaliper, cfg: &BeadConfig) -> StripExtent {
+    let step = f64::from(c.profile.step);
+    let reach = f64::from(c.max_offset)
+        + 0.5 * f64::from(cfg.max_width)
+        + f64::from(cfg.clearance.unwrap_or(0.0))
+        + 3.0 * f64::from(c.profile.sigma)
+        + step;
+    let steps = (2.0 * reach / step).ceil();
+    StripExtent {
+        half_len: 0.5 * steps * step,
+        samples: steps + 1.0,
+        across: (2.0 * f64::from(c.half_width)).floor() + 1.0,
+    }
+}
+
 /// Check every setting of `cfg`.
 pub(super) fn validate(cfg: &BeadConfig) -> Result<(), Error> {
-    non_negative(
-        cfg.min_width,
-        "bead min_width must be finite and non-negative",
-    )?;
+    positive(cfg.min_width, "bead min_width must be finite and positive")?;
     positive(cfg.max_width, "bead max_width must be finite and positive")?;
     if cfg.min_width > cfg.max_width {
         return Err(Error::InvalidConfig("bead min_width exceeds max_width"));
@@ -219,8 +253,16 @@ pub(super) fn validate(cfg: &BeadConfig) -> Result<(), Error> {
     {
         return Err(Error::InvalidConfig("bead min_margin must be in (0, 1)"));
     }
-    validate_caliper(&cfg.track, cfg.min_width)?;
-    validate_caliper(&cfg.measure, cfg.min_width)?;
+    for c in [&cfg.track, &cfg.measure] {
+        validate_caliper(c, cfg.min_width)?;
+        let e = strip_extent(c, cfg);
+        if e.samples * e.across > MAX_STRIP_SAMPLES {
+            return Err(Error::InvalidConfig(
+                "bead strips would average more than 2^22 samples: lower max_offset, \
+                 max_width, clearance or half_width, or raise the step",
+            ));
+        }
+    }
     validate_tuning(&cfg.tuning)
 }
 
