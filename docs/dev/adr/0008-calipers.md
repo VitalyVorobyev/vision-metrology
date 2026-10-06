@@ -59,8 +59,8 @@ whether the result is unbiased:
   radius depending on phase, so it cannot assert subpixel accuracy. Fixtures are anti-aliased.
 - **Background-padding and centreline-refinement gates.** These are properties of a tracked
   contour, not of a caliper: refining centres from a rough polyline and re-measuring from the
-  refined one, and requiring clean background beyond each edge. They belong in a bead/stripe
-  tool built on `measure`.
+  refined one, and requiring clean background beyond each edge. They belong in the bead
+  tracker built on `measure` ([ADR-0018](0018-tracked-curves.md)).
 
 ## Consequences
 
