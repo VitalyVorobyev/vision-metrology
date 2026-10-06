@@ -99,8 +99,9 @@ fn chord_tangents_are_exact_on_a_circle() {
     let h = 2.0 * r * (0.5 * step).sin();
     let (window, mut tan) = (10.0, Vec::new());
     chord_tangents(&pts, h, window, &mut tan);
-    let reach = (window / h).ceil() as usize;
-    for (i, t) in tan.iter().enumerate().take(61 - reach).skip(reach) {
+    // Near the ends the window shrinks and stays centred, so every station but the two
+    // ends is exact.
+    for (i, t) in tan.iter().enumerate().take(60).skip(1) {
         let a = i as f64 * step;
         let truth = [-a.sin(), a.cos()];
         let err = (t[0] - truth[0]).hypot(t[1] - truth[1]);
@@ -110,7 +111,7 @@ fn chord_tangents_are_exact_on_a_circle() {
     let mut kappa = Vec::new();
     curvature(&tan, h, &mut kappa);
     // κ reads the neighbours' tangents, so one station further in.
-    for (i, k) in kappa.iter().enumerate().take(60 - reach).skip(reach + 1) {
+    for (i, k) in kappa.iter().enumerate().take(59).skip(2) {
         let rel = (k * r - 1.0).abs();
         assert!(rel < 1e-3, "station {i}: κ·R = {}", k * r);
     }
