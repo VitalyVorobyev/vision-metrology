@@ -40,7 +40,10 @@ edge, and orange at the start, where the step lies within `clearance` of the bea
 - **Use `laser` instead** for a stripe that stays roughly parallel to an image axis: it
   scans rows or columns and needs no prior.
 - **It does not cover:** closed or branching curves, or finding a bead with no prior at
-  all.
+  all. For a first frame without a reference part, a CAD or robot path or a taught
+  frame, any detector that returns a path within the reach will do: a skeletonised
+  ridge filter is enough on a clean part, because the tracker measures the centre and
+  width itself ([finding a bead without a prior](performance.md#finding-a-bead-without-a-prior)).
 
 ```rust
 use vision_metrology::measure::{BeadConfig, BeadTracker};
@@ -109,6 +112,16 @@ Keeping the stages apart is what lets the search be generous while the reported
 dimensions stay strict:
 - a pair that only the wide tracking search accepts cannot reach the result;
 - each stage keeps its own caliper, whose profile length is fixed for the stage.
+
+The final stage's defaults suit clean edges. On rough or faint ones, such as the walls
+of a crack, they reject stations the tracking found:
+- the obliquity gate, because a rough wall's gradient direction is not a reliable test.
+  Most of those stations are rejected as `NoPair`, one edge of the pair having failed it;
+- the threshold, as `Caliper(NoEdge)`.
+
+There, switch the gate off (`measure.max_obliquity_deg = 180`) and lower
+`measure.threshold`. Neither changes where the curve goes, only how many stations
+report a measurement ([on real cracks](performance.md#real-data-bead-tracking-on-damsegment-cracks)).
 
 A strip's endpoints are stored in `f32`, so the spacing of its samples, and with it σ in
 samples, differs between stations by a few ulps. Each caliper therefore refills its
@@ -485,6 +498,8 @@ raises `ValueError`. A missing bead does not raise: every station is rejected.
 - [Bead tracking on real cracks](performance.md#real-data-bead-tracking-on-damsegment-cracks):
   how often the tracker locks onto a concrete crack from a perturbed prior, and how it
   fails when it does not.
+- [Finding a bead without a prior](performance.md#finding-a-bead-without-a-prior): ridge
+  detectors as the source of a first prior, and how the tracker does from what they find.
 
 [`BeadTracker`]: ../crates/vision-metrology/src/measure/bead/mod.rs
 [`TrackedBead`]: ../crates/vision-metrology/src/measure/bead/result.rs

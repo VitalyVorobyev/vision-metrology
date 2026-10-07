@@ -45,6 +45,61 @@ deleted here.
   The radius can flip between neighbours (3↔4), and edge positions move by about 1e-4 px.
   A nominal-spacing option on strips, which converts σ with `step` as rect calipers do,
   would remove both.
+- **Bead ends.** With a prior that runs onto the bead's square end, the end station can
+  pair noise. In 1 trial of 270 this swung the curve's end by about 7 px, and the robust
+  loss did not stop it.
+  - Options: a per-end support check, a down-weighted or frozen end once its station
+    loses support, or a reported end status.
+  - Needs a design; tangential end extension is not observable with normal searches.
+- **A distractor within about 2 px of a bead's edge merges with it.** The edge detector
+  sees one edge, so `clearance` never sees the distractor, and the width reads about
+  0.4 px short. `docs/bead.md` documents it. A fix would need a profile-shape check, such
+  as edge symmetry, or a two-edge model.
+- **Silent wrong locks on a textured surface.** On DamSegment cracks, 91% of the calls
+  that fail to lock still report a support of at least 0.5. `tools/bead_eval/signals.py`
+  measured every per-call signal against the lock, over 5400 calls on 300 paths:
+  - the AUC is 0.71 for support, 0.68 for `longest_gap`, 0.59 for `center_rms` and 0.48
+    for the median `BeadHit::confidence`;
+  - `min_margin` 0.1, 0.2 or 0.3 does not help: support's AUC is 0.66–0.68 and the lock
+    rate rises from 85% to 86%;
+  - a support threshold that keeps 90% of the locked calls passes 65% of the others.
+
+  A wrong lock is typically another dark line in the window, a pit, a shadow or a
+  parallel crack, measured as well as the crack would be, so no signal of the pair or of
+  the fit can see it. A fix needs evidence from outside the station: the profile's
+  contrast and width against the previous frame's, a second line in the window as an
+  ambiguity flag over the whole call, or an appearance check along the curve. Needs a
+  design, and a dataset whose truth is the dark line, not a mask.
+- **`Converged` almost never fires on real data.** 99.9% of DamSegment calls stop on
+  `PassLimit`, because `max|d| < tol` (0.05 px) is far below a rough crack's station
+  noise. With 10 passes the median rms correction levels off near 0.09 px, about a
+  tenth of the residual, and the median largest near 0.33 px; 13% of those calls
+  converge. At the third pass, the candidate tests hold for:
+  - `rms(d) < tol`: 1% of calls; `rms(d) < 2·tol`: 13%;
+  - `max|d| < residual_rms / 2`: 19%; `rms(d) < residual_rms / 10`: 3%.
+
+  Options: an rms test, a test relative to the pass's residual, or keeping `max|d|` and
+  documenting `PassLimit` as the normal outcome on rough edges. Changing what
+  `Converged` means is an API-semantics decision for the user. The numbers are in
+  `signals.py`'s report (`--passes 10` for the long runs).
+- **Acquisition without a prior** is not built ([ADR-0018](adr/0018-tracked-curves.md)).
+  The recommendation is not to build a Rust ridge module now. The evaluation
+  (`tools/bead_eval/acquire_eval.py`, numbers in
+  [`docs/performance.md`](../performance.md#finding-a-bead-without-a-prior)) showed that a
+  detected path seeds the tracker as well as the truth does, so a ridge detector's
+  sub-pixel output adds nothing; the open problem is choosing the bead among other
+  lines. What would change the answer:
+  - an inspection case with no prior source at all (no reference part, CAD or robot
+    path, or taught frame), in a deployment that cannot run a Python or OpenCV detector
+    for the first frame;
+  - a selection rule that works on real images: width, polarity and contrast gates, or a
+    region, that leave one candidate per bead. The evaluation is the place to try one;
+  - `filter` landing with recursive Gaussian derivatives, which would make a
+    full-image Hessian at a wide bead's scale cheap to build.
+
+  If built, it should be its own module, never on the prior-driven path, with sub-pixel
+  centre and width from the Hessian (Steger), scale selection over a real scale space
+  (ADR-0016), a stated junction scope, accuracy rows and a bench.
 - **`MeasureArc` obliquity** is checked against the arc tangent, which is right for
   features crossing the arc. A mode that measures the arc's own edge would check the
   radial direction.

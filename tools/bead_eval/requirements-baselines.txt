@@ -1,0 +1,5 @@
+# Optional baselines for acquire_eval.py; the scripts skip a missing one.
+# ridge-detector is MIT-licensed and describes itself as an adaptation of the GPL ImageJ
+# Ridge Detection plugin: it is used here as a black box only, and none of its code is
+# copied or adapted anywhere in this repository.
+ridge-detector>=0.1.4

@@ -1,8 +1,12 @@
 # Bead-tracker evaluation on real data
 
 Offline scripts that run `BeadTracker`, through the `vision_metrology` Python bindings, on
-real curvilinear structures: the cracks of the DamSegment dataset. They answer one
-question: does the tracker lock onto a real crack and follow it from a perturbed prior?
+real curvilinear structures: the cracks of the DamSegment dataset. They answer three
+questions:
+- does the tracker lock onto a real crack and follow it from a perturbed prior?
+- do its own quality signals tell a call that locked from one that did not?
+- without a prior, can a ridge detector find candidate centrelines good enough to seed
+  it ([acquisition](#acquisition-without-a-prior))?
 
 This is **development tooling**, not a library demo, and it is not run in CI. For
 runnable library examples see [`examples/python/`](../../examples/python).
@@ -21,6 +25,7 @@ which is validated on synthetic fixtures with exact ground truth
 ```bash
 python -m venv tools/bead_eval/.venv && . tools/bead_eval/.venv/bin/activate
 pip install -r tools/bead_eval/requirements.txt
+pip install -r tools/bead_eval/requirements-baselines.txt   # optional, for acquire_eval.py
 # the bindings, built from this checkout into the active venv:
 (cd crates/vm-python && maturin develop --release)   # or: pip install ./crates/vm-python
 ```
@@ -74,6 +79,8 @@ The steps hand over through files there, so any step can be re-run alone:
 | `runs/tracker/…/*.npz`, `meta.json` | `run_tracker.py` | every call's refined curve, widths, reasons, summary and time |
 | `runs/active_contour/…` | `baselines.py` | the same, for the baseline |
 | `report.md`, `report.json`, `overlays/*.png` | `report.py` | the metrics, and a few overlays for a look |
+| `signals_report.md`, `signals_report.json` | `signals.py` | whether the tracker's own signals separate locked calls, and how close they come to `Converged` |
+| `acquire_report.md`, `acquire_report.json`, `acquire_overlays/*.png` | `acquire_eval.py` | acquisition without a prior, and tracking from what it found |
 
 Never commit anything from the output directory.
 
@@ -135,6 +142,96 @@ Never commit anything from the output directory.
   - **false lock**: not locked, but with support of at least 0.5, so the tracker's own
     summary would not flag it;
   - **runtime**: the median per call.
+- **`signals.py`: the tracker's own signals.** On a seeded subset of paths (100 per
+  difficulty), every prior within the reach is tracked with `run_tracker.py`'s settings,
+  and again with `min_margin` 0.1, 0.2 and 0.3. For each signal (`support`, `center_rms`,
+  `longest_gap`, the median `confidence` of the final stage's hits, and the support with a
+  `min_margin`), it reports how well it separates the calls that locked from those that
+  did not: the AUC, and the share of unlocked calls that pass a threshold set to keep 90%
+  of the locked ones. It also reads every call's passes: the last solved pass's
+  correction and residual, and how often candidate stopping tests would hold at each
+  pass, with the median correction and residual at each pass. It writes
+  `signals_report.md` and `signals_report.json`.
+
+  ```bash
+  python -I tools/bead_eval/signals.py --data-dir $D   # about 1 min; after priors.py
+  python -I tools/bead_eval/signals.py --data-dir $D --passes 10 --name signals_10pass
+  ```
+
+## Acquisition without a prior
+
+`acquire_eval.py` asks whether candidate centrelines found from the image alone, with no
+prior, are good enough to seed the tracker. It is an evaluation, not a library feature.
+The algorithmic reference is C. Steger, "An Unbiased Detector of Curvilinear
+Structures", *IEEE PAMI* 20(2), 1998.
+
+```bash
+pip install -r tools/bead_eval/requirements-baselines.txt   # optional: ridge-detector
+python -I tools/bead_eval/acquire_eval.py --data-dir $D --workers 6   # about 30 min; after paths.py
+python -I tools/bead_eval/acquire_eval.py --out-dir /tmp/acq --datasets synthetic   # no data needed
+```
+
+It writes `acquire_report.md`, `acquire_report.json`, and under `acquire_overlays/` three
+synthetic scenes with each detector's paths. Times are measured per image inside each
+worker; for timing, run with `--workers 1`.
+
+**The sources** (`acquire.py`), each with a sweep of threshold settings and one default
+whose paths are tracked:
+- **scikit-image's `sato` and `meijering` ridge filters**, at scales `w / (2√3)` and
+  `w / 2` for each expected width `w`. The response is thresholded with hysteresis: the
+  high threshold is the larger of Otsu's and `median + k·s`, where `s` is the median
+  absolute deviation scaled to a standard deviation, and the low one is halfway from the
+  median. Each `k` in 2, 3, 5 and 8 is a setting; 3 is the default. The mask then goes
+  through `paths.py`'s skeleton graph, so the paths are non-branching. Their width is the
+  mask's `2 · EDT − 1`, which says more about the threshold than about the line.
+- **`ridge-detector`**, optional, from `requirements-baselines.txt`: a multi-scale
+  detector after Steger, with sub-pixel points and widths. It is MIT-licensed but
+  describes itself as an adaptation of the GPL ImageJ Ridge Detection plugin, so it is
+  used as a black box only, through its public calls. Nothing of it is copied or adapted
+  here, and nothing derived from it may go into the library. Two of its behaviours are
+  worked around from outside:
+  - a dark line is passed as a light line on the inverted image, where its contrast
+    thresholds mean what they say;
+  - it rounds its contrast thresholds down to a whole number of a unit that grows with
+    the line width (about 19 grey levels at 8 px), so for a wide line they round to 0.
+    It therefore runs on the image mean-pooled by `ceil(w_max / 8)`, and its points and
+    widths are scaled back.
+
+  Its settings are the low and high contrasts 10/20, 20/40 and 40/80 grey levels; 20/40
+  is the default. When it is not installed, the script says so and skips it.
+
+**The data.**
+- **Synthetic ribbons** (`ribbons.py`), 1280×1024, rendered in numpy with exact truth: the
+  model of the library's own test fixture, a light ribbon of contrast 60 DN on 80 DN,
+  blurred across by σ 1 px. A line, an arc (R 300 px) and a sine (amplitude 40 px, period
+  400 px), each 3, 8 and 30 px wide, under four conditions: clean (noise 2 DN), noisy
+  (8 DN), a distractor (a 40 DN step 10 px beyond the ribbon's edge, parallel to its
+  chord), and a 30 px gap. Two noise seeds each, 72 images. The sources expect the true
+  width.
+- **DamSegment cracks**, 640×640, against `paths.py`'s reference paths. The sources
+  expect dark lines 3, 5 and 8 px wide, the range of the visible cracks.
+
+**The metrics,** per source and setting:
+- **recall**: the share of reference paths with at least 80% of their length within
+  `max(2 px, w/2)` of an acquired path. **One-path recall** asks it of a single acquired
+  path, which is what a prior needs;
+- **precision**: the share of acquired length near a reference. On DamSegment that is
+  within 1 px of the crack mask, so an unannotated dark line, such as a formwork seam,
+  counts against it;
+- **centre error**: each acquired point near a reference, its distance to it;
+- **width**: the source's estimate there, against the truth or the mask width;
+- **time** per image, of the whole acquisition and of the filter alone. The skeleton
+  graph is pure Python, so the filter time is the part a compiled implementation would
+  compete with.
+
+**Acquire, then track.** Each reference path that one acquired path covers (one-path
+recall) is tracked three times with the same settings: from that acquired path, cut to
+its longest run within the tolerance; from the reference itself; and from the reference
+translated 4 px across its chord, with `priors.py`'s seeded sign. The synthetic ribbons
+use the library's defaults with a width range of `0.5w` to `1.5w`, and DamSegment uses
+`run_tracker.py`'s settings. The metrics are `report.py`'s, with *converged* measured
+against the run from the reference itself. Cutting the acquired path uses the reference,
+so this measures how good a found path is as a prior, not how to pick the right one.
 
 ## GAN_Synth_Adhesive: local, qualitative use only
 

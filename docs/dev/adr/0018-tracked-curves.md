@@ -1,7 +1,7 @@
 # ADR-0018: Tracked curves: a prior, two caliper stages and a regularised normal solve
 
 - Status: Accepted
-- Date: 2026-10-06
+- Date: 2026-10-07
 
 ## Context
 
@@ -95,12 +95,33 @@ bead-specific gates out of `Caliper`.
   `diagnostics::explain_bead` therefore returns `track`'s result to the bit, with each
   station's evidence beside it.
 - **Scope.** The tool handles open, non-branching curves that have a prior. It does not
-  cover:
-  - closed or branching curves;
-  - curved strip placements;
-  - acquisition without a prior, meaning candidate centrelines found from the image alone
-    (e.g. a Steger ridge detector). Acquisition is a separate mode, evaluated offline
-    before any decision, and it must not slow the prior-driven path.
+  cover closed or branching curves, or curved strip placements.
+- **Acquisition without a prior is not built as a library module.** Acquisition means
+  candidate centrelines found from the image alone, for a first frame or a lost track,
+  for example by a Steger ridge detector. The caller supplies the first prior: a
+  reference part, a CAD or robot path, a taught frame, or any offline detector. The
+  reasons come from an offline evaluation of ridge detectors as prior sources, on
+  synthetic beads and on real cracks:
+  - **The tracker does not need a precise prior.** It needs a path within its reach. From
+    a skeleton-level path, it ends on the same curve as from the true centreline. The
+    sub-pixel centre and width that set a Steger detector apart are what the tracker
+    already measures.
+  - **The hard part is choosing, and a ridge detector does not choose.** On a clean part
+    every detector tried finds the bead, and some also report an edge beside it or noise
+    ridges. On a textured surface, ridge evidence finds most of the line, but broken at
+    gaps and junctions and among many other dark lines. Picking the bead out of those
+    takes knowledge of where it runs, how wide it is and how it contrasts: a prior in
+    another form.
+  - **A lost track has a prior: the last good result.** Re-tracking from it with a wider
+    reach searches a band around a known path, with the existing tool. On a textured
+    surface the band can hold other lines, which is the same choice again, but over a
+    band instead of the whole image.
+  - **The cost is the image, not the bead.** A ridge detector filters the whole image
+    with kernels as wide as the bead. The tracker is built to cost in proportion to its
+    profiles. A correct detector also needs a real scale space (ADR-0016), line linking
+    and junction handling: a module with its own accuracy obligations and bindings.
+
+  The backlog records what would reopen this.
 
 ## Alternatives
 
@@ -119,6 +140,8 @@ bead-specific gates out of `Caliper`.
 - **A dense solve.** It costs O(N³) per reweighting iteration.
 - **Global acquisition on every frame.** It spends full-image work on an answer the prior
   already gives.
+- **A built-in ridge detector for the first frame.** It is rejected for the reasons in the
+  Decision.
 
 ## Consequences
 
@@ -135,3 +158,5 @@ bead-specific gates out of `Caliper`.
   curve fits.
 - Strips are straight, and on a curved bead their averaging biases the centre towards the
   concave side. The bias grows with the strip's half width and falls with the radius.
+- The first prior is the caller's. `tools/bead_eval/acquire_eval.py` keeps the acquisition
+  evaluation, so the decision can be re-run against a new case.
