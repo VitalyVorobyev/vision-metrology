@@ -323,9 +323,20 @@ How to read them:
   - Three passes almost never bring every station's correction under `tol` on a rough
     crack: 99.9% of calls stop on `PassLimit`. On a subset of 387 paths, 6 or 10 passes
     raise converged by 6 to 12 points and lower locked by 2 to 3.
+  - The corrections shrink from pass to pass, then level off. On 300 paths with 10
+    passes, the median rms correction falls from 0.25 px at the third pass to 0.09 px at
+    the tenth, about a tenth of the stations' scatter about the solved curve, and the
+    median largest correction to 0.33 px. Only 13% of those calls end `Converged`.
 - **Failure is mostly silent.** 91% of the calls that do not lock still report a support
   of at least 0.5: a median of 0.84, against 0.94 for a call that locked. Neither
   support, `center_rms` nor `longest_gap` tells the two apart well.
+  - Nor do the final stage's `confidence` or a `min_margin`. Over 5400 calls on 300 paths,
+    the chance that a locked call scores better than one that did not (the AUC) is 0.71
+    for support, 0.68 for the longest gap, 0.59 for `center_rms` and 0.48 for the
+    median `confidence`. With a `min_margin` of 0.1 to 0.3, it is 0.66 to 0.68 for
+    support, and one more call in a hundred locks.
+  - A support threshold that keeps 90% of the locked calls still passes 65% of those
+    that did not lock.
   - Beyond the reach, the tracker takes the next dark structure for the crack: a pit, a
     shadow, a parallel crack. It measures that structure as it would the bead.
   - The synthetic fixtures have nothing beyond the reach to lock onto. On a textured
@@ -349,6 +360,99 @@ How to read them:
 The dataset is not distributed with this repository.
 [`tools/bead_eval/README.md`](../tools/bead_eval/README.md) downloads it and reproduces the
 numbers.
+
+## Finding a bead without a prior
+
+The tracker needs a prior within its reach. For a first frame with no reference part, CAD
+or robot path or taught frame, something else has to find the bead. These runs measure
+how well a ridge detector does that, and whether what it finds is a good prior. They are
+an offline evaluation with Python packages, not a library feature.
+
+**The detectors,** each given the bead's expected width:
+- scikit-image's `sato` and `meijering` ridge filters, at scales of `w/(2√3)` and `w/2`.
+  The response is thresholded with hysteresis, relative to its median and spread, then
+  skeletonised and split at junctions into non-branching paths. Their width is the
+  thresholded mask's;
+- [`ridge-detector`](https://pypi.org/project/ridge-detector/), a Python implementation
+  after C. Steger's detector ("An Unbiased Detector of Curvilinear Structures", *IEEE
+  PAMI* 20(2), 1998), with sub-pixel points and widths. On a bead wider than 8 px it runs
+  on a mean-pooled image, because its contrast thresholds round to 0 at large scales.
+
+**Synthetic beads,** 1280×1024 with exact truth: a light ribbon of 60 DN contrast, blurred
+by σ 1 px, along a line, an arc (R 300 px) or a sine; 3, 8 or 30 px wide. Each is
+rendered clean (2 DN of noise), noisy (8 DN), beside a 40 DN step edge 10 px beyond the
+bead, or broken by a 30 px gap, with two noise seeds: 72 images. *Found* means at least
+80% of the bead within `max(2 px, w/2)` of one path; *precision* is the share of found
+length that lies on the bead.
+
+| Detector | Found, without a gap | Precision: clean / noisy / beside the step | Centre, median / p95 | Width read at 3 / 8 / 30 px | Time per image at 3 / 8 / 30 px |
+|---|---:|---:|---:|---:|---:|
+| `sato` | 100% | 100% / 100% / 62% | 0.12 / 1.99 px | 2.6 / 7.1 / 29.6 px | 0.39 / 0.21 / 0.57 s |
+| `meijering` | 100% | 100% / 100% / 39% | 0.12 / 1.40 px | 2.6 / 7.1 / 29.3 px | 0.41 / 0.23 / 0.59 s |
+| `ridge-detector` | 100% | 100% / 7% / 100% | 0.03 / 0.54 px | 4.1 / 8.4 / 31.4 px | 1.3 / 1.3 / 0.09 s |
+
+Each found path, cut to where it lies on the bead, is then the prior of a `track` call
+with the default config and a width range of `0.5w` to `1.5w`. *Locked* means 90% of the
+stations within `w/2 + 1 px` of the true centreline, and *converged* 90% within 1 px of the
+curve tracked from the true centreline:
+
+| Prior | Calls | Refined centreline, median / p95 from the truth | Locked | Converged |
+|---|---:|---:|---:|---:|
+| found by `sato` | 60 | 0.033 / 0.147 px | 100% | 100% |
+| found by `meijering` | 54 | 0.037 / 0.139 px | 100% | 100% |
+| found by `ridge-detector` | 54 | 0.022 / 0.148 px | 100% | 100% |
+| the true centreline | 60 | 0.018 / 0.111 px | 100% | – |
+| the true centreline, moved 4 px | 60 | 0.018 / 0.108 px | 100% | 100% |
+
+**Real cracks.** The same detectors on the DamSegment images and reference paths of the
+section above (Gharehbaghi et al., [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)),
+expecting dark lines 3, 5 and 8 px wide. *Precision* is the share of found length within
+1 px of the crack mask, so an unannotated dark line, such as a formwork seam, counts
+against it. Each found piece is tracked with the config of the section above:
+
+| Detector, setting | Cracks touched | Found in one piece | Precision | Paths per image | Time per image | Tracked from a found piece: locked / converged |
+|---|---:|---:|---:|---:|---:|---:|
+| `sato`, threshold 3 | 38% | 14% | 14% | 113 | 0.29 s | 99% / 91% |
+| `sato`, threshold 8 | 20% | 8% | 35% | 26 | 0.22 s | – |
+| `meijering`, threshold 3 | 42% | 15% | 20% | 85 | 0.28 s | 100% / 89% |
+| `ridge-detector`, contrast 20/40 | 81% | 24% | 5% | 508 | 1.8 s | 99% / 83% |
+
+*Touched* asks for 80% of a crack's reference path within `max(2 px, w/2)` of any found
+path, *found in one piece* of a single path. The threshold is in robust deviations of the
+filter's response above its median. From the reference path itself, the same cracks lock
+in 96–97% of the calls, and from a 4 px translation of it, 95% lock and 82–88% converge.
+
+How to read them:
+- **On a clean part every detector finds the bead, and what it finds is as good a prior as
+  the truth.** The tracker ends on the curve it reaches from the true centreline.
+  - A skeleton path, a tenth of a pixel off the centre at the median and up to 2 px at
+    the 95th percentile, is enough: the tracker measures the centre and the width
+    itself. Steger's sub-pixel centre adds nothing the tracker needs.
+  - From a skeleton path, the refined curve keeps a little of its pixel-scale wiggle
+    after three passes: 0.033 px against 0.018 px from the truth
+    ([limitations](bead.md#limitations)).
+- **Each detector also reports what is not the bead.**
+  - `meijering` at every width, and `sato` mostly at 30 px, follow the step edge.
+  - `ridge-detector` passes noise ridges at its default contrast on the noisy 3 px bead,
+    about 1100 paths per image; its strictest setting removes them.
+  - A gap breaks the bead into two paths, except under `sato` at 30 px, whose 15 px scale
+    bridges it.
+- **On cracks, the choice is the problem.** `ridge-detector` touches 81% of the cracks,
+  but among about 500 paths per image, and only a quarter of the cracks come out in one
+  piece. The filters find fewer cracks and fewer other lines. No setting gives both.
+- **A found piece seeds the tracker as well as the annotation does.** From a found piece,
+  99–100% of the calls lock, and 83–91% end on the curve tracked from the reference path,
+  against 82–88% from a 4 px translation of it. The piece is cut to the crack with the
+  reference's help, so these rows measure how good a found path is as a prior, not how
+  to choose it.
+- **The detectors filter the whole image at the bead's scale.** In scikit-image, the
+  filter alone takes 0.15–0.53 s per 1280×1024 image and 0.18–0.20 s per 640×640 crack
+  image, on one core, against 0.27 ms for a `track` call on a crack. Times are medians,
+  measured one image at a time.
+
+The dataset is not distributed with this repository.
+[`tools/bead_eval/README.md`](../tools/bead_eval/README.md#acquisition-without-a-prior)
+reproduces these numbers.
 
 ## Real data: shape matching
 

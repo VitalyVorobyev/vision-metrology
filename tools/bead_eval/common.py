@@ -311,6 +311,70 @@ def project(points: np.ndarray, ref: np.ndarray) -> tuple[np.ndarray, np.ndarray
     return d[rows, k], s, inside
 
 
+class PolylineIndex:
+    """Closest points on a set of polylines, for many query points at once.
+
+    `project` above compares every point with every segment, which is fine for one path
+    and too slow for a whole image. Here the polylines are resampled at `step` px, a k-d
+    tree finds each query's nearest vertex, and the segments on either side of that
+    vertex give the closest point."""
+
+    def __init__(self, curves: list[np.ndarray], step: float = 0.5):
+        from scipy.spatial import cKDTree
+
+        dense = [resample(np.asarray(c, dtype=np.float64), step) for c in curves if len(c) >= 2]
+        self.empty = not dense
+        if self.empty:
+            return
+        self.pts = np.concatenate(dense)
+        self.which = np.concatenate([np.full(len(c), i) for i, c in enumerate(dense)])
+        self.s = np.concatenate([arc_length(c) for c in dense])
+        self.last = np.concatenate([np.arange(len(c)) == len(c) - 1 for c in dense])
+        self.tree = cKDTree(self.pts)
+
+    def query(
+        self, points: np.ndarray, upper: float = np.inf
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """For each point: the distance to the nearest polyline (`inf` beyond `upper`),
+        that polyline's index, the arc length of the closest point along it, and whether
+        the closest point is one of its ends."""
+        points = np.asarray(points, dtype=np.float64).reshape(-1, 2)
+        n = len(points)
+        d = np.full(n, np.inf)
+        which = np.full(n, -1)
+        s = np.full(n, np.nan)
+        at_end = np.zeros(n, dtype=bool)
+        if self.empty or n == 0:
+            return d, which, s, at_end
+        d0, k = self.tree.query(points, distance_upper_bound=upper)
+        ok = np.isfinite(d0)
+        k = np.where(ok, k, 0)
+        d[ok] = d0[ok]
+        which[ok] = self.which[k[ok]]
+        s[ok] = self.s[k[ok]]
+        first = np.concatenate([[True], self.which[1:] != self.which[:-1]])
+        at_end[ok] = (first | self.last)[k[ok]]
+        # The segments k-1..k and k..k+1, where both ends lie on the same polyline.
+        for a_idx in (k - 1, k):
+            b_idx = a_idx + 1
+            valid = ok & (a_idx >= 0) & (b_idx < len(self.pts))
+            a_c, b_c = np.clip(a_idx, 0, len(self.pts) - 1), np.clip(b_idx, 0, len(self.pts) - 1)
+            valid &= self.which[a_c] == self.which[b_c]
+            a, b = self.pts[a_c], self.pts[b_c]
+            ab = b - a
+            len2 = np.maximum(np.einsum("ij,ij->i", ab, ab), 1e-12)
+            u = np.einsum("ij,ij->i", points - a, ab) / len2
+            uc = np.clip(u, 0.0, 1.0)
+            dd = np.hypot(*(points - a - uc[:, None] * ab).T)
+            better = valid & (dd < d)
+            d[better] = dd[better]
+            s[better] = self.s[a_c[better]] + uc[better] * np.sqrt(len2[better])
+            at_end[better] = (
+                (first[a_c] & (u <= 0.0)) | (self.last[b_c] & (u >= 1.0))
+            )[better]
+        return d, which, s, at_end
+
+
 def angle_error_deg(t_a: np.ndarray, t_b: np.ndarray) -> np.ndarray:
     """Unsigned angle between line directions, in degrees, in [0, 90]."""
     c = np.abs(np.einsum("ij,ij->i", t_a, t_b))

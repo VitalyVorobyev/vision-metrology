@@ -1,7 +1,7 @@
 # ADR-0016: Scope: what this library deliberately does not build
 
 - Status: Accepted
-- Date: 2026-08-19
+- Date: 2026-10-07
 
 ## Context
 
@@ -25,6 +25,8 @@ These are out of scope until a concrete inspection case needs them:
 - **A multi-scale edge detector without a real scale space.** A box-mean pyramid with a
   fixed-σ derivative of Gaussian is not a scale space. Scale selection, if needed, gets
   designed as one.
+- **A ridge detector for acquisition without a prior.** A tracked curve's first prior is
+  the caller's; ADR-0018 gives the reasons.
 
 ## Alternatives
 

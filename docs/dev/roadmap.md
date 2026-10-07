@@ -8,32 +8,13 @@ scheduled lives in [`backlog.md`](backlog.md).
 ## Where the library stands
 
 The measurement chain runs end to end on real data: rectify → locate → fixture → calipers
-→ robust fit → millimetres → pass/fail ([system design](system-design.md)). The work ahead
-is the bead tracker, then the first release, then the remaining gaps: accuracy coverage,
-blob features, `filter`, the lab's package catch-up and bindings.
+→ robust fit → millimetres → pass/fail ([system design](system-design.md)). Beads and
+stripes are tracked along a prior curve and measured station by station
+([ADR-0018](adr/0018-tracked-curves.md)). The work ahead is the first release, whose API
+review covers the bead tracker, then the remaining gaps: accuracy coverage, blob
+features, `filter`, the lab's package catch-up and bindings.
 
 ---
-
-## M10: bead tracking, `in progress`
-
-`measure::BeadTracker` refines a prior centreline from caliper edge pairs and measures on
-the refined curve ([ADR-0018](adr/0018-tracked-curves.md)), with Python parity and a user
-guide. The release waits for the rest, so the API review covers it.
-
-- Accuracy rows for the final centre, the final width and the tracked curve. A
-  convergence-basin sweep against translation, rotation, smooth and local deformation of
-  the prior.
-- A bench at 100–300 poses: search length, 1 vs 3 passes, valid vs partly invalid.
-- An example with an overlay, and a Python example.
-- Offline tooling under `tools/`:
-  - a robustness evaluation on DamSegment crack masks, whose truth is pixel-level only;
-  - an evaluation of ridge-based acquisition (no prior), ending in a recorded decision.
-
-**Accept:**
-- each accuracy row has an envelope at about 1.5× the measured value;
-- the basins and bench numbers are in `docs/performance.md`;
-- the example runs in CI;
-- the acquisition decision is recorded in ADR-0018.
 
 ## R: first release (v0.2.0), `in progress`
 

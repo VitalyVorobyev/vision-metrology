@@ -114,6 +114,10 @@ are relative to 0.1.0.
     `BeadTracker.explain(image, prior)` returns a `vm.BeadTrace`: each pass as a
     `vm.BeadPassTrace` of per-station arrays with a `vm.CaliperTrace` per station, and the
     final stage as `vm.BeadStationTrace`s.
+  - `docs/performance.md` gives the tracker's accuracy, convergence basins and speed, how
+    it behaves on real concrete cracks (the DamSegment dataset), and how well a ridge
+    detector finds a prior when there is none. `tools/bead_eval/` reproduces the
+    real-data numbers offline.
 - **Robust fitting** (`fit`): `fit_line`, `fit_circle` (Taubin then Gauss–Newton) and
   `fit_ellipse`, with `RobustLoss::{Huber, Tukey}` (annealed) and `RansacConfig`. Every fit
   reports `rms`, `max_dev` and `n_used`.
