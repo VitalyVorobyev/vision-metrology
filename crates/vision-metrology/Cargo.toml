@@ -195,6 +195,10 @@ name = "corr"
 required-features = ["corr"]
 
 [[test]]
+name = "translation_alloc"
+required-features = ["corr"]
+
+[[test]]
 name = "glue_displacement"
 required-features = ["corr"]
 

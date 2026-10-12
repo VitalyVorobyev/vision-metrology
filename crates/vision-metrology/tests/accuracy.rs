@@ -51,6 +51,9 @@ mod ribbon;
 #[path = "accuracy/bead.rs"]
 mod bead;
 
+#[path = "accuracy/translation.rs"]
+mod translation;
+
 // ── shared fixtures ──────────────────────────────────────────────────────
 
 /// A tiny seeded xorshift64* — deterministic noise without an external RNG
@@ -1332,6 +1335,18 @@ struct Row {
 /// chord) with 10% gross outliers, where RANSAC's own consensus metric
 /// becomes ambiguous among near-collinear points.
 const ROWS: &[Row] = &[
+    Row {
+        name: "translation_masked",
+        measure: translation::sweep,
+        bias_envelope: 0.14,
+        sigma_envelope: 0.016,
+    },
+    Row {
+        name: "translation_masked_clean",
+        measure: translation::clean,
+        bias_envelope: 0.002,
+        sigma_envelope: 0.000001,
+    },
     Row {
         name: "edge1d_position",
         measure: edge1d_sweep,

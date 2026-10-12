@@ -43,3 +43,6 @@ pub use lsd::LsdConfig;
 pub use matching::{Contrast, ShapeModelConfig, ShapeSearchConfig, ShapeSearchTuning};
 pub use measure::{Locate, MeasureConfig};
 pub use scale::{LogPolarScaleConfig, MomentScaleConfig, ScaleInvariantConfig};
+
+mod translation;
+pub use translation::{TranslationConfig, TranslationTuning};

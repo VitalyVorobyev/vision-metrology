@@ -22,13 +22,17 @@
 //! confirmation at a pose another stage already found) and `matching` for
 //! teach-and-find under unknown pose.
 //!
-//! # `u8`-only
+//! # Pixel types
 //!
 //! Both [`CorrTemplate::from_image`] and [`displacement`] take
 //! `ImageView<'_, u8>` only — no `Pixel` generic pretense. corrmatch's
 //! published API (0.2.5) is `u8`-only; `u16`/`f32` support belongs in
 //! corrmatch itself, not in a wrapper that would have to quantize its way
 //! around it and misreport the precision.
+//!
+//! [`TranslationEstimator`] is a specialized native two-mask registration operator,
+//! generic over `u8`, `u16` and `f32`. It reports typed acceptance, photometry,
+//! covariance and regional consistency; it does not change the ordinary matcher.
 //!
 //! # Quick start
 //!
@@ -52,6 +56,7 @@ mod adapter;
 mod config;
 mod displacement;
 mod template;
+mod translation;
 
 pub use config::{
     CorrConfig, CorrMetric, CorrSearchTuning, CorrTemplateConfig, CorrTemplateTuning,
@@ -59,3 +64,6 @@ pub use config::{
 };
 pub use displacement::{Displacement, displacement};
 pub use template::{CorrMatch, CorrTemplate, find, find_topk};
+pub use translation::{
+    Translation, TranslationConfig, TranslationEstimator, TranslationStatus, TranslationTuning,
+};

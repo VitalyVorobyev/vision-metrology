@@ -15,6 +15,11 @@ are relative to 0.1.0.
 
 ### Added
 
+- **Masked subpixel translation** (`corr::TranslationEstimator`): reusable scratch,
+  independent per-image validity masks, bounded spatial registration with gain/offset
+  refinement, typed acceptance, photometric residuals, covariance and regional motion
+  consistency. Generic over u8/u16/f32, with Python bindings and allocation/accuracy gates.
+
 - **Shape-based object detection** (`matching`).
   - `ShapeModel` / `ShapeMatcher`: gradient-orientation similarity with
     `Polarity::{Match, IgnoreGlobal, IgnoreLocal}`, coarse-to-fine search over translation,

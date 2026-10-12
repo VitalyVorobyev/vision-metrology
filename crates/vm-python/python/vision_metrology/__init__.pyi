@@ -1241,6 +1241,51 @@ def load_table_calibration(source: Union[str, bytes]) -> List[Tuple[CameraModel,
 
 # ---------------------------------------------------------------------------
 # corr: cross-correlation matching + displacement
+
+class TranslationTuning:
+    max_levels: int
+    iterations: int
+    tolerance: float
+    huber: float
+    min_texture: float
+    def __init__(self, *, max_levels: int = 3, iterations: int = 12,
+                 tolerance: float = 0.005, huber: float = 1.5,
+                 min_texture: float = 1e-5) -> None: ...
+
+class TranslationConfig:
+    search_radius: int
+    min_support: int
+    min_score: float
+    min_margin: float
+    max_region_error: float | None
+    tuning: TranslationTuning
+    def __init__(self, *, search_radius: int = 12, min_support: int = 400,
+                 min_score: float = 0.5, min_margin: float = 0.02,
+                 max_region_error: float | None = 0.5,
+                 tuning: TranslationTuning | None = None) -> None: ...
+
+class Translation:
+    """Content motion; only status 'accepted' permits using shift as a fixture."""
+    shift: tuple[float, float] | None
+    score: float | None
+    margin: float | None
+    support: int
+    residual_rms: float | None
+    residual_max: float | None
+    gain: float | None
+    offset: float | None
+    covariance: tuple[float, float, float] | None
+    regions: int
+    region_error: float | None
+    status: str
+
+class TranslationEstimator:
+    """Masked subpixel registration. Python conversion copies inputs."""
+    def __init__(self, config: TranslationConfig | None = None) -> None: ...
+    def estimate(self, previous: ImageAny, current: ImageAny, *,
+                 previous_mask: ImageU8 | None = None,
+                 current_mask: ImageU8 | None = None,
+                 prediction: tuple[float, float] | None = None) -> Translation: ...
 # ---------------------------------------------------------------------------
 
 def find(

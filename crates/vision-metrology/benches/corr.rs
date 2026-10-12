@@ -23,7 +23,8 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 use vision_metrology::corr::{
-    CorrConfig, CorrTemplate, CorrTemplateConfig, DisplacementConfig, Refine, displacement, find,
+    CorrConfig, CorrTemplate, CorrTemplateConfig, DisplacementConfig, Refine, TranslationConfig,
+    TranslationEstimator, displacement, find,
 };
 use vision_metrology::{Image, Rect2f};
 
@@ -147,5 +148,70 @@ fn bench_displacement(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, bench_find, bench_displacement);
+fn bench_translation(c: &mut Criterion) {
+    for (w, h) in [(320, 97), (1280, 1024)] {
+        let texture = |dx: f32, dy: f32| {
+            Image::from_vec(
+                w,
+                h,
+                (0..w * h)
+                    .map(|i| {
+                        let x = (i % w) as f32 - dx;
+                        let y = (i / w) as f32 - dy;
+                        (100.0
+                            + 25.0 * (x * 0.17 + y * 0.13).sin()
+                            + 20.0 * (x * 0.08 - y * 0.21).cos()
+                            + 15.0 * (x * 0.31 + y * 0.07).sin()
+                            + 10.0 * (x * 0.03 + y * 0.39).cos())
+                        .round() as u8
+                    })
+                    .collect(),
+            )
+            .unwrap()
+        };
+        let a = texture(0.0, 0.0);
+        let b = texture(0.7, -0.3);
+        let mut mask = Image::new_fill(w, h, 1u8);
+        for y in h / 3..2 * h / 3 {
+            for x in w / 3..2 * w / 3 {
+                mask.data_mut()[y * w + x] = 0;
+            }
+        }
+        let cfg = TranslationConfig::default();
+        let mut estimator = TranslationEstimator::new();
+        let prepared = estimator
+            .estimate(
+                &a.as_view(),
+                &b.as_view(),
+                Some(&mask.as_view()),
+                Some(&mask.as_view()),
+                None,
+                &cfg,
+            )
+            .unwrap();
+        assert_eq!(
+            prepared.status,
+            vision_metrology::corr::TranslationStatus::Accepted,
+            "benchmark must exercise successful refinement: {prepared:?}"
+        );
+        c.bench_function(&format!("corr_translation_masked_{w}x{h}"), |bench| {
+            bench.iter(|| {
+                black_box(
+                    estimator
+                        .estimate(
+                            black_box(&a.as_view()),
+                            black_box(&b.as_view()),
+                            Some(&mask.as_view()),
+                            Some(&mask.as_view()),
+                            None,
+                            &cfg,
+                        )
+                        .unwrap(),
+                )
+            });
+        });
+    }
+}
+
+criterion_group!(benches, bench_find, bench_displacement, bench_translation);
 criterion_main!(benches);

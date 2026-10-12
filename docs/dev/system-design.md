@@ -40,6 +40,12 @@ acquire → [metric: undistort / rectify] → matching: locate → pose as fixtu
 to end on real frames; its reference numbers are in
 [`docs/performance.md`](../performance.md).
 
+`corr::TranslationEstimator` registers masked image content with explicit support,
+photometric residuals, uncertainty and motion-model diagnostics. It is a reusable
+operator, not a sequence or inspection framework. Callers transport geometry between
+native images; image filtering, annotations and reference learning stay outside it.
+The specialized two-mask algorithm is the narrow native exception in ADR-0011.
+
 ## Invariants
 
 Breaking an invariant is a design change: it needs an ADR, or an update to an existing one.

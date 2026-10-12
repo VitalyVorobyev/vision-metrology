@@ -39,6 +39,19 @@ Other operators:
 | `warp::Map::apply`, polar, 640×480, bilinear | 494 µs |
 | `corr::find`, VGA scene, 64×64 template, rotation off / on | 4.60 / 22.1 ms |
 | `corr::displacement`, 320×97 window, quadratic / + Lucas–Kanade | 1.60 / 1.71 ms |
+| `corr::TranslationEstimator`, prepared two-mask 320×97, successful refinement and regions | 2.92 ms |
+| `corr::TranslationEstimator`, prepared two-mask 1280×1024, successful refinement and regions | 124 ms |
+
+The masked translation timings were measured 2026-10-12 with 10 Criterion samples,
+1 s warmup and 2 s measurement request. Inputs are deterministic u8 analytic texture,
+with a central foreground exclusion, displacement `(0.7, −0.3)`, and default settings.
+The bench asserts acceptance, so these include correlation, photometry refinement,
+covariance and all regional checks. Preparation, I/O and caller filtering are excluded.
+The native allocation gate finds zero allocations after preparation even when masks
+change. The existing displacement baselines on the same run were 1.58 ms (quadratic)
+and 1.72 ms (Lucas–Kanade), consistent with the published numbers above.
+There was no prior benchmark for the new operator. Its strip case leaves about 2.08 ms
+of a 5 ms frame budget; this is not a claim that a complete application sustains 200 FPS.
 
 Bead tracking on a 1280×1024 frame: an S-shaped bead 50 px wide and 1080 px long, its
 prior 2 px off and bent by a further 1 px, every configured pass run:
@@ -65,6 +78,24 @@ Where the time goes, in the 3-pass case:
   The strips in a gap are sampled all the same.
 
 ## Accuracy envelopes
+
+Masked translation, measured 2026-10-12: analytic f32 texture at nine subpixel shifts,
+independent masks excluding a central rectangle, gain 1.3 and offset 17, and five
+deterministic trials per cell. The noisy sweep adds independent uniform noise up to
+5 grey levels to both images; values below are the worst per-axis cell bias and spread.
+
+| Operator | Unit | Worst bias | Worst σ | Envelope bias / σ |
+|---|---|---|---|---|
+| masked translation, clean | px | 0.0011 | 0 (deterministic repeats) | 0.002 / 0.000001 |
+| masked translation, noise 0/2/5 GL | px | 0.0871 | 0.0104 | 0.14 / 0.016 |
+
+Additional tests cover independent validity masks, excluded non-finite pixels, static
+distractors, odd dimensions, strided views, unequal image sizes, predicted motion,
+forward/backward closure, repetitive patterns, search limits, refinement budgets,
+noise-dependent covariance and intensity-unit invariance. An observable 0.01 rad
+rotation is rejected as a translation-model mismatch. A single textured quadrant
+reports that regional consistency is unavailable. Covariance is a local approximation;
+the suite does not certify its statistical coverage or include systematic bias in it.
 
 Each row sweeps a synthetic fixture with known subpixel ground truth. It reports the worst
 bias and standard deviation found anywhere in the sweep. The envelope is what
@@ -496,3 +527,47 @@ repeatability, because it is measured over different physical cans, so part-to-p
 variation of the rim is inside it.
 
 The can-end dataset is not distributed with this repository.
+
+## Real data: masked translation
+
+Evaluated 2026-10-12 on all adjacent pairs of six private 320×97 camera-strip sequences.
+Development runs select settings; the two held-out runs use the identical frozen
+configuration. Saved camera roles select the strip, and camera handovers are explicit
+failures. Masks combine nozzle/unlit exclusions, saved foreground support, available
+reviewed masks and registered blank-difference support. Foreground is dilated by 3 px.
+Caller preprocessing uses masked normalized DoG at sigma 1/4 px; registration uses the
+native estimator defaults. Source images and annotations are not distributed.
+
+| Split / run | Accepted / pairs | Coverage | Closure median / p95 (px) | Python estimate median / p95 (ms) |
+|---|---|---|---|---|
+| development 15074 | 284 / 484 | 58.7% | 0.0096 / 0.0398 | 4.11 / 6.29 |
+| development 15077 | 327 / 546 | 59.9% | 0.0343 / 0.3112 | 3.45 / 6.06 |
+| development 15082 | 70 / 139 | 50.4% | 0.0301 / 0.0753 | 3.67 / 4.71 |
+| development 15516 | 47 / 259 | 18.1% | 0.0216 / 0.1383 | 2.38 / 3.22 |
+| held out 15090 | 104 / 197 | 52.8% | 0.0134 / 0.0331 | 4.52 / 5.91 |
+| held out 15521 | 16 / 237 | 6.8% | 0.0915 / 0.2079 | 2.12 / 5.91 |
+
+Coverage counts every pair, including camera handovers. Closure statistics include only
+pairs accepted in both directions. Python estimate times include image/mask conversion
+but exclude I/O, mask preparation and filtering; those preparation costs are separately
+reported by the evaluator. Their p95 can exceed the eventual 5 ms application budget.
+
+The failure counts (model mismatch / ambiguity / refinement budget / camera handover)
+are 103/60/37/0, 147/5/66/1, 67/2/0/0, 204/3/5/0, 89/0/2/2 and 126/93/1/1 in table
+order. Low coverage is a material limitation: translation alone does not cover these
+runs, particularly turns and the unlike held-out part. Even accepted estimates have
+nonzero closure, and local covariance does not account for accumulated drift. Similarity
+registration and anchored sequence consistency need separate validation.
+
+Median distances to the application's saved raw motion estimates are 0.024, 0.079,
+0.051, 0.070, 0.030 and 0.113 px. Those saved estimates are generated comparisons,
+not independent motion ground truth. Blank differences give foreground support;
+precise bead boundaries still come from original bead images.
+
+In the local propagation demonstration, a saved generated ribbon at frame 150 of 15074
+is transported independently in both directions. It produces 67 backward and 55 forward
+accepted measurements before explicit motion-model rejection. Transported independent
+walls, centerline and sections remain separate from caliper observations and the tracker's
+regularized curve. Unsupported sections have typed rejection results; observations
+never feed back into the immutable seed or registration. Overlays show transported walls
+and local wall measurements. No image or annotation artifacts are committed.

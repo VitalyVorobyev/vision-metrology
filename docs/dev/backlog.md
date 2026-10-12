@@ -30,6 +30,14 @@ deleted here.
 
 ## Measurement
 
+- **Masked translation refinement can exhaust its budget on real crops.** The changing
+  valid overlap and robust reweighting can keep Gauss–Newton updates above the convergence
+  tolerance. It returns `TranslationStatus::RefinementFailed`; it never promotes the
+  integer initializer to an accepted pose. The evaluation and failure counts are in
+  `docs/performance.md`, and `tools/translation_eval` reproduces them. Reduce this to
+  synthetic overlap/mask fixtures before changing the stopping rule or adding a line
+  search. Preserve explicit regional model-mismatch rejection when improving convergence.
+
 - **Pixel-unit settings convert with the nominal `step`** for rect, arc and radial
   calipers: σ, the `SmoothThenCentral` radius and the half-contrast flank distances and
   tolerance go to samples through `Placement::sigma_spacing`, not the real spacing that

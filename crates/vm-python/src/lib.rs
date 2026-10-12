@@ -23,6 +23,7 @@ mod morph_py;
 mod scale_py;
 mod segment;
 mod shape;
+mod translation_py;
 mod types;
 mod warp_py;
 
@@ -33,7 +34,7 @@ use config::{
     BeadCaliper, BeadConfig, BeadTuning, Contrast, CorrConfig, CorrSearchTuning,
     CorrTemplateConfig, CorrTemplateTuning, DisplacementConfig, EdgeConfig, FitConfig, Locate,
     LogPolarScaleConfig, LsdConfig, MeasureConfig, MomentScaleConfig, Refine, ScaleInvariantConfig,
-    ShapeModelConfig, ShapeSearchConfig, ShapeSearchTuning,
+    ShapeModelConfig, ShapeSearchConfig, ShapeSearchTuning, TranslationConfig, TranslationTuning,
 };
 use corr_py::{CorrMatch, CorrTemplate, Displacement, displacement, find, find_topk};
 use detector::EdgeDetector;
@@ -53,6 +54,7 @@ use scale_py::{
 };
 use segment::Segmenter;
 use shape::{Fitter, LsdDetector};
+use translation_py::{Translation, TranslationEstimator};
 use types::{
     Circle, ComponentStats, Edgel, Ellipse, LevelEdge, Line, LineSegment, MeasureEdge, MeasurePair,
     ShapeMatch,
@@ -132,6 +134,10 @@ fn vision_metrology(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<BeadStationTrace>()?;
     m.add_class::<CorrMatch>()?;
     m.add_class::<Displacement>()?;
+    m.add_class::<Translation>()?;
+    m.add_class::<TranslationConfig>()?;
+    m.add_class::<TranslationTuning>()?;
+    m.add_class::<TranslationEstimator>()?;
     m.add_class::<ScaleEstimate>()?;
 
     // Exceptions

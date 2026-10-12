@@ -13,6 +13,8 @@ stripes are tracked along a prior curve and measured station by station
 ([ADR-0018](adr/0018-tracked-curves.md)). The work ahead is the first release, whose API
 review covers the bead tracker, then the remaining gaps: accuracy coverage, blob
 features, `filter`, the lab's package catch-up and bindings.
+Masked translation registration is available as a general-purpose `corr` operator;
+reference learning remains a separate sequence of algorithmic work below.
 
 ---
 
@@ -33,7 +35,7 @@ four targets.
 
 The suite (`tests/accuracy.rs`) covers edges, the strip, rect, arc and radial calipers,
 circle fitting, shape matching (translation, rotation, scale), rectified crops and
-displacement. Open rows:
+displacement and masked translation. Open rows:
 
 | Operator | Sweep | Report |
 |---|---|---|
@@ -88,6 +90,44 @@ Mosaic works on the desktop.
 - Python bindings for `laser`, `segment::watershed` / region growing and
   `build_graph_from_edgels`.
 - A weekly miri job over every `unsafe` block.
+
+---
+
+## Reference learning algorithms, `planned`
+
+These are reusable operators, validated with adhesive beads and other tracked curves.
+Acquisition, annotation stores, recipe orchestration, tolerances and defect decisions
+remain application responsibilities. Each stage starts with a finite API/algorithm design;
+the next stage begins only after its prerequisite passes synthetic accuracy, Python
+parity and performance gates. Existing release, accuracy and filter work retains its scope.
+
+1. **Similarity registration and anchored sequences.** Build on masked translation;
+   support observable rotation/scale and keyframe consistency, with explicit rank and
+   drift diagnostics. **Accept:** known synthetic similarity transforms recover within
+   pinned envelopes; long-sequence anchors reduce accumulated error without inventing
+   evidence in unobservable directions. Translation-only results retain their contract.
+2. **Curve propagation and extension.** Build on reliable registration and existing
+   prior-driven measurement. Preserve arc/material identity while new portions enter
+   view; independently supported walls and genuine gaps remain distinct.
+   **Accept:** synthetic sequences longer than the seed segment recover new visible
+   geometry, handle disappearance and preserve the original annotated segment's identity.
+3. **Multi-frame reference learning.** Pool native-image evidence in a global frame;
+   learn independent boundaries and retain support, uncertainty and source provenance.
+   Panoramas visualize geometry rather than supply blurred width measurements.
+   **Accept:** asymmetric variable-width fixtures recover both walls without symmetry
+   assumptions, including noise, occlusion and unsupported intervals.
+4. **Appearance-assisted localization.** Compare learned local profiles with gradient
+   measurements under photometric variation and distractors. **Accept:** held-out
+   sequences and adversarial synthetic gradients show fewer wrong locks at a reported
+   coverage/cost tradeoff; appearance mismatch remains explicit and the reference is fixed.
+5. **Adaptive measurement placement.** Compile curves and boundary evidence into local
+   caliper poses and search regions, with density controlled by curvature and uncertainty.
+   **Accept:** measurements execute on original incoming images, preserve irregular
+   reference geometry and meet a stated native latency budget without per-frame panoramas.
+6. **Calibration and reference comparison.** Compose with `metric` for offline reference
+   geometry and reporting. **Accept:** calibrated synthetic fixtures give consistent
+   image/metric results while online localization and measurements stay in native image
+   coordinates. One reference supplies nominal geometry, never statistical tolerances.
 
 ---
 
