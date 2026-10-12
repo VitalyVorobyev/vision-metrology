@@ -28,12 +28,18 @@ That contract is not represented by corrmatch's current high-level matching inte
   - Stage 2 is translation-only inverse-compositional Lucas–Kanade on the template's own
     gradient. A parabola fitted to a discrete correlation surface is biased towards integer
     positions, and only a second, differently biased estimator removes that bias.
-- **Masked translation is a narrow native exception.** `TranslationEstimator` accepts
+- **Masked local registration is a narrow native exception.** `TranslationEstimator` accepts
   two image views, independently framed validity masks and an optional displacement
   prediction. Its bounded box-mean pyramid search uses jointly valid ZNCC, followed by
   robust Gauss–Newton refinement of translation, gain and offset. It is generic over
   `Pixel`, without quantization. It does not duplicate corrmatch's general matcher,
   rotated bank, beam search or SIMD engine, and uses no FFT.
+- **Local similarity shares that exception.** `SimilarityEstimator` prediction-warps
+  valid native samples to initialize the bounded translation search, then jointly
+  refines uniform scale, rotation, translation and photometry. It uses the existing
+  `Similarity2f` map and translation tuning/status types. It has no global angle or
+  scale bank, no general matching engine and no FFT. Its independent regional fits
+  compare maps over full-image corners; unobservable regions remain unavailable.
 - **Excluded pixels contribute no evidence.** Every pyramid cell and interpolation
   footprint requires all source mask pixels to be valid. Exact bilinear derivatives
   use those same valid footprints. No border fill is registration evidence.
@@ -63,7 +69,7 @@ That contract is not represented by corrmatch's current high-level matching inte
 ## Consequences
 
 - A corrmatch release can raise this crate's MSRV (ADR-0002).
-- Scale search and non-`u8` data wait on upstream (backlog).
-- Masked translation has its own accuracy rows, allocation gate, benchmarks and Python
+- General matching scale search and non-`u8` data wait on upstream (backlog).
+- Masked translation and local similarity have their own accuracy rows, allocation gate, benchmarks and Python
   parity. Private sequence evaluation is development tooling and never writes source
   annotations. The existing `displacement` implementation and semantics are unchanged.

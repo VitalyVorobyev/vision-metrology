@@ -113,3 +113,83 @@ Python accepts matching `uint8`, `uint16` or `float32` images and `uint8` masks,
 C-contiguous storage. Configuration is captured as a copy at construction. The usual
 numpy-to-image conversion copies inputs; only the native numerical scratch has the
 allocation-free guarantee. Python status names are the Rust names in snake case.
+
+## Local masked similarity
+
+`corr::SimilarityEstimator` adds uniform scale and rotation near a supplied
+`Similarity2f` prediction (identity by default). Its map is previous to current:
+`q = scale * R(angle) * p + translation`. It uses the same mask-safe planes and typed
+outcomes as translation. Ordinary template matching remains delegated to corrmatch.
+
+```rust
+use vision_metrology::corr::{SimilarityEstimator, SimilarityConfig, TranslationStatus};
+use vision_metrology::Image;
+let a = Image::new_fill(64, 48, 0f32);
+let mut estimator = SimilarityEstimator::new();
+let result = estimator.estimate(&a.as_view(), &a.as_view(), None, None, None,
+                                &SimilarityConfig::default())?;
+if result.status == TranslationStatus::Accepted {
+    let previous_to_current = result.transform.expect("accepted maps are present");
+    println!("{previous_to_current:?}");
+}
+# Ok::<(), vision_metrology::Error>(())
+```
+
+```python
+estimator = vm.SimilarityEstimator(vm.SimilarityConfig())
+result = estimator.estimate(previous, current, previous_mask=valid,
+                            current_mask=valid, prediction=(0., 0., 0., 1.))
+if result.status == "accepted":
+    tx, ty, angle_radians, scale = result.transform
+```
+
+`SimilarityConfig.translation` reuses support, initializer score/margin, translation
+search extent, robust tuning and the optional regional discrepancy gate. Similarity
+uses 20 iterations by default. `max_angle` defaults to 0.05 radians and `max_log_scale`
+to 0.05. These limit departure from the prediction, rather than providing an exhaustive
+angle/scale search. Native refinement gates x/y centre displacement in current pixel
+units; initialization searches residual translations in the prediction-warped previous
+frame. For non-unit predicted scale/rotation those search boxes differ.
+A large window can lose initializer capture under a small rotation: use an explicit
+nearby prediction. A bound is not a convergence guarantee.
+
+Prediction-warped masked sampling initializes the existing translation search. The
+initializer's integer correlation and margin are reported, not a global similarity
+correlation bank. A supported coarse peak can initialize similarity even when a
+translation-only refinement cannot converge. A robust six-parameter forward-additive
+solve then refines four motion coefficients and gain/offset against the original
+current plane. Coordinates are centred at `((width-1)/2, (height-1)/2)` and normalized
+by the radius to the corner, keeping rank checks comparable between sizes. The two
+linear coefficients parameterize uniform scale and rotation without introducing shear.
+
+Independent regional similarity fits are compared at all four previous-image corners.
+This extrapolation is stricter than translation's shift-distance test. `region_error`
+is absent when fewer than two regions are supported. Rank loss is `LowTexture`; missing
+regions cannot certify a similarity model. Rejected results may retain diagnostic maps.
+The 4×4 covariance is for centre displacement x/y, angle and log-scale; it is a local
+normal-equation approximation with photometry eliminated. It does not quantify global
+sequence drift or certify statistical coverage. Photometry retains the same input-unit
+contract. Stable-size prepared native similarity calls also allocate nothing.
+
+For differing crop origins, the full map is
+`T(current_origin) * local_map * T(-previous_origin)`, where `T` is translation.
+To compose accepted maps, multiply `current_map * previous_seed_to_previous_map`.
+Transport a normal with the rotation, then normalize it; uniform scale changes lengths.
+Do not treat failed maps, transformed predictions or covariance as new boundary evidence.
+
+## Anchored-sequence development experiment
+
+The caller-owned tooling in `tools/translation_eval` retains chained adjacent maps and
+independently registered seed-to-current anchors. Both adjacent steps and anchors require
+accepted reverse registration and corner closure at most 0.25 px before constraining a
+sequence. Loss of evidence starts a new segment. An anchor has no authority without
+support, and constraints cannot correct inherited anchor errors or absence of overlap.
+
+The synthetic 64-frame noisy fixture verifies anchors against known transforms, showing
+lower mean accumulated error and anchor corner error below 0.1 px. Private-data runs
+have no independent motion truth, and their lower similarity coverage is a material
+limitation. The operator is useful for bounded local similarity; it is not a validated
+replacement for translation on these bead strips. See the measured accuracy, coverage,
+closure, rejection counts and latency in [performance.md](performance.md).
+The next work is to understand regional disagreement and photometric/model departures,
+with known deformation/noise fixtures, before curve extension or reference fusion.

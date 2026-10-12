@@ -1,7 +1,7 @@
 //! Specialized two-mask registration, separate from ordinary corrmatch matching.
 
 mod config;
-mod plane;
+use super::plane;
 mod refine;
 mod result;
 mod search;

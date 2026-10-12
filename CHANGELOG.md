@@ -15,6 +15,12 @@ are relative to 0.1.0.
 
 ### Added
 
+- **Local masked similarity** (`corr::SimilarityEstimator`): previous-to-current
+  `Similarity2f`, explicit prediction/bounds, robust photometry, motion rank checks,
+  covariance and independent regional map comparisons; native scratch reuse and
+  matching Python bindings. Development tooling adds reciprocal seed anchors and
+  standalone private overlay/viewer artifacts, including raw three-strip sequences.
+
 - **Masked subpixel translation** (`corr::TranslationEstimator`): reusable scratch,
   independent per-image validity masks, bounded spatial registration with gain/offset
   refinement, typed acceptance, photometric residuals, covariance and regional motion

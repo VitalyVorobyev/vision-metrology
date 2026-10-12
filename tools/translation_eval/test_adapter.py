@@ -52,9 +52,9 @@ def test_normalized_filter_excludes_masked_values():
 
 
 def test_private_adapter_is_read_only():
-    root = os.environ.get('VM_RTVT_DATA')
+    root = os.environ.get('VM_SEQUENCE_DATA')
     if not root or not (Path(root)/'pixel-manifest.json').exists():
-        pytest.skip('private rtvt-pano dataset absent; set VM_RTVT_DATA to opt in')
+        pytest.skip('private private sequence dataset dataset absent; set VM_SEQUENCE_DATA to opt in')
     db = Path(root)/'pixel-labels/labels.sqlite'
     before = hashlib.sha256(db.read_bytes()).hexdigest()
     dataset = Dataset(root, '15074')

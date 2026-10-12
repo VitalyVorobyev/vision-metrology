@@ -70,7 +70,7 @@ def evaluate(dataset, stride):
                                  if reverse['status'] == 'accepted' else None)
         rows.append(row)
     return {'summary': summary(rows), 'pairs': rows,
-            'comparison_provenance': 'rtvt-pano generated raw estimates, not motion ground truth'}
+            'comparison_provenance': 'private sequence dataset generated raw estimates, not motion ground truth'}
 
 
 def transported(ribbon, shift):

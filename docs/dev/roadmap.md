@@ -101,7 +101,13 @@ remain application responsibilities. Each stage starts with a finite API/algorit
 the next stage begins only after its prerequisite passes synthetic accuracy, Python
 parity and performance gates. Existing release, accuracy and filter work retains its scope.
 
-1. **Similarity registration and anchored sequences.** Build on masked translation;
+1. **Similarity registration and anchored sequences, `in progress`.** The bounded
+   native operator, Python parity, synthetic accuracy/allocation gates and caller-owned
+   reciprocal seed-anchor demonstration are implemented; see
+   [the finite design](registration-stage2.md). Real strip coverage is lower than
+   translation and native 320×97 latency exceeds 5 ms. Regional model/photometric
+   disagreement and reliable sequence support remain open before curve extension.
+   Build on masked translation;
    support observable rotation/scale and keyframe consistency, with explicit rank and
    drift diagnostics. **Accept:** known synthetic similarity transforms recover within
    pinned envelopes; long-sequence anchors reduce accumulated error without inventing

@@ -81,3 +81,53 @@ fn prepared_estimation_allocates_nothing_even_when_masks_change() {
     assert_eq!(count, 0, "prepared registration must allocate nothing");
     assert_eq!(result.unwrap().status, TranslationStatus::Accepted);
 }
+
+#[test]
+fn prepared_similarity_allocates_nothing_after_empty_evidence() {
+    use vision_metrology::corr::{SimilarityConfig, SimilarityEstimator};
+    let image = Image::from_vec(
+        161,
+        97,
+        (0..161 * 97)
+            .map(|i| {
+                let (x, y) = ((i % 161) as f32, (i / 161) as f32);
+                100. + 25. * (x * 0.17 + y * 0.13).sin()
+                    + 20. * (x * 0.08 - y * 0.21).cos()
+                    + 15. * (x * 0.31 + y * 0.07).sin()
+                    + 10. * (x * 0.03 + y * 0.39).cos()
+            })
+            .collect(),
+    )
+    .unwrap();
+    let mut mask = Image::new_fill(161, 97, 0u8);
+    let cfg = SimilarityConfig::default();
+    let mut e = SimilarityEstimator::new();
+    assert_eq!(
+        e.estimate(
+            &image.as_view(),
+            &image.as_view(),
+            Some(&mask.as_view()),
+            Some(&mask.as_view()),
+            None,
+            &cfg
+        )
+        .unwrap()
+        .status,
+        TranslationStatus::InsufficientSupport
+    );
+    mask.data_mut().fill(1);
+    COUNT.with(|n| n.set(0));
+    ACTIVE.with(|a| a.set(true));
+    let result = e.estimate(
+        &image.as_view(),
+        &image.as_view(),
+        Some(&mask.as_view()),
+        Some(&mask.as_view()),
+        None,
+        &cfg,
+    );
+    ACTIVE.with(|a| a.set(false));
+    let count = COUNT.with(Cell::get);
+    assert_eq!(count, 0, "prepared similarity must allocate nothing");
+    assert_eq!(result.unwrap().status, TranslationStatus::Accepted);
+}

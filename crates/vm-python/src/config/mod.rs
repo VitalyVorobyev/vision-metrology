@@ -46,3 +46,6 @@ pub use scale::{LogPolarScaleConfig, MomentScaleConfig, ScaleInvariantConfig};
 
 mod translation;
 pub use translation::{TranslationConfig, TranslationTuning};
+
+mod similarity;
+pub use similarity::SimilarityConfig;

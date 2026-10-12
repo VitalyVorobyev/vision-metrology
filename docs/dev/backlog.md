@@ -187,3 +187,14 @@ deleted here.
   in `pose_audit` is valid at scale ≈ 1 only.
 - **corrmatch `u16`/`f32`.** `corr` is `u8`-only because corrmatch is
   ([ADR-0011](adr/0011-corr-delegates-to-corrmatch.md)).
+
+### Local similarity: private strip coverage and cost
+
+The bounded similarity operator passes known-transform and allocation gates, but native
+320×97 latency is 6.53 ms and its full-corner regional consistency reduces private-data
+coverage (0–12.5% on private sequence dataset development runs). Reciprocal checks further limit supported
+segments. Before extending learned curves, isolate rank/noise versus actual deformation
+and camera-fixed illumination using known synthetic fixtures and source-image diagnostics.
+Do not mute failures, accept cached motion as truth, or loosen held-out thresholds to
+obtain longer tracks. Keep conditioning/photometric investigations in development tools;
+promote only supported improvements with accuracy and performance envelopes.

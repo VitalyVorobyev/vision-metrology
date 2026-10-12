@@ -62,7 +62,7 @@ impl Default for TranslationTuning {
 }
 
 impl TranslationConfig {
-    pub(super) fn validate(&self) -> Result<(), Error> {
+    pub(crate) fn validate(&self) -> Result<(), Error> {
         if self.search_radius.get() > 4096
             || self.tuning.max_levels.get() > 12
             || !self.min_score.is_finite()

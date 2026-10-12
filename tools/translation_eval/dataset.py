@@ -1,4 +1,4 @@
-"""Read-only adapter for private rtvt-pano data; never import its mutable Store."""
+"""Read-only adapter for private private sequence dataset data; never import its mutable Store."""
 from __future__ import annotations
 
 import hashlib
@@ -26,7 +26,7 @@ def decode(runs, shape):
 def bandpass(image, valid):
     """Caller-owned normalized DoG; excluded pixels contribute no filter mass.
 
-    Mirrors the application preprocessing in rtvt-pano. The library estimator
+    Mirrors the application preprocessing in private sequence dataset. The library estimator
     itself accepts original pixel units and does not select a filtering policy.
     """
     mass = valid.astype(np.float32)

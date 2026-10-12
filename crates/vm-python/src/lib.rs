@@ -23,6 +23,7 @@ mod morph_py;
 mod scale_py;
 mod segment;
 mod shape;
+mod similarity_py;
 mod translation_py;
 mod types;
 mod warp_py;
@@ -30,6 +31,7 @@ mod warp_py;
 use pyo3::prelude::*;
 use pyo3::wrap_pyfunction;
 
+use crate::config::SimilarityConfig;
 use config::{
     BeadCaliper, BeadConfig, BeadTuning, Contrast, CorrConfig, CorrSearchTuning,
     CorrTemplateConfig, CorrTemplateTuning, DisplacementConfig, EdgeConfig, FitConfig, Locate,
@@ -54,6 +56,7 @@ use scale_py::{
 };
 use segment::Segmenter;
 use shape::{Fitter, LsdDetector};
+use similarity_py::{Similarity, SimilarityEstimator};
 use translation_py::{Translation, TranslationEstimator};
 use types::{
     Circle, ComponentStats, Edgel, Ellipse, LevelEdge, Line, LineSegment, MeasureEdge, MeasurePair,
@@ -134,6 +137,9 @@ fn vision_metrology(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<BeadStationTrace>()?;
     m.add_class::<CorrMatch>()?;
     m.add_class::<Displacement>()?;
+    m.add_class::<Similarity>()?;
+    m.add_class::<SimilarityConfig>()?;
+    m.add_class::<SimilarityEstimator>()?;
     m.add_class::<Translation>()?;
     m.add_class::<TranslationConfig>()?;
     m.add_class::<TranslationTuning>()?;
