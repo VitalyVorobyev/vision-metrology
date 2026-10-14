@@ -34,7 +34,7 @@ deleted here.
   valid overlap and robust reweighting can keep Gauss–Newton updates above the convergence
   tolerance. It returns `TranslationStatus::RefinementFailed`; it never promotes the
   integer initializer to an accepted pose. The evaluation and failure counts are in
-  `docs/performance.md`, and `tools/translation_eval` reproduces them. Reduce this to
+  `docs/performance.md`, and `tools/registration_eval` reproduces them. Reduce this to
   synthetic overlap/mask fixtures before changing the stopping rule or adding a line
   search. Preserve explicit regional model-mismatch rejection when improving convergence.
 

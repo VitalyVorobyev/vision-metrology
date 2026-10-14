@@ -28,7 +28,7 @@ CI runs these and more:
 | MSRV | `cargo check --workspace --all-targets --all-features` on the `rust-version` toolchain of the root `Cargo.toml` |
 | Invariant numbering | `python3 tools/check-invariants.py` |
 | Examples | the self-asserting examples listed in `ci.yml` |
-| Python bindings | `pip install crates/vm-python`, then `pytest crates/vm-python/tests` |
+| Python bindings | `pip install crates/vm-python`, then `pytest crates/vm-python/tests` and `pytest tools/registration_eval` |
 | Cross-platform | build and test on Windows and macOS |
 | Lab | frontend typecheck, lint, test and build; desktop crate fmt, clippy and test, which includes the contract replay |
 

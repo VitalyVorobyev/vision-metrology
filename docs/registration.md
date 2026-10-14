@@ -179,7 +179,7 @@ Do not treat failed maps, transformed predictions or covariance as new boundary 
 
 ## Anchored-sequence development experiment
 
-The caller-owned tooling in `tools/translation_eval` retains chained adjacent maps and
+The caller-owned tooling in `tools/registration_eval` retains chained adjacent maps and
 independently registered seed-to-current anchors. Both adjacent steps and anchors require
 accepted reverse registration and corner closure at most 0.25 px before constraining a
 sequence. Loss of evidence starts a new segment. An anchor has no authority without
