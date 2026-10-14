@@ -142,6 +142,13 @@ update it when a change moves them.
   checks that every citation resolves, and rejects plan labels outside the roadmap and the
   changelog, links into `docs/dev/` from user-facing files, and one external project name.
   It also enforces the size cap of invariant 14 against the list in `backlog.md`.
+- **Private datasets only test the workspace.** Their adapters live in the git-ignored
+  `tools/private/` and write a neutral manifest that the tracked tools read
+  (`tools/registration_eval/README.md`). Tracked files report private runs only under
+  opaque labels and as aggregates. `tools/check-invariants.py` fails if anything under
+  `tools/private/` is tracked, and, when the local, git-ignored
+  `tools/private/forbidden-terms.txt` exists, if a tracked file contains one of its terms
+  (one per line). CI has no such list and skips that check.
 
 ### Illustrations
 
