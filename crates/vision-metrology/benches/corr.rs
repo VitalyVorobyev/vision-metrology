@@ -1,6 +1,6 @@
 //! `corr` benchmarks: `find` over a VGA scene with a 64x64 template
 //! (rotation off and on), and `displacement` over a 320x97 strip window —
-//! the glue-dataset frame shape (`data/42781`).
+//! the glue-rig strip shape.
 //!
 //! Run with `cargo bench -p vision-metrology --bench corr`.
 //!

@@ -100,7 +100,7 @@ pytest tests/
 - **Private datasets.** Tests that need one skip with a message when it is absent. The
   datasets are not distributed:
   - the can-end frames used by `inspect_canend`, `pose_audit` and the lab's folder test;
-  - the glue-rig sequence.
+  - the glue-rig sequence, read from `data/glue-rig` or from `VM_GLUE_RIG_DATA`.
 
 ## Benchmarks
 

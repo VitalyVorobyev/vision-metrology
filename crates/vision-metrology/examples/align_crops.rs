@@ -11,7 +11,7 @@
 //! to frame. `CropSpec` fixes the output tensor shape once, at teach time, so
 //! every frame's rectified crop is directly comparable pixel-for-pixel.
 //!
-//! The dataset (`data/42781`) has no calibration and three cameras glued
+//! The dataset (`data/glue-rig`) has no calibration and three cameras glued
 //! vertically into one 320x291 frame (~97 rows per strip) — this example
 //! picks one strip and teaches the glue nozzle's
 //! dome, which has real edges and moves frame to frame as the rig runs.
@@ -24,7 +24,7 @@
 //! ## Run
 //! ```text
 //! cargo run -p vision-metrology --example align_crops
-//! cargo run -p vision-metrology --example align_crops -- --data-dir data/42781 --strip 1 --n 20
+//! cargo run -p vision-metrology --example align_crops -- --data-dir data/glue-rig --strip 1 --n 20
 //! ```
 
 use std::path::{Path, PathBuf};
@@ -39,7 +39,7 @@ use vision_metrology::{BorderMode, Image, Rect2f};
 #[command(about = "Teach the glue nozzle in one camera strip, then rectify N frames to it")]
 struct Cli {
     /// Directory of `Image_NNNNN.bmp` frames.
-    #[arg(long, default_value = "data/42781")]
+    #[arg(long, default_value = "data/glue-rig")]
     data_dir: PathBuf,
     /// Which of the three vertically-stacked camera strips to use (0, 1, 2).
     #[arg(long, default_value_t = 1)]
