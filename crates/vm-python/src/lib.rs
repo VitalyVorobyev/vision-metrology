@@ -137,9 +137,6 @@ fn vision_metrology(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<BeadStationTrace>()?;
     m.add_class::<CorrMatch>()?;
     m.add_class::<Displacement>()?;
-    m.add_class::<Similarity>()?;
-    m.add_class::<SimilarityConfig>()?;
-    m.add_class::<SimilarityEstimator>()?;
     m.add_class::<Translation>()?;
     m.add_class::<TranslationConfig>()?;
     m.add_class::<TranslationTuning>()?;
@@ -170,5 +167,13 @@ fn vision_metrology(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Declarative free functions
     functions::register(m)?;
+
+    // Experimental API, outside the compatibility promise. `vision_metrology.experimental`
+    // (python/vision_metrology/experimental.py) re-exports this submodule.
+    let experimental = PyModule::new(m.py(), "_experimental")?;
+    experimental.add_class::<Similarity>()?;
+    experimental.add_class::<SimilarityConfig>()?;
+    experimental.add_class::<SimilarityEstimator>()?;
+    m.add_submodule(&experimental)?;
     Ok(())
 }

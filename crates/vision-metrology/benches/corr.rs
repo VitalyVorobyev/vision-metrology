@@ -213,6 +213,7 @@ fn bench_translation(c: &mut Criterion) {
     }
 }
 
+#[cfg(feature = "corr-experimental")]
 fn bench_similarity(c: &mut Criterion) {
     use vision_metrology::corr::{SimilarityConfig, SimilarityEstimator, TranslationStatus};
     use vision_metrology::{Point2f, Similarity2f, Vec2f, transform_point};
@@ -305,6 +306,7 @@ fn bench_similarity(c: &mut Criterion) {
         );
     }
 }
+#[cfg(feature = "corr-experimental")]
 criterion_group!(
     benches,
     bench_find,
@@ -312,4 +314,6 @@ criterion_group!(
     bench_translation,
     bench_similarity
 );
+#[cfg(not(feature = "corr-experimental"))]
+criterion_group!(benches, bench_find, bench_displacement, bench_translation);
 criterion_main!(benches);

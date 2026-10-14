@@ -114,6 +114,8 @@ cargo bench -p vision-metrology --bench match_shape
 cargo bench -p vm-primitives --bench downsample -- downsample2x2_to_f32_u8_1280x1024
 ```
 
+The experimental similarity benches in `corr` need `--features corr-experimental`.
+
 Add a benchmark when you add or change a hot path, and put before/after numbers in the PR
 description. Published numbers live in [`docs/performance.md`](docs/performance.md);
 update it when a change moves them.

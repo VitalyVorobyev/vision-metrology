@@ -114,7 +114,13 @@ C-contiguous storage. Configuration is captured as a copy at construction. The u
 numpy-to-image conversion copies inputs; only the native numerical scratch has the
 allocation-free guarantee. Python status names are the Rust names in snake case.
 
-## Local masked similarity
+## Local masked similarity (experimental)
+
+> **Experimental.** `SimilarityEstimator`, `SimilarityConfig` and `Similarity` are behind
+> the non-default Cargo feature `corr-experimental`, and in Python under
+> `vision_metrology.experimental`. They are outside the semver promise until the regional
+> consistency check is recalibrated for real data: they may change or be removed in any
+> release. Translation's contract is unaffected.
 
 `corr::SimilarityEstimator` adds uniform scale and rotation near a supplied
 `Similarity2f` prediction (identity by default). Its map is previous to current:
@@ -136,7 +142,9 @@ if result.status == TranslationStatus::Accepted {
 ```
 
 ```python
-estimator = vm.SimilarityEstimator(vm.SimilarityConfig())
+from vision_metrology.experimental import SimilarityConfig, SimilarityEstimator
+
+estimator = SimilarityEstimator(SimilarityConfig())
 result = estimator.estimate(previous, current, previous_mask=valid,
                             current_mask=valid, prediction=(0., 0., 0., 1.))
 if result.status == "accepted":

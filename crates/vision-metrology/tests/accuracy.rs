@@ -51,6 +51,7 @@ mod ribbon;
 #[path = "accuracy/bead.rs"]
 mod bead;
 
+#[cfg(feature = "corr-experimental")]
 #[path = "accuracy/similarity.rs"]
 mod similarity;
 #[path = "accuracy/translation.rs"]
@@ -1338,30 +1339,6 @@ struct Row {
 /// becomes ambiguous among near-collinear points.
 const ROWS: &[Row] = &[
     Row {
-        name: "masked_similarity_clean_corner",
-        measure: similarity::clean,
-        bias_envelope: 0.005,
-        sigma_envelope: 0.000001,
-    },
-    Row {
-        name: "masked_similarity_noisy_corner",
-        measure: similarity::point,
-        bias_envelope: 0.035,
-        sigma_envelope: 0.035,
-    },
-    Row {
-        name: "masked_similarity_angle_radians",
-        measure: similarity::angle,
-        bias_envelope: 0.00018,
-        sigma_envelope: 0.00022,
-    },
-    Row {
-        name: "masked_similarity_log_scale",
-        measure: similarity::log_scale,
-        bias_envelope: 0.00032,
-        sigma_envelope: 0.00026,
-    },
-    Row {
         name: "translation_masked",
         measure: translation::sweep,
         bias_envelope: 0.14,
@@ -1587,9 +1564,40 @@ const ROWS: &[Row] = &[
     },
 ];
 
+/// The experimental `corr::SimilarityEstimator` (feature `corr-experimental`).
+#[cfg(feature = "corr-experimental")]
+const EXPERIMENTAL_ROWS: &[Row] = &[
+    Row {
+        name: "masked_similarity_clean_corner",
+        measure: similarity::clean,
+        bias_envelope: 0.005,
+        sigma_envelope: 0.000001,
+    },
+    Row {
+        name: "masked_similarity_noisy_corner",
+        measure: similarity::point,
+        bias_envelope: 0.035,
+        sigma_envelope: 0.035,
+    },
+    Row {
+        name: "masked_similarity_angle_radians",
+        measure: similarity::angle,
+        bias_envelope: 0.00018,
+        sigma_envelope: 0.00022,
+    },
+    Row {
+        name: "masked_similarity_log_scale",
+        measure: similarity::log_scale,
+        bias_envelope: 0.00032,
+        sigma_envelope: 0.00026,
+    },
+];
+#[cfg(not(feature = "corr-experimental"))]
+const EXPERIMENTAL_ROWS: &[Row] = &[];
+
 #[test]
 fn accuracy_envelopes_hold() {
-    for row in ROWS {
+    for row in ROWS.iter().chain(EXPERIMENTAL_ROWS) {
         let m = (row.measure)();
         eprintln!(
             "{}: bias={:.4} sigma={:.4} (envelope {:.4}/{:.4})",

@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 import vision_metrology as vm
+from vision_metrology import experimental
 
 
 def matrix(parts):
@@ -36,7 +37,7 @@ def test_similarity_and_prediction(dtype):
     a, b = render((0, 0, 0, 1), dtype), render(truth, dtype)
     mask = np.ones(a.shape, dtype=np.uint8)
     mask[25:55, 40:100] = 0
-    f = vm.SimilarityEstimator().estimate(a, b, previous_mask=mask, current_mask=mask)
+    f = experimental.SimilarityEstimator().estimate(a, b, previous_mask=mask, current_mask=mask)
     assert f.status == 'accepted'
     assert corner_error(f.transform, truth) < .1
     assert f.support > 400 and f.regions >= 2 and f.region_error < .5
@@ -44,20 +45,20 @@ def test_similarity_and_prediction(dtype):
     assert covariance.shape == (4, 4)
     assert np.linalg.eigvalsh(covariance).min() > -1e-9
     truth = centered(18.7, -.3, .03, 1.02)
-    f = vm.SimilarityEstimator().estimate(a, render(truth, dtype), prediction=centered(18, 0, .02, 1.01))
+    f = experimental.SimilarityEstimator().estimate(a, render(truth, dtype), prediction=centered(18, 0, .02, 1.01))
     assert f.status == 'accepted' and corner_error(f.transform, truth) < .1
 
 
 def test_similarity_failures_photometry_and_configs():
     a, truth = render((0, 0, 0, 1)), centered()
     b = render(truth)*1.3+17
-    e = vm.SimilarityEstimator()
+    e = experimental.SimilarityEstimator()
     f = e.estimate(a, b)
     assert f.status == 'accepted'
     assert abs(f.gain-1/1.3) < .02 and abs(f.offset+17/1.3) < 1
     assert e.estimate(a*0, a*0).status == 'low_texture'
     assert e.estimate(a, b, current_mask=np.zeros(a.shape, np.uint8)).status == 'insufficient_support'
-    f = vm.SimilarityEstimator(vm.SimilarityConfig(max_angle=.005)).estimate(a, b)
+    f = experimental.SimilarityEstimator(experimental.SimilarityConfig(max_angle=.005)).estimate(a, b)
     assert f.status == 'search_boundary'
     for prediction in [(0, 0, 0, 0), (0, 0, 0, -1), (np.nan, 0, 0, 1)]:
         with pytest.raises(ValueError):
@@ -66,3 +67,17 @@ def test_similarity_failures_photometry_and_configs():
         e.estimate(a, b.astype(np.uint8))
     with pytest.raises(ValueError):
         e.estimate(a, b, current_mask=np.ones((4, 4), np.uint8))
+
+
+def test_similarity_is_experimental_only():
+    """The class lives under `vision_metrology.experimental`, not the top level, and its
+    stub declares exactly what exists there."""
+    import importlib.resources as res
+    import re
+
+    for name in ("Similarity", "SimilarityConfig", "SimilarityEstimator"):
+        assert not hasattr(vm, name), f"{name} must not be in the top-level namespace"
+        assert hasattr(experimental, name)
+    stub = (res.files("vision_metrology") / "experimental.pyi").read_text()
+    declared = re.findall(r"^class (\w+)", stub, re.MULTILINE)
+    assert sorted(declared) == sorted(experimental.__all__)

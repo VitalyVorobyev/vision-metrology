@@ -15,7 +15,9 @@ are relative to 0.1.0.
 
 ### Added
 
-- **Local masked similarity** (`corr::SimilarityEstimator`): previous-to-current
+- **Local masked similarity, experimental** (`corr::SimilarityEstimator`, behind the
+  non-default `corr-experimental` feature; in Python, `vision_metrology.experimental`).
+  Outside the semver promise until its regional check is recalibrated. Previous-to-current
   `Similarity2f`, explicit prediction/bounds, robust photometry, motion rank checks,
   covariance and independent regional map comparisons; native scratch reuse and
   matching Python bindings. Development tooling (`tools/registration_eval`) reads a

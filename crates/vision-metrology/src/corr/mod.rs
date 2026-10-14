@@ -32,9 +32,9 @@
 //!
 //! [`TranslationEstimator`] is a specialized native two-mask registration operator,
 //! generic over `u8`, `u16` and `f32`. It reports typed acceptance, photometry,
-//! covariance and regional consistency. [`SimilarityEstimator`] shares that narrow
-//! native exception for local prediction-guided rotation/scale; neither changes
-//! the ordinary matcher.
+//! covariance and regional consistency. The experimental `SimilarityEstimator`
+//! (feature `corr-experimental`) shares that narrow native exception for local
+//! prediction-guided rotation/scale; neither changes the ordinary matcher.
 //!
 //! # Quick start
 //!
@@ -58,6 +58,7 @@ mod adapter;
 mod config;
 mod displacement;
 mod plane;
+#[cfg(feature = "corr-experimental")]
 mod similarity;
 mod template;
 mod translation;
@@ -67,6 +68,7 @@ pub use config::{
     DisplacementConfig, Refine,
 };
 pub use displacement::{Displacement, displacement};
+#[cfg(feature = "corr-experimental")]
 pub use similarity::{Similarity, SimilarityConfig, SimilarityEstimator};
 pub use template::{CorrMatch, CorrTemplate, find, find_topk};
 

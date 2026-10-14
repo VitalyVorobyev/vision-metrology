@@ -7,6 +7,10 @@ reference-to-current fixture localization. Ordinary teach/find remains in corrma
 
 ## Contract
 
+The three types are behind the non-default `corr-experimental` feature, and in Python
+under `vision_metrology.experimental`, until the regional check is recalibrated (backlog,
+Measurement).
+
 Add `SimilarityEstimator`, `SimilarityConfig`, and `Similarity` using the existing
 `Similarity2f`, `TranslationConfig`/`TranslationTuning` and typed registration outcomes.
 The map is previous pixel-centre coordinates to current coordinates, `q = s R p + t`.

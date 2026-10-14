@@ -29,7 +29,9 @@ doctest = false
 
 [dependencies]
 vm-primitives    = { path = "../vm-primitives", version = "0.1.0" }
-vision-metrology = { path = "../vision-metrology", version = "0.1.0", features = ["serde"] }
+# `corr-experimental`: the Python wheel exposes the experimental similarity estimator
+# under `vision_metrology.experimental`.
+vision-metrology = { path = "../vision-metrology", version = "0.1.0", features = ["serde", "corr-experimental"] }
 nalgebra         = { workspace = true }
 pyo3             = { version = "0.29", features = ["extension-module", "abi3-py310"] }
 numpy            = "0.29"

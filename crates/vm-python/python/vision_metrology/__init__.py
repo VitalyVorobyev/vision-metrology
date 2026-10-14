@@ -9,3 +9,4 @@ import (PEP 561 stub-package precedence).
 
 from .vision_metrology import *  # noqa: F401,F403
 from .vision_metrology import __doc__  # noqa: F401
+from . import experimental  # noqa: E402,F401

@@ -11,6 +11,7 @@ from time import perf_counter
 import numpy as np
 from PIL import Image, ImageDraw
 import vision_metrology as vm
+from vision_metrology.experimental import SimilarityConfig, SimilarityEstimator
 from anchors import AnchoredSequence, matrix, parts, corner_distance
 from manifest import Sequence
 
@@ -34,7 +35,7 @@ def estimate(estimator, sequence, previous, current, preprocess, prediction=None
 def evaluate_sequence(sequence, count, anchor_every, max_closure, preprocess):
     """Adjacent pairs within a group; a group change is a handover and ends a segment."""
     rows = []
-    estimator, anchor_estimator = vm.SimilarityEstimator(), vm.SimilarityEstimator()
+    estimator, anchor_estimator = SimilarityEstimator(), SimilarityEstimator()
     translation = vm.TranslationEstimator()
     chain = None
     for frame in range(count-1):
@@ -170,7 +171,7 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     report = evaluate(sequences, args.limit, args.anchor_every, args.max_closure, args.preprocess)
     report['provenance'] = {s.name: s.provenance for s in sequences}
-    cfg = vm.SimilarityConfig()
+    cfg = SimilarityConfig()
     report['settings'] = {'max_angle': cfg.max_angle, 'max_log_scale': cfg.max_log_scale,
                           'translation': {k: getattr(cfg.translation, k) for k in ('search_radius', 'min_support', 'min_score', 'min_margin', 'max_region_error')},
                           'tuning': {k: getattr(cfg.translation.tuning, k) for k in ('iterations', 'max_levels', 'tolerance', 'huber', 'min_texture')}}

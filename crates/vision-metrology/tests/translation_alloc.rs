@@ -82,6 +82,7 @@ fn prepared_estimation_allocates_nothing_even_when_masks_change() {
     assert_eq!(result.unwrap().status, TranslationStatus::Accepted);
 }
 
+#[cfg(feature = "corr-experimental")]
 #[test]
 fn prepared_similarity_allocates_nothing_after_empty_evidence() {
     use vision_metrology::corr::{SimilarityConfig, SimilarityEstimator};

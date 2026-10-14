@@ -1,7 +1,7 @@
 # Sequence registration evaluation
 
-Development tooling for `corr::TranslationEstimator` and
-`corr::SimilarityEstimator`. It reads one neutral manifest per image sequence
+Development tooling for `corr::TranslationEstimator` and the experimental
+`corr::SimilarityEstimator` (`vision_metrology.experimental` in Python). It reads one neutral manifest per image sequence
 (`sequence.json`, below), registers adjacent frames, composes caller-owned sequence
 poses with reciprocal anchors, and writes reports, overlays and a standalone viewer.
 The tool knows nothing about where a sequence came from. A dataset with its own on-disk

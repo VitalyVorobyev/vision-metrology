@@ -1,6 +1,6 @@
 """Known-transform sequence acceptance: no cached algorithm serves as truth."""
 import numpy as np
-import vision_metrology as vm
+from vision_metrology.experimental import SimilarityEstimator
 from anchors import AnchoredSequence, matrix, parts, corner_distance
 
 
@@ -19,7 +19,7 @@ def test_native_long_sequence_anchors_reduce_known_truth_error():
     identity = np.eye(3)
     seed = texture(identity, 0)
     previous = seed
-    e, anchors = vm.SimilarityEstimator(), vm.SimilarityEstimator()
+    e, anchors = SimilarityEstimator(), SimilarityEstimator()
     raw_errors, anchored_errors = [], []
     for frame in range(1, 65):
         truth = matrix((frame*.15, -frame*.025, frame*.00015, np.exp(frame*.00008)))
