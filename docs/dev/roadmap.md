@@ -95,45 +95,101 @@ Mosaic works on the desktop.
 
 ## Reference learning algorithms, `planned`
 
-These are reusable operators, validated with adhesive beads and other tracked curves.
-Acquisition, annotation stores, recipe orchestration, tolerances and defect decisions
-remain application responsibilities. Each stage starts with a finite API/algorithm design;
-the next stage begins only after its prerequisite passes synthetic accuracy, Python
-parity and performance gates. Existing release, accuracy and filter work retains its scope.
+The goal is one geometric and appearance model of a tracked curve, such as a bead, built
+from many observations, and measurements from that model. These are reusable operators,
+validated with adhesive beads and other tracked curves. Acquisition, annotation stores,
+recipe orchestration, tolerances and defect decisions remain application
+responsibilities, and private datasets only test the operators: their adapters write a
+neutral sequence manifest (`tools/registration_eval`). The motion models are not expanded
+further: masked translation and the experimental local similarity are the registration
+this work builds on. Registration must not depend on the tracked object: callers mask it
+out, and a test checks that an object moving relative to its substrate is flagged, not
+absorbed as motion. Each stage starts with a finite design, and the next begins only after
+its prerequisite passes synthetic accuracy, Python parity and performance gates.
 
-1. **Similarity registration and anchored sequences, `in progress`.** The bounded
-   native operator, Python parity, synthetic accuracy/allocation gates and caller-owned
-   reciprocal seed-anchor demonstration are implemented; see
-   [the finite design](registration-stage2.md). Real strip coverage is lower than
-   translation and native 320×97 latency exceeds 5 ms. Regional model/photometric
-   disagreement and reliable sequence support remain open before curve extension.
-   Build on masked translation;
-   support observable rotation/scale and keyframe consistency, with explicit rank and
-   drift diagnostics. **Accept:** known synthetic similarity transforms recover within
-   pinned envelopes; long-sequence anchors reduce accumulated error without inventing
-   evidence in unobservable directions. Translation-only results retain their contract.
-2. **Curve propagation and extension.** Build on reliable registration and existing
-   prior-driven measurement. Preserve arc/material identity while new portions enter
-   view; independently supported walls and genuine gaps remain distinct.
-   **Accept:** synthetic sequences longer than the seed segment recover new visible
-   geometry, handle disappearance and preserve the original annotated segment's identity.
-3. **Multi-frame reference learning.** Pool native-image evidence in a global frame;
-   learn independent boundaries and retain support, uncertainty and source provenance.
-   Panoramas visualize geometry rather than supply blurred width measurements.
-   **Accept:** asymmetric variable-width fixtures recover both walls without symmetry
-   assumptions, including noise, occlusion and unsupported intervals.
-4. **Appearance-assisted localization.** Compare learned local profiles with gradient
-   measurements under photometric variation and distractors. **Accept:** held-out
-   sequences and adversarial synthetic gradients show fewer wrong locks at a reported
-   coverage/cost tradeoff; appearance mismatch remains explicit and the reference is fixed.
-5. **Adaptive measurement placement.** Compile curves and boundary evidence into local
-   caliper poses and search regions, with density controlled by curvature and uncertainty.
+1. **Registration calibration, `planned`; before R, which freezes `TranslationConfig`.**
+   The similarity design is in [registration-stage2.md](registration-stage2.md).
+   - Diagnose first. Synthetic: a true translation or similarity on DoG-band texture at
+     320×97 with realistic noise, measuring the current false-reject rate. Private: on
+     development sequences A and B, disable the regional check and compare `region_error`
+     with reciprocal closure and anchor corrections.
+   - Replace the fixed-px regional threshold with a covariance-normalized test.
+     Translation: χ² on pairwise regional shift differences, from the summed regional
+     covariances plus a model-bias floor in px². Similarity: compare each regional fit
+     with the global one at that region's own centroid and extent, without
+     extrapolation. Config: `region_check: Option<RegionCheck { max_chi2, bias_floor_px }>`.
+   - Convergence: freeze the observation set at the start of refinement, fix the Huber
+     scale after the first iteration, and test convergence on the motion step only.
+     Reproduce the failure first with a synthetic overlap/mask fixture.
+   - Give the similarity initializer a search-only path.
+
+   **Accept:** synthetic false rejects ≤ 1% at the stated noise; an observable 0.01 rad
+   rotation (translation) and a mild affine (similarity) are still rejected; before/after
+   coverage on the development sequences, with reciprocal-closure p95 no worse; the
+   held-out sequences reported with the settings frozen; benches updated.
+2. **Coupled two-boundary extraction, single observation, `planned`.** A global choice of
+   both walls along a curve, instead of `pairing::choose`'s choice at each station alone;
+   its max-marginals give an ambiguity signal for the whole call, which no station-level
+   signal provides (backlog, silent wrong locks). Settled in its own ADR.
+   - Prototype in Python in `tools/bead_eval` on DamSegment first, in two variants: a
+     sparse Viterbi over the caliper's candidate edge pairs per station, plus an "absent"
+     state; and a dense DP over profile costs. Measure lock rate, false locks and a
+     max-marginal ambiguity AUC against today's tracker. It goes to Rust only if the
+     global choice lowers wrong locks at equal coverage.
+   - The Rust operator takes a reference polyline, stations from `measure/bead/curve.rs`,
+     masked profiles along the normals and signed DoG edge costs. States are (left bin,
+     width bin) plus an absent state with a cost; transitions bound |Δl| and |Δr| with
+     quadratic smoothness and width-change penalties, in ADR-0018's length-scale
+     parameters, so the result does not depend on the station spacing. It reports
+     boundaries refined subpixel on native pixels with the existing caliper and `Edge1D`,
+     a max-marginal margin per station and for the whole call, and typed absence. It
+     plugs into `BeadTracker` as an alternative pairing mode, with `explain_bead` parity
+     through the existing probes.
+   - Fixtures: `examples/common/ribbon.rs`'s scenes as a shared fixture, with asymmetric
+     variable-width walls, a distractor within 2 px, a continuous parallel line, gaps,
+     occlusion and highlights.
+
+   **Accept:** accuracy rows for boundary bias and σ; the backlog's 2 px distractor and
+   parallel-line wrong locks are resolved, or flagged by the whole-call margin; DamSegment
+   shows fewer false locks at equal lock rate; Python parity, a bench and the 600-line
+   file cap.
+3. **Multi-observation fusion and extension, `planned`.** An evidence stack holds, per
+   station, observations (id, profile samples, validity, weight), each sampled from its
+   own native frame through the caller's registered map. A robust combination of the
+   per-observation costs, weighted by registration covariance and visibility, feeds stage
+   2's extraction; provenance records which observations support each station. Extension
+   past the seed's end is the same extraction on new stations. Fusion runs only on
+   segments that registration supports. A pose chain over the reciprocal anchors stays in
+   tooling. A synthetic sequence generator renders known motion, a bead with asymmetric
+   walls, per-frame occlusions and highlights, injected registration error, and a bead
+   that moves relative to its substrate. Private validation annotates 50–100
+   cross-sections of a development sequence and a held-out one, read through the
+   manifest's `annotations`, and compares the single-frame tracker, the single-frame
+   extraction and the fused extraction.
+
+   **Accept:** synthetic walls are recovered where a single frame fails; the bead-moved
+   case is flagged; degradation under injected registration error is graceful and
+   reported; the private comparison is reported as aggregates.
+4. **Appearance-assisted localization, `planned`.** Fit a learned cross-section
+   appearance `a·A_s(u−δ)+b` against the fused profiles, and compare it with the gradient
+   calipers under photometric variation and distractors.
+
+   **Accept:** held-out sequences and adversarial synthetic gradients show fewer wrong
+   locks at a reported coverage/cost tradeoff; appearance mismatch remains explicit and
+   the reference is fixed.
+5. **Adaptive measurement placement, `planned`.** Compile curves and boundary evidence
+   into local caliper poses and search regions on native images, with density controlled
+   by curvature and uncertainty.
+
    **Accept:** measurements execute on original incoming images, preserve irregular
-   reference geometry and meet a stated native latency budget without per-frame panoramas.
-6. **Calibration and reference comparison.** Compose with `metric` for offline reference
-   geometry and reporting. **Accept:** calibrated synthetic fixtures give consistent
-   image/metric results while online localization and measurements stay in native image
-   coordinates. One reference supplies nominal geometry, never statistical tolerances.
+   reference geometry and meet a stated native latency budget without per-frame
+   panoramas.
+6. **Calibration composition, `planned`.** Compose with `metric` for offline reference
+   geometry and reporting.
+
+   **Accept:** calibrated synthetic fixtures give consistent image/metric results while
+   online localization and measurements stay in native image coordinates. One reference
+   supplies nominal geometry, never statistical tolerances.
 
 ---
 
