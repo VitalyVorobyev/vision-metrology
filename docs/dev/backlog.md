@@ -192,7 +192,7 @@ deleted here.
 
 The bounded similarity operator passes known-transform and allocation gates, but native
 320×97 latency is 6.53 ms and its full-corner regional consistency reduces private-data
-coverage (0–12.5% on private sequence dataset development runs). Reciprocal checks further limit supported
+coverage (0–12.5% on the private development sequences A–D). Reciprocal checks further limit supported
 segments. Before extending learned curves, isolate rank/noise versus actual deformation
 and camera-fixed illumination using known synthetic fixtures and source-image diagnostics.
 Do not mute failures, accept cached motion as truth, or loosen held-out thresholds to

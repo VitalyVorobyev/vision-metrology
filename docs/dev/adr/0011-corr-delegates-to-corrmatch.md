@@ -63,8 +63,8 @@ That contract is not represented by corrmatch's current high-level matching inte
 - **Whole-frame correlation with zero-filled exclusions.** Zero fill creates artificial
   stationary edges and allows excluded values into derivatives. Two-mask validity is
   part of the likelihood, not an image intensity convention.
-- **Porting the application pipeline.** Nozzle inference, frame pairing, ribbon labeling
-  and inspection orchestration do not belong in the general-purpose library.
+- **Porting an application pipeline.** Foreground inference, frame pairing, ribbon
+  labeling and inspection orchestration do not belong in the general-purpose library.
 
 ## Consequences
 

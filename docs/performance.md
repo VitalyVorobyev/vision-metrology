@@ -532,27 +532,28 @@ The can-end dataset is not distributed with this repository.
 
 ## Real data: masked translation
 
-Evaluated 2026-10-12 on all adjacent pairs of six private 320×97 camera-strip sequences.
-Development runs select settings; the two held-out runs use the identical frozen
-configuration. Saved camera roles select the strip, and camera handovers are explicit
-failures. Masks combine nozzle/unlit exclusions, saved foreground support, available
-reviewed masks and registered blank-difference support. Foreground is dilated by 3 px.
-Caller preprocessing uses masked normalized DoG at sigma 1/4 px; registration uses the
-native estimator defaults. Source images and annotations are not distributed.
+Evaluated 2026-10-12 on all adjacent pairs of six private 320×97 camera-strip sequences:
+development sequences A–D, which select settings, and held-out sequences E and F, which use
+the identical frozen configuration. Each frame belongs to one camera group, and a group
+change is a handover, counted as an explicit failure. Caller masks exclude stationary
+foreground, unlit regions, the tracked bead's support and registered blank-difference
+support; foreground is dilated by 3 px. Caller preprocessing uses masked normalized DoG at
+sigma 1/4 px; registration uses the native estimator defaults. Source images and
+annotations are not distributed.
 
 | Split / run | Accepted / pairs | Coverage | Closure median / p95 (px) | Python estimate median / p95 (ms) |
 |---|---|---|---|---|
-| development 15074 | 284 / 484 | 58.7% | 0.0096 / 0.0398 | 4.11 / 6.29 |
-| development 15077 | 327 / 546 | 59.9% | 0.0343 / 0.3112 | 3.45 / 6.06 |
-| development 15082 | 70 / 139 | 50.4% | 0.0301 / 0.0753 | 3.67 / 4.71 |
-| development 15516 | 47 / 259 | 18.1% | 0.0216 / 0.1383 | 2.38 / 3.22 |
-| held out 15090 | 104 / 197 | 52.8% | 0.0134 / 0.0331 | 4.52 / 5.91 |
-| held out 15521 | 16 / 237 | 6.8% | 0.0915 / 0.2079 | 2.12 / 5.91 |
+| development A | 284 / 484 | 58.7% | 0.0096 / 0.0398 | 4.11 / 6.29 |
+| development B | 327 / 546 | 59.9% | 0.0343 / 0.3112 | 3.45 / 6.06 |
+| development C | 70 / 139 | 50.4% | 0.0301 / 0.0753 | 3.67 / 4.71 |
+| development D | 47 / 259 | 18.1% | 0.0216 / 0.1383 | 2.38 / 3.22 |
+| held out E | 104 / 197 | 52.8% | 0.0134 / 0.0331 | 4.52 / 5.91 |
+| held out F | 16 / 237 | 6.8% | 0.0915 / 0.2079 | 2.12 / 5.91 |
 
 Coverage counts every pair, including camera handovers. Closure statistics include only
 pairs accepted in both directions. Python estimate times include image/mask conversion
 but exclude I/O, mask preparation and filtering; those preparation costs are separately
-reported by the evaluator. Their p95 can exceed the eventual 5 ms application budget.
+reported by the evaluator. Their p95 can exceed the eventual 5 ms online budget.
 
 The failure counts (model mismatch / ambiguity / refinement budget / camera handover)
 are 103/60/37/0, 147/5/66/1, 67/2/0/0, 204/3/5/0, 89/0/2/2 and 126/93/1/1 in table
@@ -561,12 +562,12 @@ runs, particularly turns and the unlike held-out part. Even accepted estimates h
 nonzero closure, and local covariance does not account for accumulated drift. Similarity
 registration and anchored sequence consistency need separate validation.
 
-Median distances to the application's saved raw motion estimates are 0.024, 0.079,
+Median distances to another estimator's saved raw motion estimates are 0.024, 0.079,
 0.051, 0.070, 0.030 and 0.113 px. Those saved estimates are generated comparisons,
 not independent motion ground truth. Blank differences give foreground support;
 precise bead boundaries still come from original bead images.
 
-In the local propagation demonstration, a saved generated ribbon at frame 150 of 15074
+In the local propagation demonstration, a saved generated ribbon at frame 150 of sequence A
 is transported independently in both directions. It produces 67 backward and 55 forward
 accepted measurements before explicit motion-model rejection. Transported independent
 walls, centerline and sections remain separate from caliper observations and the tracker's
@@ -616,12 +617,12 @@ leave the pose unchanged. Covariance has no certified statistical coverage.
 
 ### Private sequence results
 
-The following compares the two operators using identical prepared inputs. The six
-private sequence dataset runs retain their development/held-out identities and saved camera assignments,
-masks and pairing metadata. Similarity defaults are identical in all runs. The raw 42781
-sequence has 141 frames, with each of its three strips evaluated independently using the
-explicit caller-selected valid texture ROI x/y/w/h = 5/5/100/85. It has no reviewed role,
-foreground mask, blank pair or reference curve; there is no invented bead seed.
+The following compares the two operators using identical prepared inputs. Sequences A–F
+keep their development/held-out split, camera groups and masks. Similarity defaults are
+identical in all runs. The raw multi-strip sequence G has 141 frames, with each of its
+three strips evaluated independently using the explicit caller-selected valid texture ROI
+x/y/w/h = 5/5/100/85. It has no camera groups, foreground mask, blank pair or reference
+curve; there is no invented bead seed.
 
 Native acceptance is distinct from caller-owned sequence support. Sequence steps require
 accepted reverse registration and at most 0.25 px maximum corner closure; the gate was
@@ -633,32 +634,32 @@ those withheld by the sequence gate. Small closure sample counts are explicit.
 
 | Run | Translation accepted | Similarity accepted / pairs | Reciprocal sequence steps | Closure samples; median / p95 px | Python estimate median / p95 ms |
 |---|---|---|---|---|---|
-| 42781 | 289 | 147 / 420 (35.0%) | 118 | 124; 0.069 / 0.237 | 2.47 / 4.01 |
-| 15074 | 284 | 53 / 484 (11.0%) | 20 | 22; 0.099 / 0.268 | 8.31 / 13.86 |
-| 15077 | 327 | 68 / 546 (12.5%) | 31 | 32; 0.077 / 0.162 | 7.43 / 10.69 |
-| 15082 | 70 | 0 / 139 (0.0%) | 0 | 0; unavailable / unavailable | 7.74 / 10.67 |
-| 15516 | 47 | 10 / 259 (3.9%) | 2 | 3; 0.201 / 1.401 | 4.86 / 7.63 |
-| 15090 | 104 | 9 / 197 (4.6%) | 2 | 2; 0.120 / 0.183 | 10.25 / 13.31 |
-| 15521 | 16 | 6 / 237 (2.5%) | 1 | 1; 0.157 / 0.157 | 3.57 / 14.28 |
+| G | 289 | 147 / 420 (35.0%) | 118 | 124; 0.069 / 0.237 | 2.47 / 4.01 |
+| A | 284 | 53 / 484 (11.0%) | 20 | 22; 0.099 / 0.268 | 8.31 / 13.86 |
+| B | 327 | 68 / 546 (12.5%) | 31 | 32; 0.077 / 0.162 | 7.43 / 10.69 |
+| C | 70 | 0 / 139 (0.0%) | 0 | 0; unavailable / unavailable | 7.74 / 10.67 |
+| D | 47 | 10 / 259 (3.9%) | 2 | 3; 0.201 / 1.401 | 4.86 / 7.63 |
+| E | 104 | 9 / 197 (4.6%) | 2 | 2; 0.120 / 0.183 | 10.25 / 13.31 |
+| F | 16 | 6 / 237 (2.5%) | 1 | 1; 0.157 / 0.157 | 3.57 / 14.28 |
 
 Native similarity failure counts below retain every reason. Most failures are regional
 map disagreement; extra parameters and full-corner extrapolation are substantially less
-stable on these strips than a translation-only shift. Raw 42781's small texture ROI also
-loses rank in two regions. The accepted sample in 15516 still has a 1.401 px p95 reciprocal
+stable on these strips than a translation-only shift. G's small texture ROI also
+loses rank in two regions. The accepted sample in D still has a 1.401 px p95 reciprocal
 closure, so native acceptance alone is not sufficient for trustworthy sequence transport.
 
 | Run | Model mismatch | Ambiguity | Low texture | Refinement | Search bound | Handover |
 |---|---|---|---|---|---|---|
-| 42781 | 101 | 76 | 89 | 5 | 2 | 0 |
-| 15074 | 352 | 60 | 17 | 2 | 0 | 0 |
-| 15077 | 411 | 11 | 0 | 55 | 0 | 1 |
-| 15082 | 137 | 2 | 0 | 0 | 0 | 0 |
-| 15516 | 236 | 2 | 0 | 11 | 0 | 0 |
-| 15090 | 186 | 0 | 0 | 0 | 0 | 2 |
-| 15521 | 123 | 93 | 0 | 14 | 0 | 1 |
+| G | 101 | 76 | 89 | 5 | 2 | 0 |
+| A | 352 | 60 | 17 | 2 | 0 | 0 |
+| B | 411 | 11 | 0 | 55 | 0 | 1 |
+| C | 137 | 2 | 0 | 0 | 0 | 0 |
+| D | 236 | 2 | 0 | 11 | 0 | 0 |
+| E | 186 | 0 | 0 | 0 | 0 | 2 |
+| F | 123 | 93 | 0 | 14 | 0 | 1 |
 
-Raw 42781 provides three reciprocally supported independent anchor corrections; the
-private sequence dataset runs currently provide none. Closures and generated cached estimates are not
+G provides three reciprocally supported independent anchor corrections; A–F currently
+provide none. Closures and generated cached estimates are not
 independent motion truth. The six-run comparison is exploratory validation of this new
 stage; it does not establish accuracy of private pixels or a production reference-learning
 pipeline. Regional conditioning, noise and actual model/lighting departures need controlled
@@ -670,4 +671,4 @@ camera/model controls, frame playback, masks, mapped grids, failure timelines an
 versus anchored trajectories. Existing translation seed-segment outputs can be overlaid
 separately, retaining amber predictions and green caliper evidence plus geometry provenance.
 Detailed reports/pixels are private artifacts outside the repository; no source images,
-annotation rows, vendor paths or per-frame geometry are published.
+annotations or per-frame geometry are published.

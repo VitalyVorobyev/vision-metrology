@@ -37,11 +37,13 @@ Camera transitions start a new segment. Direct anchors cannot remove error inher
 an anchor itself; both chained and corrected trajectories are retained for comparison.
 No sequence manager or pose graph becomes public API in this stage.
 
-Private 42781 has raw three-strip images without reviewed camera assignment, masks or
-ribbon annotations. Its tool evaluates each strip independently and records that
-provenance; it does not assume a top-strip bead or invent a reviewed seed. Existing
-private sequence dataset saved roles and masks remain authoritative. HTML viewers embed private pixels
-only into local, untracked output directories; no remote scripts or hosted assets.
+The tooling reads a neutral sequence manifest; a private dataset's adapter writes it,
+from the git-ignored `tools/private/`. The raw multi-strip sequence G has no camera
+groups, masks or ribbon annotations: its adapter writes one manifest per strip, with a
+caller-selected texture ROI as the only mask, and records that provenance. It does not
+invent a seed. For sequences A–F, the caller's camera groups and masks are authoritative.
+HTML viewers embed private pixels only into local, untracked output directories; no remote
+scripts or hosted assets.
 
 ## Acceptance
 
@@ -52,7 +54,7 @@ only into local, untracked output directories; no remote scripts or hosted asset
   known truth; anchor failures and camera handovers remain explicit.
 - Python parity and zero-allocation prepared-call tests; representative strip/larger
   window benchmarks and complete repository gates.
-- Local reports and overlays for 42781 and saved-role private sequence dataset sequences; coverage,
+- Local reports and overlays for G and for the grouped sequences A–F; coverage,
   failures, closure and latency remain visible. No cached estimate is motion truth.
 
 Similarity may still fail under weak spatial texture, large changes, local minima,

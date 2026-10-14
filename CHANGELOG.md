@@ -18,8 +18,9 @@ are relative to 0.1.0.
 - **Local masked similarity** (`corr::SimilarityEstimator`): previous-to-current
   `Similarity2f`, explicit prediction/bounds, robust photometry, motion rank checks,
   covariance and independent regional map comparisons; native scratch reuse and
-  matching Python bindings. Development tooling adds reciprocal seed anchors and
-  standalone private overlay/viewer artifacts, including raw three-strip sequences.
+  matching Python bindings. Development tooling (`tools/registration_eval`) reads a
+  neutral sequence manifest and adds reciprocal seed anchors and a standalone overlay
+  viewer.
 
 - **Masked subpixel translation** (`corr::TranslationEstimator`): reusable scratch,
   independent per-image validity masks, bounded spatial registration with gain/offset
