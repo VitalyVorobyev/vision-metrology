@@ -670,6 +670,68 @@ The dataset is not distributed with this repository.
 [`tools/bead_eval/README.md`](../tools/bead_eval/README.md#acquisition-without-a-prior)
 reproduces these numbers.
 
+## Choosing both walls along the curve
+
+The tracker chooses each station's edge pair on its own. A prototype chooses the pairs of
+all stations together, as one shortest path over the profiles with smoothness on both
+walls and an explicit "absent" state, and reads an ambiguity for the whole call from the
+path's max-marginals: what the best answer with a wall more than 5 px elsewhere costs.
+It comes in two variants: a Viterbi over the caliper's candidate pairs (*sparse*), and a
+dynamic programme over every centre and width bin of the profile (*dense*). Both refine
+the walls with the caliper's own sub-pixel edges. It is Python around the bindings'
+caliper, an offline evaluation and not a library feature.
+
+On the DamSegment calls of the [tracker's signals](#real-data-bead-tracking-on-damsegment-cracks):
+5400 calls from the priors within the reach on 300 paths, with the same reach, width range
+and threshold. Intervals are 90% bootstrap intervals over paths. *Wrong at equal coverage*
+lets each method's support accept as many locked calls as the tracker's support of at
+least 0.5 does, 84.5% of all calls, and counts the calls it accepts that did not lock:
+
+| Method | Locked | Not locked, support ≥ 0.5 | Wrong at equal coverage | AUC: support / ambiguity / path evidence | Time per call |
+|---|---:|---:|---:|---:|---:|
+| tracker | 85.3% [82.6, 88.0] | 13.0% [10.6, 15.4] | 13.0% [10.5, 15.4] | 0.71 / – / – | 0.4 ms |
+| sparse | 86.3% [84.3, 88.2] | 7.1% [5.7, 8.8] | 12.4% [10.0, 14.3] | 0.70 / 0.54 / 0.70 | 13 ms |
+| dense | 91.0% [88.8, 93.3] | 8.8% [6.6, 11.0] | 7.1% [5.0, 8.8] | 0.58 / 0.50 / 0.72 | 19 ms |
+
+- **The dense choice locks more and wrongly less.** Paired with the tracker on the same
+  calls, it locks 5.7 percentage points more [4.1, 7.3] and, at equal coverage, accepts
+  6.0 points fewer wrong locks [4.1, 7.8]. On the 257 paths whose reference itself locks
+  for every method, it locks 98.0% of the calls against 94.1%, and the wrong locks at equal
+  coverage fall from 5.5% to 1.4%.
+- **The sparse choice does not.** At equal coverage it accepts about as many wrong locks
+  as the tracker, 0.7 points fewer [−1.5, 3.8]. It has fewer false locks only because its
+  support is lower on every call: 64% on average, against the tracker's 90% and the dense
+  variant's 99%.
+- **The max-marginal ambiguity does not predict wrong locks on cracks.** Its AUC is 0.50
+  (dense) and 0.54 (sparse), and 0.59–0.63 on the lockable paths, under support's. The
+  wrong locks are not close calls. In 86% of the dense variant's, the path it took has at
+  least as much evidence as the best path along the annotation (54% on the lockable
+  paths), so another structure is genuinely stronger. They are partial: a median of 82% of
+  the stations stays on the crack, and 63% of those that leave it lie in the outer fifth
+  at either end, where 40% would if they were spread evenly. The best path's mean evidence
+  is a better whole-call signal, with an AUC of 0.72.
+- **It does flag a competing parallel line.** On synthetic beads with an identical bead
+  14 px away, the six calls whose prior lies midway between the two score an ambiguity
+  below 0.85, and every other synthetic call scores above 4. Half of the six follow the
+  wrong bead, and they are the only wrong locks of either variant, so the ambiguity's AUC
+  on the synthetic set is 1.00, against 0.43 for the dense variant's support. The
+  tracker's support also separates them there, because the tracker loses stations
+  between the two beads.
+- **Accuracy is the caliper's.** On the synthetic walls (clean, asymmetric and varying in
+  width, with a gap or an occluder), both variants find every visible wall within 1 px,
+  with a bias within 0.005 px and a σ of 0.046 px against the tracker's 0.051 px. Where
+  a nearby edge merges with a wall in the derivative, every method reads the same biased
+  wall, and a choice between edges cannot undo it: a stripe 2 px outside the wall pulls it
+  0.43 px inwards, and a highlight inside the bead 0.38 px.
+- **Time.** The dense programme has 65 centres by a median of 28 widths per station on
+  these paths. The Python prototype takes 19 ms per call, median, of which 3 ms is
+  sampling the profiles; the tracker takes 0.4 ms in Rust. Measured with 8 worker
+  processes.
+
+The settings were chosen on a tuning subset of 120 other paths and on the synthetic
+scenes. [`tools/bead_eval/README.md`](../tools/bead_eval/README.md#coupled-two-boundary-extraction)
+reproduces the numbers.
+
 ## Real data: shape matching
 
 `examples/pose_audit` checks every recovered pose against corrmatch's masked ZNCC of the

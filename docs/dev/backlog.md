@@ -93,7 +93,9 @@ deleted here.
 - **A distractor within about 2 px of a bead's edge merges with it.** The edge detector
   sees one edge, so `clearance` never sees the distractor, and the width reads about
   0.4 px short. `docs/bead.md` documents it. A fix would need a profile-shape check, such
-  as edge symmetry, or a two-edge model.
+  as edge symmetry, or a two-edge model. A global choice of both walls along the curve
+  (`tools/bead_eval/coupled.py`) reads the same biased wall: the merge happens in the
+  derivative, before any choice between edges.
 - **Silent wrong locks on a textured surface.** On DamSegment cracks, 91% of the calls
   that fail to lock still report a support of at least 0.5. `tools/bead_eval/signals.py`
   measured every per-call signal against the lock, over 5400 calls on 300 paths:
@@ -109,6 +111,15 @@ deleted here.
   contrast and width against the previous frame's, a second line in the window as an
   ambiguity flag over the whole call, or an appearance check along the curve. Needs a
   design, and a dataset whose truth is the dark line, not a mask.
+
+  `tools/bead_eval/coupled_eval.py` tried the whole-call ambiguity: the max-marginals of a
+  global choice of both walls along the curve ([ADR-0019](adr/0019-coupled-two-boundary-extraction.md),
+  proposed). The dense variant locks more and accepts fewer wrong locks at equal coverage,
+  but its ambiguity does not separate the wrong locks that remain (AUC about 0.5): most
+  are not close calls, since another structure has at least as much evidence as the
+  crack. It does flag a competing parallel line on synthetic beads. The best path's mean
+  evidence separates slightly better than support. Numbers:
+  [performance](../performance.md#choosing-both-walls-along-the-curve).
 - **`Converged` almost never fires on real data.** 99.9% of DamSegment calls stop on
   `PassLimit`, because `max|d| < tol` (0.05 px) is far below a rough crack's station
   noise. With 10 passes the median rms correction levels off near 0.09 px, about a

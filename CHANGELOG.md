@@ -153,7 +153,9 @@ are relative to 0.1.0.
   - `docs/performance.md` gives the tracker's accuracy, convergence basins and speed, how
     it behaves on real concrete cracks (the DamSegment dataset), and how well a ridge
     detector finds a prior when there is none. `tools/bead_eval/` reproduces the
-    real-data numbers offline.
+    real-data numbers offline. It also evaluates a prototype that chooses both walls
+    along the whole curve at once, against the tracker, on the cracks and on synthetic
+    beads with known walls.
 - **Robust fitting** (`fit`): `fit_line`, `fit_circle` (Taubin then Gauss–Newton) and
   `fit_ellipse`, with `RobustLoss::{Huber, Tukey}` (annealed) and `RansacConfig`. Every fit
   reports `rms`, `max_dev` and `n_used`.
