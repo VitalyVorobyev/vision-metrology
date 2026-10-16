@@ -246,6 +246,8 @@ are relative to 0.1.0.
 - The unused `rayon` feature and the `vm-gallery` crate.
 - The dev-only `trace-cands` feature and its stderr instrumentation in
   `ShapeMatcher::find`. Time the call from outside, as the `stage_timing` example does.
+- The hidden `pyr::bench_downsample2x2_mean_to_f32_into` hook. `Pyramid::build` is the
+  way in; the `downsample` bench measures one level through it under the same IDs.
 
 ### Fixed
 
