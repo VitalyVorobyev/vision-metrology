@@ -215,6 +215,16 @@ are relative to 0.1.0.
   frame, view and station, and the cap rims. Named presets cover the synthetic acceptance
   cases of fusion, the planar rig and bead ends. A self-check measures the rendered walls
   independently. Byte-identical output and the truth are tested in CI.
+- **Cross-section annotation** (`tools/registration_eval`). `annotate.py` serves a
+  loopback page that proposes stations on a curve per frame: uniform with a fixed seed,
+  plus hard spans and stations the annotator adds. The annotator places both boundaries
+  on a cubic or `ProfileSampler` profile along the normal, sampled every 0.05 px, with
+  0.05 px nudges and a not-visible mark. Every section is annotated twice in two
+  shuffled, blind passes. Annotations go to a file that the manifest's `annotations`
+  names, and that file stays with the data. `annotations_eval.py` reports an operator's
+  wall bias and σ, its width error and its coverage, with the annotator's σ from pass 1
+  against pass 2 beside them. It writes aggregates only by default. The README holds the
+  protocol: how to choose sections, how many, and how to keep held-out sequences apart.
 - An accuracy regression suite with pinned envelopes; its strip and caliper rows run on
   CaliperBench's pixel-integrated image model: each `Locate` method on steps, bar centre
   and width, oblique strips, and rect, arc and radial calipers; its bead rows pin the

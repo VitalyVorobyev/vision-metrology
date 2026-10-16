@@ -14,6 +14,7 @@ import numpy as np
 from PIL import Image
 from scipy.ndimage import gaussian_filter
 
+import annotation
 from anchors import matrix
 
 VERSION = 1
@@ -92,7 +93,18 @@ class Sequence:
         self.comparison = doc.get('comparison')
         if self.comparison is not None and len(self.comparison.get('shifts', [])) != len(self.frames)-1:
             raise ValueError('comparison.shifts needs one entry (or null) per adjacent pair')
-        self.annotations = doc.get('annotations', [])
+        annotations = doc.get('annotations', [])
+        self.annotations_path = None
+        if isinstance(annotations, str):
+            self.annotations_path = self._resolve(annotations)
+            annotations = (annotation.read(self.annotations_path, len(self.frames))['annotations']
+                           if self.annotations_path.exists() else [])
+        elif isinstance(annotations, list):
+            for entry in annotations:
+                annotation.check(entry, len(self.frames))
+        else:
+            raise ValueError('annotations is a list or the path of an annotations file')
+        self.annotations = annotations
         self._images, self._masks, self._visible, self._prepared = {}, {}, {}, {}
 
     def __len__(self):

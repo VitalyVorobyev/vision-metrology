@@ -4,7 +4,8 @@ Development tooling for `corr::TranslationEstimator` and the experimental
 `corr::SimilarityEstimator` (`vision_metrology.experimental` in Python). It reads one neutral manifest per image sequence
 (`sequence.json`, below), registers adjacent frames, composes caller-owned sequence
 poses with reciprocal anchors, and writes reports, overlays and a standalone viewer. It also
-checks edge locators for sub-pixel locking without ground truth.
+checks edge locators for sub-pixel locking without ground truth, and measures wall accuracy
+against hand-annotated cross-sections.
 The tool knows nothing about where a sequence came from. A dataset with its own on-disk
 layout gets a small adapter that *writes* a manifest; private adapters live in the
 git-ignored `tools/private/`.
@@ -46,7 +47,7 @@ pixel), in the frame's own image.
 | `seed` | no | seed geometry for propagation |
 | `truth` | no | known geometry, for synthetic or independently measured sequences |
 | `comparison` | no | another method's estimates, reported against but never truth |
-| `annotations` | no | hand-annotated cross-sections, carried through unchanged |
+| `annotations` | no | hand-annotated cross-sections: a list, or the path of an annotations file |
 
 Each entry of `frames` is `{image, mask?, visibility?, group?}`:
 - `image`: a single-channel image Pillow can read (8- or 16-bit), or a 2-D `.npy` array.
@@ -76,7 +77,19 @@ frame's boundary polylines, for boundary evaluation.
 `comparison` is `{provenance, shifts}`: one previous-to-current `[dx, dy]` (or `null`)
 per adjacent pair, from another estimator. Reports state the distance to it.
 
-`annotations` is a list of `{frame, point, normal, left, right}` cross-sections.
+`annotations` is a list of annotated cross-sections, or the relative path of the
+annotations file that `annotate.py` writes (a named file that does not exist yet reads as
+empty). Each annotation is `{frame, station, normal, left, right, left_visible,
+right_visible, annotator, pass, timestamp}`:
+- `station` is `[x, y]` on the frame's curve, and `normal` the unit normal there.
+- `left` and `right` are signed offsets in px along `normal` from `station`, with
+  `left < right`. Each is `null` when that boundary is not visible, and its `*_visible`
+  flag is then false.
+- `pass` is 1 or 2, the blind repeat. `timestamp` is ISO 8601 UTC.
+
+The annotations file is `{version, protocol, sections, annotations}`. `sections` lists every
+station with its arc position and `source`: `uniform`, `span`, or `user` (added on the
+page). `protocol` records the seed, the count, the curve source and the profile settings.
 
 ## Preprocessing
 
@@ -152,6 +165,103 @@ is necessary, not sufficient, for an unbiased locator.
 python tools/registration_eval/phase_histogram.py \
   --manifest /tmp/registration-synthetic/seq/sequence.json --out-dir /tmp/phase-out --refine dog
 ```
+
+## Cross-section annotation: `annotate.py`
+
+A local page for annotating two-edge cross-sections. It proposes stations on a curve per
+frame: the manifest's seed polyline by default, or `--curves`, a file of
+`{"curves": [{"frame": i, "polyline": [[x, y], ...]}]}` such as a tracked curve. `--count`
+stations (default 60) are spread uniformly over the curves' joint arc length, one at
+random in each equal stratum, from `--seed`. Each `--span FRAME,S0,S1,COUNT` adds stations
+on a hard span, and clicking near the curve in the page's overview adds one more. A
+station's normal is the curve's chord over ±2 px of arc, turned by +90°.
+
+Each task shows the frame crop around the station and the profile along the normal,
+sampled every 0.05 px over ±`--half-length` px (default 12). The profile is a cubic spline
+through the original pixels; `--profile sampler` reads the bindings' `ProfileSampler`
+instead (σ `--sigma`). Samples outside the frame or outside `visibility` are hatched.
+Click the profile to place the active boundary. `←`/`→` nudge it by 0.05 px (`Shift`:
+0.5 px), `Tab` switches sides, `V` marks a boundary not visible, the wheel or `+`/`−`/`0`
+zoom, and `Enter` submits.
+
+Pass 1 visits every section in one shuffled order and pass 2 in another. No task shows an
+earlier answer. Every answer is written at once, so a session resumes where it stopped.
+Progress is per `--annotator`. The annotations file defaults to the one the manifest
+names, or `annotations.json` beside the manifest, so that annotations of private data stay
+with the data. The server listens on loopback only.
+
+```bash
+python tools/registration_eval/annotate.py --manifest /tmp/registration-synthetic/seq/sequence.json \
+  --annotator me --count 20
+```
+
+## Annotation evaluation: `annotations_eval.py`
+
+It scores an operator's walls against the annotations. A results file is
+`{"operator": name, "sections": [{frame, station, normal?, left, right}]}`. Each wall is
+`null` when the operator found none, an `[x, y]` point, or an offset along the row's normal.
+A row matches the annotated section of the same frame whose station lies within
+`--match-px` (default 0.5). `--stations-out` writes the annotated stations as an unfilled
+results file for an operator to complete.
+
+The reference at a section is the mean of all its visible annotations. A side that some
+annotations mark visible and others not is *disputed*, and it is left out. The report
+gives:
+- per wall and pooled: the bias, σ, RMS and largest error;
+- the width error: bias, σ and RMS;
+- coverage: visible walls found, hidden walls reported (spurious) and disputed walls;
+- the annotator's spread, from pass 2 against pass 1 of the same section: the inter-pass
+  bias, a single annotation's σ (`std(difference)/√2`) for a wall and for the width, and
+  visibility agreement;
+- the wall σ with the reference's own noise removed.
+
+`--annotator` and `--source uniform|span|user` restrict the annotations. The report holds
+aggregates only. `--per-section` adds per-section errors, which carry geometry and stay
+local. A held-out sequence needs `--held-out`.
+
+```bash
+python tools/registration_eval/annotations_eval.py --manifest seq/sequence.json \
+  --results /tmp/operator.json --out /tmp/annotation-report.json
+```
+
+## Annotation protocol
+
+**What a boundary is.** Place a boundary where the intensity changes fastest across it:
+the inflection of the profile, at the extremum of the grey derivative trace. Mark a
+boundary not visible when that change is not visible: occlusion, glare, or no contrast.
+Do not guess one.
+
+**Choosing sections.**
+- Use the uniform stations for the headline numbers. They sample the curve as the
+  operator meets it, and the fixed seed makes the set reproducible.
+- Add the hard spans on top: junctions, tight curvature, low contrast, glare,
+  occlusion boundaries, and frames where the tracker struggled. Give them as `--span`
+  before pass 1 starts, or add them on the overview, and report them separately with
+  `--source`.
+- Choose stations from the curve and the frame alone, before any operator result is
+  looked at.
+
+**How many.** Annotate 50–100 sections per sequence, each twice, about 100–200 answers.
+A bias is known to about σ/√n. Spread the sections over the sequence's frames; many
+stations on one frame are correlated.
+
+**The blind repeat.** Finish pass 1 before pass 2, and take a break between them. Add
+stations before pass 1 ends. A station added later still gets both passes, but its pass 2
+may come soon after its pass 1. Several annotators share one file, each with their own
+`--annotator`.
+
+**Development and held-out.** The split is per sequence: the manifest's `split`. Choose
+the held-out sequences before annotating, and annotate them with the same protocol. Tune
+operators on development sequences only. Run a held-out sequence once, with frozen
+settings; `annotations_eval.py` refuses one without `--held-out`. When a single sequence
+must be split, split it into contiguous frame ranges with one manifest each. Never
+interleave stations, because neighbouring stations and frames share their errors.
+
+**Reporting.** Report each operator's wall bias and σ, its width error and its coverage
+beside the annotator's σ and the number of sections. A wall σ near the reference's own
+noise (the annotator's σ/√2 for two passes) cannot be resolved by these annotations.
+Report the uniform and the hard-span sections separately. Annotations of private data stay
+with the data, and only aggregates under opaque labels go into `docs/performance.md`.
 
 ## The synthetic sequence: `synthetic.py`
 
