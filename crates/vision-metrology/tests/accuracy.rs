@@ -691,6 +691,10 @@ const SCALE_ROTATIONS_DEG: [f32; 3] = [0.0, 120.0, 240.0];
 /// | 1.7632 | 3/3   |  0.0006    | 0.0002       | 0.0105          | 0.0002            |
 /// | 2.0000 | 3/3   |  0.0006    | 0.0003       | 0.0131          | 0.0003            |
 ///
+/// Re-measured 2026-10-16, after edgels stopped snapping to pixel centres
+/// (issue #99): still 3/3 at every scale. The worst position bias drops to
+/// 0.0191 px; the worst scale cell is now 1.3704 (bias 0.0017, sigma 0.0012).
+///
 /// Found every trial at every scale — see the module-level comment above
 /// for why that does not contradict the field-data hypothesis. The
 /// offset-collapse at `scale < 1` this table's own worst cells hint at
@@ -1256,7 +1260,8 @@ struct Row {
 }
 
 /// Envelopes measured 2026-08-20 (`cargo test -p vision-metrology --test
-/// accuracy --all-features -- --nocapture`), pinned at ~1.5x the worst cell
+/// accuracy --all-features -- --nocapture`; `edge2d_position` and the four
+/// scale rows re-measured 2026-10-16, after issue #99), pinned at ~1.5x the worst cell
 /// observed across each sweep — except `fit_circle`, whose worst cell is a
 /// known-hard near-degenerate case (see `fit_circle_sweep`'s comment) and
 /// whose envelope is intentionally looser than 1.5x:
@@ -1264,15 +1269,15 @@ struct Row {
 /// | Row                                 | measured \|bias\| | measured sigma | envelope bias | envelope sigma |
 /// |--------------------------------------|-------------------:|----------------:|---------------:|-----------------:|
 /// | edge1d_position (px)                 | 0.042               | 0.095            | 0.07            | 0.15              |
-/// | edge2d_position (px)                 | 0.085               | 1.195            | 0.13            | 1.80              |
+/// | edge2d_position (px)                 | 0.097               | 1.608            | 0.15            | 2.40              |
 /// | caliper_rect_position (px)           | 0.026               | 0.062            | 0.05            | 0.12              |
 /// | fit_circle_radius_and_centre (px)    | 0.325               | 1.135            | 0.50            | 1.75              |
 /// | shape_matcher_translation (px)       | 0.003               | 0.011            | 0.02            | 0.03              |
 /// | shape_matcher_rotation (deg)         | 0.000               | 0.001            | 0.05            | 0.05              |
-/// | shape_matcher_scale_bias (frac.)     | 0.0014              | 0.0003           | 0.003           | 0.001             |
-/// | shape_matcher_scale_position (px)    | 0.0218              | 0.0039           | 0.04            | 0.01              |
-/// | estimate_verify_scale_bias (frac.)   | 0.0014              | 0.0003           | 0.003           | 0.001             |
-/// | estimate_verify_position (px)        | 0.0218              | 0.0039           | 0.04            | 0.01              |
+/// | shape_matcher_scale_bias (frac.)     | 0.0017              | 0.0012           | 0.003           | 0.0018            |
+/// | shape_matcher_scale_position (px)    | 0.0191              | 0.0048           | 0.04            | 0.01              |
+/// | estimate_verify_scale_bias (frac.)   | 0.0013              | 0.0002           | 0.003           | 0.001             |
+/// | estimate_verify_position (px)        | 0.0191              | 0.0048           | 0.04            | 0.01              |
 /// | rectify_repeatability (8-bit units)  | 0.8775              | 1.6883           | 1.30            | 2.50              |
 /// | displacement_quadratic (px)          | 0.0239              | 0.0164           | 0.04            | 0.025             |
 /// | displacement_lk (px)                 | 0.0204              | 0.0141           | 0.035           | 0.022             |
@@ -1339,10 +1344,14 @@ struct Row {
 /// `edge2d_position` and `fit_circle_radius_and_centre` are the two rows
 /// whose worst cell is a genuinely hard corner of the sweep, not a loose
 /// envelope for its own sake: `edge2d`'s worst cell is blur sigma=3 combined
-/// with 5 LSB noise, where the true edge's own gradient peak is weak enough
-/// that per-pixel noise competes with it (see `edge2d_sweep`'s comment on why
-/// `Hysteresis::Auto` cannot be used here at all — it would be *worse*, not
-/// better); `fit_circle`'s worst cell is a 30 deg arc (nearly a straight
+/// with 5 LSB noise at 45°, where the true edge's own gradient peak is weak
+/// enough that per-pixel noise competes with it (see `edge2d_sweep`'s comment
+/// on why `Hysteresis::Auto` cannot be used here at all — it would be *worse*,
+/// not better). Its sigma is the noise edgels chained to the line (a quarter
+/// of that cell's edgels lie more than 1.5 px off it); the edgels within
+/// 1.5 px have a sigma of 0.69 px and no bias. Every other cell is under
+/// 0.35 px, and with sub-pixel refinement fitting the pre-suppression
+/// magnitude the 30° and 45° cells up to blur sigma=1 are under 0.05 px; `fit_circle`'s worst cell is a 30 deg arc (nearly a straight
 /// chord) with 10% gross outliers, where RANSAC's own consensus metric
 /// becomes ambiguous among near-collinear points.
 const ROWS: &[Row] = &[
@@ -1367,8 +1376,8 @@ const ROWS: &[Row] = &[
     Row {
         name: "edge2d_position",
         measure: edge2d_sweep,
-        bias_envelope: 0.13,
-        sigma_envelope: 1.80,
+        bias_envelope: 0.15,
+        sigma_envelope: 2.40,
     },
     Row {
         name: "caliper_rect_position",
@@ -1402,19 +1411,23 @@ const ROWS: &[Row] = &[
     Row {
         // Worst measured |bias|/sigma over the full 0.5-2.0x sweep (all 12
         // scales found every trial — see `BASELINE_FOUND_RATE`'s table):
-        // |bias| 0.0014, sigma 0.0003. The offset-collapse at scale < 1
+        // |bias| 0.0017, sigma 0.0012, both at 1.37x, where the 120° and
+        // 240° scenes read 0.0025 high and 0° reads 0.0000 (every other
+        // scale's sigma is at most 0.0002). That cell moved when edgels
+        // stopped snapping to pixel centres (issue #99): the model's points
+        // moved by up to ½ px onto the edge. The offset-collapse at scale < 1
         // this row's own worst cells reflect was investigated as a fix
         // and deliberately left unfixed after
         // every design tried measured worse than the status quo — see
         // `BASELINE_FOUND_RATE`'s doc comment and `score_pose`'s own.
-        // ~2x the measurement, rounded.
+        // ~2x the bias, rounded; 1.5x the sigma.
         name: "shape_matcher_scale_bias",
         measure: shape_matcher_scale_bias_sweep,
         bias_envelope: 0.003,
-        sigma_envelope: 0.001,
+        sigma_envelope: 0.0018,
     },
     Row {
-        // Same sweep, position (px): |bias| 0.0218, sigma 0.0039.
+        // Same sweep, position (px): |bias| 0.0191, sigma 0.0048.
         name: "shape_matcher_scale_position",
         measure: shape_matcher_scale_position_sweep,
         bias_envelope: 0.04,
@@ -1423,19 +1436,18 @@ const ROWS: &[Row] = &[
     Row {
         // Estimate-then-verify on a model taught with the
         // *default* scale_range (motivation (b) — see the module comment
-        // above `estimate_verify_sweep_cells`). Measured: |bias| 0.0014,
-        // sigma 0.0003 — identical to the scan row above at every one of
-        // the 12 scales, not just close: estimate-then-verify always
-        // searches near the resampled model's own scale ~1.0. Same
-        // envelope as the scan row above.
+        // above `estimate_verify_sweep_cells`). Measured: |bias| 0.0013,
+        // sigma 0.0002 — the scan row above's numbers at 11 of the 12
+        // scales (not at 1.37x, the scan's outlier): estimate-then-verify
+        // always searches near the resampled model's own scale ~1.0.
         name: "estimate_verify_scale_bias",
         measure: estimate_verify_scale_bias_sweep,
         bias_envelope: 0.003,
         sigma_envelope: 0.001,
     },
     Row {
-        // Same sweep, position (px). Measured 2026-08-20: |bias| 0.0218,
-        // sigma 0.0039 — same observation as the row above.
+        // Same sweep, position (px): |bias| 0.0191, sigma 0.0048 — the
+        // same as the scan's position row.
         name: "estimate_verify_position",
         measure: estimate_verify_position_sweep,
         bias_envelope: 0.04,

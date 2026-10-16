@@ -41,10 +41,12 @@ pub struct ContourBuildConfig {
     ///
     /// Graph construction classifies a pixel by its crossing number, which is
     /// only a meaningful degree on a set that is already one pixel wide.
-    /// [`Edge2DDetector`] does not guarantee that: non-maximum suppression runs
-    /// on the 8-neighbourhood grid, so curved and diagonal edges come out as a
-    /// band 1-2 px thick. Fed such a band, nearly every pixel looks like a
-    /// junction and contours shatter into fragments a few points long.
+    /// [`Edge2DDetector`] suppresses along the image axis closest to the
+    /// gradient, which keeps one pixel per row or column of a clean edge, but
+    /// does not guarantee a one-pixel-wide set: where both axes tie, at corners
+    /// and in noise it can keep a band 1-2 px thick, and so can other edgel
+    /// sources. Fed such a band, nearly every pixel looks like a junction and
+    /// contours shatter into fragments a few points long.
     ///
     /// Thinning reduces the mask to a true skeleton first. Only the occupancy
     /// mask is thinned -- surviving edgels keep their original subpixel
@@ -980,15 +982,12 @@ mod tests {
         // A ring has an inner and an outer boundary and nothing else, so the
         // only correct graph is two loops with no junctions.
         //
-        // `Edge2DDetector` emits a band 1-2 px thick here (772 edgels against
-        // ~503 for a true 1-px outline). Before the mask was thinned, the
-        // crossing number saw junctions everywhere and this produced 288 nodes
-        // and 432 edges whose longest run was 15 points.
+        // An 8-connected outline of the two boundaries is about 450 px.
         let img = ring_image(128, 40.0, 2.0);
         let mut det = Edge2DDetector::new();
         let edgels = det.detect(&img.as_view(), &Edge2DConfig::default());
         assert!(
-            edgels.len() > 500,
+            edgels.len() > 400,
             "fixture should produce a rich edgel set"
         );
 
@@ -1016,14 +1015,26 @@ mod tests {
         );
     }
 
+    /// The edgels of a ring's two boundaries as bands `2 · half_band` px thick, the
+    /// shape a detector that suppresses along the 8-neighbourhood grid gives.
+    fn thick_ring_edgels(size: usize, radii: [f32; 2], half_band: f32) -> Vec<Edgel> {
+        let c = size as f32 / 2.0;
+        (0..size * size)
+            .map(|i| (i % size, i / size))
+            .filter(|&(x, y)| {
+                let r = ((x as f32 - c).powi(2) + (y as f32 - c).powi(2)).sqrt();
+                radii.iter().any(|&rr| (r - rr).abs() <= half_band)
+            })
+            .map(|(x, y)| e(x, y))
+            .collect()
+    }
+
     #[test]
     fn thinning_is_what_prevents_fragmentation() {
         // Pins the meaning of the flag: same edgels, same everything else, and
         // the only difference is whether the occupancy mask is skeletonised
-        // first. Without it the thick band is read as a mesh of junctions.
-        let img = ring_image(128, 40.0, 2.0);
-        let mut det = Edge2DDetector::new();
-        let edgels = det.detect(&img.as_view(), &Edge2DConfig::default());
+        // first. Without it a thick band is read as a mesh of junctions.
+        let edgels = thick_ring_edgels(128, [38.0, 42.0], 0.75);
 
         let thinned = build_graph_from_edgels(
             128,

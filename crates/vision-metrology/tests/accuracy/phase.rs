@@ -454,11 +454,11 @@ fn sweep(family: Family, locators: &[&Locator]) -> Vec<Phased> {
 /// Envelopes measured 2026-10-16 (`cargo test -p vision-metrology --test accuracy
 /// --all-features phase -- --nocapture`), |bias| and sigma pinned at ~1.5× the measured
 /// worst cell and the locking index `L` at `1 + 1.5 (L − 1)`; the measured numbers are in
-/// `docs/performance.md`. `edge1d_centroid` and `edge2d_parabolic_along_normal` leave a
-/// histogram bin empty (index ∞), so only their bias and sigma are guarded; both are
-/// recorded in `docs/dev/backlog.md` ("Edges"). `strip_continuous_sigma2.5` pins its index
-/// at 1.2, the acceptance bar for a locator that does not lock, rather than 1.5× its
-/// measured 1.19.
+/// `docs/performance.md`. `edge1d_centroid` leaves a histogram bin empty (index ∞), so
+/// only its bias and sigma are guarded; it is recorded in `docs/dev/backlog.md`
+/// ("Edges"). `edge2d_parabolic_along_normal` re-measured 2026-10-16 after issue #99.
+/// `strip_continuous_sigma2.5` pins its index at 1.2, the acceptance bar for a locator
+/// that does not lock, rather than 1.5× its measured 1.19.
 const LOCATORS: &[Locator] = &[
     Locator {
         name: "strip_textbook_parabolic",
@@ -568,9 +568,9 @@ const LOCATORS: &[Locator] = &[
         name: "edge2d_parabolic_along_normal",
         family: Family::Axis,
         locate: edge2d_parabolic,
-        bias_envelope: 0.68,
-        sigma_envelope: 0.75,
-        locking_envelope: f64::INFINITY,
+        bias_envelope: 0.046,
+        sigma_envelope: 0.043,
+        locking_envelope: 1.74,
     },
 ];
 

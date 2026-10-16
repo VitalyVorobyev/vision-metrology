@@ -6,6 +6,12 @@
 //! Normal direction: `n` is derived from image gradient `(gx, gy)` and points
 //! from dark to bright (increasing intensity).
 //!
+//! Non-maximum suppression compares each pixel's gradient magnitude with its two
+//! neighbours along the image axis closest to the gradient (x when `|gx| > |gy|`, y
+//! when `|gy| > |gx|`, either when they are equal), so a clean edge is one pixel thick
+//! along that axis at any orientation. The sub-pixel step
+//! then fits the pre-suppression magnitude along the same axis (see [`Subpix2D`]).
+//!
 //! Threshold behavior: see [`Hysteresis`]. [`Hysteresis::Auto`] derives both
 //! thresholds from the frame's peak NMS response; [`Hysteresis::Manual`] uses
 //! the given pair (with low/high ordering fixed if needed).
@@ -16,7 +22,6 @@
 use super::gradient::dense_scharr;
 use crate::core::{
     BorderMode, Image, ImageView, Pixel, Point2f, Vec2f, Vec2fExt, parabolic_peak_offset,
-    sample_bilinear_f32,
 };
 
 /// A single subpixel 2-D edge element (edgel).
@@ -41,9 +46,12 @@ pub struct Edgel {
 pub enum Subpix2D {
     /// No sub-pixel refinement: edgel position is the NMS peak pixel center.
     None,
-    /// Parabolic interpolation along the gradient normal direction using the
-    /// NMS values at `±1` pixel offsets. Offsets are clamped to `[-1, 1]`, the
-    /// bracket the three samples span.
+    /// A parabola through the pre-suppression gradient magnitude at the edgel's
+    /// pixel and its two neighbours along the image axis closest to the normal
+    /// (the axis suppression compared along). Its vertex is where the magnitude
+    /// ridge crosses the pixel's row (or column); the edgel moves from its pixel
+    /// centre along the normal `n` to the point of the ridge there, at most ½ px
+    /// along that axis.
     ParabolicAlongNormal,
 }
 
@@ -93,7 +101,11 @@ pub struct Edge2DConfig {
     pub smooth_kind: SmoothKind,
     /// How the hysteresis thresholds are chosen.
     pub hysteresis: Hysteresis,
-    /// Border replication mode for gradient and NMS sampling.
+    /// Border mode for samples outside the image.
+    ///
+    /// The gradient clamps at the border, and edgels are interior pixels whose
+    /// sub-pixel samples are their grid neighbours, so no sample currently falls
+    /// outside the image and this field has no effect.
     pub border: BorderMode<f32>,
     /// Sub-pixel refinement mode applied after NMS.
     pub subpix: Subpix2D,
@@ -332,9 +344,6 @@ impl Edge2DDetector {
             return;
         }
 
-        const TAN22_5: f32 = 0.414_213_57;
-        const TAN67_5: f32 = 2.414_213_7;
-
         for y in 1..(h - 1) {
             for x in 1..(w - 1) {
                 let idx = y * w + x;
@@ -342,23 +351,7 @@ impl Edge2DDetector {
                 if m <= 0.0 {
                     continue;
                 }
-
-                let gxx = gx[idx];
-                let gyy = gy[idx];
-                let ax = gxx.abs();
-                let ay = gyy.abs();
-
-                let (i1, i2) = if ay <= ax * TAN22_5 {
-                    (idx - 1, idx + 1)
-                } else if ay >= ax * TAN67_5 {
-                    (idx - w, idx + w)
-                } else if gxx * gyy > 0.0 {
-                    (idx - w - 1, idx + w + 1)
-                } else {
-                    (idx - w + 1, idx + w - 1)
-                };
-
-                if m >= mag[i1] && m >= mag[i2] {
+                if peak_axis(mag, gx[idx], gy[idx], idx, w).is_some() {
                     nms[idx] = m;
                 }
             }
@@ -445,7 +438,6 @@ impl Edge2DDetector {
         let gy = self.gy.data();
         let mag = self.mag.data();
         let nms_data = self.nms.data();
-        let nms_view = self.nms.as_view();
 
         let mut out = Vec::with_capacity(count_hint);
 
@@ -468,14 +460,7 @@ impl Edge2DDetector {
 
                 let mut t = 0.0f32;
                 if cfg.subpix == Subpix2D::ParabolicAlongNormal {
-                    let s0 = nms_data[idx];
-                    let sp =
-                        sample_bilinear_f32(&nms_view, x as f32 + n.x, y as f32 + n.y, cfg.border);
-                    let sm =
-                        sample_bilinear_f32(&nms_view, x as f32 - n.x, y as f32 - n.y, cfg.border);
-                    if let Some(tt) = parabolic_peak_offset(sm, s0, sp) {
-                        t = tt.clamp(-1.0, 1.0);
-                    }
+                    t = axis_parabola_offset(mag, gx[idx], gy[idx], idx, w, n);
                 }
 
                 let p = Point2f::new(x as f32 + t * n.x, y as f32 + t * n.y);
@@ -497,6 +482,50 @@ impl Default for Edge2DDetector {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// The image axis along which the interior pixel `idx` is a gradient-magnitude peak, as
+/// the index step to its neighbour (`1` for x, `w` for y), or `None` when it is not one.
+///
+/// The axis is the one closest to the gradient: x when `|gx| > |gy|`, y when
+/// `|gy| > |gx|`, and either when they are equal, so a staircase at exactly 45° is not
+/// broken where the two choices meet. The comparison is strict on one side, so a
+/// two-pixel plateau keeps exactly one pixel.
+#[inline]
+fn peak_axis(mag: &[f32], gx: f32, gy: f32, idx: usize, w: usize) -> Option<usize> {
+    let m = mag[idx];
+    let is_peak = |step: usize| m > mag[idx - step] && m >= mag[idx + step];
+    let (ax, ay) = (gx.abs(), gy.abs());
+    if ax >= ay && is_peak(1) {
+        Some(1)
+    } else if ay >= ax && is_peak(w) {
+        Some(w)
+    } else {
+        None
+    }
+}
+
+/// Sub-pixel offset along the normal `n` of the gradient-magnitude ridge through the
+/// interior edgel pixel `idx`, in px.
+///
+/// The parabola runs through the **pre-suppression** magnitude at `idx` and its two
+/// grid neighbours along the axis suppression found the peak on ([`peak_axis`]). The
+/// samples are exact, so no interpolation error enters; it is the three-point fit a 1-D
+/// profile gets. A straight ridge `g(n·p − d)` sampled along that axis is `g` stretched
+/// by `1 / |n·axis|`, so the vertex `u` along the axis is where the ridge crosses the
+/// pixel's row (or column), and `u · (n·axis)` is the same point's distance along `n`.
+/// `idx` is the maximum of the three, so `|u| ≤ ½`; the clamp only guards rounding.
+///
+/// Suppression decides only which pixels are edgels: its output has both neighbours of
+/// a one-pixel ridge at zero, so a fit to it would return the pixel centre.
+#[inline]
+fn axis_parabola_offset(mag: &[f32], gx: f32, gy: f32, idx: usize, w: usize, n: Vec2f) -> f32 {
+    let Some(step) = peak_axis(mag, gx, gy, idx, w) else {
+        return 0.0;
+    };
+    let along = if step == 1 { n.x } else { n.y };
+    parabolic_peak_offset(mag[idx - step], mag[idx], mag[idx + step])
+        .map_or(0.0, |u| u.clamp(-0.5, 0.5) * along)
 }
 
 /// Widen `src` into the packed `f32` scratch plane.
@@ -599,15 +628,50 @@ mod tests {
         let e_none = det.detect(&img.as_view(), &cfg_none);
         let e_sub = det.detect(&img.as_view(), &cfg_sub);
 
-        assert!(e_none.len() > 100);
-        assert!(e_sub.len() > 100);
+        // Thin in x at 20°: about one edgel per interior row.
+        assert!(e_none.len() >= 90 && e_none.len() <= 96, "{}", e_none.len());
+        assert_eq!(e_sub.len(), e_none.len());
 
         let m_none = median_abs_distance(&e_none, &n, t);
         let m_sub = median_abs_distance(&e_sub, &n, t);
 
-        assert!(m_none <= 0.3);
-        assert!(m_sub <= 0.2);
-        assert!(m_sub <= m_none + 1e-4);
+        assert!(m_none <= 0.3, "{m_none}");
+        assert!(m_sub <= 0.08, "{m_sub}");
+        assert!(m_sub <= 0.5 * m_none, "{m_sub} vs {m_none}");
+    }
+
+    /// A box-sampled vertical step at `edge_x`, levels 0 and 1, one binomial pass.
+    fn box_step(w: usize, h: usize, edge_x: f32) -> Image<f32> {
+        let mut img = vec![0.0f32; w * h];
+        for y in 0..h {
+            for x in 0..w {
+                img[y * w + x] = (x as f32 + 0.5 - edge_x).clamp(0.0, 1.0);
+            }
+        }
+        blur_binomial3(&mut img, w, h, 1);
+        Image::from_vec(w, h, img).expect("valid image")
+    }
+
+    /// The sub-pixel step fits the pre-suppression magnitude: edgels follow the step
+    /// across a pixel instead of staying on pixel centres.
+    #[test]
+    fn edgels_follow_the_subpixel_phase() {
+        let (w, h) = (32usize, 16usize);
+        let mut det = Edge2DDetector::new();
+        for k in 0..10 {
+            let edge_x = 15.0 + k as f32 / 10.0;
+            let img = box_step(w, h, edge_x);
+            let edgels = det.detect(&img.as_view(), &Edge2DConfig::default());
+            let inner: Vec<&Edgel> = edgels
+                .iter()
+                .filter(|e| (2..h - 2).contains(&e.idx.1))
+                .collect();
+            assert_eq!(inner.len(), h - 4, "one edgel per row at x = {edge_x}");
+            for e in inner {
+                let err = e.p.x - edge_x;
+                assert!(err.abs() <= 0.06, "x = {edge_x}: edgel at {}", e.p.x);
+            }
+        }
     }
 
     #[test]
