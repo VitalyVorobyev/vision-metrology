@@ -262,6 +262,9 @@ are relative to 0.1.0.
   crate-private (`p` is the node's position).
 - `GraphEdge::compute_geometry` and `ContourGraph::compute_all_geometry`; set
   `ContourBuildConfig::record_geometry` to get `tangents`, `curvatures` and `arc_params`.
+- `Pixel`'s accumulator items (`Acc`, `to_acc`, `acc_to_f32`, `as_f32_slice`) move to its
+  sealed supertrait, and the unused `acc_mean4` is gone. `Pixel` keeps `ZERO`, `to_f32`
+  and `from_f32_sat`.
 
 ### Fixed
 

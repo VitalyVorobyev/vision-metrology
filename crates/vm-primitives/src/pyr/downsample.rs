@@ -1,6 +1,6 @@
 //! 2×2 box-mean downsampling, generic over [`Pixel`].
 //!
-//! [`Pixel::to_acc`] carries the only per-type difference (accumulator
+//! The accumulator (`to_acc`, on `Pixel`'s sealed half) carries the only per-type difference (accumulator
 //! width), so one generic loop covers every pixel type, with no `unsafe`.
 //!
 //! Only an `f32`-destination kernel exists: every pyramid level above 0 is
@@ -38,7 +38,7 @@ fn check_dims(src_w: usize, src_h: usize, dst_w: usize, dst_h: usize) -> Result<
 
 /// 2×2 box mean of `src` into an `f32` destination.
 ///
-/// The sum is accumulated in [`Pixel::Acc`] and converted once, so an integer
+/// The sum is accumulated in the pixel type's accumulator and converted once, so an integer
 /// source loses nothing to intermediate rounding. This is the kernel every
 /// pyramid level above 0 is built with.
 ///
