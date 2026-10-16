@@ -56,14 +56,19 @@ substrate is flagged, not absorbed as motion.
 
 ### R: first release, `in progress` ([#79])
 
-- CI packages both library crates (`cargo publish --dry-run`) and installs and tests each
-  built wheel on Linux x86_64 and aarch64, macOS and Windows.
+- Done: CI packages both library crates on every PR (`release-crates.yml`), and builds
+  each abi3 wheel, installs it into a clean venv and runs the README quick starts on Linux
+  x86_64 and aarch64, macOS and Windows (`python-wheels.yml`). The wheel version comes from
+  `Cargo.toml`. Both publish jobs exist, over OIDC, gated to version tags on this
+  repository.
 - The public Rust and Python surface is reviewed before the release fixes it, in four
   phases, each approved on its own. It follows registration calibration, which settles
   `TranslationConfig`.
 - CHANGELOG cut, versions 0.2.0, install sections point at crates.io and PyPI.
-- crates.io's first publish is manual (trusted publishing needs an existing crate); later
-  releases publish from CI over OIDC, PyPI over a trusted publisher. No stored tokens.
+- crates.io's first publish is manual (trusted publishing needs an existing crate). Then
+  configure the trusted publishers (crates.io: both crates, `release-crates.yml`,
+  environment `crates-io`; PyPI: `python-wheels.yml`, environment `pypi`) and set the
+  repository variable `CRATES_IO_TRUSTED_PUBLISHING=true`. No stored tokens.
 
 **Accept:** `vm-primitives` and `vision-metrology` 0.2.0 on crates.io with docs.rs builds;
 the `vision-metrology` 0.2.0 wheel on PyPI imports and runs the README quick start on all

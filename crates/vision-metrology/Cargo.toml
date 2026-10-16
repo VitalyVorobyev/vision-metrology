@@ -9,6 +9,25 @@ readme = "README.md"
 description = "Industrial machine-vision metrology: calipers and metrology models, robust line/circle/ellipse fitting, shape-based object detection, contour graphs, laser stripe extraction, subpixel edges"
 keywords = ["machine-vision", "metrology", "laser", "contour", "segmentation"]
 categories = ["computer-vision", "science"]
+# What crates.io ships: the library, its README (the crate docs `include_str!` it), the
+# licence texts (symlinks to the repository root), the benches and the integration tests
+# with their fixtures. An allow-list, so a new file is left out until someone decides to
+# ship it. A fixture ships only under 64 KiB: `caliperbench_golden.json` (~120 KiB) and the
+# test that reads it stay in the repository. The examples stay too: several read datasets
+# that are not in the repository, and they are browsable on GitHub. The two example helpers
+# that tests and benches `#[path]`-include ship with them.
+include = [
+  "/src/**",
+  "/benches/**",
+  "/tests/**",
+  "/examples/common/corr.rs",
+  "/examples/common/ribbon.rs",
+  "!/tests/caliperbench_protocol.rs",
+  "!/tests/fixtures/caliperbench_golden.json",
+  "/README.md",
+  "/LICENSE-MIT",
+  "/LICENSE-APACHE",
+]
 
 [dependencies]
 vm-primitives = { path = "../vm-primitives", version = "0.1.0" }

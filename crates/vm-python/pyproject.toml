@@ -4,16 +4,17 @@ build-backend = "maturin"
 
 [project]
 name = "vision-metrology"
-# Kept in step with `version` in the workspace Cargo.toml by hand; maturin does
-# not read the Rust version, and a mismatch would ship a wheel labelled wrongly.
-version = "0.1.0"
-description = "Industrial machine-vision metrology: subpixel edges, laser stripe extraction, contour graphs, shape fitting and segmentation"
+# maturin takes the version from Cargo.toml (`version.workspace = true`), so the wheel and
+# the crates cannot drift apart.
+dynamic = ["version"]
+# Only what the bindings expose: laser stripe extraction is a Rust-only module.
+description = "Industrial machine-vision metrology: subpixel edges, shape-based matching, calipers, bead tracking, robust fitting, pixel-to-millimetre calibration, image warping and cross-correlation"
 readme = "README.md"
 # SPDX expression only: `license-files` cannot reach the repo-root LICENSE-*
 # files because `..` is rejected in its globs.
 license = "MIT OR Apache-2.0"
 requires-python = ">=3.10"
-keywords = ["machine-vision", "metrology", "image-processing", "edge-detection", "laser"]
+keywords = ["machine-vision", "metrology", "image-processing", "edge-detection", "shape-matching"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Science/Research",

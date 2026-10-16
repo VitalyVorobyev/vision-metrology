@@ -190,8 +190,6 @@ deleted here.
   vm-python README.
 - **No `Edge1DDetector` or `LevelCrossing1D` binding.** 1-D detection is reachable only
   through `Caliper`.
-- **No built wheel is import-tested** on any platform; CI builds the extension from
-  source.
 
 ## Testing
 
