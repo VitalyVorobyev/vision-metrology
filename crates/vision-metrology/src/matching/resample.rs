@@ -48,7 +48,7 @@
 use vm_primitives::{Edge2DConfig, Error, Point2f};
 
 use super::build::{MAX_LEVELS, RawPoint, from_raw};
-use super::config::{Contrast, ShapeModelConfig};
+use super::config::{Contrast, ShapeModelConfig, ShapeModelTuning};
 use super::model::ShapeModel;
 
 /// A narrow scale_range on the resampled model, centered on 1.0 — the
@@ -118,11 +118,7 @@ impl ShapeModel {
             ..Edge2DConfig::default()
         };
         let cfg = ShapeModelConfig {
-            num_levels: core::num::NonZeroUsize::new(self.num_levels().min(MAX_LEVELS)),
-            edge,
-            pre_smooth: self.pre_smooth(),
             min_contrast: Contrast::Raw(0.0),
-            max_points: core::num::NonZeroUsize::new(self.point_count(0).max(8)),
             origin: Some(Point2f::new(0.0, 0.0)),
             // Zero, not `self.reference_angle()`: `teach_points` are already
             // stored in the rotated model frame (`build::assemble` rotates
@@ -135,7 +131,13 @@ impl ShapeModel {
             angle_range: self.angle_range(),
             scale_range: VERIFY_SCALE_RANGE,
             polarity: self.polarity(),
-            min_points_per_level: 8,
+            tuning: ShapeModelTuning {
+                num_levels: core::num::NonZeroUsize::new(self.num_levels().min(MAX_LEVELS)),
+                edge,
+                pre_smooth: self.pre_smooth(),
+                max_points: core::num::NonZeroUsize::new(self.point_count(0).max(8)),
+                min_points_per_level: 8,
+            },
         };
 
         let mut out = from_raw(raw, &cfg)?;

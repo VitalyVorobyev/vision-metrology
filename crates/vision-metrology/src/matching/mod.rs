@@ -77,7 +77,8 @@ mod search;
 
 pub use build::{ContourOrientation, ShapeModelBuilder};
 pub use config::{
-    Contrast, Polarity, Refinement, ShapeModelConfig, ShapeSearchConfig, ShapeSearchTuning,
+    Contrast, Polarity, Refinement, ShapeModelConfig, ShapeModelTuning, ShapeSearchConfig,
+    ShapeSearchTuning,
 };
 pub use crop::CropSpec;
 pub use matcher::{ShapeMatch, ShapeMatcher};

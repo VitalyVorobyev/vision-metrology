@@ -258,6 +258,12 @@ are relative to 0.1.0.
   `radius`, `angle_step`, `scale_step`); `point_count(i)` counts a level's points, and
   `model_geometry(i)` copies them out. Python adds `ShapeModel.level_info` and
   `vm.LevelInfo`.
+- **Breaking:** `ShapeModelConfig` keeps what the model is (`min_contrast`, `origin`,
+  `reference_angle`, `angle_range`, `scale_range`, `polarity`) and moves the extraction
+  effort into `tuning` (`ShapeModelTuning`: `num_levels`, `edge`, `pre_smooth`,
+  `max_points`, `min_points_per_level`), as `ShapeSearchConfig` does. Write
+  `cfg.tuning.max_points`, or `tuning: ShapeModelTuning { max_points, ..Default::default() }`
+  in a literal. Python's `ShapeModelConfig` keeps its flat keywords.
 - Internal: `measure` holds two crate-private numerical cores (ADR-0020). One is an exact
   layered min-path with max-marginals, for the coupled two-boundary extraction and the
   bead-end rim. The other is a robust Whittaker smoother, on which `BeadTracker`'s

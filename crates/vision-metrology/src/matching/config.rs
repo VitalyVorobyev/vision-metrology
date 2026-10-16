@@ -137,27 +137,18 @@ fn dynamic_range<P: Pixel>(img: &ImageView<'_, P>) -> f32 {
 
 /// Parameters for building a [`ShapeModel`](super::ShapeModel).
 ///
+/// These six fields describe **what the model is**: which edges count, where
+/// its reference point and natural 0° are, and the pose range it will be
+/// searched over. How the model is extracted — the edge detector, the pyramid,
+/// the point budget — lives in [`ShapeModelTuning`] under `tuning`, as the
+/// search's effort settings live in
+/// [`ShapeSearchTuning`].
+///
 /// The intended `angle_range` and `scale_range` are stored in the model because
 /// they, together with the model's radius, determine the angle and scale steps
 /// the search sweeps with. A search may narrow them but not widen them.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ShapeModelConfig {
-    /// Number of pyramid levels; `None` chooses automatically.
-    ///
-    /// Automatic selection keeps adding levels while the level still has at
-    /// least `min_points_per_level` points and a radius of at least 6 px, up to
-    /// a hard ceiling of 5 levels.
-    pub num_levels: Option<NonZeroUsize>,
-    /// Edge detector configuration used at every pyramid level.
-    pub edge: Edge2DConfig,
-    // Invariant 3.
-    /// Pre-filter applied before each pyramid decimation.
-    ///
-    /// Stored in the finished model, and the search reads it from there —
-    /// model and scene must share the downsample kernel.
-    /// [`PreSmooth::Binomial121`] is what keeps a fine-toothed contour alive at
-    /// levels 3–4, where a plain box mean aliases it away.
-    pub pre_smooth: PreSmooth,
     /// Additional gradient-magnitude floor for a point to enter the model.
     ///
     /// The single most consequential setting on low-relief parts: because the
@@ -165,13 +156,6 @@ pub struct ShapeModelConfig {
     /// non-repeating surface shading *dilutes* every later score rather than
     /// merely failing to help.
     pub min_contrast: Contrast,
-    /// Maximum points per level; the excess is grid-decimated. `None` = unlimited.
-    ///
-    /// Decimation is always spatially uniform. Keeping the *strongest* `n`
-    /// points instead would bias the score upward and break the
-    /// `score ≈ 1 − occluded_fraction` property the `min_score` threshold rests
-    /// on.
-    pub max_points: Option<NonZeroUsize>,
     /// Reference point in reference-image coordinates. `None` = centroid of the
     /// level-0 points, which minimises the model radius and therefore the
     /// number of angle steps the search needs.
@@ -206,6 +190,40 @@ pub struct ShapeModelConfig {
     pub scale_range: (f32, f32),
     /// Polarity semantics baked into the model.
     pub polarity: Polarity,
+    /// Extraction effort: the edge detector, the pyramid and the point budget.
+    pub tuning: ShapeModelTuning,
+}
+
+/// How a [`ShapeModel`](super::ShapeModel) is extracted, for
+/// [`ShapeModelConfig`].
+///
+/// The defaults suit a part of a few hundred pixels taught from an 8-bit
+/// image; `edge` is the field most often changed, to match the scene's blur.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ShapeModelTuning {
+    /// Number of pyramid levels; `None` chooses automatically.
+    ///
+    /// Automatic selection keeps adding levels while the level still has at
+    /// least `min_points_per_level` points and a radius of at least 6 px, up to
+    /// a hard ceiling of 5 levels.
+    pub num_levels: Option<NonZeroUsize>,
+    /// Edge detector configuration used at every pyramid level.
+    pub edge: Edge2DConfig,
+    // Invariant 3.
+    /// Pre-filter applied before each pyramid decimation.
+    ///
+    /// Stored in the finished model, and the search reads it from there —
+    /// model and scene must share the downsample kernel.
+    /// [`PreSmooth::Binomial121`] is what keeps a fine-toothed contour alive at
+    /// levels 3–4, where a plain box mean aliases it away.
+    pub pre_smooth: PreSmooth,
+    /// Maximum points per level; the excess is grid-decimated. `None` = unlimited.
+    ///
+    /// Decimation is always spatially uniform. Keeping the *strongest* `n`
+    /// points instead would bias the score upward and break the
+    /// `score ≈ 1 − occluded_fraction` property the `min_score` threshold rests
+    /// on.
+    pub max_points: Option<NonZeroUsize>,
     /// Automatic-level stopping threshold: a level with fewer points than this
     /// is not built. Below ~8 points a mean of dot products is noise.
     pub min_points_per_level: usize,
@@ -214,16 +232,24 @@ pub struct ShapeModelConfig {
 impl Default for ShapeModelConfig {
     fn default() -> Self {
         Self {
-            num_levels: None,
-            edge: Edge2DConfig::default(),
-            pre_smooth: PreSmooth::None,
             min_contrast: Contrast::Raw(0.0),
-            max_points: NonZeroUsize::new(512),
             origin: None,
             reference_angle: 0.0,
             angle_range: (-core::f32::consts::PI, core::f32::consts::PI),
             scale_range: (1.0, 1.0),
             polarity: Polarity::default(),
+            tuning: ShapeModelTuning::default(),
+        }
+    }
+}
+
+impl Default for ShapeModelTuning {
+    fn default() -> Self {
+        Self {
+            num_levels: None,
+            edge: Edge2DConfig::default(),
+            pre_smooth: PreSmooth::None,
+            max_points: NonZeroUsize::new(512),
             min_points_per_level: 8,
         }
     }
@@ -330,11 +356,11 @@ mod tests {
     #[test]
     fn defaults_are_the_documented_ones() {
         let m = ShapeModelConfig::default();
-        assert_eq!(m.num_levels, None);
-        assert_eq!(m.max_points, NonZeroUsize::new(512));
+        assert_eq!(m.tuning.num_levels, None);
+        assert_eq!(m.tuning.max_points, NonZeroUsize::new(512));
         assert_eq!(m.polarity, Polarity::Match);
         assert_eq!(m.scale_range, (1.0, 1.0));
-        assert_eq!(m.min_points_per_level, 8);
+        assert_eq!(m.tuning.min_points_per_level, 8);
         assert_eq!(m.min_contrast, Contrast::Raw(0.0));
 
         let s = ShapeSearchConfig::default();

@@ -228,7 +228,7 @@ impl ShapeModel {
 mod tests {
     use vm_primitives::{Point2f, Polyline2f, PreSmooth};
 
-    use crate::matching::{ContourOrientation, ShapeModel, ShapeModelConfig};
+    use crate::matching::{ContourOrientation, ShapeModel, ShapeModelConfig, ShapeModelTuning};
 
     /// Invariant 3: the pyramid kernel travels with the stored model.
     #[test]
@@ -245,7 +245,10 @@ mod tests {
             })
             .collect();
         let cfg = ShapeModelConfig {
-            pre_smooth: PreSmooth::Binomial121,
+            tuning: ShapeModelTuning {
+                pre_smooth: PreSmooth::Binomial121,
+                ..Default::default()
+            },
             ..Default::default()
         };
         let model = ShapeModel::from_polylines(

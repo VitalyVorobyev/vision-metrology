@@ -29,7 +29,7 @@ use clap::{Parser, ValueEnum};
 use image::ImageReader;
 use vision_metrology::matching::{
     Contrast, Polarity, Refinement, ShapeMatch, ShapeMatcher, ShapeModel, ShapeModelBuilder,
-    ShapeModelConfig, ShapeSearchConfig, ShapeSearchTuning,
+    ShapeModelConfig, ShapeModelTuning, ShapeSearchConfig, ShapeSearchTuning,
 };
 use vision_metrology::{Image, Point2f, Rect2f};
 
@@ -161,9 +161,12 @@ fn load_gray(path: &Path) -> Result<Image<u8>> {
 fn build_model(args: &Args, model_path: &Path, roi: Rect2f) -> Result<ShapeModel> {
     let reference = load_gray(model_path)?;
     let cfg = ShapeModelConfig {
-        max_points: NonZeroUsize::new(args.max_points),
         polarity: args.polarity.into(),
         min_contrast: Contrast::Raw(args.model_min_contrast),
+        tuning: ShapeModelTuning {
+            max_points: NonZeroUsize::new(args.max_points),
+            ..Default::default()
+        },
         ..Default::default()
     };
     let t0 = Instant::now();

@@ -105,8 +105,9 @@ Prefer `Raw`, re-tuned per pixel type.
 
 Three further model knobs:
 
-- **`max_points`** (default 512 per level) caps the model size. Decimation is
-  always spatially uniform; keeping the strongest `n` points instead would
+- **`tuning.max_points`** (default 512 per level) caps the model size. It sits in
+  `ShapeModelTuning` with the other extraction-effort fields (`edge`, `pre_smooth`,
+  `num_levels`, `min_points_per_level`). Decimation is always spatially uniform; keeping the strongest `n` points instead would
   concentrate the model on the highest-contrast part of the contour and break
   the `score ≈ 1 − occluded_fraction` reading.
 - **`origin`** sets the reference point. The default — the level-0 centroid —

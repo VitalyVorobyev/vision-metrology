@@ -7,7 +7,8 @@ use std::num::NonZeroUsize;
 
 use std::time::Instant;
 use vision_metrology::matching::{
-    ShapeMatcher, ShapeModelBuilder, ShapeModelConfig, ShapeSearchConfig, ShapeSearchTuning,
+    ShapeMatcher, ShapeModelBuilder, ShapeModelConfig, ShapeModelTuning, ShapeSearchConfig,
+    ShapeSearchTuning,
 };
 use vision_metrology::{Image, Pyramid, Rect2f};
 use vm_primitives::{DirectionField, SmoothKind};
@@ -62,7 +63,10 @@ fn main() {
         height: 240.0,
     };
     let cfg = ShapeModelConfig {
-        max_points: NonZeroUsize::new(800),
+        tuning: ShapeModelTuning {
+            max_points: NonZeroUsize::new(800),
+            ..Default::default()
+        },
         ..Default::default()
     };
     let model = ShapeModelBuilder::new()

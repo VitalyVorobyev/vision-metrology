@@ -182,7 +182,7 @@ impl ShapeModelBuilder {
             &sub,
             crop.levels,
             &PyramidConfig {
-                pre_smooth: cfg.pre_smooth,
+                pre_smooth: cfg.tuning.pre_smooth,
             },
         );
         self.finish(crop, roi, mask, cfg, min_contrast)
@@ -202,7 +202,7 @@ impl ShapeModelBuilder {
         for level in 0..built {
             let img = self.pyr.level(level).expect("level < num_levels");
             let (lw, lh) = (img.width(), img.height());
-            let edgels = self.det.detect(&img.as_view(), &cfg.edge);
+            let edgels = self.det.detect(&img.as_view(), &cfg.tuning.edge);
 
             // Sub-image level-l coordinates translate to full-image level-l
             // coordinates by a pure shift, because the crop origin was aligned
@@ -254,7 +254,7 @@ impl ShapeModelBuilder {
             Some(o) => o,
             None => centroid(raw.first().map_or(&[][..], Vec::as_slice)).ok_or(
                 Error::InsufficientData {
-                    need: cfg.min_points_per_level.max(1),
+                    need: cfg.tuning.min_points_per_level.max(1),
                     got: 0,
                 },
             )?,
@@ -444,7 +444,7 @@ fn validate(
         return Err(Error::OutOfBounds);
     }
 
-    let levels = match cfg.num_levels {
+    let levels = match cfg.tuning.num_levels {
         None => MAX_AUTO_LEVELS,
         Some(n) => n.get().min(MAX_LEVELS),
     };
@@ -519,13 +519,13 @@ pub(super) fn from_raw(pts: Vec<RawPoint>, cfg: &ShapeModelConfig) -> Result<Sha
     let origin = match cfg.origin {
         Some(o) => o,
         None => centroid(&pts).ok_or(Error::InsufficientData {
-            need: cfg.min_points_per_level.max(1),
+            need: cfg.tuning.min_points_per_level.max(1),
             got: 0,
         })?,
     };
     let teach_points = teach_points_from(&pts, origin);
 
-    let levels = match cfg.num_levels {
+    let levels = match cfg.tuning.num_levels {
         None => MAX_AUTO_LEVELS,
         Some(n) => n.get().min(MAX_LEVELS),
     };
@@ -562,7 +562,7 @@ pub(super) fn assemble(
     teach_points: Option<Vec<TeachPoint>>,
 ) -> Result<ShapeModel, Error> {
     check_ranges(cfg)?;
-    let need = cfg.min_points_per_level.max(1);
+    let need = cfg.tuning.min_points_per_level.max(1);
     let mut levels: Vec<ShapeModelLevel> = Vec::with_capacity(raw.len());
 
     // The canonical orientation is applied here, once, to everything that
@@ -587,7 +587,7 @@ pub(super) fn assemble(
 
     for (level, pts) in raw.into_iter().enumerate() {
         let ref_l = Point2f::new(to_level(origin.x, level), to_level(origin.y, level));
-        let kept = match cfg.max_points {
+        let kept = match cfg.tuning.max_points {
             Some(cap) if pts.len() > cap.get() => decimate(&pts, cap.get()),
             _ => pts,
         };
@@ -624,7 +624,7 @@ pub(super) fn assemble(
         return Err(Error::InsufficientData { need, got: 0 });
     }
 
-    let smooth = cfg.edge.smooth_kind;
+    let smooth = cfg.tuning.edge.smooth_kind;
     Ok(ShapeModel::from_parts(
         levels,
         origin,
@@ -632,7 +632,7 @@ pub(super) fn assemble(
         cfg.scale_range,
         cfg.polarity,
         smooth,
-        cfg.pre_smooth,
+        cfg.tuning.pre_smooth,
         teach_points,
         cfg.reference_angle,
     ))
@@ -801,7 +801,7 @@ fn gcd(mut a: usize, mut b: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::matching::{ShapeModelBuilder, ShapeModelConfig};
+    use crate::matching::{ShapeModelBuilder, ShapeModelConfig, ShapeModelTuning};
     use vm_primitives::Image;
 
     /// A bright disc on a dark field, with a bright square parked in one
@@ -856,7 +856,10 @@ mod tests {
         // post-decimation and is not monotone in the number of points that
         // survived extraction (a bigger raw set decimates to a smaller one).
         let cfg = ShapeModelConfig {
-            max_points: None,
+            tuning: ShapeModelTuning {
+                max_points: None,
+                ..Default::default()
+            },
             ..ShapeModelConfig::default()
         };
 

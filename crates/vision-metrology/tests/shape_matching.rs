@@ -7,7 +7,7 @@
 
 use vision_metrology::matching::{
     ContourOrientation, Polarity, Refinement, ShapeMatch, ShapeMatcher, ShapeModel,
-    ShapeModelBuilder, ShapeModelConfig, ShapeSearchConfig, ShapeSearchTuning,
+    ShapeModelBuilder, ShapeModelConfig, ShapeModelTuning, ShapeSearchConfig, ShapeSearchTuning,
 };
 use vision_metrology::{Image, Point2f, Polyline2f, Rect2f, Vec2f, wrap_angle};
 
@@ -904,7 +904,10 @@ fn the_pyramid_kernel_survives_persistence() {
     use vm_primitives::PreSmooth;
 
     let cfg = ShapeModelConfig {
-        pre_smooth: PreSmooth::Binomial121,
+        tuning: ShapeModelTuning {
+            pre_smooth: PreSmooth::Binomial121,
+            ..Default::default()
+        },
         ..Default::default()
     };
     let model = build_bracket_model(&cfg);
