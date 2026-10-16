@@ -42,6 +42,10 @@ harness = false
 name = "morph"
 harness = false
 
+[[bench]]
+name = "profile"
+harness = false
+
 
 [package.metadata.docs.rs]
 all-features = true

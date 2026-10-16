@@ -37,8 +37,9 @@ pub use core::{
 pub use edge::{
     Derivative1D, DirectionField, DoGKernel1D, Edge1DConfig, Edge1DDetector, Edge2DConfig,
     Edge2DDetector, EdgePair1D, EdgePairConfig, EdgePeak, EdgePolarity, Edgel, GradientBuffers,
-    HalfContrastConfig, Hysteresis, LevelCrossing1D, LevelEdge, LevelOutcome, SmoothKind, Subpix2D,
-    SubpixRefine, TiledField, best_edge_pair,
+    HalfContrastConfig, Hysteresis, LevelCrossing1D, LevelEdge, LevelOutcome, ProfileSample,
+    ProfileSampler, ProfileSamplerConfig, ProfileStation, SmoothKind, Subpix2D, SubpixRefine,
+    TiledField, best_edge_pair,
 };
 pub use morph::{
     StructuringElement, chamfer_distance_u8, close_binary_u8, close3x3_binary_u8, dilate_binary_u8,
