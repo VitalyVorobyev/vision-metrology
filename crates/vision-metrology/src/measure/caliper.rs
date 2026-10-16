@@ -11,6 +11,7 @@ use vm_primitives::{
 use super::config::{
     Derivative, EdgeSelect, Locate, MeasureConfig, OffImage, PolaritySelect, RejectReason,
 };
+use super::continuous::{ContinuousProfile, Scan};
 use super::placement::{
     MeasureArc, MeasureRadial, MeasureRect, MeasureStrip, Placement, StripGeometry,
 };
@@ -59,6 +60,8 @@ pub struct Caliper {
     cfg: MeasureConfig,
     det: Edge1DDetector,
     levels_finder: LevelCrossing1D,
+    /// The sampler and buffers of [`Derivative::Continuous`].
+    cont: ContinuousProfile,
     profile: Vec<f32>,
     /// Edges that passed threshold, polarity and the obliquity gate, before `select`.
     cands: Vec<Candidate>,
@@ -102,6 +105,7 @@ impl Caliper {
             placement,
             det: Edge1DDetector::new(cfg.profile.sigma.max(1e-3)),
             levels_finder: LevelCrossing1D::new(),
+            cont: ContinuousProfile::default(),
             cfg,
             profile: Vec::new(),
             cands: Vec::new(),
@@ -181,6 +185,9 @@ impl Caliper {
     /// with the current config. Off the hot path: it allocates both, and leaves every
     /// result of the last call as it was.
     pub(crate) fn smoothed_and_response(&mut self) -> (Vec<f32>, Vec<f32>) {
+        if self.continuous() {
+            return (self.profile.clone(), self.cont.resp.clone());
+        }
         let step = self.cfg.profile.step;
         let spacing = self
             .placement
@@ -250,15 +257,37 @@ impl Caliper {
         &self.pairs
     }
 
-    /// Fill `profile` with the cross-averaged intensity along the scan axis.
+    /// Whether the profile comes from [`Derivative::Continuous`].
+    fn continuous(&self) -> bool {
+        self.cfg.profile.derivative == Derivative::Continuous
+    }
+
+    /// Where the continuous sampler evaluates, for the current placement and profile.
+    fn scan(&self) -> Scan {
+        let (step, n) = (self.cfg.profile.step, self.profile.len());
+        Scan {
+            placement: self.placement,
+            n,
+            across: self.placement.across_count(),
+            sigma: self.cfg.profile.sigma,
+            spacing: self.placement.spacing(step, n),
+        }
+    }
+
+    /// Fill `profile` with the cross-averaged intensity along the scan axis (for
+    /// [`Derivative::Continuous`], the smoothed intensity, and its response).
     ///
-    /// Returns `false` when any sample fell outside the image, so the caller
-    /// can report [`RejectReason::OffImage`] rather than silently measuring
-    /// border fill.
+    /// Returns `false` when any sample fell outside the image (for `Continuous`, when any
+    /// sample's support did), so the caller can report [`RejectReason::OffImage`] rather
+    /// than silently measuring border fill.
     fn build_profile<P: Pixel>(&mut self, img: &ImageView<'_, P>) -> bool {
         let n = self.placement.profile_len(self.cfg.profile.step);
         self.profile.clear();
         self.profile.resize(n, 0.0);
+        if self.continuous() {
+            let scan = self.scan();
+            return self.cont.build(img, scan, &mut self.profile);
+        }
         if n == 0 || img.width() == 0 || img.height() == 0 {
             return false;
         }
@@ -303,11 +332,17 @@ impl Caliper {
         if n < 3 {
             return Some(RejectReason::ProfileTooShort);
         }
+        // Border fill is not evidence: a continuous profile reads 0 there, which a level
+        // method would take for an intensity.
+        let level = !matches!(self.cfg.locate, Locate::GradientPeak { .. });
+        if level && self.continuous() && !self.cont.all_valid() {
+            return Some(RejectReason::OffImage);
+        }
         // `sigma` and the level methods' distances are in pixels, the profile in samples.
         let spacing = self.placement.sigma_spacing(self.cfg.profile.step, n);
         let found = match self.cfg.locate {
             Locate::GradientPeak { refine } => self
-                .gradient_candidates(spacing, refine)
+                .gradient_candidates(img, spacing, refine)
                 .and_then(|()| self.gate_and_select(img)),
             Locate::MidpointCrossing {
                 endpoint_samples,
@@ -329,7 +364,7 @@ impl Caliper {
                     max_iter,
                     min_contrast,
                 };
-                self.gradient_candidates(spacing, SubpixRefine::Parabolic3)
+                self.gradient_candidates(img, spacing, SubpixRefine::Parabolic3)
                     .and_then(|()| self.gate_and_select(img))
                     .and_then(|()| self.refine_half_contrast(spacing, &hc))
             }
@@ -363,8 +398,9 @@ impl Caliper {
 
     /// Fill `cands` with the derivative peaks that pass threshold and polarity, mapped to
     /// image space.
-    fn gradient_candidates(
+    fn gradient_candidates<P: Pixel>(
         &mut self,
+        img: &ImageView<'_, P>,
         spacing: f32,
         refine: SubpixRefine,
     ) -> Result<(), RejectReason> {
@@ -377,7 +413,13 @@ impl Caliper {
         let want = self.cfg.polarity;
         let denom = profile_denom(self.profile.len());
         let placement = self.placement;
-        let peaks = self.det.detect_in_ref(&self.profile, &det_cfg);
+        let peaks = if self.continuous() {
+            let scan = self.scan();
+            self.cont.find_peaks(img, scan, threshold);
+            &self.cont.peaks
+        } else {
+            self.det.detect_in_ref(&self.profile, &det_cfg)
+        };
         let mut any_peak = false;
         for pk in peaks.iter().filter(|pk| pk.strength >= threshold) {
             any_peak = true;
@@ -411,7 +453,8 @@ impl Caliper {
     ) -> Result<(), RejectReason> {
         let det_cfg = self.detector_config(spacing, SubpixRefine::Parabolic3);
         let n = self.profile.len();
-        let smooth = self.det.smooth_in_ref(&self.profile, &det_cfg);
+        let continuous = self.continuous();
+        let smooth = smoothed(&mut self.det, &self.profile, &det_cfg, continuous);
         let (before, after) = self.levels_finder.end_levels(smooth, endpoint_samples);
         let contrast = (f64::from(after) - f64::from(before)).abs();
         if contrast < f64::from(min_contrast) {
@@ -495,7 +538,8 @@ impl Caliper {
         let det_cfg = self.detector_config(spacing, SubpixRefine::Parabolic3);
         let denom = profile_denom(self.profile.len());
         let placement = self.placement;
-        let smooth = self.det.smooth_in_ref(&self.profile, &det_cfg);
+        let continuous = self.continuous();
+        let smooth = smoothed(&mut self.det, &self.profile, &det_cfg, continuous);
         for c in &mut self.chosen {
             let level = match self.levels_finder.half_contrast(smooth, c.x, hc) {
                 LevelOutcome::Found(level) => level,
@@ -522,10 +566,28 @@ fn profile_denom(n: usize) -> f32 {
     (n.saturating_sub(1)).max(1) as f32
 }
 
+/// The profile the level methods read: the detector's smoothing of it, or the profile
+/// itself when [`Derivative::Continuous`] sampled it smoothed.
+fn smoothed<'a>(
+    det: &'a mut Edge1DDetector,
+    profile: &'a [f32],
+    cfg: &Edge1DConfig,
+    continuous: bool,
+) -> &'a [f32] {
+    if continuous {
+        profile
+    } else {
+        det.smooth_in_ref(profile, cfg)
+    }
+}
+
 /// The detector's derivative operator for a profile sampled every `spacing` pixels.
+/// [`Derivative::Continuous`] does not use the detector.
 fn derivative_in_samples(d: Derivative, spacing: f32) -> Derivative1D {
     match d {
-        Derivative::DerivativeOfGaussian => Derivative1D::DerivativeOfGaussian,
+        Derivative::DerivativeOfGaussian | Derivative::Continuous => {
+            Derivative1D::DerivativeOfGaussian
+        }
         Derivative::SmoothThenCentral { radius_px } => Derivative1D::SmoothThenCentral {
             radius: NonZeroUsize::new((radius_px / spacing).round().max(1.0) as usize)
                 .unwrap_or(NonZeroUsize::MIN),

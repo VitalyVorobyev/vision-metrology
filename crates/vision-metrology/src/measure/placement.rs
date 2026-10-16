@@ -308,6 +308,64 @@ impl Placement {
         }
     }
 
+    /// Line `j` of `across` at the continuous profile index `x` of `n` samples: the point
+    /// and the unit scan direction there, in `f64`. At an integer `x` the point is the one
+    /// the bilinear profile samples, up to rounding.
+    pub(crate) fn station_at(
+        &self,
+        x: f64,
+        n: usize,
+        j: usize,
+        across: usize,
+    ) -> ((f64, f64), (f64, f64)) {
+        let frac = x / f64::from(index_denom(n));
+        let s = StripGeometry::across(f64::from(self.half_width()), j, across);
+        let polar = |phi: f64| (phi.cos(), phi.sin());
+        match *self {
+            Placement::Rect(r) => {
+                let half = f64::from(r.half_len);
+                let t = -half + 2.0 * half * frac;
+                let (c, u) = (
+                    (f64::from(r.center.x), f64::from(r.center.y)),
+                    polar(f64::from(r.angle)),
+                );
+                ((c.0 + t * u.0 - s * u.1, c.1 + t * u.1 + s * u.0), u)
+            }
+            Placement::Arc(a) => {
+                let phi = f64::from(a.angle_start) + f64::from(a.angle_extent) * frac;
+                let (radial, rad) = (polar(phi), f64::from(a.radius) + s);
+                let sign = if a.angle_extent < 0.0 { -1.0 } else { 1.0 };
+                let p = (
+                    f64::from(a.center.x) + rad * radial.0,
+                    f64::from(a.center.y) + rad * radial.1,
+                );
+                (p, (-sign * radial.1, sign * radial.0))
+            }
+            Placement::Radial(r) => {
+                let half = f64::from(r.half_len);
+                let rad = f64::from(r.radius) - half + 2.0 * half * frac;
+                let dphi = if rad.abs() > 1e-3 { s / rad } else { 0.0 };
+                let u = polar(f64::from(r.angle) + dphi);
+                (
+                    (
+                        f64::from(r.center.x) + rad * u.0,
+                        f64::from(r.center.y) + rad * u.1,
+                    ),
+                    u,
+                )
+            }
+            Placement::Strip(st) => {
+                let g = st.geometry();
+                let t = if n < 2 {
+                    0.0
+                } else {
+                    x * (g.length / (n - 1) as f64)
+                };
+                (g.point(t, s), g.u)
+            }
+        }
+    }
+
     /// Map a subpixel profile index back to image coordinates and the scan coordinate `t`.
     pub(crate) fn point_at(&self, x: f32, denom: f32) -> (Point2f, f32) {
         match *self {

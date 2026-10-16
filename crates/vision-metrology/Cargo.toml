@@ -225,6 +225,10 @@ name = "translation_alloc"
 required-features = ["corr"]
 
 [[test]]
+name = "profile_alloc"
+required-features = ["measure"]
+
+[[test]]
 name = "glue_displacement"
 required-features = ["corr"]
 

@@ -118,7 +118,7 @@ const REFINES: &[&str] = &["none", "parabolic", "gaussian", "centroid"];
 const POLARITIES: &[&str] = &["any", "rising", "falling"];
 const SELECTS: &[&str] = &["all", "first", "last", "strongest", "in_order"];
 pub(super) const BORDER_MODES: &[&str] = &["clamp", "reflect101", "constant"];
-pub(super) const DERIVATIVES: &[&str] = &["dog", "smooth_central"];
+pub(super) const DERIVATIVES: &[&str] = &["dog", "smooth_central", "continuous"];
 pub(super) const OFF_IMAGES: &[&str] = &["fill", "reject"];
 /// Polarity names a `sequence` entry accepts; "either" and "any" both mean either.
 const SEQUENCE_POLARITIES: &[&str] = &["rising", "falling", "either", "any"];
@@ -288,6 +288,7 @@ impl Profile<'_> {
                 "smooth_central" => NativeDerivative::SmoothThenCentral {
                     radius_px: self.kernel_radius_px,
                 },
+                "continuous" => NativeDerivative::Continuous,
                 other => return Err(not_one_of("derivative", other, DERIVATIVES)),
             },
             step: self.step,
@@ -319,6 +320,7 @@ pub(super) fn profile_names(
     let (derivative, kernel_radius_px) = match p.derivative {
         NativeDerivative::DerivativeOfGaussian => ("dog", 3.0),
         NativeDerivative::SmoothThenCentral { radius_px } => ("smooth_central", radius_px),
+        NativeDerivative::Continuous => ("continuous", 3.0),
     };
     let off_image = match p.off_image {
         NativeOffImage::Fill => "fill",
@@ -365,8 +367,9 @@ pub struct MeasureConfig {
     pub border_mode: String,
     #[pyo3(set)]
     pub border_constant: f32,
-    /// "dog" (derivative of Gaussian) or "smooth_central" (Gaussian, then central
-    /// differences).
+    /// "dog" (derivative of Gaussian), "smooth_central" (Gaussian, then central
+    /// differences) or "continuous" (the 2-D derivative of Gaussian sampled at each profile
+    /// point, as `ProfileSampler` does, and peaks refined on it).
     pub derivative: String,
     /// Half-width of the smoothing kernel for `derivative="smooth_central"`, in pixels.
     #[pyo3(set)]
