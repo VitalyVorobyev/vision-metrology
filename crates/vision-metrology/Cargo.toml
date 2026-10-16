@@ -138,6 +138,11 @@ harness = false
 required-features = ["measure"]
 
 [[bench]]
+name = "measure_numeric"
+harness = false
+required-features = ["measure"]
+
+[[bench]]
 name = "warp"
 harness = false
 required-features = ["warp"]
@@ -235,6 +240,10 @@ required-features = ["measure"]
 
 [[test]]
 name = "caliper_bits"
+required-features = ["measure"]
+
+[[test]]
+name = "measure_numeric_alloc"
 required-features = ["measure"]
 
 [[test]]

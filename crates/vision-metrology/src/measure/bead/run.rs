@@ -279,9 +279,9 @@ pub(super) fn run<P: Pixel, R: Probe>(
         if n_valid == 0 || support < f64::from(t.min_support) {
             s.applied.clear();
             s.applied.resize(n, 0.0);
-            s.solve.weights.clear();
-            s.solve.weights.resize(n, 0.0);
-            probe.solved(pass, &s.solve.weights, &s.applied);
+            s.solve.smooth.weights.clear();
+            s.solve.smooth.weights.resize(n, 0.0);
+            probe.solved(pass, s.solve.weights(), &s.applied);
             passes.push(record);
             stop = BeadStop::TooFewValid;
             break;
@@ -302,10 +302,10 @@ pub(super) fn run<P: Pixel, R: Probe>(
             &mut s.solve,
         )
         .ok_or(Error::Degenerate("bead solve lost positive definiteness"))?;
-        let alpha = step_scale(&s.pts, &s.normals, &s.kappa, &s.solve.d);
-        let solved_max = s.solve.d.iter().fold(0.0f64, |m, d| m.max(d.abs()));
+        let alpha = step_scale(&s.pts, &s.normals, &s.kappa, s.solve.d());
+        let solved_max = s.solve.d().iter().fold(0.0f64, |m, d| m.max(d.abs()));
         s.applied.clear();
-        s.applied.extend(s.solve.d.iter().map(|&d| alpha * d));
+        s.applied.extend(s.solve.d().iter().map(|&d| alpha * d));
         let (mut sum2, mut max) = (0.0f64, 0.0f64);
         s.src.clear();
         for ((&p, &nrm), &c) in s.pts.iter().zip(&s.normals).zip(&s.applied) {
@@ -313,7 +313,7 @@ pub(super) fn run<P: Pixel, R: Probe>(
             max = max.max(c.abs());
             s.src.push([p[0] + c * nrm[0], p[1] + c * nrm[1]]);
         }
-        probe.solved(pass, &s.solve.weights, &s.applied);
+        probe.solved(pass, s.solve.weights(), &s.applied);
         let moved = arc_lengths(&s.src, &mut s.cum);
         resample(&s.src, &s.cum, n, &mut s.pts);
         h = moved / (n - 1) as f64;

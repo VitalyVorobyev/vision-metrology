@@ -39,6 +39,7 @@ mod caliper;
 mod config;
 pub mod diagnostics;
 mod model;
+mod numeric;
 mod placement;
 mod select;
 

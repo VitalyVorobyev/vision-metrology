@@ -1,10 +1,9 @@
-//! Unit tests for the bead tracker's parts: stations, the fold guards, the banded solve
-//! and its regulariser, IRLS, the pair gates, and config validation. The end-to-end
+//! Unit tests for the bead tracker's parts: stations, the fold guards, the regulariser of
+//! the offset solve, IRLS, the pair gates, and config validation. The end-to-end
 //! behaviour on rendered beads is in `tests/bead.rs`.
 
 use std::f64::consts::TAU;
 
-use nalgebra::{DMatrix, DVector};
 use vm_primitives::{EdgePolarity, Error, Point2f};
 
 use super::config::validate;
@@ -12,23 +11,10 @@ use super::curve::{
     V2, arc_lengths, chord_tangents, curvature, offset_window, perp, resample, step_scale,
 };
 use super::pairing::{Gates, choose, sort_edges};
-use super::solve::{Band, Penalty, SolveScratch, solve_offsets};
+use super::solve::{Penalty, SolveScratch, solve_offsets};
 use super::{BeadCaliper, BeadConfig, BeadPolarity, BeadReject, BeadTuning};
 use crate::fit::RobustLoss;
 use crate::measure::{Locate, MeasureEdge, RejectReason};
-
-/// A seeded LCG in `[0, 1)`.
-struct Lcg(u64);
-
-impl Lcg {
-    fn next(&mut self) -> f64 {
-        self.0 = self
-            .0
-            .wrapping_mul(6_364_136_223_846_793_005)
-            .wrapping_add(1_442_695_040_888_963_407);
-        (self.0 >> 11) as f64 / (1u64 << 53) as f64
-    }
-}
 
 fn resampled(src: &[V2], n: usize) -> Vec<V2> {
     let mut cum = Vec::new();
@@ -165,71 +151,7 @@ fn the_step_scale_keeps_the_curve_from_folding() {
     assert!((alpha - 0.9 / 2.0).abs() < 1e-12, "α = {alpha}");
 }
 
-// ── the banded solve ────────────────────────────────────────────────────
-
-fn dense(b: &Band) -> DMatrix<f64> {
-    let n = b.diag.len();
-    DMatrix::from_fn(n, n, |r, c| match r.abs_diff(c) {
-        0 => b.diag[r],
-        1 => b.off1[r.min(c)],
-        2 => b.off2[r.min(c)],
-        _ => 0.0,
-    })
-}
-
-/// `x` from the band solver and from nalgebra's dense Cholesky, `‖Δ‖ / ‖x‖`.
-fn band_vs_dense(band: &mut Band, rhs: &[f64]) -> f64 {
-    let want = dense(band)
-        .cholesky()
-        .expect("SPD")
-        .solve(&DVector::from_column_slice(rhs));
-    assert!(band.factor());
-    let mut got = rhs.to_vec();
-    band.solve_in_place(&mut got);
-    let diff: f64 = got
-        .iter()
-        .zip(want.iter())
-        .map(|(a, b)| (a - b).powi(2))
-        .sum();
-    diff.sqrt() / want.norm()
-}
-
-#[test]
-fn the_band_solver_matches_a_dense_cholesky() {
-    let mut rng = Lcg(7);
-    let mut band = Band::default();
-    let mut worst = 0.0f64;
-    for &n in &[1usize, 2, 3, 4, 5, 17, 64, 300] {
-        for _ in 0..5 {
-            // Diagonally dominant: symmetric positive definite.
-            band.zero(n);
-            for v in band.off1.iter_mut().chain(band.off2.iter_mut()) {
-                *v = 2.0 * rng.next() - 1.0;
-            }
-            for d in &mut band.diag {
-                *d = 4.5 + 4.0 * rng.next();
-            }
-            let rhs: Vec<f64> = (0..n).map(|_| 20.0 * rng.next() - 10.0).collect();
-            worst = worst.max(band_vs_dense(&mut band, &rhs));
-
-            // The tracker's own systems: data weights, damping, tension and bending.
-            let w: Vec<f64> = (0..n).map(|_| 0.5 + 0.5 * rng.next()).collect();
-            let p = Penalty::new(0.1 * rng.next(), 2.0, 8.0, 2.0 + 4.0 * rng.next());
-            band.assemble(&w, p);
-            worst = worst.max(band_vs_dense(&mut band, &rhs));
-        }
-    }
-    assert!(worst < 1e-12, "band vs dense: relative error {worst:e}");
-}
-
-#[test]
-fn a_non_positive_pivot_is_reported() {
-    let mut band = Band::default();
-    band.zero(3);
-    band.diag.copy_from_slice(&[1.0, 1.0, 1.0]);
-    band.off1.copy_from_slice(&[2.0, 0.0]);
-    assert!(!band.factor());
-}
+// ── the offset solve ────────────────────────────────────────────────────
 
 /// The solved amplitude of `sin(ωs)` observed at every station of a long curve at
 /// spacing `h`, read off the middle half by least squares.
@@ -249,7 +171,7 @@ fn passed_amplitude(h: f64, omega: f64, tuning: &BeadTuning) -> f64 {
     for i in n / 4..3 * n / 4 {
         let basis = (omega * i as f64 * h).sin();
         ss += basis * basis;
-        sd += basis * s.d[i];
+        sd += basis * s.d()[i];
     }
     sd / ss
 }
@@ -296,7 +218,7 @@ fn pulled_by_outlier(loss: RobustLoss, irls_iters: usize) -> f64 {
     let solved = solve_offsets(&obs, &vec![true; n], p, loss, irls_iters, &mut s).expect("solved");
     let reweighted = if loss == RobustLoss::None { 0 } else { 1 };
     assert!(solved.irls_iters >= reweighted && solved.irls_iters <= irls_iters);
-    (s.d[50] - 0.5).abs()
+    (s.d()[50] - 0.5).abs()
 }
 
 #[test]
