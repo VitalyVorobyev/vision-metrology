@@ -154,6 +154,13 @@ deleted here.
 
 ## Edges
 
+- **The default caliper derivative locks to the pixel grid.** A bilinear profile's
+  derivative has knots at the pixel boundaries, so the default strip locks in the phase
+  sweep at every blur, and a wider σ does not remove it.
+  `Derivative::Continuous` does (ADR-0021), at several times the cost, so it is an option.
+  Making it the default would re-pin every accuracy envelope, the can-end baseline and the
+  lab's contract fixtures; decide it with the release, from `docs/performance.md`'s costs.
+
 - **`Edge2DDetector`'s `ParabolicAlongNormal` does not refine.** It fits the parabola to
   the non-maximum-suppressed image, whose two neighbours along the normal of a one-pixel
   ridge are suppressed to zero, so the offset is zero and edgels stay on pixel centres

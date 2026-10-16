@@ -37,6 +37,7 @@
 mod bead;
 mod caliper;
 mod config;
+mod continuous;
 pub mod diagnostics;
 mod model;
 mod numeric;

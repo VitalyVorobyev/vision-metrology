@@ -138,7 +138,10 @@ keeps the edgels whose pixel lies inside the frame's mask, eroded by `--erode` p
 edgel contributes the coordinate along that axis where its tangent crosses its own pixel
 row or column. `--mask` chooses `visibility` (the default), `validity` (the registration
 mask), `both` or `none`. `--refine dog` re-locates the same edgels with a continuous,
-tapered derivative of Gaussian, a reference that does not lock.
+tapered derivative of Gaussian, a reference that does not lock; `--refine sampler` does the
+same with the bindings' `ProfileSampler`, dropping an edgel whose samples reach an excluded
+pixel. `--sigma` sets the kernel's σ (default 1 px). The re-location searches ±1.1 px
+around each edgel, a reach sized for σ near 1 px.
 
 `phase_histogram.json` and `summary.txt` hold, per sequence and pooled, the 10-bin
 histogram of fractional parts normalized to the uniform rate and the locking index, its

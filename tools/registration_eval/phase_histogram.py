@@ -15,16 +15,18 @@ pixel centre along the normal, so at an oblique normal its raw `x` would cover o
 of each pixel even when it is unbiased.
 
 `--refine dog` re-locates each counted edge along its normal with a continuous
-derivative of Gaussian (σ 1 px, tapered by `(1 − r²/R²)²` to zero at R = 4σ), evaluated
-at the continuous point, as a reference that does not lock: the same edges, another
-locator.
+derivative of Gaussian (σ `--sigma` px, default 1, tapered by `(1 − r²/R²)²` to zero at
+R = 4σ), evaluated at the continuous point, as a reference that does not lock: the same
+edges, another locator. `--refine sampler` does the same with the library's
+`ProfileSampler`, honouring the chosen mask: an edgel whose samples reach an excluded
+pixel or leave the frame is dropped instead of being read from clamped pixels.
 
 The report holds, per sequence and pooled, the 10-bin histogram normalized to the uniform
 rate (1.0 everywhere when flat) and the locking index, its max/min bin ratio. Only
 aggregates; no positions, frames or pixels.
 
     python tools/registration_eval/phase_histogram.py --manifest seq/sequence.json \\
-        --out-dir /tmp/phase-out [--mask visibility] [--refine dog]
+        --out-dir /tmp/phase-out [--mask visibility] [--refine dog|sampler] [--sigma 1]
 """
 from __future__ import annotations
 
@@ -118,6 +120,38 @@ def dog_relocate(image, x, y, nx, ny, sigma=DOG_SIGMA, radius=DOG_RADIUS):
     return x + shift*nx, y + shift*ny
 
 
+def peak_shift(rows, offsets):
+    """Per row, the offset of the largest value refined by a parabola through its neighbours."""
+    best = np.clip(np.argmax(rows, axis=1), 1, len(offsets)-2)
+    k = np.arange(len(rows))
+    a, b, c = rows[k, best-1], rows[k, best], rows[k, best+1]
+    denominator = a - 2*b + c
+    with np.errstate(divide='ignore', invalid='ignore'):
+        vertex = np.where(denominator < 0, .5*(a - c)/denominator, 0.)
+    return offsets[best] + np.clip(vertex, -1, 1)*(offsets[1] - offsets[0])
+
+
+def sampler_relocate(image, valid, x, y, nx, ny, sigma=DOG_SIGMA):
+    """`dog_relocate` with `vm.ProfileSampler`: (x, y, kept), the edgels whose samples all
+    lay on valid pixels (`valid` True) inside the frame."""
+    image = np.ascontiguousarray(image)
+    if image.dtype not in (np.uint8, np.uint16, np.float32):
+        image = image.astype(np.float32)
+    mask = np.ascontiguousarray(valid, dtype=np.uint8)*255
+    norm = np.hypot(nx, ny)
+    n = np.stack([nx/norm, ny/norm], axis=1)
+    sampler = vm.ProfileSampler(sigma=sigma)
+    shift, kept = np.zeros_like(x), np.ones(len(x), dtype=bool)
+    for step, span in ((.25, 4), (.05, 2)):
+        offsets = np.arange(-span, span+1)*step
+        points = np.stack([x + shift*n[:, 0], y + shift*n[:, 1]], axis=1)
+        _, derivative, ok = sampler.sample(image, points.astype(np.float32), n.astype(np.float32),
+                                           offsets.astype(np.float32), mask=mask)
+        kept &= ok.all(axis=1)
+        shift = shift + peak_shift(np.abs(np.nan_to_num(derivative)), offsets)
+    return x + shift*n[:, 0], y + shift*n[:, 1], kept
+
+
 def histogram(coordinates):
     """Counts of the fractional parts in BINS equal bins."""
     fraction = coordinates - np.floor(coordinates)
@@ -138,7 +172,7 @@ def summarize(counts):
 
 
 def evaluate(sequence, mask='visibility', erode=5, max_angle=25., refine='none', stride=1,
-             locate=None):
+             locate=None, sigma=DOG_SIGMA):
     """Per-axis and pooled counts over one sequence's frames.
 
     `locate(image) -> (x, y, nx, ny)` replaces the detector (for tests).
@@ -159,8 +193,15 @@ def evaluate(sequence, mask='visibility', erode=5, max_angle=25., refine='none',
         x, y, nx, ny = x[inside], y[inside], nx[inside], ny[inside]
         coordinate, axis, near_axis = axis_coordinates(x, y, nx, ny, max_angle)
         if refine == 'dog' and near_axis.any():
-            rx, ry = dog_relocate(image, x[near_axis], y[near_axis], nx[near_axis], ny[near_axis])
+            rx, ry = dog_relocate(image, x[near_axis], y[near_axis], nx[near_axis], ny[near_axis],
+                                  sigma, 4*sigma)
             coordinate, axis, _ = axis_coordinates(rx, ry, nx[near_axis], ny[near_axis], max_angle)
+        elif refine == 'sampler' and near_axis.any():
+            valid = frame_mask(sequence, i, mask, 0)
+            rx, ry, kept = sampler_relocate(image, valid, x[near_axis], y[near_axis],
+                                            nx[near_axis], ny[near_axis], sigma)
+            coordinate, axis, _ = axis_coordinates(rx[kept], ry[kept], nx[near_axis][kept],
+                                                   ny[near_axis][kept], max_angle)
         for a in (0, 1):
             counts[a] += histogram(coordinate[axis == a])
         frames += 1
@@ -188,11 +229,13 @@ def main():
                         help='visibility (default), validity (the registration mask), both, or none')
     parser.add_argument('--erode', type=int, default=5, help='mask erosion, px')
     parser.add_argument('--max-angle', type=float, default=25.)
-    parser.add_argument('--refine', choices=('none', 'dog'), default='none')
+    parser.add_argument('--refine', choices=('none', 'dog', 'sampler'), default='none')
+    parser.add_argument('--sigma', type=float, default=DOG_SIGMA,
+                        help='σ of the continuous derivative of Gaussian, px')
     parser.add_argument('--stride', type=int, default=1)
     args = parser.parse_args()
-    if args.stride < 1 or args.erode < 0 or not 0 < args.max_angle < 45:
-        parser.error('stride ≥ 1, erode ≥ 0 and 0 < max-angle < 45')
+    if args.stride < 1 or args.erode < 0 or not 0 < args.max_angle < 45 or not args.sigma > 0:
+        parser.error('stride ≥ 1, erode ≥ 0, 0 < max-angle < 45 and sigma > 0')
     sequences = [Sequence(path) for path in args.manifest]
     if len({s.name for s in sequences}) != len(sequences):
         parser.error('sequence names must be unique')
@@ -202,12 +245,14 @@ def main():
         parser.error('outputs must be outside the repository and the manifest directories')
     out.mkdir(parents=True, exist_ok=True)
     report = {'settings': {'detector': 'detect_edges, EdgeConfig defaults', 'refine': args.refine,
+                           'sigma_px': args.sigma,
                            'mask': args.mask, 'erode_px': args.erode, 'max_angle_deg': args.max_angle,
                            'stride': args.stride, 'bins': BINS},
               'sequences': {}}
     total = np.zeros((2, BINS), dtype=np.int64)
     for sequence in sequences:
-        row = evaluate(sequence, args.mask, args.erode, args.max_angle, args.refine, args.stride)
+        row = evaluate(sequence, args.mask, args.erode, args.max_angle, args.refine, args.stride,
+                       sigma=args.sigma)
         row['split'] = sequence.split
         report['sequences'][sequence.name] = row
         total += np.asarray(row['counts'])

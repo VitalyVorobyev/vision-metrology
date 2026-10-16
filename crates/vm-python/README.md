@@ -96,6 +96,7 @@ Each Rust config is a Python class with keyword arguments, for example
 | Rust module | Python |
 |---|---|
 | `edge` (2-D) | `EdgeDetector`, `detect_edges`, `EdgeConfig`, `Edgel` |
+| `edge` (profiles) | `ProfileSampler` (`sample` returns value, derivative and validity arrays; `sigma` is its config) |
 | `lsd` | `LsdDetector`, `detect_line_segments`, `LsdConfig`, `LineSegment` |
 | `fit` | `Fitter` (`fit_line`, `fit_circle`, `fit_ellipse`), `fit_line`, `fit_ellipse`, `FitConfig`, `Line`, `Circle`, `Ellipse` |
 | `matching` | `ShapeModel` (incl. `save`/`load`, `resample_at`), `ShapeMatcher`, `ShapeMatch`, `find_shape_model`, `ShapeModelConfig`, `ShapeSearchConfig`, `ShapeSearchTuning`, `Contrast`, `CropSpec` (`ShapeMatch.model_frame_map`) |

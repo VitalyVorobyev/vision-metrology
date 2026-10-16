@@ -6,6 +6,8 @@
 //!   crossing.
 //! - [`Edge2DDetector`]: subpixel 2-D edgels; [`DirectionField`]: dense gradient
 //!   directions.
+//! - [`ProfileSampler`]: a continuous derivative-of-Gaussian profile, and the smoothed
+//!   intensity, at any point along any direction, honouring a validity mask.
 //! - [`best_edge_pair`]: opposite-polarity edge pairs, such as the two sides of a laser
 //!   stripe.
 //!
@@ -29,6 +31,7 @@ mod gradient;
 mod kernels1d;
 mod laser1d;
 mod level1d;
+mod profile;
 
 pub use conv1d::convolve_f32;
 pub use edge1d::{
@@ -41,3 +44,4 @@ pub use gradient::{DirectionField, TiledField};
 pub use kernels1d::DoGKernel1D;
 pub use laser1d::{EdgePair1D, EdgePairConfig, best_edge_pair};
 pub use level1d::{HalfContrastConfig, LevelCrossing1D, LevelEdge, LevelOutcome};
+pub use profile::{ProfileSample, ProfileSampler, ProfileSamplerConfig, ProfileStation};

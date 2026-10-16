@@ -370,9 +370,12 @@ class MeasureConfig:
         "in_order"; "in_order" needs `sequence`, one or two of "rising",
         "falling" and "either", found in scan order, each the strongest edge of
         its polarity after the previous one (equal strength: the earlier edge).
-        `derivative` is "dog" (derivative of Gaussian, default) or
+        `derivative` is "dog" (derivative of Gaussian, default),
         "smooth_central" (Gaussian of half-width `kernel_radius_px`, then central
-        differences). `off_image` is "fill" (default: sample outside the image with
+        differences) or "continuous" (the 2-D derivative of Gaussian sampled straight
+        from the image at each profile point, as `ProfileSampler` does, with peaks
+        refined on that continuous response; a sample whose support leaves the image
+        reads 0 and is never evidence). `off_image` is "fill" (default: sample outside the image with
         `border_mode` and measure) or "reject" (raise `MeasureRejected("off_image")`
         whenever any sample lies outside the image). The string fields accept only
         these names, here and on assignment; anything else raises `ValueError`."""
@@ -968,6 +971,30 @@ class EdgeDetector:
     def detect(self, img: ImageAny) -> List[Edgel]: ...
     def config(self) -> EdgeConfig: ...
     def set_config(self, config: EdgeConfig) -> None: ...
+
+class ProfileSampler:
+    """Continuous derivative-of-Gaussian profiles along arbitrary directions.
+
+    At each sample the kernel is a Gaussian of `sigma` px tapered by `(1 - d²/r²)²`
+    to zero at `r = 4 sigma`, so the samples are C¹ in position. A sample whose
+    support leaves the image or touches a masked pixel is invalid."""
+
+    sigma: float
+    def __init__(self, sigma: float = ...) -> None: ...
+    def sample(
+        self,
+        img: ImageAny,
+        points: PointsF32,
+        normals: PointsF32,
+        offsets: npt.NDArray[np.float32],
+        mask: Optional[ImageU8] = ...,
+    ) -> Tuple[npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.bool_]]:
+        """Sample station `i` at `points[i] + offsets[j] * normals[i]` (normalised).
+        Returns `(value, derivative, valid)`, each `(N, M)`: the smoothed intensity,
+        its derivative along the normal (input units per pixel) and whether the
+        sample is valid; invalid samples read NaN. `mask` is non-zero where pixels
+        are valid."""
+        ...
 
 class LsdDetector:
     def __init__(self, config: Optional[LsdConfig] = ...) -> None: ...

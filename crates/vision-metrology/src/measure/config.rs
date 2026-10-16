@@ -75,6 +75,27 @@ pub enum Derivative {
         /// (at least one).
         radius_px: f32,
     },
+    /// Sample the 2-D derivative of a Gaussian of σ [`ProfileConfig::sigma`] straight from
+    /// the image at each profile point, along the scan direction, with
+    /// [`ProfileSampler`](vm_primitives::edge::ProfileSampler), and refine each gradient
+    /// peak on that continuous response rather than on its samples.
+    ///
+    /// The other derivatives differentiate a profile interpolated bilinearly, whose
+    /// derivative is piecewise linear between pixels, so located edges cluster at
+    /// particular sub-pixel phases. This one is C¹ everywhere, at several times the cost.
+    ///
+    /// - The profile ([`Caliper::profile`](super::Caliper::profile)) is the Gaussian-smoothed
+    ///   intensity, which the level methods read as it is.
+    /// - The response is in input units per profile sample, like the other derivatives:
+    ///   a ramp reads its slope. The taper narrows the kernel, so a step's peak reads
+    ///   about 15–25% higher than with [`DerivativeOfGaussian`](Self::DerivativeOfGaussian)
+    ///   at the same σ.
+    /// - A sample whose support (every pixel within 4σ) leaves the image is not data:
+    ///   [`ProfileConfig::border`] is not used. It reads 0 in the profile and the
+    ///   response, and no edge is located where it is needed. With
+    ///   [`OffImage::Fill`] a gradient peak is still found on the rest of the profile; a
+    ///   level method rejects the profile with [`RejectReason::OffImage`].
+    Continuous,
 }
 
 /// How an edge position is located on the profile.

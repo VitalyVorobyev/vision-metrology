@@ -51,7 +51,7 @@ pub struct BeadCaliper {
     /// "clamp", "reflect101" or "constant".
     pub border_mode: String,
     pub border_constant: f32,
-    /// "dog" or "smooth_central".
+    /// "dog", "smooth_central" or "continuous".
     pub derivative: String,
     /// Half-width of the smoothing kernel for `derivative="smooth_central"`, in px.
     pub kernel_radius_px: f32,

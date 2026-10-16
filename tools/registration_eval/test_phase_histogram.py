@@ -69,6 +69,17 @@ def test_the_reference_is_flat_and_the_detector_locks_on_smooth_data(tmp_path):
     assert detector['normalized'][0] > 2 and detector['normalized'][9] > 2
 
 
+def test_the_library_sampler_agrees_with_the_reference(tmp_path):
+    s = smooth_field(tmp_path, frames=4)
+    reference = ph.evaluate(s, 'none', refine='dog')['pooled']
+    sampler = ph.evaluate(s, 'none', refine='sampler')['pooled']
+    assert sampler['locking_index'] < 1.3, sampler
+    # The sampler drops what the reference reads from clamped pixels near the border.
+    assert .9*reference['edges'] < sampler['edges'] <= reference['edges'], (reference, sampler)
+    wide = ph.evaluate(s, 'none', refine='sampler', sigma=2.)['pooled']
+    assert wide['edges'] < sampler['edges'], 'a wider support reaches the border sooner'
+
+
 def test_masks_decide_which_edges_count_on_the_generator_sequence(tmp_path):
     s = Sequence(generate(tmp_path / 'synthetic', frames=4))
 

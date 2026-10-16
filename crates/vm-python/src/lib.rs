@@ -20,6 +20,7 @@ mod match_py;
 mod measure_py;
 mod metric_py;
 mod morph_py;
+mod profile_py;
 mod scale_py;
 mod segment;
 mod shape;
@@ -50,6 +51,7 @@ use metric_py::{
     BrownConrady5, CameraModel, PinholeIntrinsics, Plane3, PlaneGrid, load_rig_extrinsics,
     load_table_calibration, pixel_to_plane, plane_grid_map, project_plane_points, undistort_map,
 };
+use profile_py::ProfileSampler;
 use scale_py::{
     ScaleEstimate, estimate_scale_logpolar, estimate_scale_moments, find_scale_invariant_center,
     find_scale_invariant_roi,
@@ -93,6 +95,7 @@ fn vision_metrology(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Stateful classes
     m.add_class::<EdgeDetector>()?;
+    m.add_class::<ProfileSampler>()?;
     m.add_class::<LsdDetector>()?;
     m.add_class::<Fitter>()?;
     m.add_class::<ShapeModel>()?;

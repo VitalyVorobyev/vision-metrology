@@ -228,6 +228,49 @@ fn bench_caliper_strip(c: &mut Criterion) {
     });
 }
 
+/// The library's default strip, 40 px at one sample per pixel over the bar's two edges,
+/// with the default derivative of Gaussian and with `Derivative::Continuous` at σ 1 and
+/// 2.5 px. The default is the baseline the continuous profile's cost compares with.
+fn bench_caliper_strip_continuous(c: &mut Criterion) {
+    let bar = bar_scene_f32(96, 96, 40, 60);
+    let view = bar.as_view();
+    let geom = strip((28.0, 48.3), (68.0, 48.3), 0.0, 41, 1);
+    for (name, sigma, derivative) in [
+        (
+            "caliper_strip_40px_41s_dog",
+            1.0,
+            Derivative::DerivativeOfGaussian,
+        ),
+        (
+            "caliper_strip_40px_41s_continuous_sigma1",
+            1.0,
+            Derivative::Continuous,
+        ),
+        (
+            "caliper_strip_40px_41s_continuous_sigma2.5",
+            2.5,
+            Derivative::Continuous,
+        ),
+    ] {
+        let cfg = MeasureConfig {
+            threshold: 0.01,
+            profile: ProfileConfig {
+                sigma,
+                derivative,
+                ..ProfileConfig::default()
+            },
+            ..MeasureConfig::default()
+        };
+        let mut cal = Caliper::strip(geom, cfg);
+        c.bench_function(name, |b| {
+            b.iter(|| {
+                let edges = cal.measure(black_box(&view)).expect("two edges");
+                black_box(edges.len());
+            });
+        });
+    }
+}
+
 /// One caliper moved back and forth between two strips 0.02 px apart in length, the way
 /// a tracker moves one caliper along a curve. σ in samples changes on every call, so
 /// every call rebuilds the detector's kernel (the default derivative of Gaussian: σ of
@@ -264,6 +307,7 @@ criterion_group!(
     bench_caliper_rect_pos,
     bench_metrology_model_apply_96_calipers,
     bench_caliper_strip,
-    bench_caliper_strip_jittered
+    bench_caliper_strip_jittered,
+    bench_caliper_strip_continuous
 );
 criterion_main!(benches);
