@@ -399,3 +399,32 @@ fn speckled_masks_near_integer_shifts_converge() {
         "{outcomes:?}"
     );
 }
+
+#[test]
+fn tap_window_matches_a_brute_force_block_check() {
+    let (w, h) = (23, 17);
+    let mask = crate::corr::fixtures::speckle(w, h, 0.08, 5);
+    let mut p = Plane::default();
+    p.load(&Image::new_fill(w, h, 1.0f32).as_view(), Some(&mask.as_view()))
+        .unwrap();
+    for y in -2..h as i64 + 2 {
+        for x in -2..w as i64 + 2 {
+            let brute = (y - 1..=y + 2).all(|yy| {
+                (x - 1..=x + 2).all(|xx| {
+                    xx >= 0
+                        && yy >= 0
+                        && xx < w as i64
+                        && yy < h as i64
+                        && p.valid[yy as usize * w + xx as usize]
+                })
+            });
+            assert_eq!(p.window_valid(x as f64 + 0.3, y as f64 + 0.7), brute, "{x} {y}");
+            if brute {
+                for (dx, dy) in [(-0.99, -0.99), (0.99, 0.99), (-0.99, 0.99)] {
+                    let (sx, sy) = (x as f64 + 0.3 + dx, y as f64 + 0.7 + dy);
+                    assert!(p.sample(sx, sy).is_some(), "{sx} {sy}");
+                }
+            }
+        }
+    }
+}

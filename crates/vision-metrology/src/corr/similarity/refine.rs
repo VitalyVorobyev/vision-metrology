@@ -59,21 +59,22 @@ pub(super) struct Fit {
 #[derive(Default)]
 pub(super) struct Workspace {
     pub residuals: Vec<f64>,
-    pub observations: Vec<u32>,
+    pub observations: Vec<bool>,
 }
 /// Valid previous pixels whose current-image taps stay valid while the map moves by less
 /// than 1 px from `pose` (see `Plane::window_valid`). The set is then fixed.
-fn freeze(a: &Plane, b: &Plane, pose: &Pose, region: [usize; 4], out: &mut Vec<u32>) {
-    out.clear();
+fn freeze(a: &Plane, b: &Plane, pose: &Pose, region: [usize; 4], out: &mut Vec<bool>) -> usize {
+    out.resize(a.w * a.h, false);
+    let mut n = 0;
     for y in region[2]..region[3] {
         for x in region[0]..region[1] {
             let i = y * a.w + x;
             let q = pose.map(x as f64, y as f64);
-            if a.valid[i] && b.window_valid(q[0], q[1]) {
-                out.push(i as u32);
-            }
+            out[i] = a.valid[i] && b.window_valid(q[0], q[1]);
+            n += usize::from(out[i]);
         }
     }
+    n
 }
 /// Largest per-axis displacement between two maps over a region; for affine maps the
 /// extremes are at the corners.
@@ -92,33 +93,44 @@ fn observations(
     a: &Plane,
     b: &Plane,
     pose: Pose,
-    frozen: &[u32],
+    frozen: &[bool],
+    region: [usize; 4],
     mut f: impl FnMut(f64, f64, f64, f64, f64, f64),
 ) {
-    for &i in frozen {
-        let i = i as usize;
-        let (x, y) = ((i % a.w) as f64, (i / a.w) as f64);
-        let q = pose.map(x, y);
-        if let Some((v, gx, gy)) = b.sample(q[0], q[1]) {
-            f(
-                a.data[i] as f64,
-                v,
-                gx,
-                gy,
-                (x - pose.center[0]) / pose.radius,
-                (y - pose.center[1]) / pose.radius,
-            );
+    for y in region[2]..region[3] {
+        for x in region[0]..region[1] {
+            let i = y * a.w + x;
+            if !frozen[i] {
+                continue;
+            }
+            let q = pose.map(x as f64, y as f64);
+            if let Some((v, gx, gy)) = b.sample(q[0], q[1]) {
+                f(
+                    a.data[i] as f64,
+                    v,
+                    gx,
+                    gy,
+                    (x as f64 - pose.center[0]) / pose.radius,
+                    (y as f64 - pose.center[1]) / pose.radius,
+                );
+            }
         }
     }
 }
 /// 1.4826 × the median absolute photometric residual.
-fn robust_scale(a: &Plane, b: &Plane, pose: Pose, scratch: &mut Workspace) -> f64 {
+fn robust_scale(
+    a: &Plane,
+    b: &Plane,
+    pose: Pose,
+    region: [usize; 4],
+    scratch: &mut Workspace,
+) -> f64 {
     let Workspace {
         residuals,
         observations: frozen,
     } = scratch;
     residuals.clear();
-    observations(a, b, pose, frozen, |u, v, _, _, _, _| {
+    observations(a, b, pose, frozen, region, |u, v, _, _, _, _| {
         residuals.push((pose.p[4] * v + pose.p[5] - u).abs())
     });
     let n = residuals.len();
@@ -133,11 +145,12 @@ fn system(
     b: &Plane,
     pose: Pose,
     cutoff: f64,
-    frozen: &[u32],
+    region: [usize; 4],
+    frozen: &[bool],
 ) -> (Matrix, Vector, f64, f64, usize) {
     let (mut h, mut rhs, mut sum, mut max, mut n) =
         (Matrix::zeros(), Vector::zeros(), 0.0, 0.0f64, 0usize);
-    observations(a, b, pose, frozen, |u, v, gx, gy, x, y| {
+    observations(a, b, pose, frozen, region, |u, v, gx, gy, x, y| {
         let r = pose.p[4] * v + pose.p[5] - u;
         let w = (cutoff / r.abs().max(cutoff)).min(1.0);
         let g = pose.p[4];
@@ -171,21 +184,21 @@ pub(super) fn refine(
     scratch: &mut Workspace,
 ) -> Result<Fit, TranslationStatus> {
     let mut frozen_at = pose;
-    freeze(a, b, &frozen_at, region, &mut scratch.observations);
+    let mut support = freeze(a, b, &frozen_at, region, &mut scratch.observations);
     let mut cutoff = 0.0;
     let mut converged = false;
     for iteration in 0..tuning.iterations.get() {
         if departure(&pose, &frozen_at, region) >= 1.0 {
             frozen_at = pose;
-            freeze(a, b, &frozen_at, region, &mut scratch.observations);
+            support = freeze(a, b, &frozen_at, region, &mut scratch.observations);
         }
-        if scratch.observations.len() < min_support {
+        if support < min_support {
             return Err(TranslationStatus::InsufficientSupport);
         }
         if iteration < 2 {
-            cutoff = tuning.huber as f64 * robust_scale(a, b, pose, scratch);
+            cutoff = tuning.huber as f64 * robust_scale(a, b, pose, region, scratch);
         }
-        let (h, rhs, _, _, n) = system(a, b, pose, cutoff, &scratch.observations);
+        let (h, rhs, _, _, n) = system(a, b, pose, cutoff, region, &scratch.observations);
         if n < min_support {
             return Err(TranslationStatus::InsufficientSupport);
         }
@@ -225,7 +238,7 @@ pub(super) fn refine(
     if departure(&pose, &frozen_at, region) >= 1.0 {
         freeze(a, b, &pose, region, &mut scratch.observations);
     }
-    let (h, _, sum, max, n) = system(a, b, pose, cutoff, &scratch.observations);
+    let (h, _, sum, max, n) = system(a, b, pose, cutoff, region, &scratch.observations);
     if n < min_support {
         return Err(TranslationStatus::InsufficientSupport);
     }

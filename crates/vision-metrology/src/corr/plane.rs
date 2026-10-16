@@ -6,8 +6,7 @@ pub(super) struct Plane {
     pub h: usize,
     pub data: Vec<f32>,
     pub valid: Vec<bool>,
-    /// `window[j]`: every pixel of the 4×4 block `[x-1, x+2] × [y-1, y+2]` around `j` is
-    /// in bounds and valid. Filled by `load`.
+    /// Forward 4×4 erosion of `valid`, filled by `load`; read through `window_valid`.
     pub window: Vec<bool>,
 }
 
@@ -77,43 +76,39 @@ impl Plane {
 
     /// Mark the pixels whose bilinear taps stay valid for every position within ±1 px:
     /// a sample at `(x, y)` with `window_valid(x, y)` stays valid for any `(x + dx, y + dy)`
-    /// with `|dx|, |dy| < 1`. Separable 4-run erosion, two passes, no allocation once sized.
+    /// with `|dx|, |dy| < 1`. Separable forward 4-run erosion in place, row-major, so
+    /// `window[r * w + c]` covers rows `r..=r+3` and columns `c..=c+3`.
     fn prepare_window(&mut self) {
         let (w, h) = (self.w, self.h);
         self.window.resize(w * h, false);
-        // Horizontal: window[j] holds whether x-1..=x+2 are all valid in this row.
         for y in 0..h {
             let row = y * w;
             for x in 0..w {
                 self.window[row + x] =
-                    x >= 1 && x + 2 < w && self.valid[row + x - 1..=row + x + 2].iter().all(|&v| v);
+                    x + 3 < w && self.valid[row + x..=row + x + 3].iter().all(|&v| v);
             }
         }
-        // Vertical, in place: rows below are still horizontal; the row above is cached.
-        for x in 0..w {
-            let mut above = false;
-            for y in 0..h {
-                let here = self.window[y * w + x];
-                let ok = y >= 1
-                    && y + 2 < h
-                    && above
-                    && here
-                    && self.window[(y + 1) * w + x]
-                    && self.window[(y + 2) * w + x];
-                above = here;
-                self.window[y * w + x] = ok;
+        // Each row reads only itself and the three rows below, all still horizontal.
+        for y in 0..h {
+            for x in 0..w {
+                let i = y * w + x;
+                self.window[i] = y + 3 < h
+                    && self.window[i]
+                    && self.window[i + w]
+                    && self.window[i + 2 * w]
+                    && self.window[i + 3 * w];
             }
         }
     }
 
-    /// Whether the ±1 px tap window about `(x, y)` is valid (see `prepare_window`);
-    /// `false` outside the image.
+    /// Whether the ±1 px tap window about `(x, y)` is valid: the 4×4 block
+    /// `[fx-1, fx+2] × [fy-1, fy+2]` of `(fx, fy) = floor(x, y)` is in bounds and valid.
     pub fn window_valid(&self, x: f64, y: f64) -> bool {
         let (fx, fy) = (x.floor(), y.floor());
-        if !(fx >= 0.0 && fy >= 0.0 && fx < self.w as f64 && fy < self.h as f64) {
+        if !(fx >= 1.0 && fy >= 1.0 && fx + 2.0 < self.w as f64 && fy + 2.0 < self.h as f64) {
             return false;
         }
-        self.window[fy as usize * self.w + fx as usize]
+        self.window[(fy as usize - 1) * self.w + fx as usize - 1]
     }
 
     /// Bilinear value and exact derivatives. All four taps must be valid, even
