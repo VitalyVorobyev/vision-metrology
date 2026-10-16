@@ -204,6 +204,17 @@ are relative to 0.1.0.
   fetch script that verifies SHA-256 checksums into the git-ignored `data/`, and committed
   dev/test splits of IDs. DamSegment (split by image) and HPatches (split by sequence)
   are registered.
+- **Synthetic sequence benchmark** (`tools/sequence_bench/`): a deterministic generator of
+  image sequences with exact truth, in the neutral `sequence.json` manifest. A curved
+  ribbon with asymmetric, variable-width walls is laid on a textured substrate that moves
+  rigidly under one to three affine or projective views, with box-integrated rendering
+  and a camera handover. Each nuisance is switchable: camera-fixed highlights and shading,
+  occlusions, a parallel line, a distractor also present in the blank, dropped frames, a
+  gap, injected registration error, camera motion and a bead that slides on its
+  substrate. The truth holds the poses per frame, the walls per station, the visibility per
+  frame, view and station, and the cap rims. Named presets cover the synthetic acceptance
+  cases of fusion, the planar rig and bead ends. A self-check measures the rendered walls
+  independently. Byte-identical output and the truth are tested in CI.
 - An accuracy regression suite with pinned envelopes; its strip and caliper rows run on
   CaliperBench's pixel-integrated image model: each `Locate` method on steps, bar centre
   and width, oblique strips, and rect, arc and radial calipers; its bead rows pin the

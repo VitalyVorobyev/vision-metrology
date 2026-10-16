@@ -231,11 +231,12 @@ jobs:
         run: pytest crates/vm-python/tests -q
 
       # The sequence evaluator's manifest reader, synthetic generator and
-      # evaluators, on synthetic sequences only.
-      - name: Test the registration evaluator
+      # evaluators, and the sequence benchmark's generator (determinism, truth,
+      # self-check), on synthetic sequences only.
+      - name: Test the registration evaluator and the sequence benchmark
         run: |
           pip install scipy pillow
-          pytest tools/registration_eval -q
+          pytest tools/registration_eval tools/sequence_bench -q
 
   cross-build:
     name: Cross-platform Build/Test
