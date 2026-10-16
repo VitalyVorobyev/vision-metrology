@@ -9,6 +9,10 @@ readme = "README.md"
 description = "Core image, geometry, edge, pyramid, and morphology primitives for vision metrology"
 keywords = ["machine-vision", "metrology", "image-processing", "edge-detection"]
 categories = ["computer-vision", "science"]
+# What crates.io ships: the library, its README (the crate docs `include_str!` it), the
+# licence texts (symlinks to the repository root) and the benches. Everything else stays in
+# the repository. An allow-list, so a new file is left out until someone decides to ship it.
+include = ["/src/**", "/benches/**", "/README.md", "/LICENSE-MIT", "/LICENSE-APACHE"]
 
 [dependencies]
 nalgebra = { workspace = true }
