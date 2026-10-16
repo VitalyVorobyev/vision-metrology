@@ -177,6 +177,11 @@ are relative to 0.1.0.
   `examples/python/`.
 - **Docs:** guides for shape matching, measurement and bead tracking, and a performance and
   accuracy page.
+- **Public datasets** (`tools/datasets/`): a registry of the external datasets used for
+  real-data numbers, with each one's licence as stated at its source, a standard-library
+  fetch script that verifies SHA-256 checksums into the git-ignored `data/`, and committed
+  dev/test splits of IDs. DamSegment (split by image) and HPatches (split by sequence)
+  are registered.
 - An accuracy regression suite with pinned envelopes; its strip and caliper rows run on
   CaliperBench's pixel-integrated image model: each `Locate` method on steps, bar centre
   and width, oblique strips, and rect, arc and radial calipers; its bead rows pin the

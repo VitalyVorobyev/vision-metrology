@@ -27,7 +27,7 @@ these operators instead of copies of them.
 | Tier | Data | Where it is reported | Rules |
 |---|---|---|---|
 | Synthetic | Generators with exact truth: the ribbon scenes, phase sweeps, the sequence benchmark ([#86]) | `tests/accuracy/*`, envelopes at about 1.5× the measured value; [`performance.md`](../performance.md) | In CI; deterministic (invariant 12) |
-| Public real | DamSegment; planar-tracking and viewpoint benchmarks; human-annotated paired edges ([#85]) | [`performance.md`](../performance.md), with the dataset, split and bootstrap intervals | Licence checked and recorded in the dataset registry ([#88]); data never committed; settings frozen on dev before the test split runs |
+| Public real | DamSegment; planar-tracking and viewpoint benchmarks; human-annotated paired edges ([#85]) | [`performance.md`](../performance.md), with the dataset, split and bootstrap intervals | Licence checked and recorded in the [dataset registry](../../tools/datasets/README.md); data never committed; settings frozen on dev before the test split runs |
 | Private | Application sequences under opaque labels: development A–D and the early part of H; held out E, F and the late part of H; raw multi-strip G; calibrated scans P1–P4 | Aggregates only, under those labels | Adapters in the git-ignored `tools/private/` write the neutral `sequence.json`; held-out data runs once with frozen settings; `check-invariants.py` guards against leaks |
 
 Public reports never depend on private data. A claim that only private data supports is
@@ -110,25 +110,16 @@ The similarity design is in [registration-stage2.md](registration-stage2.md).
   after the first iteration, and test convergence on the motion step only. Reproduce the
   failure first with a synthetic overlap/mask fixture.
 - Give the similarity initializer a search-only path.
-- Public real data: frame pairs from a planar-tracking benchmark with homography truth,
-  split by sequence, for false rejects on real texture; viewpoint pairs for rejection of
-  an observable rotation or affine.
+- Public real data: HPatches, registered with its split by sequence
+  ([dataset registry](../../tools/datasets/README.md)). Its illumination sequences, with
+  a known identity homography, for false rejects on real texture; its viewpoint pairs for
+  rejection of an observable rotation or affine.
 
 **Accept:** synthetic false rejects ≤ 1% at the stated noise; an observable 0.01 rad
 rotation (translation) and a mild affine (similarity) are still rejected; the public
 numbers published with the split and the settings frozen; before/after coverage on the
 development sequences, with reciprocal-closure p95 no worse; the held-out sequences
 reported with the settings frozen; benches updated.
-
-### Dataset registry, `planned` ([#88])
-
-`tools/datasets/` holds, for each external dataset, its source, licence, citation, a fetch
-script into the git-ignored `data/`, checksums, and a committed split file of IDs only.
-DamSegment moves in first.
-
-**Accept:** DamSegment and the first new dataset are registered and their checksums
-reproduce; `check-invariants.py` fails on a dataset named in `performance.md` that the
-registry lacks.
 
 ---
 
@@ -397,7 +388,6 @@ Mosaic works on the desktop.
 [#85]: https://github.com/VitalyVorobyev/vision-metrology/issues/85
 [#86]: https://github.com/VitalyVorobyev/vision-metrology/issues/86
 [#87]: https://github.com/VitalyVorobyev/vision-metrology/issues/87
-[#88]: https://github.com/VitalyVorobyev/vision-metrology/issues/88
 [#89]: https://github.com/VitalyVorobyev/vision-metrology/issues/89
 [#90]: https://github.com/VitalyVorobyev/vision-metrology/issues/90
 [#91]: https://github.com/VitalyVorobyev/vision-metrology/issues/91
