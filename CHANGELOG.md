@@ -149,7 +149,7 @@ are relative to 0.1.0.
   `ComponentStats`, marker-based `watershed` that partitions plateaus and draws 1 px
   boundaries, and `grow_regions`, which grows regions bounded by a `ContourGraph`.
 - **Contour geometry** (`contour`): `ContourBuildConfig::record_geometry` with per-edge
-  `tangents`, `curvatures` and `arc_params` (`GraphEdge::compute_geometry`),
+  `tangents`, `curvatures` and `arc_params`,
   `ContourGraph::{iter_edges_by_length, filter_edges_min_length}`, and
   `contour::smooth_polyline` (Gaussian polyline smoothing).
 - **Image warping** (`warp`): `Map::{affine, projective, polar, log_polar, from_fn}` and
@@ -244,6 +244,27 @@ are relative to 0.1.0.
 ### Removed
 
 - The unused `rayon` feature and the `vm-gallery` crate.
+- The dev-only `trace-cands` feature and its stderr instrumentation in
+  `ShapeMatcher::find`. Time the call from outside, as the `stage_timing` example does.
+- The hidden `pyr::bench_downsample2x2_mean_to_f32_into` hook. `Pyramid::build` is the
+  way in; the `downsample` bench measures one level through it under the same IDs.
+- **Breaking:** `core::{to_f32, to_f32_u16}`. Level 0 of a `Pyramid` is the `f32` copy
+  (`pyr.build(&view, 1); pyr.level(0)`), or map a row with `Pixel::to_f32`.
+- **Breaking:** `edge::best_edge_pair_in_row_u8`. Call
+  `best_edge_pair(det.detect_in_ref(view.row(y), &cfg), &pair_cfg)`.
+- **Breaking:** `core::map_index` is crate-private; sample through `BorderMode` with
+  `sample_nearest` / `sample_bilinear_f32`.
+- `core::Angle`, `fit::fit_conic` and its Bookstein solver, and
+  `metric::{normalized_to_pixel, pixel_to_normalized_linear}` (the last two are now
+  crate-private). Use `wrap_angle` for angles, `fit_ellipse` for ellipses (it reports
+  residuals), and `distort_pixel` / `undistort_pixel` for the camera model.
+- **Breaking:** `contour::Node::degree`; read `incident_edges.len()`. `Node::idx` is
+  crate-private (`p` is the node's position).
+- `GraphEdge::compute_geometry` and `ContourGraph::compute_all_geometry`; set
+  `ContourBuildConfig::record_geometry` to get `tangents`, `curvatures` and `arc_params`.
+- `Pixel`'s accumulator items (`Acc`, `to_acc`, `acc_to_f32`, `as_f32_slice`) move to its
+  sealed supertrait, and the unused `acc_mean4` is gone. `Pixel` keeps `ZERO`, `to_f32`
+  and `from_f32_sat`.
 
 ### Fixed
 

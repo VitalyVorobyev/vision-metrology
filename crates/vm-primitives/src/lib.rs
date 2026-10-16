@@ -28,17 +28,17 @@ pub mod prelude {
 // ---------------------------------------------------------------------------
 
 pub use core::{
-    Affine2f, Angle, BorderMode, Circle2f, Conic2f, Ellipse2f, Error, Image, ImageView,
-    ImageViewMut, Isometry2f, Isometry3f, Line2f, Pixel, Point2f, Point3f, Polyline2f,
-    Projective2f, Rect2f, Similarity2f, Vec2f, Vec2fExt, Vec3f, map_index, parabolic_peak_offset,
-    sample_bilinear_at, sample_bilinear_f32, sample_nearest, similarity_from_parts,
-    similarity_parts, to_f32, to_f32_u16, transform_point, transform_vec, wrap_angle,
+    Affine2f, BorderMode, Circle2f, Conic2f, Ellipse2f, Error, Image, ImageView, ImageViewMut,
+    Isometry2f, Isometry3f, Line2f, Pixel, Point2f, Point3f, Polyline2f, Projective2f, Rect2f,
+    Similarity2f, Vec2f, Vec2fExt, Vec3f, parabolic_peak_offset, sample_bilinear_at,
+    sample_bilinear_f32, sample_nearest, similarity_from_parts, similarity_parts, transform_point,
+    transform_vec, wrap_angle,
 };
 pub use edge::{
     Derivative1D, DirectionField, DoGKernel1D, Edge1DConfig, Edge1DDetector, Edge2DConfig,
     Edge2DDetector, EdgePair1D, EdgePairConfig, EdgePeak, EdgePolarity, Edgel, GradientBuffers,
     HalfContrastConfig, Hysteresis, LevelCrossing1D, LevelEdge, LevelOutcome, SmoothKind, Subpix2D,
-    SubpixRefine, TiledField, best_edge_pair, best_edge_pair_in_row_u8,
+    SubpixRefine, TiledField, best_edge_pair,
 };
 pub use morph::{
     StructuringElement, chamfer_distance_u8, close_binary_u8, close3x3_binary_u8, dilate_binary_u8,

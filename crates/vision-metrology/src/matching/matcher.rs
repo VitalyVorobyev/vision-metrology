@@ -140,8 +140,6 @@ impl ShapeMatcher {
         model: &ShapeModel,
         cfg: &ShapeSearchConfig,
     ) -> Vec<ShapeMatch> {
-        #[cfg(feature = "trace-cands")]
-        let t = std::time::Instant::now();
         let min_contrast = cfg.min_contrast.resolve(img);
         // Invariant 3: the scene must be decimated with the same kernel the
         // model was, so the choice is read off the model rather than from this
@@ -153,8 +151,6 @@ impl ShapeMatcher {
                 pre_smooth: model.pre_smooth(),
             },
         );
-        #[cfg(feature = "trace-cands")]
-        eprintln!("pyr build: {:.3} ms", t.elapsed().as_secs_f64() * 1e3);
         self.run(model, cfg, min_contrast)
     }
 
@@ -164,8 +160,6 @@ impl ShapeMatcher {
         cfg: &ShapeSearchConfig,
         min_contrast: f32,
     ) -> Vec<ShapeMatch> {
-        #[cfg(feature = "trace-cands")]
-        let t_run = std::time::Instant::now();
         self.truncated = false;
         let n_lv = model.num_levels().min(self.pyr.num_levels());
         if n_lv == 0 || cfg.min_score > 1.0 {
@@ -176,11 +170,6 @@ impl ShapeMatcher {
             self.fields.resize_with(n_lv, DirectionField::new);
         }
         let top = n_lv - 1;
-        #[cfg(feature = "trace-cands")]
-        eprintln!(
-            "fields setup: {:.3} ms",
-            t_run.elapsed().as_secs_f64() * 1e3
-        );
 
         let last = cfg.tuning.last_level.min(top);
         let angles = intersect(
@@ -251,8 +240,6 @@ impl ShapeMatcher {
 
         cands.clear();
         maps.resize(span.width() * span.height());
-        #[cfg(feature = "trace-cands")]
-        let t_sweep = std::time::Instant::now();
         for si in 0..sca.len() {
             sweep_angles(
                 field,
@@ -269,24 +256,9 @@ impl ShapeMatcher {
             );
         }
         *truncated = cap_candidates(cands, cfg.tuning.max_candidates);
-        #[cfg(feature = "trace-cands")]
-        {
-            let mut pos: Vec<(i32, i32)> = cands.iter().map(|c| (c.x, c.y)).collect();
-            pos.sort_unstable();
-            pos.dedup();
-            eprintln!(
-                "top level {top}: sweep {:.3} ms, {} candidates at {} distinct positions (truncated {})",
-                t_sweep.elapsed().as_secs_f64() * 1e3,
-                cands.len(),
-                pos.len(),
-                *truncated
-            );
-        }
 
         // ---- propagate down ------------------------------------------------
         for level in (last..top).rev() {
-            #[cfg(feature = "trace-cands")]
-            let t_level = std::time::Instant::now();
             let lvl = model.level(level).expect("level < num_levels");
             let img = pyr.level(level).expect("level < n_lv");
             let span = Span::for_level(cfg.roi, level, img.width(), img.height());
@@ -325,12 +297,6 @@ impl ShapeMatcher {
                 }
             }
             core::mem::swap(cands, next);
-            #[cfg(feature = "trace-cands")]
-            eprintln!(
-                "level {level}: {:.3} ms, {} candidates survive",
-                t_level.elapsed().as_secs_f64() * 1e3,
-                cands.len()
-            );
         }
 
         // ---- refine, score, suppress ---------------------------------------
@@ -338,8 +304,6 @@ impl ShapeMatcher {
         let up = (1usize << last) as f32;
         let shift = 0.5 * (up - 1.0);
 
-        #[cfg(feature = "trace-cands")]
-        let t_final = std::time::Instant::now();
         let mut out: Vec<ShapeMatch> = Vec::new();
         for cand in cands.iter() {
             if last < top {
@@ -391,14 +355,8 @@ impl ShapeMatcher {
             });
         }
 
-        #[cfg(feature = "trace-cands")]
-        eprintln!(
-            "final: {:.3} ms; run so far {:.3} ms",
-            t_final.elapsed().as_secs_f64() * 1e3,
-            t_run.elapsed().as_secs_f64() * 1e3
-        );
         let (w0, h0) = (fields[0].width(), fields[0].height());
-        let result = suppress(
+        suppress(
             mask,
             (w0, h0),
             &model.level(0).expect("level 0 exists").points,
@@ -406,10 +364,7 @@ impl ShapeMatcher {
             cfg.max_overlap,
             cfg.max_matches,
             nms_scratch,
-        );
-        #[cfg(feature = "trace-cands")]
-        eprintln!("run total: {:.3} ms", t_run.elapsed().as_secs_f64() * 1e3);
-        result
+        )
     }
 }
 

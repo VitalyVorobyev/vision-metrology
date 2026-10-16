@@ -18,14 +18,92 @@
 //! stay absolute and documented per config field rather than being silently
 //! rescaled.
 
-use core::ops::Add;
-
 mod sealed {
-    /// Prevents downstream implementations of [`Pixel`](super::Pixel).
-    pub trait Sealed {}
-    impl Sealed for u8 {}
-    impl Sealed for u16 {}
-    impl Sealed for f32 {}
+    use core::ops::Add;
+
+    /// The crate-private half of [`Pixel`](super::Pixel): it seals the trait
+    /// against downstream implementations and carries the accumulator
+    /// arithmetic the pyramid and the 1-D detector use. Nothing here is part
+    /// of the public contract. Generic code bounded by `P: Pixel` calls these
+    /// without importing anything.
+    pub trait Sealed: Sized {
+        /// Accumulator wide enough to sum a 2×2 block of this type without loss.
+        ///
+        /// `u32` for both integer types (`4 × u16::MAX` fits comfortably), `f32`
+        /// for `f32` — which keeps float summation order and rounding identical
+        /// to a hand-written `a + b + c + d`.
+        type Acc: Copy + Add<Output = Self::Acc>;
+
+        /// Widen for accumulation.
+        fn to_acc(self) -> Self::Acc;
+
+        /// Exact `f32` value of an accumulator.
+        fn acc_to_f32(a: Self::Acc) -> f32;
+
+        /// Borrow `s` as `&[f32]` when `Self` *is* `f32`, else `None`.
+        ///
+        /// Lets generic code skip the widening copy on the one type that needs
+        /// none. Callers must treat `None` as "copy through `Pixel::to_f32`",
+        /// never as an error.
+        fn as_f32_slice(s: &[Self]) -> Option<&[f32]>;
+    }
+
+    impl Sealed for u8 {
+        type Acc = u32;
+
+        #[inline]
+        fn to_acc(self) -> u32 {
+            u32::from(self)
+        }
+
+        #[inline]
+        fn acc_to_f32(a: u32) -> f32 {
+            a as f32
+        }
+
+        #[inline]
+        fn as_f32_slice(_: &[Self]) -> Option<&[f32]> {
+            None
+        }
+    }
+
+    impl Sealed for u16 {
+        type Acc = u32;
+
+        #[inline]
+        fn to_acc(self) -> u32 {
+            u32::from(self)
+        }
+
+        #[inline]
+        fn acc_to_f32(a: u32) -> f32 {
+            a as f32
+        }
+
+        #[inline]
+        fn as_f32_slice(_: &[Self]) -> Option<&[f32]> {
+            None
+        }
+    }
+
+    impl Sealed for f32 {
+        type Acc = f32;
+
+        #[inline]
+        fn to_acc(self) -> f32 {
+            self
+        }
+
+        #[inline]
+        fn acc_to_f32(a: f32) -> f32 {
+            a
+        }
+
+        #[inline]
+        fn as_f32_slice(s: &[Self]) -> Option<&[f32]> {
+            Some(s)
+        }
+    }
 }
 
 /// A scalar pixel type: `u8`, `u16` or `f32`.
@@ -46,13 +124,6 @@ mod sealed {
 /// assert_eq!(mean(&[1.0f32, 2.0]), 1.5);
 /// ```
 pub trait Pixel: sealed::Sealed + Copy + Default + PartialOrd + core::fmt::Debug + 'static {
-    /// Accumulator wide enough to sum a 2×2 block of this type without loss.
-    ///
-    /// `u32` for both integer types (`4 × u16::MAX` fits comfortably), `f32`
-    /// for `f32` — which keeps float summation order and rounding identical to
-    /// a hand-written `a + b + c + d`.
-    type Acc: Copy + Add<Output = Self::Acc>;
-
     /// The additive identity, for clearing scratch buffers generically.
     const ZERO: Self;
 
@@ -65,31 +136,9 @@ pub trait Pixel: sealed::Sealed + Copy + Default + PartialOrd + core::fmt::Debug
     /// identity. `NaN` maps to [`ZERO`](Pixel::ZERO) for the integer types,
     /// which is what Rust's `as` conversion already does.
     fn from_f32_sat(v: f32) -> Self;
-
-    /// Widen for accumulation.
-    fn to_acc(self) -> Self::Acc;
-
-    /// Exact `f32` value of an accumulator.
-    fn acc_to_f32(a: Self::Acc) -> f32;
-
-    /// Borrow `s` as `&[f32]` when `Self` *is* `f32`, else `None`.
-    ///
-    /// Lets generic code skip the widening copy on the one type that needs
-    /// none. Callers must treat `None` as "copy through
-    /// [`to_f32`](Pixel::to_f32)", never as an error.
-    fn as_f32_slice(s: &[Self]) -> Option<&[f32]>;
-
-    /// Mean of four accumulated samples, back in this pixel type.
-    ///
-    /// Integer types round half-up (`(sum + 2) / 4`); `f32` scales by `0.25`.
-    /// This is the 2×2 box-mean kernel the pyramid is built from, so its exact
-    /// arithmetic is load-bearing.
-    // Invariants 2 and 3.
-    fn acc_mean4(a: Self::Acc) -> Self;
 }
 
 impl Pixel for u8 {
-    type Acc = u32;
     const ZERO: Self = 0;
 
     #[inline]
@@ -102,30 +151,9 @@ impl Pixel for u8 {
         // `as` saturates at the integer bounds and maps NaN to 0 since Rust 1.45.
         v.round() as u8
     }
-
-    #[inline]
-    fn to_acc(self) -> u32 {
-        u32::from(self)
-    }
-
-    #[inline]
-    fn acc_to_f32(a: u32) -> f32 {
-        a as f32
-    }
-
-    #[inline]
-    fn as_f32_slice(_: &[Self]) -> Option<&[f32]> {
-        None
-    }
-
-    #[inline]
-    fn acc_mean4(a: u32) -> Self {
-        ((a + 2) / 4) as u8
-    }
 }
 
 impl Pixel for u16 {
-    type Acc = u32;
     const ZERO: Self = 0;
 
     #[inline]
@@ -137,30 +165,9 @@ impl Pixel for u16 {
     fn from_f32_sat(v: f32) -> Self {
         v.round() as u16
     }
-
-    #[inline]
-    fn to_acc(self) -> u32 {
-        u32::from(self)
-    }
-
-    #[inline]
-    fn acc_to_f32(a: u32) -> f32 {
-        a as f32
-    }
-
-    #[inline]
-    fn as_f32_slice(_: &[Self]) -> Option<&[f32]> {
-        None
-    }
-
-    #[inline]
-    fn acc_mean4(a: u32) -> Self {
-        ((a + 2) / 4) as u16
-    }
 }
 
 impl Pixel for f32 {
-    type Acc = f32;
     const ZERO: Self = 0.0;
 
     #[inline]
@@ -172,52 +179,12 @@ impl Pixel for f32 {
     fn from_f32_sat(v: f32) -> Self {
         v
     }
-
-    #[inline]
-    fn to_acc(self) -> f32 {
-        self
-    }
-
-    #[inline]
-    fn acc_to_f32(a: f32) -> f32 {
-        a
-    }
-
-    #[inline]
-    fn as_f32_slice(s: &[Self]) -> Option<&[f32]> {
-        Some(s)
-    }
-
-    #[inline]
-    fn acc_mean4(a: f32) -> Self {
-        a * 0.25
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::Pixel;
-
-    /// The rounding rule the integer pyramid levels depend on: half rounds up.
-    #[test]
-    fn integer_box_mean_rounds_half_up() {
-        // 1+1+1+2 = 5 -> 5/4 = 1.25 -> 1
-        assert_eq!(u8::acc_mean4(5), 1);
-        // 1+1+2+2 = 6 -> 1.5 -> 2 (half up, not banker's)
-        assert_eq!(u8::acc_mean4(6), 2);
-        // 2+2+2+1 = 7 -> 1.75 -> 2
-        assert_eq!(u8::acc_mean4(7), 2);
-        assert_eq!(u16::acc_mean4(6), 2);
-        // Saturating input: four maxima average back to the maximum.
-        assert_eq!(u8::acc_mean4(4 * 255), 255);
-        assert_eq!(u16::acc_mean4(4 * 65535), 65535);
-    }
-
-    #[test]
-    fn float_box_mean_is_a_plain_quarter() {
-        assert_eq!(f32::acc_mean4(6.0), 1.5);
-        assert_eq!(f32::acc_mean4(-2.0), -0.5);
-    }
+    use super::sealed::Sealed;
 
     /// `Acc` must hold the largest 2x2 sum each type can produce.
     #[test]

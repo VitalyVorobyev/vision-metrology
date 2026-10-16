@@ -90,7 +90,7 @@ pub mod prelude {
 // `vm-primitives` a potential name collision here, and hide what this crate's
 // surface actually is.
 pub use vm_primitives::{
-    Affine2f, Angle, BorderMode, Circle2f, Conic2f, Edge1DConfig, Edge1DDetector, Edge2DConfig,
+    Affine2f, BorderMode, Circle2f, Conic2f, Edge1DConfig, Edge1DDetector, Edge2DConfig,
     Edge2DDetector, EdgePolarity, Edgel, Ellipse2f, Error, Image, ImageView, ImageViewMut,
     Isometry2f, Isometry3f, Line2f, Pixel, Point2f, Point3f, Polyline2f, PreSmooth, Projective2f,
     Pyramid, PyramidConfig, Rect2f, Similarity2f, SmoothKind, SubpixRefine, Vec2f, Vec2fExt, Vec3f,

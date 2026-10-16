@@ -33,8 +33,9 @@ pub struct ContourBuildConfig {
     /// When `true`, store per-vertex gradient strength in [`GraphEdge::strengths`].
     /// Default: `false`.
     pub record_strengths: bool,
-    /// When `true`, call [`GraphEdge::compute_geometry`] on every edge after
-    /// building the graph, populating `tangents`, `curvatures`, and `arc_params`.
+    /// When `true`, compute every edge's geometry after building the graph,
+    /// populating [`GraphEdge::tangents`], `curvatures`, and `arc_params`.
+    /// Default: `false`.
     pub record_geometry: bool,
     /// Thin the edgel occupancy mask (Zhang-Suen) before tracing. Default: `true`.
     ///
@@ -205,7 +206,6 @@ pub fn build_graph_from_edgels(
             kind: kind_from_degree(deg[p]),
             p: edgels[eidx].p,
             idx: (x, y),
-            degree: deg[p] as usize,
             incident_edges: Vec::new(),
         });
     }
@@ -352,7 +352,9 @@ pub fn build_graph_from_edgels(
     };
 
     if cfg.record_geometry {
-        graph.compute_all_geometry();
+        for edge in &mut graph.edges {
+            edge.compute_geometry();
+        }
     }
 
     graph
@@ -556,8 +558,7 @@ fn ensure_terminal_node(
     let eidx = grid.edgel_at[pixel] as usize;
     let (x, y) = (pixel % grid.width, pixel / grid.width);
 
-    let degree = deg[pixel] as usize;
-    let kind = match degree {
+    let kind = match deg[pixel] {
         0 => NodeKind::Isolated,
         1 => NodeKind::End,
         2 => fallback_kind,
@@ -572,7 +573,6 @@ fn ensure_terminal_node(
         kind,
         p: grid.edgels[eidx].p,
         idx: (x, y),
-        degree,
         incident_edges: Vec::new(),
     });
 
@@ -847,7 +847,7 @@ mod tests {
             .next()
             .expect("junction should be present");
         assert_eq!(j.idx, (4, 4));
-        assert_eq!(j.degree, 3);
+        assert_eq!(j.incident_edges.len(), 3);
 
         for edge in g.iter_edges() {
             assert!(edge.points.len() >= 2);

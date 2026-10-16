@@ -1,6 +1,4 @@
-use crate::core::ImageView;
-
-use super::edge1d::{Edge1DConfig, Edge1DDetector, EdgePeak, EdgePolarity};
+use super::edge1d::{EdgePeak, EdgePolarity};
 
 /// A pair of opposite-polarity 1-D edge peaks forming a laser stripe.
 #[derive(Debug, Clone, PartialEq)]
@@ -97,26 +95,11 @@ pub fn best_edge_pair(peaks: &[EdgePeak], cfg: &EdgePairConfig) -> Option<EdgePa
     best
 }
 
-/// Run 1-D edge detection on row `y` of a `u8` image and return the best edge pair.
-///
-/// Convenience wrapper around [`best_edge_pair`] that first calls the detector on the row.
-pub fn best_edge_pair_in_row_u8(
-    detector: &mut Edge1DDetector,
-    img: &ImageView<'_, u8>,
-    y: usize,
-    edge_cfg: &Edge1DConfig,
-    pair_cfg: &EdgePairConfig,
-) -> Option<EdgePair1D> {
-    let row = img.row(y);
-    let peaks = detector.detect_in_ref(row, edge_cfg);
-    best_edge_pair(peaks, pair_cfg)
-}
-
 #[cfg(test)]
 mod tests {
     use crate::core::{BorderMode, Image};
 
-    use super::{EdgePairConfig, best_edge_pair, best_edge_pair_in_row_u8};
+    use super::{EdgePairConfig, best_edge_pair};
     use crate::DoGKernel1D;
     use crate::edge::conv1d::convolve_f32;
     use crate::edge::edge1d::{Edge1DConfig, Edge1DDetector, SubpixRefine};
@@ -202,8 +185,8 @@ mod tests {
         };
         let pair_cfg = EdgePairConfig::default();
 
-        let pair = best_edge_pair_in_row_u8(&mut det, &img.as_view(), 1, &edge_cfg, &pair_cfg)
-            .expect("pair should exist");
+        let peaks = det.detect_in_ref(img.as_view().row(1), &edge_cfg);
+        let pair = best_edge_pair(peaks, &pair_cfg).expect("pair should exist");
 
         assert!((pair.center_x - center).abs() <= 0.2);
     }

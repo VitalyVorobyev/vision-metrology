@@ -52,9 +52,7 @@ mod project;
 mod types;
 mod undistort_map;
 
-pub use distortion::{
-    distort_pixel, normalized_to_pixel, pixel_to_normalized_linear, undistort_pixel,
-};
+pub use distortion::{distort_pixel, undistort_pixel};
 pub use homography::{homography_plane_to_image, plane_grid_map};
 pub use project::{pixel_to_plane, pixel_to_ray, ray_plane_intersect};
 pub use types::{BrownConrady5, CameraModel, PinholeIntrinsics, Plane3, PlaneGrid, Pose3};

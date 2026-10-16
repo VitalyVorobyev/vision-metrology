@@ -28,9 +28,7 @@ pub struct Node {
     /// Subpixel position (from the originating edgel).
     pub p: Point2f,
     /// Integer pixel grid cell containing this node.
-    pub idx: (usize, usize),
-    /// Number of incident arcs. Equals `incident_edges.len()`.
-    pub degree: usize,
+    pub(crate) idx: (usize, usize),
     /// Indices of all arcs incident to this node in [`ContourGraph::edges`].
     pub incident_edges: Vec<EdgeId>,
 }
@@ -38,8 +36,10 @@ pub struct Node {
 /// A polyline arc connecting two [`Node`]s in a [`ContourGraph`].
 ///
 /// Geometry fields (`tangents`, `curvatures`, `arc_params`) are populated
-/// lazily by calling [`GraphEdge::compute_geometry`] or by setting
-/// `ContourBuildConfig::record_geometry` to `true` at build time.
+/// when [`ContourBuildConfig::record_geometry`] is `true` at build time, and
+/// are `None` otherwise.
+///
+/// [`ContourBuildConfig::record_geometry`]: crate::contour::ContourBuildConfig::record_geometry
 #[derive(Debug, Clone)]
 pub struct GraphEdge {
     /// Unique identifier; equals the index of this edge in [`ContourGraph::edges`].
@@ -58,7 +58,7 @@ pub struct GraphEdge {
     pub score: f32,
     /// `true` when this edge forms a closed loop (its two endpoints are the same node).
     pub is_loop: bool,
-    /// Unit tangent direction at each point, computed by [`GraphEdge::compute_geometry`].
+    /// Unit tangent direction at each point, when geometry was recorded.
     /// `tangents[i]` is the symmetric finite-difference tangent at `points[i]`.
     pub tangents: Option<Vec<Vec2f>>,
     /// Signed curvature κ = (t′ × t) / |t|³ at each interior point (radians / pixel).
@@ -73,8 +73,8 @@ impl GraphEdge {
     /// Compute and store tangents, curvatures, and arc-length parameters.
     ///
     /// Safe to call multiple times; re-computes on every call.
-    /// Has no effect if `points.len() < 2`.
-    pub fn compute_geometry(&mut self) {
+    /// Clears all three if `points.len() < 2`.
+    pub(crate) fn compute_geometry(&mut self) {
         let n = self.points.len();
         if n < 2 {
             self.tangents = None;
@@ -214,13 +214,6 @@ impl ContourGraph {
     pub fn filter_edges_min_length(&self, min_length: f32) -> impl Iterator<Item = &GraphEdge> {
         self.edges.iter().filter(move |e| e.length >= min_length)
     }
-
-    /// Compute geometry (tangents, curvatures, arc params) for all edges in place.
-    pub fn compute_all_geometry(&mut self) {
-        for edge in &mut self.edges {
-            edge.compute_geometry();
-        }
-    }
 }
 
 #[cfg(test)]
@@ -233,12 +226,6 @@ mod tests {
             kind,
             p: Point2f::new(id as f32, 0.0),
             idx: (id, 0),
-            degree: match kind {
-                NodeKind::End => 1,
-                NodeKind::Junction => 3,
-                NodeKind::Isolated => 0,
-                NodeKind::LoopAnchor => 2,
-            },
             incident_edges: Vec::new(),
         }
     }
@@ -460,9 +447,11 @@ mod tests {
     }
 
     #[test]
-    fn compute_all_geometry_covers_every_edge() {
+    fn compute_geometry_covers_every_edge() {
         let mut g = graph(vec![], vec![line(0, 4), arc(1, 8.0, 16), line(2, 1)]);
-        g.compute_all_geometry();
+        for e in &mut g.edges {
+            e.compute_geometry();
+        }
         assert!(g.edges[0].tangents.is_some());
         assert!(g.edges[1].tangents.is_some());
         // Single-point edge stays untouched rather than panicking.

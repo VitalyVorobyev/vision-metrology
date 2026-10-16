@@ -13,7 +13,7 @@ use crate::warp::Map;
 /// map answers "for this destination (undistorted) pixel, where in the
 /// source (raw, distorted) image do I look?" A destination pixel `(x, y)`
 /// is first turned into a normalized ray under `camera`'s **linear**
-/// intrinsics only ([`pixel_to_normalized_linear`] — no distortion, since
+/// intrinsics only (`fx`, `fy`, `skew`, `cx`, `cy` — no distortion, since
 /// the destination image is defined to be the undistorted one), then that
 /// same ray is run through the **forward** distortion model
 /// ([`distort_pixel`](super::distort_pixel)) to find where it actually
