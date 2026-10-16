@@ -1,0 +1,96 @@
+<!doctype html><html lang="en"><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cross-section annotation</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,sans-serif;background:#15181c;color:#e9edf1}
+body{max-width:1240px;margin:24px auto;padding:0 16px}h1{font-size:24px;margin:0 0 4px;font-weight:600}
+p{color:#aeb9c7;line-height:1.5;margin:6px 0 16px}kbd{font:12px ui-monospace,monospace;background:#2a323c;border:1px solid #546171;border-radius:3px;padding:1px 4px}
+.panels{display:grid;grid-template-columns:1fr 2.4fr;gap:16px}section{background:#20262d;padding:14px;border:1px solid #39414b;border-radius:8px;min-width:0}
+h2{font-size:15px;font-weight:500;margin:0 0 10px}canvas{width:100%;background:#0e1115;display:block}#profile{cursor:crosshair}#overview{cursor:copy}
+.controls{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-top:12px;font-size:14px}
+button,select{font:inherit;background:#2a323c;color:#edf3f9;border:1px solid #546171;border-radius:4px;padding:6px 10px}
+button.on{border-color:#e9edf1;background:#39424e}#submit{margin-left:auto;background:#2f5d4d;border-color:#84dab9}
+label{display:flex;align-items:center;gap:6px}.value{font-variant-numeric:tabular-nums;min-width:6em}
+.cyan{color:#7bb7dc}.amber{color:#efb976}#status{min-height:1.4em;color:#efb976;font-size:14px;margin-top:8px}
+.caption{font-size:13px;color:#aeb9c7;margin-top:8px}details{margin-top:16px}summary{cursor:pointer;color:#aeb9c7}
+@media(max-width:850px){.panels{grid-template-columns:1fr}}
+</style>
+<h1>Cross-section annotation</h1>
+<p><span id="progress">Loading…</span>. Click the profile to place the active boundary. <kbd>←</kbd>/<kbd>→</kbd> nudge it by 0.05 px
+(<kbd>Shift</kbd> 0.5 px), <kbd>Tab</kbd> or <kbd>L</kbd>/<kbd>R</kbd> switch sides, <kbd>V</kbd> marks it not visible,
+<kbd>+</kbd>/<kbd>−</kbd>/<kbd>0</kbd> or the wheel zoom, <kbd>Enter</kbd> submits. Earlier answers are never shown.</p>
+<div class="panels">
+<section><h2 id="where">Frame</h2><canvas id="crop" width="336" height="336"></canvas>
+<div class="caption">The station (green ring), its normal and the placed boundaries. Left lies on the negative side of the normal.</div></section>
+<section><h2>Profile along the normal, every 0.05 px</h2><canvas id="profile" width="860" height="380"></canvas>
+<div class="caption">Intensity (white) and its derivative (grey, own scale). Hatched: outside the frame or not visible.</div>
+<div class="controls">
+<button id="side-left" class="cyan">Left</button><span class="value cyan" id="left-value">unset</span>
+<label><input type="checkbox" id="left-hidden">not visible</label>
+<button id="side-right" class="amber">Right</button><span class="value amber" id="right-value">unset</span>
+<label><input type="checkbox" id="right-hidden">not visible</label>
+<button id="submit">Submit</button></div><div id="status"></div></section></div>
+<details id="add"><summary>Add stations on a hard span</summary>
+<div class="controls"><label>Frame <select id="frame"></select></label><span class="caption">Click near the curve to add a station; each joins both passes.</span></div>
+<canvas id="overview" width="1200" height="400" style="margin-top:10px"></canvas></details>
+<script>
+const $=id=>document.getElementById(id), SIDES=['left','right'], COLORS={left:'#7bb7dc',right:'#efb976'};
+let T=null,marks={},hidden={},active='left',view=null,crop=new Image(),O=null,overviewImage=new Image();
+const M={l:56,r:56,t:14,b:34};
+function status(text){$('status').textContent=text||''}
+function progress(p){$('progress').textContent=`${p[0]} of ${p[1]} answers recorded`}
+async function call(url,body){const r=await fetch(url,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});const data=await r.json();if(!r.ok)throw new Error(data.error||r.statusText);return data}
+async function load(promise){try{T=await promise}catch(e){status(e.message);return}
+  progress(T.progress);marks={left:null,right:null};hidden={left:false,right:false};active='left';view=null;status('');
+  if(T.done){$('where').textContent='Done';status('Both passes are complete.');draw();return}
+  $('where').textContent=`Frame ${T.frame}`;crop=new Image();crop.onload=draw;crop.src=T.crop;draw()}
+function range(){return view||[T.offsets[0],T.offsets[T.offsets.length-1]]}
+function toX(t,w){const [a,b]=range();return M.l+(t-a)/(b-a)*(w-M.l-M.r)}
+function fromX(x,w){const [a,b]=range();return a+(x-M.l)/(w-M.l-M.r)*(b-a)}
+function scaleOf(values,h){const v=values.filter((x,i)=>x!=null&&inView(i));if(!v.length)return null;let lo=Math.min(...v),hi=Math.max(...v);const pad=Math.max(hi-lo,1e-6)*.06;lo-=pad;hi+=pad;return y=>M.t+(hi-y)/(hi-lo)*(h-M.t-M.b)}
+function inView(i){const [a,b]=range(),t=T.offsets[i];return t>=a&&t<=b}
+function trace(ctx,values,y,w,color,width){ctx.strokeStyle=color;ctx.lineWidth=width;ctx.beginPath();let pen=false;T.offsets.forEach((t,i)=>{const v=values[i];if(v==null||!inView(i)){pen=false;return}const X=toX(t,w),Y=y(v);if(pen)ctx.lineTo(X,Y);else ctx.moveTo(X,Y);pen=true});ctx.stroke()}
+function drawProfile(){const c=$('profile'),ctx=c.getContext('2d'),w=c.width,h=c.height;ctx.clearRect(0,0,w,h);if(!T||T.done)return;
+  const [a,b]=range(),step=(b-a)>8?1:(b-a)>3?.5:(b-a)>1.2?.2:.05;ctx.font='12px system-ui';ctx.fillStyle='#aeb9c7';ctx.textAlign='center';
+  for(let t=Math.ceil(a/step)*step;t<=b+1e-9;t+=step){const X=toX(t,w);ctx.strokeStyle=Math.abs(t)<1e-9?'#5d6876':'#2c333c';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(X,M.t);ctx.lineTo(X,h-M.b);ctx.stroke();ctx.fillText(t.toFixed(step<.1?2:1),X,h-M.b+16)}
+  ctx.fillText('offset along the normal, px',w/2,h-4);ctx.fillStyle='rgba(216,83,179,.18)';
+  T.offsets.forEach((t,i)=>{if(T.values[i]==null&&inView(i)){const X=toX(t,w);ctx.fillRect(X-1,M.t,3,h-M.t-M.b)}});
+  const yd=scaleOf(T.derivative,h),yv=scaleOf(T.values,h);if(yd)trace(ctx,T.derivative,yd,w,'#6b7683',1);if(yv)trace(ctx,T.values,yv,w,'#f1f4f7',1.6);
+  for(const side of SIDES){if(marks[side]==null||hidden[side])continue;const X=toX(marks[side],w);ctx.strokeStyle=COLORS[side];ctx.lineWidth=side===active?2.2:1.2;ctx.setLineDash(side===active?[]:[5,4]);ctx.beginPath();ctx.moveTo(X,M.t);ctx.lineTo(X,h-M.b);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle=COLORS[side];ctx.fillText(side,X,M.t+12)}}
+function drawCrop(){const c=$('crop'),ctx=c.getContext('2d');ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,c.width,c.height);if(!T||T.done||!crop.complete||!crop.width)return;
+  const s=Math.min(c.width/crop.width,c.height/crop.height);ctx.imageSmoothingEnabled=false;ctx.drawImage(crop,0,0,crop.width*s,crop.height*s);
+  const P=(x,y)=>[(x-T.origin[0]+.5)*s,(y-T.origin[1]+.5)*s],[sx,sy]=T.station,[nx,ny]=T.normal,L=T.offsets[T.offsets.length-1];
+  ctx.strokeStyle='rgba(255,255,255,.55)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(...P(sx-L*nx,sy-L*ny));ctx.lineTo(...P(sx+L*nx,sy+L*ny));ctx.stroke();
+  for(const side of SIDES){if(marks[side]==null||hidden[side])continue;const t=marks[side],q=[sx+t*nx,sy+t*ny];ctx.strokeStyle=COLORS[side];ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(...P(q[0]+1.5*ny,q[1]-1.5*nx));ctx.lineTo(...P(q[0]-1.5*ny,q[1]+1.5*nx));ctx.stroke()}
+  for(const [color,width] of [['#000',3.5],['#84dab9',1.5]]){ctx.strokeStyle=color;ctx.lineWidth=width;ctx.beginPath();ctx.arc(...P(sx,sy),4,0,Math.PI*2);ctx.stroke()}}
+function draw(){drawProfile();drawCrop();for(const side of SIDES){$(`side-${side}`).classList.toggle('on',side===active);$(`${side}-hidden`).checked=hidden[side];$(`${side}-value`).textContent=hidden[side]?'not visible':marks[side]==null?'unset':`${marks[side].toFixed(3)} px`}}
+function place(t){const [a,b]=[T.offsets[0],T.offsets[T.offsets.length-1]];marks[active]=Math.round(Math.min(b,Math.max(a,t))*1000)/1000;hidden[active]=false}
+function zoom(factor,centre){const [a,b]=range(),full=T.offsets[T.offsets.length-1]-T.offsets[0];let span=Math.min(full,Math.max(.5,(b-a)*factor));if(span>=full){view=null;draw();return}let lo=centre-(centre-a)*span/(b-a);lo=Math.max(T.offsets[0],Math.min(lo,T.offsets[T.offsets.length-1]-span));view=[lo,lo+span];draw()}
+function canvasX(e,c){const r=c.getBoundingClientRect();return (e.clientX-r.left)*c.width/r.width}
+$('profile').addEventListener('click',e=>{if(!T||T.done)return;const c=$('profile');place(fromX(canvasX(e,c),c.width));if(active==='left'&&marks.right==null&&!hidden.right)active='right';draw()});
+$('profile').addEventListener('wheel',e=>{if(!T||T.done)return;e.preventDefault();const c=$('profile');zoom(e.deltaY>0?1.25:.8,fromX(canvasX(e,c),c.width))},{passive:false});
+for(const side of SIDES){$(`side-${side}`).onclick=()=>{active=side;draw()};$(`${side}-hidden`).onchange=e=>{hidden[side]=e.target.checked;draw()}}
+async function submit(){if(!T||T.done)return;for(const side of SIDES)if(marks[side]==null&&!hidden[side]){status(`Place the ${side} boundary or mark it not visible.`);return}
+  const left=hidden.left?null:marks.left,right=hidden.right?null:marks.right;if(left!=null&&right!=null&&!(left<right)){status('Left must lie before right along the normal.');return}
+  await load(call('/api/annotate',{task:T.task,left,right}))}
+$('submit').onclick=submit;
+document.addEventListener('keydown',e=>{if(!T||T.done||e.target.tagName==='SELECT')return;const k=e.key;
+  if(k==='ArrowLeft'||k==='ArrowRight'){if(marks[active]!=null){place(marks[active]+(k==='ArrowLeft'?-1:1)*(e.shiftKey?.5:.05));draw()}e.preventDefault()}
+  else if(k==='Tab'){active=active==='left'?'right':'left';draw();e.preventDefault()}
+  else if(k==='l'||k==='L'){active='left';draw()}else if(k==='r'||k==='R'){active='right';draw()}
+  else if(k==='v'||k==='V'){hidden[active]=!hidden[active];draw()}
+  else if(k==='+'||k==='='){const [a,b]=range();zoom(.5,marks[active]??(a+b)/2)}else if(k==='-'||k==='_'){const [a,b]=range();zoom(2,(a+b)/2)}else if(k==='0'){view=null;draw()}
+  else if(k==='Enter'){submit();e.preventDefault()}});
+function drawOverview(){const c=$('overview'),ctx=c.getContext('2d');if(!O||!overviewImage.width)return;const s=c.width/overviewImage.width;c.height=Math.round(overviewImage.height*s);
+  ctx.imageSmoothingEnabled=true;ctx.drawImage(overviewImage,0,0,c.width,c.height);const P=p=>[(p[0]+.5)*s,(p[1]+.5)*s];
+  ctx.strokeStyle='#efb976';ctx.lineWidth=1.2;ctx.beginPath();O.curve.forEach((p,i)=>i?ctx.lineTo(...P(p)):ctx.moveTo(...P(p)));ctx.stroke();
+  ctx.fillStyle='#84dab9';for(const p of O.stations){ctx.beginPath();ctx.arc(...P(p),3,0,Math.PI*2);ctx.fill()}}
+async function overview(frame){try{O=await call(`/api/overview${frame==null?'':`?frame=${frame}`}`)}catch(e){status(e.message);return}
+  if(!$('frame').options.length)for(const f of O.frames){const o=document.createElement('option');o.value=f;o.textContent=f;$('frame').append(o)}
+  $('frame').value=O.frame;overviewImage=new Image();overviewImage.onload=drawOverview;overviewImage.src=O.image}
+$('add').addEventListener('toggle',()=>{if($('add').open&&!O)overview()});$('frame').onchange=()=>overview($('frame').value);
+$('overview').addEventListener('click',async e=>{if(!O)return;const c=$('overview'),r=c.getBoundingClientRect(),s=c.width/overviewImage.width;
+  const x=(e.clientX-r.left)*c.width/r.width/s-.5,y=(e.clientY-r.top)*c.height/r.height/s-.5;
+  try{const result=await call('/api/station',{frame:O.frame,point:[x,y]});O=result;drawOverview();progress(result.progress);status(result.added?'Station added.':'That station exists.')}catch(err){status(err.message)}});
+load(call('/api/task'));
+</script></html>

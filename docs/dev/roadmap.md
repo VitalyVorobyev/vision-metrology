@@ -209,17 +209,6 @@ mismatch; degradation under injected registration error reported; the parallel l
 flagged; on private sequences, the single-frame tracker, the single-frame extraction and
 the fused extraction compared as aggregates.
 
-### Cross-section annotation, `planned` ([#87])
-
-A two-edge sub-pixel annotation mode in the `registration_eval` viewer, on magnified
-interpolated profiles. Each section is annotated twice, blind, for the annotator's σ, and
-stored in the manifest's `annotations`. A protocol covers how to choose and split
-sections. Annotations of private data stay with it. The target is 50–100 sections per
-sequence on development and held-out sequences.
-
-**Accept:** annotations round-trip through the manifest, with tests on a synthetic
-manifest; wall bias and σ reported against them, with the annotator's σ beside them.
-
 ---
 
 ## v0.5: online and metric
@@ -347,7 +336,6 @@ Mosaic works on the desktop.
 [#84]: https://github.com/VitalyVorobyev/vision-metrology/issues/84
 [#85]: https://github.com/VitalyVorobyev/vision-metrology/issues/85
 [#86]: https://github.com/VitalyVorobyev/vision-metrology/issues/86
-[#87]: https://github.com/VitalyVorobyev/vision-metrology/issues/87
 [#89]: https://github.com/VitalyVorobyev/vision-metrology/issues/89
 [#90]: https://github.com/VitalyVorobyev/vision-metrology/issues/90
 [#91]: https://github.com/VitalyVorobyev/vision-metrology/issues/91

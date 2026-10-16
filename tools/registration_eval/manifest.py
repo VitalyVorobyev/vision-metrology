@@ -14,6 +14,7 @@ import numpy as np
 from PIL import Image
 from scipy.ndimage import gaussian_filter
 
+import annotation
 from anchors import matrix
 
 VERSION = 1
@@ -92,8 +93,27 @@ class Sequence:
         self.comparison = doc.get('comparison')
         if self.comparison is not None and len(self.comparison.get('shifts', [])) != len(self.frames)-1:
             raise ValueError('comparison.shifts needs one entry (or null) per adjacent pair')
-        self.annotations = doc.get('annotations', [])
+        annotations = doc.get('annotations', [])
+        self.annotations_path = None
+        if isinstance(annotations, str):
+            self.annotations_path = self._resolve(annotations)
+            annotations = (annotation.read(self.annotations_path, len(self.frames))['annotations']
+                           if self.annotations_path.exists() else [])
+        elif isinstance(annotations, list):
+            # An entry with no annotator is an exact cross-section from a generator, with
+            # wall points; it is carried through unchanged and never scored as an annotation.
+            for entry in annotations:
+                if 'annotator' in entry:
+                    annotation.check(entry, len(self.frames))
+        else:
+            raise ValueError('annotations is a list or the path of an annotations file')
+        self.annotations = annotations
         self._images, self._masks, self._visible, self._prepared = {}, {}, {}, {}
+
+    @property
+    def annotated(self):
+        """The hand annotations: the `annotations` entries that name an annotator."""
+        return [entry for entry in self.annotations if 'annotator' in entry]
 
     def __len__(self):
         return len(self.frames)
