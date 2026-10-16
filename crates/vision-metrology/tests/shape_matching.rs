@@ -7,7 +7,7 @@
 
 use vision_metrology::matching::{
     ContourOrientation, Polarity, Refinement, ShapeMatch, ShapeMatcher, ShapeModel,
-    ShapeModelBuilder, ShapeModelConfig, ShapeModelTuning, ShapeSearchConfig, ShapeSearchTuning,
+    ShapeModelBuilder, ShapeModelConfig, ShapeSearchConfig, ShapeSearchTuning,
 };
 use vision_metrology::{Image, Point2f, Polyline2f, Rect2f, Vec2f};
 use vm_primitives::wrap_angle;
@@ -905,7 +905,7 @@ fn the_pyramid_kernel_survives_persistence() {
     use vm_primitives::PreSmooth;
 
     let cfg = ShapeModelConfig {
-        tuning: ShapeModelTuning {
+        tuning: vision_metrology::matching::ShapeModelTuning {
             pre_smooth: PreSmooth::Binomial121,
             ..Default::default()
         },
