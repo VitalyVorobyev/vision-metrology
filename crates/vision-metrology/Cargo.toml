@@ -87,8 +87,6 @@ warp = []
 ## `from_bytes` over an opaque, version-gated document. Enables the same feature
 ## in vm-primitives for the geometry types the model embeds.
 serde = ["dep:serde", "dep:serde_json", "vm-primitives/serde", "matching"]
-## Internal diagnostics: per-level candidate counts on stderr. Dev only.
-trace-cands = []
 
 [dev-dependencies]
 anyhow = "1"

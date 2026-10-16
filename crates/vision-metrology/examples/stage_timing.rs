@@ -2,9 +2,7 @@
 //!
 //! Prints the cost of the pyramid build, each direction-field level, and the
 //! full `ShapeMatcher::find` on a clean and on a cluttered 1280x1024 fixture, plus a
-//! small config sweep on the cluttered scene. Build with
-//! `--features trace-cands` to also see per-level candidate counts and stage
-//! times from inside the matcher on stderr.
+//! small config sweep on the cluttered scene.
 use std::num::NonZeroUsize;
 
 use std::time::Instant;
