@@ -3,7 +3,8 @@
 Development tooling for `corr::TranslationEstimator` and the experimental
 `corr::SimilarityEstimator` (`vision_metrology.experimental` in Python). It reads one neutral manifest per image sequence
 (`sequence.json`, below), registers adjacent frames, composes caller-owned sequence
-poses with reciprocal anchors, and writes reports, overlays and a standalone viewer.
+poses with reciprocal anchors, and writes reports, overlays and a standalone viewer. It also
+checks edge locators for sub-pixel locking without ground truth.
 The tool knows nothing about where a sequence came from. A dataset with its own on-disk
 layout gets a small adapter that *writes* a manifest; private adapters live in the
 git-ignored `tools/private/`.
@@ -20,6 +21,8 @@ python tools/registration_eval/run.py --manifest /tmp/registration-synthetic/seq
 python tools/registration_eval/similarity_run.py \
   --manifest /tmp/registration-synthetic/seq/sequence.json --out-dir /tmp/similarity-out \
   --propagation-report /tmp/translation-out/report.json
+python tools/registration_eval/phase_histogram.py \
+  --manifest /tmp/registration-synthetic/seq/sequence.json --out-dir /tmp/phase-out
 python -m pytest tools/registration_eval
 ```
 
@@ -125,6 +128,27 @@ python -m http.server 8765 --bind 127.0.0.1 --directory /tmp/similarity-out
 Source pixels, geometry and detailed reports of a private dataset stay in local,
 untracked outputs. Only aggregate numbers belong in the repository's documentation,
 under opaque sequence labels; they are in `docs/performance.md`.
+
+## Sub-pixel locking: `phase_histogram.py`
+
+A ground-truth-free check that located edges do not cluster at particular sub-pixel
+phases. For every frame it runs the bindings' `detect_edges` (default `EdgeConfig`) and
+keeps the edgels whose pixel lies inside the frame's mask, eroded by `--erode` px (default
+5), and whose normal is within `--max-angle` degrees (default 25) of an image axis. Each
+edgel contributes the coordinate along that axis where its tangent crosses its own pixel
+row or column. `--mask` chooses `visibility` (the default), `validity` (the registration
+mask), `both` or `none`. `--refine dog` re-locates the same edgels with a continuous,
+tapered derivative of Gaussian, a reference that does not lock.
+
+`phase_histogram.json` and `summary.txt` hold, per sequence and pooled, the 10-bin
+histogram of fractional parts normalized to the uniform rate and the locking index, its
+max/min bin ratio (`null` when a bin is empty). They are aggregates only. A flat histogram
+is necessary, not sufficient, for an unbiased locator.
+
+```bash
+python tools/registration_eval/phase_histogram.py \
+  --manifest /tmp/registration-synthetic/seq/sequence.json --out-dir /tmp/phase-out --refine dog
+```
 
 ## The synthetic sequence: `synthetic.py`
 
