@@ -16,15 +16,14 @@
     "image_id": "$IMAGE_ID",
     "min_contrast": 0.15,
     "num_levels": null,
-    "num_levels_built": 3,
+    "num_levels_built": 2,
     "origin": [
-      64.0,
-      63.999996185302734
+      63.99999237060547,
+      64.0
     ],
     "point_counts": [
-      176,
-      88,
-      44
+      136,
+      67
     ],
     "roi": [
       24.0,
