@@ -99,18 +99,19 @@ absent with fewer than two usable regions or when `region_check` is `None`.
 | `RegionCheck` field | Default | Meaning |
 |---|---|---|
 | `max_chi2` | 13.8 | largest accepted χ²; the 99.9% quantile of χ² with 2 degrees of freedom |
-| `bias_floor_px` | 0.06 | model bias added in quadrature to each component, px |
+| `bias_floor_px` | 0.1 | model bias added in quadrature to each component, px |
 
 The covariance assumes independent residuals; the floor carries what it does not:
 interpolation bias and the noise correlation a caller's band-pass introduces. With
 negligible noise the test tolerates about `bias_floor_px · sqrt(2 · max_chi2)` of
 disagreement between two quadrants; noisy pairs are allowed proportionally more. The
-defaults were chosen for at most 1% false rejects of true translations on a synthetic
-DoG-band texture under read noise and on HPatches development self-pairs, and an
-observable rotation of a 320×97 strip is rejected; [performance.md](performance.md) has
-the numbers, including the coverage this costs on real strips, whose quadrants disagree
-by more than noise. Raising `bias_floor_px` tolerates more model error; that is the
-caller's tolerance, not a recalibration. Acceptance with an unavailable regional check does not certify a
+default floor is a tolerance, not a calibration: 0.06 px is the smallest floor with at
+most 1% false rejects of true translations on a synthetic DoG-band texture under read
+noise and on HPatches development self-pairs, and real strips' quadrants disagree by
+more than noise, so the default tolerates more (0.1 px), close to the previous fixed
+limit. A smaller floor rejects more model error at the cost of coverage; an observable
+rotation of a 320×97 strip is rejected at either. [performance.md](performance.md) has
+the numbers for both. Acceptance with an unavailable regional check does not certify a
 translation-only scene, and there is no estimate of rotation or deformation in this
 operator.
 

@@ -20,8 +20,10 @@ are relative to 0.1.0.
   covariance-normalized test: translation tests every pair of quadrant shifts (χ², 2 dof)
   against their summed covariances plus the bias floor; similarity refits each quadrant
   about its own centroid and RMS radius and compares it with the global fit there (4 dof),
-  without extrapolating to the image corners. Results report `region_chi2`. Defaults come
-  from a synthetic false-reject study and HPatches development pairs. Refinement freezes
+  without extrapolating to the image corners. Results report `region_chi2`. Defaults:
+  χ² limits at the 99.9% quantiles; similarity's floor, 0.06 px, calibrated on a synthetic
+  false-reject study and HPatches development pairs; translation's, 0.1 px, a tolerance
+  above that calibrated minimum. Refinement freezes
   its observations within ±½ px of the seed, fixes the Huber scale after the first step,
   tests convergence on the motion step alone and has a 30-iteration budget; the
   similarity initializer runs the integer search alone. `tools/registration_eval` gains

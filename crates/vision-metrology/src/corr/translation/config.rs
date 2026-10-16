@@ -56,13 +56,15 @@ pub struct RegionCheck {
 
 impl Default for RegionCheck {
     /// Translation's defaults: 13.8 is the 99.9% quantile of chi-square with 2 degrees of
-    /// freedom, and the 0.06 px floor keeps false rejects of true translations at or under
-    /// 1% on the synthetic study (`tools/registration_eval/false_reject.py`, DoG-band
-    /// texture 4 DN under 4 DN read noise) and on HPatches development self-pairs.
+    /// freedom. The 0.1 px floor is a tolerance: about 0.53 px of disagreement between two
+    /// quadrants at negligible noise, close to the previous fixed limit. The calibrated
+    /// minimum for at most 1% false rejects (synthetic study in
+    /// `tools/registration_eval/false_reject.py`, HPatches development self-pairs) is
+    /// 0.06 px; above it, the extra tolerance admits more real model error.
     fn default() -> Self {
         Self {
             max_chi2: 13.8,
-            bias_floor_px: 0.06,
+            bias_floor_px: 0.1,
         }
     }
 }

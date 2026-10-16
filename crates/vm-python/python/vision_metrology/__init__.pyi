@@ -1483,7 +1483,7 @@ class RegionCheck:
     not exceed `max_chi2`; `bias_floor_px` is added in quadrature to each component."""
     max_chi2: float
     bias_floor_px: float
-    def __init__(self, *, max_chi2: float = 13.8, bias_floor_px: float = 0.06) -> None: ...
+    def __init__(self, *, max_chi2: float = 13.8, bias_floor_px: float = 0.1) -> None: ...
 
 class TranslationConfig:
     search_radius: int
