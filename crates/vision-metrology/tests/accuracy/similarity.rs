@@ -1,9 +1,8 @@
 //! Known analytic similarity transforms with photometry, masking and seeded noise.
 use super::{Image, Lcg, Measured, mean_std};
 use vision_metrology::corr::{SimilarityConfig, SimilarityEstimator, TranslationStatus};
-use vision_metrology::{
-    Point2f, Similarity2f, Vec2f, similarity_parts, transform_point, wrap_angle,
-};
+use vision_metrology::{Point2f, Similarity2f, Vec2f};
+use vm_primitives::{similarity_parts, transform_point, wrap_angle};
 fn texture(x: f64, y: f64) -> f32 {
     (100.
         + 25. * (x * 0.17 + y * 0.13).sin()

@@ -104,7 +104,8 @@ the list is contiguous and that every citation resolves.
     the same PR, rewriting the affected entry rather than appending to it.
 17. **One canonical path per name.** No glob re-exports across crate boundaries. `prelude`
     is a curated convenience, and any crate-root re-export is an explicit list.
-    `vision-metrology` re-exports the `vm_primitives` crate, not its contents.
+    `vision-metrology` re-exports the `vm_primitives` crate, plus an explicit list of its
+    most-used *types* at its root; free functions stay at their `vm_primitives` path.
 18. **Every domain module is feature-gated**, default-on. A new module ships with its
     feature, `required-features` on every example, bench and test that uses it, and a row
     in the crate's feature table. CI checks each feature on its own.

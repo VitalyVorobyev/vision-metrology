@@ -22,9 +22,8 @@
 #![allow(dead_code)]
 
 use vision_metrology::matching::{ShapeMatch, ShapeModel};
-use vision_metrology::{
-    BorderMode, Image, Point2f, Rect2f, sample_bilinear_at, sample_bilinear_f32,
-};
+use vision_metrology::vm_primitives::{sample_bilinear_at, sample_bilinear_f32};
+use vision_metrology::{BorderMode, Image, Point2f, Rect2f};
 
 pub const GREEN: [u8; 3] = [40, 220, 60];
 pub const RED: [u8; 3] = [235, 60, 50];

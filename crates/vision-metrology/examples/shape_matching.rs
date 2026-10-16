@@ -479,7 +479,7 @@ fn synthetic() -> Result<()> {
             let q = m.pose * nalgebra::Point2::new(150.0f32, 130.0);
             (q.x - cx).abs() < 1.5
                 && (q.y - cy).abs() < 1.5
-                && vision_metrology::wrap_angle(m.angle() - angle).abs() < 0.05
+                && vision_metrology::vm_primitives::wrap_angle(m.angle() - angle).abs() < 0.05
         });
         assert!(hit, "no match for ground truth ({cx}, {cy}, {angle})");
         println!("  ok: ({cx:.0}, {cy:.0}) at {:.1} deg", angle.to_degrees());

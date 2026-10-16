@@ -9,7 +9,8 @@ use vision_metrology::matching::{
     ContourOrientation, Polarity, Refinement, ShapeMatch, ShapeMatcher, ShapeModel,
     ShapeModelBuilder, ShapeModelConfig, ShapeModelTuning, ShapeSearchConfig, ShapeSearchTuning,
 };
-use vision_metrology::{Image, Point2f, Polyline2f, Rect2f, Vec2f, wrap_angle};
+use vision_metrology::{Image, Point2f, Polyline2f, Rect2f, Vec2f};
+use vm_primitives::wrap_angle;
 
 const W: usize = 512;
 const H: usize = 512;

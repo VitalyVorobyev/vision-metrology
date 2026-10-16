@@ -35,9 +35,9 @@ use vision_metrology::scale::{
 use vision_metrology::warp::{Interp, Map};
 use vision_metrology::{
     BorderMode, Edge1DConfig, Edge1DDetector, Edge2DConfig, Edge2DDetector, EdgePolarity, Image,
-    Point2f, Rect2f, SmoothKind, SubpixRefine, Vec2f, wrap_angle,
+    Point2f, Rect2f, SmoothKind, SubpixRefine, Vec2f,
 };
-use vm_primitives::{Hysteresis, Subpix2D};
+use vm_primitives::{Hysteresis, Subpix2D, wrap_angle};
 
 // Strip and caliper rows on CaliperBench's pixel-integrated image model.
 #[path = "accuracy/strip.rs"]

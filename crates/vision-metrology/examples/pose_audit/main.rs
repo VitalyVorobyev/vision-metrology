@@ -42,7 +42,8 @@ use vision_metrology::matching::{
     Contrast, Polarity, ShapeMatch, ShapeMatcher, ShapeModel, ShapeModelBuilder, ShapeModelConfig,
     ShapeSearchConfig,
 };
-use vision_metrology::{Edge2DConfig, Edge2DDetector, Image, Point2f, Rect2f, wrap_angle};
+use vision_metrology::vm_primitives::wrap_angle;
+use vision_metrology::{Edge2DConfig, Edge2DDetector, Image, Point2f, Rect2f};
 
 #[derive(Parser)]
 #[command(about = "Audit shape-matching poses with independent checks")]
