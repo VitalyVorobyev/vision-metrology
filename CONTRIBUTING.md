@@ -39,14 +39,28 @@ The other workflows:
   missing from `deny.toml`'s allow-list is a deliberate review, not a config fix.
 - `bench.yml` runs on demand and writes a criterion table to the job summary. Shared
   runners make its numbers indicative only.
-- `python-wheels.yml` runs on a published release, or by hand: it builds the wheels and the
-  sdist, and on a release publishes them to PyPI.
+- `python-wheels.yml` runs on every PR and push to `main`: it builds the abi3 wheels for
+  Linux x86_64 and aarch64, macOS (universal2) and Windows, and the sdist. It installs each
+  wheel into a clean venv on its own platform, under Python 3.10 and 3.13, and runs
+  `crates/vm-python/tests/test_readme_quickstart.py`, which executes the READMEs'
+  self-contained Python snippets as written. Only a published release uploads to PyPI, over
+  a trusted publisher.
+- `release-crates.yml` runs on every PR and push to `main`: `cargo package` for
+  `vm-primitives` and `vision-metrology` together, which builds each from its packaged
+  sources, and `cargo publish --dry-run -p vm-primitives`. A version tag publishes both to
+  crates.io over trusted publishing, once the repository variable
+  `CRATES_IO_TRUSTED_PUBLISHING` is `true`.
 - `publish-docs.yml` publishes the rustdoc to GitHub Pages on every push to `main`.
 
 **MSRV.** It is `rust-version` in the root `Cargo.toml`, explained in
 [ADR-0002](docs/dev/adr/0002-dependency-and-toolchain-policy.md). Clippy's
 `incompatible_msrv` lint catches `std` items newer than the floor. `rust-toolchain.toml`
 pins day-to-day work to stable, and the MSRV job overrides it.
+
+**What a crate ships.** Each library crate's `include` list in its `Cargo.toml` is the
+allow-list for crates.io: sources, README, licence texts, benches and, for
+`vision-metrology`, the integration tests with fixtures under 64 KiB. The examples stay in
+the repository. Check a change with `cargo package -p vm-primitives -p vision-metrology --list`.
 
 ## Python bindings
 
@@ -66,6 +80,12 @@ pytest tests/
   same change as the `#[pymodule]` registration list. A test checks that every stubbed name
   exists at runtime.
 - **Parity** is [invariant 15](docs/dev/system-design.md#invariants).
+- **Version.** `pyproject.toml` declares `dynamic = ["version"]`, so the wheel takes the
+  workspace version from `Cargo.toml`.
+- **README snippets run.** `tests/test_readme_quickstart.py` executes every Python block in
+  the top-level and the bindings README that starts with an `import`, and a
+  `print(...)  # 1.0 2.0` line must print those numbers. Fragments with placeholder names
+  start with something else.
 
 ## Tests
 
