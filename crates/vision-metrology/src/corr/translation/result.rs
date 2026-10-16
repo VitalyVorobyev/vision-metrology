@@ -61,9 +61,13 @@ pub struct Translation {
     pub covariance: Option<[f32; 3]>,
     /// Regions with independent, supported refinements.
     pub regions: usize,
-    /// Maximum distance between regional shifts. `None` with fewer than two regions
-    /// or when the regional check is disabled.
+    /// Maximum distance between regional shifts, in pixels. `None` with fewer than two
+    /// regions or when the regional check is disabled.
     pub region_error: Option<f32>,
+    /// Largest covariance-normalized χ² over the regional pairs (2 degrees of freedom),
+    /// the statistic [`RegionCheck`](super::RegionCheck) tests. `None` when
+    /// `region_error` is.
+    pub region_chi2: Option<f32>,
     /// Acceptance or the reason the estimate must not be used as a pose.
     pub status: TranslationStatus,
 }
@@ -82,6 +86,7 @@ impl Translation {
             covariance: None,
             regions: 0,
             region_error: None,
+            region_chi2: None,
             status,
         }
     }

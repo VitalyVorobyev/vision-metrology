@@ -23,6 +23,8 @@ from __future__ import annotations
 import argparse
 import json
 from collections import Counter
+from concurrent.futures import ProcessPoolExecutor
+from functools import partial
 from pathlib import Path
 
 import numpy as np
@@ -95,11 +97,23 @@ def motion(kind, rng, magnitude):
         'angle': angle, 'log_scale': log_scale, 'anisotropy': anisotropy}
 
 
-def estimator(kind, check):
-    """Defaults, with the regional decision optionally disabled but its statistics kept."""
-    if kind in ('translation', 'rotation'):
-        return vm.TranslationEstimator(translation_config(check))
-    return SimilarityEstimator(similarity_config(check))
+def estimator(kind, check, max_chi2=None, bias_floor_px=None):
+    """Defaults, optionally overridden; `check=False` keeps the statistics without their
+    decision."""
+    translation = kind in ('translation', 'rotation')
+    cfg = translation_config(check) if translation else similarity_config(check)
+    inner = cfg if translation else cfg.translation
+    if max_chi2 is not None or bias_floor_px is not None:
+        region = inner.region_check
+        if max_chi2 is not None and check:
+            region.max_chi2 = max_chi2
+        if bias_floor_px is not None:
+            region.bias_floor_px = bias_floor_px
+        inner.region_check = region
+    if translation:
+        return vm.TranslationEstimator(cfg)
+    cfg.translation = inner
+    return SimilarityEstimator(cfg)
 
 
 def trial(kind, index, args, mask):
@@ -112,7 +126,7 @@ def trial(kind, index, args, mask):
     b = render(texture, linear, shift, rng, args.noise, args.mean, args.contrast, norm)
     if args.preprocess == 'dog':
         a, b = bandpass(a, mask > 0), bandpass(b, mask > 0)
-    result = estimator(kind, not args.no_check).estimate(a, b, previous_mask=mask, current_mask=mask)
+    result = estimator(kind, not args.no_check, args.max_chi2, args.bias_floor).estimate(a, b, previous_mask=mask, current_mask=mask)
     row = {'trial': index, 'shift': shift.tolist(), 'status': result.status,
            'regions': result.regions, 'region_error': result.region_error} | extra
     if hasattr(result, 'region_chi2'):
@@ -151,15 +165,25 @@ def main():
                         help='rotation (rad) or anisotropic scale of the negative controls')
     parser.add_argument('--preprocess', choices=('dog', 'none'), default='dog')
     parser.add_argument('--no-check', action='store_true')
+    parser.add_argument('--max-chi2', type=float, help='override the default RegionCheck')
+    parser.add_argument('--bias-floor', type=float, help='override the default RegionCheck, px')
     parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--jobs', type=int, default=1, help='worker processes')
     parser.add_argument('--out', type=Path, help='per-trial JSON report')
     args = parser.parse_args()
     if args.magnitude is None:
         args.magnitude = .01 if args.motion == 'rotation' else .005
     mask = np.ones(SHAPE, np.uint8)
     mask[BAND[0]:BAND[1]] = 0
-    rows = [trial(args.motion, i, args, mask) for i in range(args.trials)]
-    report = {'settings': {k: (str(v) if isinstance(v, Path) else v) for k, v in vars(args).items()},
+    run = partial(trial, args.motion, args=args, mask=mask)
+    if args.jobs > 1:
+        with ProcessPoolExecutor(args.jobs) as pool:
+            rows = list(pool.map(run, range(args.trials), chunksize=8))
+    else:
+        rows = [run(i) for i in range(args.trials)]
+    settings = {k: (str(v) if isinstance(v, Path) else v) for k, v in vars(args).items()
+                if k not in ('out', 'jobs')}
+    report = {'settings': settings,
               'shape': SHAPE, 'excluded_rows': BAND, 'summary': summarize(rows)}
     print(json.dumps(report, indent=1))
     if args.out:

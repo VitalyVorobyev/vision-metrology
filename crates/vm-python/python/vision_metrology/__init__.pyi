@@ -1478,16 +1478,23 @@ class TranslationTuning:
                  tolerance: float = 0.005, huber: float = 1.5,
                  min_texture: float = 1e-5) -> None: ...
 
+class RegionCheck:
+    """Covariance-normalized regional consistency: the largest regional chi-square must
+    not exceed `max_chi2`; `bias_floor_px` is added in quadrature to each component."""
+    max_chi2: float
+    bias_floor_px: float
+    def __init__(self, *, max_chi2: float = 13.8, bias_floor_px: float = 0.05) -> None: ...
+
 class TranslationConfig:
     search_radius: int
     min_support: int
     min_score: float
     min_margin: float
-    max_region_error: float | None
+    region_check: RegionCheck | None
     tuning: TranslationTuning
     def __init__(self, *, search_radius: int = 12, min_support: int = 400,
                  min_score: float = 0.5, min_margin: float = 0.02,
-                 max_region_error: float | None = 0.5,
+                 region_check: RegionCheck | None = RegionCheck(),
                  tuning: TranslationTuning | None = None) -> None: ...
 
 class Translation:
@@ -1503,6 +1510,7 @@ class Translation:
     covariance: tuple[float, float, float] | None
     regions: int
     region_error: float | None
+    region_chi2: float | None
     status: str
 
 class TranslationEstimator:

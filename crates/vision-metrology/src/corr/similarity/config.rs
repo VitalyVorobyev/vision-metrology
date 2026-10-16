@@ -1,11 +1,12 @@
-use crate::corr::TranslationConfig;
+use crate::corr::{RegionCheck, TranslationConfig};
 use vm_primitives::Error;
 
 /// Local masked similarity registration, with bounded departures from a prediction.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SimilarityConfig {
     /// Masked translation initialization, support, score, margin and numerical tuning.
-    /// `max_region_error` also gates disagreement of independent similarity fits.
+    /// `region_check` gates each regional similarity fit against the global one, at the
+    /// region's own centroid and RMS radius; its defaults here differ from translation's.
     pub translation: TranslationConfig,
     /// Maximum rotation departure from the prediction, in radians.
     pub max_angle: f32,
@@ -16,6 +17,12 @@ impl Default for SimilarityConfig {
     fn default() -> Self {
         let mut translation = TranslationConfig::default();
         translation.tuning.iterations = std::num::NonZeroUsize::new(20).unwrap();
+        // About 1% false rejects of true similarities on the synthetic study in
+        // `tools/registration_eval/false_reject.py`.
+        translation.region_check = Some(RegionCheck {
+            max_chi2: 18.5,
+            bias_floor_px: 0.035,
+        });
         Self {
             translation,
             max_angle: 0.05,

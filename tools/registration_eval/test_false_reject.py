@@ -12,7 +12,8 @@ from manifest import Sequence
 
 def args(**overrides):
     defaults = dict(motion='translation', trials=3, noise=1., contrast=12., mean=40.,
-                    magnitude=None, preprocess='dog', no_check=False, seed=0)
+                    magnitude=None, preprocess='dog', no_check=False, seed=0,
+                    max_chi2=None, bias_floor=None)
     defaults.update(overrides)
     ns = argparse.Namespace(**defaults)
     if ns.magnitude is None:

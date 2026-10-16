@@ -73,5 +73,6 @@ pub use similarity::{Similarity, SimilarityConfig, SimilarityEstimator};
 pub use template::{CorrMatch, CorrTemplate, find, find_topk};
 
 pub use translation::{
-    Translation, TranslationConfig, TranslationEstimator, TranslationStatus, TranslationTuning,
+    RegionCheck, Translation, TranslationConfig, TranslationEstimator, TranslationStatus,
+    TranslationTuning,
 };

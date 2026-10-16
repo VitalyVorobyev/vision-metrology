@@ -14,10 +14,8 @@ pub struct SimilarityConfig {
 impl Default for SimilarityConfig {
     fn default() -> Self {
         let n = NativeConfig::default();
-        let mut translation = TranslationConfig::default();
-        translation.tuning.iterations = n.translation.tuning.iterations.get();
         Self {
-            translation,
+            translation: n.translation.into(),
             max_angle: n.max_angle,
             max_log_scale: n.max_log_scale,
         }

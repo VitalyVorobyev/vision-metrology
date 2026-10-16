@@ -31,6 +31,7 @@ def test_masked_translation_and_closure(dtype):
     assert f.covariance[0] >= 0 and f.covariance[2] >= 0
     assert f.regions >= 2
     assert f.region_error < .5
+    assert 0 <= f.region_chi2 <= vm.TranslationConfig().region_check.max_chi2
     r = estimator.estimate(b, a, previous_mask=mask, current_mask=mask)
     assert r.status == "accepted"
     assert np.linalg.norm(np.array(f.shift) + r.shift) < .05
@@ -58,3 +59,22 @@ def test_photometry_and_failures():
         estimator.estimate(a, b, prediction=(float("nan"), 0))
     with pytest.raises(ValueError):
         vm.TranslationEstimator(vm.TranslationConfig(search_radius=0)).estimate(a, b)
+
+
+def test_region_check_config_and_rotation_rejection():
+    cfg = vm.TranslationConfig()
+    assert isinstance(cfg.region_check, vm.RegionCheck)
+    assert cfg.region_check.max_chi2 > 0 and cfg.region_check.bias_floor_px >= 0
+    y, x = np.mgrid[:97, :320].astype(np.float64)
+    c, s = np.cos(.01), np.sin(.01)
+    u, v = x - 160, y - 48
+    a = (100 + 25*np.sin(x*.17+y*.13) + 20*np.cos(x*.08-y*.21)).astype(np.float32)
+    xr, yr = c*u + s*v + 160 - 1.2, -s*u + c*v + 48 - .5
+    b = (100 + 25*np.sin(xr*.17+yr*.13) + 20*np.cos(xr*.08-yr*.21)).astype(np.float32)
+    f = vm.TranslationEstimator(vm.TranslationConfig(min_margin=0)).estimate(a, b)
+    assert f.status == "model_mismatch" and f.region_chi2 > cfg.region_check.max_chi2
+    f = vm.TranslationEstimator(vm.TranslationConfig(min_margin=0, region_check=None)).estimate(a, b)
+    assert f.region_chi2 is None and f.region_error is None
+    with pytest.raises(ValueError):
+        vm.TranslationEstimator(vm.TranslationConfig(
+            region_check=vm.RegionCheck(max_chi2=-1))).estimate(a, a)

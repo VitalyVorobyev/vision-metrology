@@ -23,6 +23,23 @@ impl Pose {
             self.center[1] + self.p[1] + self.p[3] * u + self.p[2] * v,
         ]
     }
+    /// The same map, parameterized about `center` and normalized by `radius`.
+    pub fn recentred(&self, center: [f64; 2], radius: f64) -> Self {
+        let q = self.map(center[0], center[1]);
+        let (a, b) = (self.p[2] / self.radius, self.p[3] / self.radius);
+        Self {
+            center,
+            radius,
+            p: Vector::new(
+                q[0] - center[0],
+                q[1] - center[1],
+                a * radius,
+                b * radius,
+                self.p[4],
+                self.p[5],
+            ),
+        }
+    }
     pub fn angle(&self) -> f64 {
         self.p[3].atan2(self.p[2])
     }

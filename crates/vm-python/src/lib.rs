@@ -38,8 +38,9 @@ use crate::config::{MotionNoise, RigPoseConfig, RigPoseTuning, RigSmootherConfig
 use config::{
     BeadCaliper, BeadConfig, BeadCoupling, BeadTuning, Contrast, CorrConfig, CorrSearchTuning,
     CorrTemplateConfig, CorrTemplateTuning, DisplacementConfig, EdgeConfig, FitConfig, Locate,
-    LogPolarScaleConfig, LsdConfig, MeasureConfig, MomentScaleConfig, Refine, ScaleInvariantConfig,
-    ShapeModelConfig, ShapeSearchConfig, ShapeSearchTuning, TranslationConfig, TranslationTuning,
+    LogPolarScaleConfig, LsdConfig, MeasureConfig, MomentScaleConfig, Refine, RegionCheck,
+    ScaleInvariantConfig, ShapeModelConfig, ShapeSearchConfig, ShapeSearchTuning,
+    TranslationConfig, TranslationTuning,
 };
 use corr_py::{CorrMatch, CorrTemplate, Displacement, displacement, find, find_topk};
 use detector::EdgeDetector;
@@ -154,6 +155,7 @@ fn vision_metrology(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<CorrMatch>()?;
     m.add_class::<Displacement>()?;
     m.add_class::<Translation>()?;
+    m.add_class::<RegionCheck>()?;
     m.add_class::<TranslationConfig>()?;
     m.add_class::<TranslationTuning>()?;
     m.add_class::<TranslationEstimator>()?;

@@ -6,7 +6,7 @@ mod refine;
 mod result;
 mod search;
 
-pub use config::{TranslationConfig, TranslationTuning};
+pub use config::{RegionCheck, TranslationConfig, TranslationTuning};
 pub use result::{Translation, TranslationStatus};
 
 use plane::Plane;
@@ -224,8 +224,8 @@ impl TranslationEstimator {
             out.status = TranslationStatus::SearchBoundary;
             return Ok(out);
         }
-        if let Some(limit) = cfg.max_region_error {
-            let mut regions = [[0.0; 2]; 4];
+        if let Some(check) = cfg.region_check {
+            let mut regions = [([0.0; 2], [0.0f32; 3]); 4];
             for r in [
                 [0, a.w / 2, 0, a.h / 2],
                 [a.w / 2, a.w, 0, a.h / 2],
@@ -241,27 +241,45 @@ impl TranslationEstimator {
                     &cfg.tuning,
                     &mut self.scratch,
                 ) {
-                    regions[out.regions] = f.p;
+                    regions[out.regions] = (f.p, f.covariance);
                     out.regions += 1;
                 }
             }
             if out.regions >= 2 {
-                let mut error = 0.0f64;
-                for i in 0..out.regions {
-                    for j in 0..i {
-                        error = error.max(
-                            (regions[i][0] - regions[j][0]).hypot(regions[i][1] - regions[j][1]),
-                        );
-                    }
-                }
+                let (error, chi2) = regional_disagreement(&regions[..out.regions], check);
                 out.region_error = Some(error as f32);
-                if error > limit as f64 {
+                out.region_chi2 = Some((chi2 as f32).min(f32::MAX));
+                if chi2.is_nan() || chi2 > check.max_chi2 as f64 {
                     out.status = TranslationStatus::ModelMismatch;
                 }
             }
         }
         Ok(out)
     }
+}
+
+/// Largest pairwise shift distance (px) and largest pairwise χ² (2 dof), each pair's
+/// difference normalized by the summed regional covariances plus the bias floor.
+fn regional_disagreement(regions: &[([f64; 2], [f32; 3])], check: RegionCheck) -> (f64, f64) {
+    let floor = (check.bias_floor_px as f64).powi(2);
+    let (mut error, mut chi2) = (0.0f64, 0.0f64);
+    for (i, (pi, ci)) in regions.iter().enumerate() {
+        for (pj, cj) in &regions[..i] {
+            let d = [pi[0] - pj[0], pi[1] - pj[1]];
+            let xx = ci[0] as f64 + cj[0] as f64 + floor;
+            let xy = ci[1] as f64 + cj[1] as f64;
+            let yy = ci[2] as f64 + cj[2] as f64 + floor;
+            let det = xx * yy - xy * xy;
+            let q = if det > 0.0 {
+                (yy * d[0] * d[0] - 2.0 * xy * d[0] * d[1] + xx * d[1] * d[1]) / det
+            } else {
+                f64::INFINITY
+            };
+            error = error.max(d[0].hypot(d[1]));
+            chi2 = chi2.max(q);
+        }
+    }
+    (error, chi2)
 }
 
 #[cfg(test)]

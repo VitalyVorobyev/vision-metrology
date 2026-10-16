@@ -181,7 +181,7 @@ fn bounds_rank_and_regional_unavailability() {
         TranslationStatus::SearchBoundary
     );
     cfg = SimilarityConfig::default();
-    cfg.translation.max_region_error = None;
+    cfg.translation.region_check = None;
     let f = e
         .estimate(&a.as_view(), &b.as_view(), None, None, None, &cfg)
         .unwrap();
@@ -282,4 +282,52 @@ fn incompatible_regions_do_not_become_a_similarity_pose() {
         .unwrap();
     assert_eq!(f.status, TranslationStatus::ModelMismatch, "{f:?}");
     assert!(f.region_error.unwrap() > 0.5);
+}
+
+#[test]
+fn recentring_keeps_the_map() {
+    let pose = Pose {
+        center: [80., 48.],
+        radius: 94.,
+        p: SVector::<f64, 6>::new(0.7, -0.3, 94.5, 1.2, 1.1, 0.2),
+    };
+    let moved = pose.recentred([30., 20.], 25.);
+    for (x, y) in [(0., 0.), (160., 96.), (31., 7.)] {
+        let (p, q) = (pose.map(x, y), moved.map(x, y));
+        assert!((p[0] - q[0]).abs() < 1e-9 && (p[1] - q[1]).abs() < 1e-9);
+    }
+    assert!((pose.angle() - moved.angle()).abs() < 1e-12);
+    assert!((pose.scale() - moved.scale()).abs() < 1e-12);
+}
+
+#[test]
+fn a_mild_affine_is_rejected_and_the_similarity_is_not() {
+    let (w, h) = (320, 97);
+    let a = render(w, h, Similarity2f::identity(), 1., 0.);
+    let truth = centered(w, h, [0.7, -0.3], 0.002, 1.001);
+    let b = render(w, h, truth, 1., 0.);
+    let cfg = SimilarityConfig::default();
+    let mut e = SimilarityEstimator::new();
+    let f = e
+        .estimate(&a.as_view(), &b.as_view(), None, None, None, &cfg)
+        .unwrap();
+    assert_eq!(f.status, TranslationStatus::Accepted, "{f:?}");
+    assert!(f.region_chi2.unwrap() <= cfg.translation.region_check.unwrap().max_chi2);
+    // ±0.5% anisotropic scale about the centre: no similarity represents it.
+    let c = [(w - 1) as f64 * 0.5, (h - 1) as f64 * 0.5];
+    let stretched = Image::from_vec(
+        w,
+        h,
+        (0..w * h)
+            .map(|i| {
+                let (x, y) = ((i % w) as f64 - 0.7, (i / w) as f64 + 0.3);
+                texture(c[0] + (x - c[0]) / 1.005, c[1] + (y - c[1]) / 0.995)
+            })
+            .collect(),
+    )
+    .unwrap();
+    let f = e
+        .estimate(&a.as_view(), &stretched.as_view(), None, None, None, &cfg)
+        .unwrap();
+    assert_eq!(f.status, TranslationStatus::ModelMismatch, "{f:?}");
 }
