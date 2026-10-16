@@ -121,11 +121,11 @@ impl SimilarityEstimator {
         let bv = ImageView::from_slice(a.w, a.h, a.w, &self.warped)?;
         let am = ImageView::from_slice(a.w, a.h, a.w, &self.previous_valid)?;
         let bm = ImageView::from_slice(a.w, a.h, a.w, &self.warped_valid)?;
-        let mut init_cfg = cfg.translation.clone();
-        init_cfg.region_check = None;
-        let initial = self
-            .initializer
-            .estimate(&av, &bv, Some(&am), Some(&bm), None, &init_cfg)?;
+        // Search only: the integer peak seeds the similarity solve, so no translation
+        // refinement runs (the similarity refinement starts from this peak).
+        let (initial, _) =
+            self.initializer
+                .search(&av, &bv, Some(&am), Some(&bm), None, &cfg.translation)?;
         let mut out = Similarity::empty(initial.status);
         out.score = initial.score;
         out.margin = initial.margin;
@@ -138,12 +138,9 @@ impl SimilarityEstimator {
             out.status = TranslationStatus::LowTexture;
             return Ok(out);
         }
-        // The coarse peak remains a supported initialization even if the translation-only
-        // numerical model cannot converge under observable rotation/scale.
-        if !matches!(
-            initial.status,
-            TranslationStatus::Accepted | TranslationStatus::RefinementFailed
-        ) {
+        // A peak that passed the search gates initializes the similarity solve; a
+        // translation-only refinement is never asked to converge under rotation/scale.
+        if initial.status != TranslationStatus::Accepted {
             return Ok(out);
         }
         let Some(shift) = initial.shift else {

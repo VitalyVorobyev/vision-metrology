@@ -37,16 +37,11 @@ impl TranslationEstimator {
         Self::default()
     }
 
-    /// Estimate content motion from `previous` into `current`.
-    ///
-    /// The prediction centers the bounded search; `None` means zero motion.
-    /// Intensities may be u8, u16 or f32, without quantization. Dimensions may
-    /// differ. Photometry is `previous ≈ gain * current(x + shift) + offset`.
-    ///
-    /// # Errors
-    /// Invalid configuration, mask dimensions, images smaller than 4×4,
-    /// non-finite prediction, or non-finite valid f32 pixels.
-    pub fn estimate<P: Pixel>(
+    /// The bounded integer search alone: validation, planes, pyramid search and the
+    /// score/margin/boundary gates, without refinement. An `Accepted` status here means
+    /// the integer peak passed those gates; `shift` is that peak. Also returns the
+    /// standardization `[mean_a, scale_a, mean_b, scale_b]`.
+    pub(crate) fn search<P: Pixel>(
         &mut self,
         previous: &ImageView<'_, P>,
         current: &ImageView<'_, P>,
@@ -54,7 +49,7 @@ impl TranslationEstimator {
         current_mask: Option<&ImageView<'_, u8>>,
         prediction: Option<Vec2f>,
         cfg: &TranslationConfig,
-    ) -> Result<Translation, Error> {
+    ) -> Result<(Translation, [f64; 4]), Error> {
         cfg.validate()?;
         for (img_w, img_h, mask) in [
             (previous.width(), previous.height(), previous_mask),
@@ -93,6 +88,7 @@ impl TranslationEstimator {
         self.current.resize_with(levels, Plane::default);
         let (mean_a, scale_a, na) = self.previous[0].load(previous, previous_mask)?;
         let (mean_b, scale_b, nb) = self.current[0].load(current, current_mask)?;
+        let stats = [mean_a, scale_a, mean_b, scale_b];
         for l in 1..levels {
             let (a, b) = self.previous.split_at_mut(l);
             b[0].downsample(&a[l - 1]);
@@ -116,10 +112,13 @@ impl TranslationEstimator {
             .reserve(side * side - self.scores.len().min(side * side));
         // Prepare all buffers even when this valid call has no usable evidence.
         if na.min(nb) < cfg.min_support.get() {
-            return Ok(Translation::empty(TranslationStatus::InsufficientSupport));
+            return Ok((
+                Translation::empty(TranslationStatus::InsufficientSupport),
+                stats,
+            ));
         }
         if scale_a <= 0.0 || scale_b <= 0.0 {
-            return Ok(Translation::empty(TranslationStatus::LowTexture));
+            return Ok((Translation::empty(TranslationStatus::LowTexture), stats));
         }
         for l in (0..levels).rev() {
             let scale = (1usize << l) as f64;
@@ -159,7 +158,7 @@ impl TranslationEstimator {
                     peak = None;
                     continue;
                 }
-                Err(status) => return Ok(Translation::empty(status)),
+                Err(status) => return Ok((Translation::empty(status), stats)),
             };
             shift = p.shift.map(|v| v as f64 * scale);
             margin = margin.min(p.margin);
@@ -173,14 +172,52 @@ impl TranslationEstimator {
         out.support = peak.support;
         if peak.score < cfg.min_score as f64 || margin < cfg.min_margin as f64 {
             out.status = TranslationStatus::Ambiguous;
-            return Ok(out);
+            return Ok((out, stats));
         }
         if (shift[0] - prediction.x as f64).abs() >= radius - 0.5
             || (shift[1] - prediction.y as f64).abs() >= radius - 0.5
         {
             out.status = TranslationStatus::SearchBoundary;
-            return Ok(out);
+            return Ok((out, stats));
         }
+        Ok((out, stats))
+    }
+
+    /// Estimate content motion from `previous` into `current`.
+    ///
+    /// The prediction centers the bounded search; `None` means zero motion.
+    /// Intensities may be u8, u16 or f32, without quantization. Dimensions may
+    /// differ. Photometry is `previous ≈ gain * current(x + shift) + offset`.
+    ///
+    /// # Errors
+    /// Invalid configuration, mask dimensions, images smaller than 4×4,
+    /// non-finite prediction, or non-finite valid f32 pixels.
+    pub fn estimate<P: Pixel>(
+        &mut self,
+        previous: &ImageView<'_, P>,
+        current: &ImageView<'_, P>,
+        previous_mask: Option<&ImageView<'_, u8>>,
+        current_mask: Option<&ImageView<'_, u8>>,
+        prediction: Option<Vec2f>,
+        cfg: &TranslationConfig,
+    ) -> Result<Translation, Error> {
+        let (mut out, [mean_a, scale_a, mean_b, scale_b]) = self.search(
+            previous,
+            current,
+            previous_mask,
+            current_mask,
+            prediction,
+            cfg,
+        )?;
+        let Some(peak) = out
+            .shift
+            .filter(|_| out.status == TranslationStatus::Accepted)
+        else {
+            return Ok(out);
+        };
+        let prediction = prediction.unwrap_or_else(|| Vec2f::new(0.0, 0.0));
+        let radius = cfg.search_radius.get() as f64;
+        let shift = [peak.x as f64, peak.y as f64];
         let (a, b) = (&self.previous[0], &self.current[0]);
         let fit = match refine::refine(
             a,
