@@ -62,6 +62,10 @@ use super::{Caliper, MeasureStrip};
 /// still a result: every station is rejected with a reason, and the tracking stops with
 /// [`BeadStop::TooFewValid`].
 ///
+/// With [`BeadPairing::Coupled`] each stage chooses the walls of all its stations together,
+/// as one exact path along the curve, instead of each station's pair on its own; see
+/// [`BeadCoupling`].
+///
 /// The tracker owns both stages' calipers and every buffer, so after the first call at a
 /// given size [`track`](Self::track) allocates only its result.
 ///

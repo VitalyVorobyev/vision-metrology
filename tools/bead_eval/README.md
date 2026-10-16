@@ -242,15 +242,27 @@ so this measures how good a found path is as a prior, not how to pick the right 
 `coupled.py` is a prototype of a global choice of both walls along a curve, from one
 image. The tracker picks each station's edge pair on its own; here the pairs along the
 whole curve are one shortest path, and the path's max-marginals say what a different
-choice at each station would cost. `coupled_eval.py` compares it with the tracker. It is
-an evaluation, not a library feature. The measured numbers are in
+choice at each station would cost. `coupled_eval.py` compares it with the tracker and with
+the library's operator, `BeadTracker` with coupled pairing (the `rust` method). The
+measured numbers are in
 [`docs/performance.md`](../../docs/performance.md#choosing-both-walls-along-the-curve).
 
 ```bash
 python -I tools/bead_eval/coupled_eval.py --data-dir $D --workers 6   # about 1 min; after priors.py
+python -I tools/bead_eval/coupled_eval.py --data-dir $D --split test --methods tracker dense rust \
+    --rust-set passes=1 --workers 8   # the published library numbers
 python -I tools/bead_eval/coupled_eval.py --out-dir /tmp/c --datasets synthetic   # no data needed
 python -m pytest tools/bead_eval/test_coupled.py   # needs pytest
 ```
+
+`--split dev|test` keeps the paths of the registry split's images
+(`tools/datasets/splits/damsegment.json`) before the seeded subset is drawn; the default,
+`all`, is the set the prototype was measured on. `--rust-set key=value` overrides a
+`BeadCoupling` field, or `track_step`, `measure_step` (keeping the threshold per px),
+`passes` and `clearance`. The `rust` method's ambiguity and evidence are its first
+pass's `path_margin` and `path_evidence`. Its settings, one tracking pass and otherwise
+the defaults, were chosen on the development split; the paired `rust − dense` rows
+compare it with the prototype.
 
 **Stations and profiles.** The prior is resampled at `spacing` px, with chord tangents over
 ±10 px that shrink at the ends. Each station runs one strip caliper along its normal with

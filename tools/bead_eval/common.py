@@ -210,6 +210,8 @@ REJECTS = (
     "offset",
     "clearance",
     "ambiguous",
+    "absent",
+    "one_sided",
 )
 
 

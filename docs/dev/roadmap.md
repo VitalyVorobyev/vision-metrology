@@ -108,28 +108,6 @@ reported with the settings frozen; benches updated.
 
 ## v0.3: native boundary evidence
 
-### Coupled two-boundary extraction, `in progress` ([#76], [#84])
-
-A global choice of both walls along a curve instead of `pairing::choose`'s choice at each
-station alone. The Python prototype in `tools/bead_eval` met its decision gate on
-DamSegment: the dense variant locks 91.0% of calls against the tracker's 85.3%, with 7.1%
-wrong at equal coverage against 13.0%. Its max-marginals flag a competing parallel line,
-but on cracks most wrong locks are not close calls. The design is ADR-0019, proposed.
-- A dense path over (centre, width) bins on the shared core (ADR-0020), with costs from the
-  continuous profiles, in ADR-0018's length-scale parameters so the result does not
-  depend on station spacing.
-- States for both walls, **left only and right only**, and absent: where one side leaves
-  the image or a mask, the visible wall is still measured.
-- Walls refined on native pixels with the caliper; max-marginal margins per station and
-  for the whole call; typed absence.
-- A `BeadTracker` pairing mode, with `explain_bead` parity through the existing probes.
-
-**Accept:** the Rust results reproduce the Python DamSegment numbers within their
-bootstrap intervals; #73's synthetic case within 0.25 px on the observable walls, with no
-wall reported where every sample is occluded; accuracy rows for boundary bias and σ, the
-2 px distractor and the parallel line, which the whole-call margin flags; a bench at 300
-stations within the tracker's budget; Python parity; the 600-line cap; ADR-0019 accepted.
-
 ### Bead ends, `planned` ([#78])
 
 With a prior that runs onto a bead's end, the end station can pair noise: in 1 trial of
@@ -314,11 +292,9 @@ Mosaic works on the desktop.
 
 [#73]: https://github.com/VitalyVorobyev/vision-metrology/issues/73
 [#75]: https://github.com/VitalyVorobyev/vision-metrology/issues/75
-[#76]: https://github.com/VitalyVorobyev/vision-metrology/pull/76
 [#78]: https://github.com/VitalyVorobyev/vision-metrology/issues/78
 [#79]: https://github.com/VitalyVorobyev/vision-metrology/issues/79
 [#81]: https://github.com/VitalyVorobyev/vision-metrology/issues/81
-[#84]: https://github.com/VitalyVorobyev/vision-metrology/issues/84
 [#85]: https://github.com/VitalyVorobyev/vision-metrology/issues/85
 [#86]: https://github.com/VitalyVorobyev/vision-metrology/issues/86
 [#89]: https://github.com/VitalyVorobyev/vision-metrology/issues/89

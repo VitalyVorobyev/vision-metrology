@@ -32,6 +32,20 @@ are relative to 0.1.0.
   `tools/sequence_bench/rig_eval.py` reports on the rig presets. The synthetic accuracy,
   the benchmark presets' numbers and the cost are in `docs/performance.md`.
 
+- **Coupled pairing for the bead tracker** (ADR-0019). `BeadConfig::pairing =
+  BeadPairing::Coupled(BeadCoupling)` chooses both walls at every station together, as one
+  exact path over (centre, width) bins on the shared min-path, instead of each station's
+  pair on its own. A station measures both walls, one wall where the other leaves the
+  image (`BeadReject::OneSided`, with `BeadSample::wall`), or none (`BeadReject::Absent`).
+  The walls snap to the caliper's sub-pixel edges. Each station reports its max-marginal
+  margin (`BeadSample::margin`) and each stage a `BeadPathScore`, whose first-pass margin
+  flags a competing line; `explain_bead` traces both. With coupled pairing `clearance` is
+  a cost. Python parity (`BeadCoupling`, `BeadConfig.pairing`, the result's `margin`,
+  `wall`, `wall_side`, `path_margin` and `path_evidence`). On DamSegment's test split it
+  reproduces the Python prototype's lock rate within its interval at about 0.6 ms per
+  call; numbers in `docs/performance.md`. `tools/bead_eval/coupled_eval.py` runs it as the
+  `rust` method, with `--split` over the registry split.
+
 - **Continuous derivative-of-Gaussian profiles.** `vm_primitives::edge::ProfileSampler`
   samples the smoothed intensity and its derivative along any direction at continuous
   points, with a Gaussian tapered by `(1 − d²/r²)²` to zero at `r = 4σ`, so both are C¹.

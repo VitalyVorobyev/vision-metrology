@@ -258,6 +258,10 @@ name = "measure_numeric_alloc"
 required-features = ["measure"]
 
 [[test]]
+name = "bead_alloc"
+required-features = ["measure"]
+
+[[test]]
 name = "caliperbench_protocol"
 required-features = ["measure"]
 

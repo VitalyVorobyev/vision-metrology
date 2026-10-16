@@ -297,3 +297,34 @@ fn a_parallel_line_lowers_the_margin() {
         "a parallel bead midway must lower the margin: {twin} vs {alone}"
     );
 }
+
+#[test]
+fn coupled_configs_are_validated() {
+    use super::BeadConfig;
+    use super::config::validate;
+    use super::coupling::BeadPairing;
+    let ok = BeadConfig {
+        pairing: BeadPairing::Coupled(BeadCoupling::default()),
+        clearance: Some(3.0),
+        ..BeadConfig::default()
+    };
+    assert!(
+        validate(&ok).is_ok(),
+        "clearance is a cost with coupled pairing"
+    );
+    let bad = |f: fn(&mut BeadConfig, &mut BeadCoupling)| {
+        let (mut cfg, mut c) = (ok, BeadCoupling::default());
+        f(&mut cfg, &mut c);
+        cfg.pairing = BeadPairing::Coupled(c);
+        validate(&cfg).is_err()
+    };
+    assert!(bad(|cfg, _| cfg.min_margin = Some(0.2)));
+    assert!(bad(|_, c| c.saturation = 0.0));
+    assert!(bad(|_, c| c.absent_level = f32::NAN));
+    assert!(bad(|_, c| c.bin_px = -1.0));
+    assert!(bad(|_, c| c.margin_quantile = 0.0));
+    assert!(bad(|_, c| c.margin_quantile = 1.5));
+    assert!(bad(|_, c| c.max_wall_slope = 0.0));
+    // A grid with too many cells for its reach and width range.
+    assert!(bad(|cfg, _| cfg.max_width = 10_000.0));
+}

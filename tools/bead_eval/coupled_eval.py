@@ -1,11 +1,19 @@
 """Coupled two-boundary extraction against today's tracker: lock rate, wrong locks, and
 whether a whole-call max-marginal ambiguity predicts the wrong locks better than support.
 
-Three methods per call, on the same image and prior:
+Four methods per call, on the same image and prior:
 - `tracker`: `BeadTracker` with `run_tracker.py`'s settings (DamSegment) or the library's
   defaults with the scene's width range (synthetic);
 - `sparse` and `dense`: `coupled.py`, from the same prior, with a reach equal to the
-  tracker's and the same width range, threshold and profile sigma.
+  tracker's and the same width range, threshold and profile sigma;
+- `rust`: the same `BeadTracker` with coupled pairing (`BeadConfig.pairing`), the
+  library's operator for what `dense` prototypes. `--rust-set` overrides its
+  `BeadCoupling` fields and `track_step`, `measure_step`, `passes` and `clearance`; its
+  ambiguity and evidence are its first pass's `path_margin` and `path_evidence`.
+
+`--split dev|test` keeps the DamSegment paths of the registry split's images
+(`tools/datasets/splits/damsegment.json`) before the seeded subset is drawn; `all`, the
+default, is #76's set.
 
 **DamSegment.** The calls of `signals.py`: a seeded subset of `--max-paths` paths per
 difficulty and every prior within the reach. `--subset tune` takes a disjoint seeded
@@ -91,6 +99,57 @@ def as_call(pr: coupled.Profiles, ex: coupled.Extraction, seconds: float) -> dic
     }
 
 
+#: `--rust-set` keys that are not `BeadCoupling` fields.
+RUST_KEYS = ("track_step", "measure_step", "passes", "clearance")
+SPLIT_FILE = pathlib.Path(__file__).resolve().parents[1] / "datasets" / "splits" / "damsegment.json"
+
+
+def rust_tracker(base, rust_kw: dict):
+    """`base`, a `vm.BeadConfig`, with coupled pairing and `rust_kw`'s overrides. The
+    stages' thresholds are per profile sample, so a stage whose step changes keeps its
+    threshold per px."""
+    import vision_metrology as vm
+
+    kw = dict(rust_kw)
+    stages = {"track": base.track, "measure": base.measure}
+    for name, st in stages.items():
+        step = kw.pop(f"{name}_step", None)
+        if step is not None:
+            st.threshold = st.threshold / st.step * step
+            st.step = step
+    tuning = base.tuning
+    if "passes" in kw:
+        tuning.passes = int(kw.pop("passes"))
+    clearance = kw.pop("clearance", None)
+    cfg = vm.BeadConfig(
+        polarity=base.polarity, min_width=base.min_width, max_width=base.max_width, spacing=base.spacing,
+        clearance=clearance if clearance and clearance > 0 else None,
+        track=stages["track"], measure=stages["measure"], tuning=tuning, pairing=vm.BeadCoupling(**kw),
+    )
+    return vm.BeadTracker(cfg)
+
+
+def rust_call(tracker, img, prior):
+    """One coupled `track` call: the bead, its first pass's scores, and the time."""
+    t = time.perf_counter()
+    bead = tracker.track(img, prior)
+    dt = time.perf_counter() - t
+    p0 = bead.passes[0]
+    nan = float("nan")
+    scores = {
+        MAIN_SCORE: nan if p0.path_margin is None else float(p0.path_margin),
+        "evidence": nan if p0.path_evidence is None else float(p0.path_evidence),
+    }
+    return bead, dt, scores
+
+
+def split_images(name: str) -> set[str] | None:
+    """The image IDs of a registry split, or `None` for every image."""
+    if name == "all":
+        return None
+    return set(common.read_json(SPLIT_FILE)[name])
+
+
 def run_coupled(img: np.ndarray, prior: np.ndarray, cfg: coupled.CoupledConfig, methods) -> dict:
     """Each coupled method on one call. `sample_ms` is one pass's profile sampling, and
     `total_ms` the whole call, every pass's sampling included."""
@@ -99,7 +158,7 @@ def run_coupled(img: np.ndarray, prior: np.ndarray, cfg: coupled.CoupledConfig, 
     t_sample = time.perf_counter() - t0
     out = {}
     for m in methods:
-        if m == "tracker":
+        if m in ("tracker", "rust"):
             continue
         t = time.perf_counter()
         pr, ex, first = coupled.extract(img, prior, cfg, m)
@@ -127,7 +186,7 @@ def dam_image(job: tuple) -> list[dict]:
     import report as report_mod
     import run_tracker
 
-    root, out_dir, rel, group, specs, args, cfg_kw = job
+    root, out_dir, rel, group, specs, args, cfg_kw, rust_kw = job
     doc = common.read_json(out_dir / "paths" / rel)
     refs = {p["id"]: p for p in doc["paths"]}
     img = common.load_gray(root / doc["image"])
@@ -141,6 +200,7 @@ def dam_image(job: tuple) -> list[dict]:
             "sigma": args.sigma, "threshold": args.threshold, **cfg_kw,
         })
         tracker = vm.BeadTracker(common.bead_config("dark", lo, hi, args))
+        rust = rust_tracker(common.bead_config("dark", lo, hi, args), rust_kw) if "rust" in args.methods else None
         anchors: dict = {}
         anchor_ok: dict = {}
         first_row = len(rows)
@@ -155,6 +215,11 @@ def dam_image(job: tuple) -> list[dict]:
                 c = run_tracker.record(e["id"], 0, bead, time.perf_counter() - t)
                 c = dict(c, centerline=c["centerline"].astype(np.float64), width=c["width"].astype(np.float64))
                 calls["tracker"] = (c, {"longest_gap": c["longest_gap"]}, {"total_ms": c["time_ms"]})
+            if rust is not None:
+                bead, dt, scores = rust_call(rust, img, prior)
+                c = run_tracker.record(e["id"], 0, bead, dt)
+                c = dict(c, centerline=c["centerline"].astype(np.float64), width=c["width"].astype(np.float64))
+                calls["rust"] = (c, scores, {"total_ms": c["time_ms"]})
             for m, (pr, ex, first, c, times) in run_coupled(img, prior, cfg, args.methods).items():
                 calls[m] = (c, coupled_scores(first, cfg, pr.h), times)
             for m, (c, scores, times) in calls.items():
@@ -176,15 +241,18 @@ def dam_image(job: tuple) -> list[dict]:
     return rows
 
 
-def damsegment(args: argparse.Namespace, cfg_kw: dict) -> list[dict]:
+def damsegment(args: argparse.Namespace, cfg_kw: dict, rust_kw: dict) -> list[dict]:
     root = common.dataset_root(args.data_dir)
     out_dir = common.resolve_out_dir(args)
     index = common.read_json(out_dir / "paths" / "index.json")
+    keep = split_images(args.split)
+    if keep is not None:
+        index = dict(index, paths=[e for e in index["paths"] if f"{e['difficulty']}/{e['stem']}" in keep])
     specs = common.read_json(out_dir / "priors.json")["priors"]
     entries = common.select_paths(index, args.max_paths)
     if args.subset == "tune":
         entries = tune_subset(index, args.tune_paths, {e["id"] for e in entries})
-    jobs = [(root, out_dir, rel, g, {e["id"]: specs[e["id"]] for e in g}, args, cfg_kw)
+    jobs = [(root, out_dir, rel, g, {e["id"]: specs[e["id"]] for e in g}, args, cfg_kw, rust_kw)
             for rel, g in common.by_image(entries).items()]
     return run_jobs(dam_image, jobs, args.workers)
 
@@ -218,7 +286,7 @@ def synth_scene(job: tuple) -> list[dict]:
 
     import synthetic
 
-    scene, args, cfg_kw = job
+    scene, args, cfg_kw, rust_kw = job
     img, truth = synthetic.render(scene)
     lo, hi = 2.0, 16.0
     cfg = coupled.CoupledConfig(**{"polarity": "light", "min_width": lo, "max_width": hi, "reach": 8.0,
@@ -228,6 +296,7 @@ def synth_scene(job: tuple) -> list[dict]:
     track.max_offset = 8.0
     bcfg.track = track
     tracker = vm.BeadTracker(bcfg)
+    rust = rust_tracker(bcfg, rust_kw) if "rust" in args.methods else None
     rows = []
     for name, prior in synthetic.priors(truth):
         res = {}
@@ -238,6 +307,11 @@ def synth_scene(job: tuple) -> list[dict]:
             hit = ~np.isnan(np.asarray(bead.width))
             res["tracker"] = (np.asarray(bead.centerline, np.float64), hit, np.asarray(bead.first, np.float64),
                               np.asarray(bead.second, np.float64), float(bead.support), {}, {"total_ms": 1e3 * dt})
+        if rust is not None:
+            bead, dt, scores = rust_call(rust, img, prior)
+            hit = ~np.isnan(np.asarray(bead.width))
+            res["rust"] = (np.asarray(bead.centerline, np.float64), hit, np.asarray(bead.first, np.float64),
+                           np.asarray(bead.second, np.float64), float(bead.support), scores, {"total_ms": 1e3 * dt})
         for m, (pr, ex, first, c, times) in run_coupled(img, prior, cfg, args.methods).items():
             lp = pr.points + np.nan_to_num(ex.left)[:, None] * pr.normals
             rp = pr.points + np.nan_to_num(ex.right)[:, None] * pr.normals
@@ -268,6 +342,10 @@ def main() -> None:
     parser.add_argument("--datasets", nargs="+", default=["damsegment", "synthetic"], choices=["damsegment", "synthetic"])
     parser.add_argument("--methods", nargs="+", default=list(METHODS), choices=list(METHODS))
     parser.add_argument("--subset", default="eval", choices=["eval", "tune"])
+    parser.add_argument("--split", default="all", choices=["all", "dev", "test"],
+                        help="DamSegment images of the registry split (default all: #76's set)")
+    parser.add_argument("--rust-set", nargs="*", default=[], metavar="KEY=VALUE",
+                        help="BeadCoupling field, or track_step, measure_step, passes, clearance")
     parser.add_argument("--max-paths", type=int, default=100, help="evaluation paths per difficulty (default 100)")
     parser.add_argument("--tune-paths", type=int, default=40, help="tuning paths per difficulty (default 40)")
     parser.add_argument("--seeds", type=int, default=2, help="synthetic noise seeds (default 2)")
@@ -290,20 +368,25 @@ def main() -> None:
             sys.exit(f"not a numeric CoupledConfig field: {k!r}")
         cfg_kw[k] = type(defaults[k])(float(v))
     keys = score_keys(coupled.CoupledConfig(**cfg_kw))
+    rust_kw = {}
+    for kv in args.rust_set:
+        k, v = kv.split("=", 1)
+        rust_kw[k] = float(v)
 
     rows: list[dict] = []
     if "damsegment" in args.datasets:
         if args.data_dir is None:
             sys.exit("damsegment needs --data-dir")
-        rows += damsegment(args, cfg_kw)
+        rows += damsegment(args, cfg_kw, rust_kw)
     if "synthetic" in args.datasets:
         import synthetic
 
-        rows += run_jobs(synth_scene, [(s, args, cfg_kw) for s in synthetic.scenes(args.seeds)], args.workers)
+        rows += run_jobs(synth_scene, [(s, args, cfg_kw, rust_kw) for s in synthetic.scenes(args.seeds)], args.workers)
 
     common.write_json(out_dir / f"{args.name}_rows.json", rows, indent=None)
     rep = coupled_report.build(rows, keys, args.datasets, args.boot)
-    rep.update({"config": dataclasses.asdict(coupled.CoupledConfig(**cfg_kw)), "subset": args.subset})
+    rep.update({"config": dataclasses.asdict(coupled.CoupledConfig(**cfg_kw)), "subset": args.subset,
+                "split": args.split, "rust": rust_kw})
     common.write_json(out_dir / f"{args.name}.json", rep)
     (out_dir / f"{args.name}.md").write_text(coupled_report.markdown(rep), encoding="utf-8")
     print(f"wrote {out_dir / (args.name + '.md')}")
