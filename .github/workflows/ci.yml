@@ -194,6 +194,29 @@ jobs:
       - name: Test
         run: cargo test --workspace --all-features
 
+  # The tests above run unoptimised. An optimised build can move floating-point
+  # results by an ulp (a sin/cos pair becomes one sincos call), so bit pins and
+  # tight tolerances must also hold under the profile users ship.
+  release-tests:
+    name: Release-profile tests
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Test (release)
+        run: cargo test --release --workspace --all-features
+
   lab:
     name: Lab (frontend + desktop shell)
     runs-on: ubuntu-latest

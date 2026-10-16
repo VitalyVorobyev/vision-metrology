@@ -30,6 +30,7 @@ CI runs these and more:
 | Examples | the self-asserting examples listed in `ci.yml` |
 | Python bindings | `pip install crates/vm-python`, then `pytest crates/vm-python/tests` and `pytest tools/registration_eval` |
 | Cross-platform | build and test on Windows and macOS |
+| Release-profile tests | `cargo test --release --workspace --all-features` on Linux, Windows and macOS |
 | Lab | frontend typecheck, lint, test and build; desktop crate fmt, clippy and test, which includes the contract replay |
 
 CI does not run the lab backend's pytest; run it locally when touching `lab/backend`.
@@ -115,6 +116,12 @@ pytest tests/
 
   The script refuses a case whose outcome hangs on a near-tie, because `f32` and
   `float64` could decide it differently.
+- **The caliper bit pin** (`tests/caliper_bits.rs`) hashes the exact output bits of
+  about 2,000 caliper cases, so a refactor meant to change nothing proves it. The hash is
+  checked only on aarch64 macOS, and it holds one value per build profile: an optimised
+  build turns a `sin`/`cos` pair into one `sincos` call, which moves a few results by an
+  ulp. A change that is meant to move results updates both constants. The test's module
+  doc gives the commands.
 - **Doctests are API smoke tests.** The two crate READMEs are the crate-level rustdoc
   (`#![doc = include_str!("../README.md")]`), so their examples compile and run.
 - **Private datasets.** Tests that need one skip with a message when it is absent. The
