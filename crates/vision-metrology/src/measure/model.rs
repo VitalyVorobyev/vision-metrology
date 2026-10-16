@@ -59,48 +59,30 @@ pub struct MetrologyResult {
     pub hits: Vec<MeasureEdge>,
 }
 
-impl MetrologyFit {
-    /// RMS deviation of the measured points from the fitted primitive, in pixels.
-    pub fn rms(&self) -> f32 {
-        match self {
-            Self::Line(f) => f.rms,
-            Self::Circle(f) => f.rms,
-        }
-    }
-
-    /// Largest deviation, in pixels — the number a form tolerance is checked
-    /// against.
-    pub fn max_dev(&self) -> f32 {
-        match self {
-            Self::Line(f) => f.max_dev,
-            Self::Circle(f) => f.max_dev,
-        }
-    }
-
-    /// How many caliper points the fit used.
-    pub fn n_used(&self) -> usize {
-        match self {
-            Self::Line(f) => f.n_used,
-            Self::Circle(f) => f.n_used,
-        }
-    }
-}
-
 impl MetrologyResult {
     /// RMS deviation of the measured points from the fitted primitive, in pixels.
     pub fn rms(&self) -> f32 {
-        self.fit.rms()
+        match &self.fit {
+            MetrologyFit::Line(f) => f.rms,
+            MetrologyFit::Circle(f) => f.rms,
+        }
     }
 
     /// Largest deviation, in pixels — the number a form tolerance is checked
     /// against.
     pub fn max_dev(&self) -> f32 {
-        self.fit.max_dev()
+        match &self.fit {
+            MetrologyFit::Line(f) => f.max_dev,
+            MetrologyFit::Circle(f) => f.max_dev,
+        }
     }
 
     /// How many caliper points the fit used.
     pub fn n_used(&self) -> usize {
-        self.fit.n_used()
+        match &self.fit {
+            MetrologyFit::Line(f) => f.n_used,
+            MetrologyFit::Circle(f) => f.n_used,
+        }
     }
 }
 

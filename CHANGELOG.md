@@ -267,6 +267,9 @@ are relative to 0.1.0.
 - **Breaking:** `Fit::inliers` always lists the indices of the points the fit used, in
   ascending order, so `inliers.len() == n_used`; it is no longer empty when every point
   was used. Drop any `inliers.is_empty()` "all points" check.
+- **Breaking:** `MetrologyFit::{rms, max_dev, n_used}` are removed; they repeated
+  `MetrologyResult::{rms, max_dev, n_used}`. Read the residuals off the result, or off
+  the matched `Fit` (`MetrologyFit::Circle(f) => f.rms`).
 - Internal: `measure` holds two crate-private numerical cores (ADR-0020). One is an exact
   layered min-path with max-marginals, for the coupled two-boundary extraction and the
   bead-end rim. The other is a robust Whittaker smoother, on which `BeadTracker`'s
