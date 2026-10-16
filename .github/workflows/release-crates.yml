@@ -36,9 +36,9 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache cargo artifacts
-        uses: Swatinem/rust-cache@v2
-
+      # No rust-cache here: its post step walks the unpacked crates under target/package
+      # and reports errors for test directories they do not ship. The job takes a minute
+      # without it.
       - name: List the packaged files
         run: |
           for p in vm-primitives vision-metrology; do
