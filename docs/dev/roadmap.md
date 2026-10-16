@@ -69,14 +69,6 @@ substrate is flagged, not absorbed as motion.
 the `vision-metrology` 0.2.0 wheel on PyPI imports and runs the README quick start on all
 four targets.
 
-### Masked registration lands, `in progress` ([#71])
-
-Translation is a public operator, and similarity stays behind `corr-experimental`. The
-generic sequence evaluator reads the neutral manifest.
-
-**Accept:** CI green, and the private adapters reproduce the published aggregates for
-every sequence, A–G, unchanged.
-
 ### A nalgebra range for downstream crates, `planned` ([#80])
 
 Crates that also depend on calibration-rs are held at nalgebra 0.34 by its solvers, so
@@ -390,7 +382,6 @@ Mosaic works on the desktop.
   Publishing `core::raster` as a common crate would end that, and is worth doing after the
   first release settles the API ([ADR-0004](adr/0004-core-raster-and-geometry.md)).
 
-[#71]: https://github.com/VitalyVorobyev/vision-metrology/pull/71
 [#73]: https://github.com/VitalyVorobyev/vision-metrology/issues/73
 [#74]: https://github.com/VitalyVorobyev/vision-metrology/issues/74
 [#75]: https://github.com/VitalyVorobyev/vision-metrology/issues/75
