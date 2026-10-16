@@ -1,0 +1,108 @@
+name: Release crates
+
+# Every PR packages both library crates the way `cargo publish` would, and verifies that
+# each builds from its packaged sources alone. A version tag on this repository publishes
+# them to crates.io over trusted publishing (OIDC); no token is stored.
+#
+# The publish job is inert until the repository variable CRATES_IO_TRUSTED_PUBLISHING is
+# `true`. crates.io can only add a trusted publisher to a crate that exists, so the first
+# release is published by hand; set the variable once both crates have this repository and
+# workflow (and the `crates-io` environment) as their trusted publisher.
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v[0-9]+.[0-9]+.[0-9]+*']
+  workflow_dispatch:
+
+concurrency:
+  group: release-crates-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  package:
+    name: Package crates
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: List the packaged files
+        run: |
+          for p in vm-primitives vision-metrology; do
+            echo "::group::$p"
+            cargo package -p "$p" --list
+            echo "::endgroup::"
+          done
+
+      # Packaging both in one invocation resolves vision-metrology's dependency on the
+      # unpublished vm-primitives through a local staging registry (cargo >= 1.89), so the
+      # verify step builds each crate from its .crate alone, as crates.io will.
+      - name: Package and verify both crates
+        run: cargo package -p vm-primitives -p vision-metrology
+
+      # vision-metrology's own dry run needs the matching vm-primitives on crates.io; the
+      # step above covers it until then.
+      - name: Publish dry run (vm-primitives)
+        run: cargo publish --dry-run -p vm-primitives
+
+  publish:
+    name: Publish to crates.io
+    needs: package
+    if: >-
+      github.repository == 'VitalyVorobyev/vision-metrology' &&
+      startsWith(github.ref, 'refs/tags/v') &&
+      vars.CRATES_IO_TRUSTED_PUBLISHING == 'true'
+    runs-on: ubuntu-latest
+    environment: crates-io
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Check the tag matches the workspace version
+        run: |
+          set -euo pipefail
+          ver=$(cargo metadata --no-deps --format-version 1 \
+            | python3 -c 'import json,sys; print({p["name"]: p["version"] for p in json.load(sys.stdin)["packages"]}["vision-metrology"])')
+          [ "${GITHUB_REF_NAME#v}" = "$ver" ] || { echo "::error::tag $GITHUB_REF_NAME, workspace version $ver"; exit 1; }
+          echo "VERSION=$ver" >> "$GITHUB_ENV"
+
+      - name: Authenticate with crates.io
+        id: auth
+        uses: rust-lang/crates-io-auth-action@v1
+
+      # Dependency order. A version already on crates.io is skipped, so a re-run after a
+      # partial failure, or a tag for a release published by hand, finishes cleanly.
+      - name: Publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: |
+          set -euo pipefail
+          for p in vm-primitives vision-metrology; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' \
+              -A 'vision-metrology release workflow (github.com/VitalyVorobyev/vision-metrology)' \
+              "https://crates.io/api/v1/crates/$p/$VERSION")
+            if [ "$code" = 200 ]; then
+              echo "$p $VERSION is already on crates.io, skipping"
+            else
+              cargo publish -p "$p"
+            fi
+          done
