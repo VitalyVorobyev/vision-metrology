@@ -151,6 +151,12 @@ update it when a change moves them.
   `tools/private/` is tracked, and, when the local, git-ignored
   `tools/private/forbidden-terms.txt` exists, if a tracked file contains one of its terms
   (one per line). CI has no such list and skips that check.
+- **Public datasets go through the registry**, [`tools/datasets/`](tools/datasets/README.md),
+  before anything is evaluated on them: the licence as stated at the source, a fetch with
+  checksums into the git-ignored `data/`, and a dev/test split of IDs committed before the
+  first run, with settings frozen on dev. Its README holds the intake checklist.
+  `tools/check-invariants.py` fails when `docs/performance.md` names a dataset that the
+  registry lacks or has not marked `verified`.
 
 ### Illustrations
 

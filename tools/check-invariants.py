@@ -35,6 +35,12 @@ Checks, over every file tracked by git:
      terms (one per line, `#` comments allowed), case-insensitively and not as part of a
      longer word or number. The list names private dataset identifiers; it is itself
      git-ignored, so CI, which never has it, skips this check silently.
+  9. Every public dataset that docs/performance.md names is in the dataset registry,
+     tools/datasets/registry.json, with the status `verified`. A name is recognised when it
+     is a registered name or alias, or one of KNOWN_DATASETS, a short list of well-known
+     dataset names, matched as whole words, case-sensitively. Every split file the
+     registry names must exist. Add to KNOWN_DATASETS when a new benchmark comes into
+     view: the list is what catches a dataset nobody registered.
 
 Retiring an invariant is still allowed — keep its number and mark the entry
 `**(retired)**`, saying what replaced it. That keeps the list contiguous and every old
@@ -46,6 +52,7 @@ and git.
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import sys
@@ -88,6 +95,16 @@ FORBIDDEN_NAME = re.compile(r"rt[v]t", re.IGNORECASE)
 # Private dataset adapters: git-ignored, never tracked. The term list beside them is local.
 PRIVATE_DIR = "tools/private/"
 PRIVATE_TERMS = REPO / PRIVATE_DIR / "forbidden-terms.txt"
+
+# Check 9: public datasets named in performance.md must be registered and verified.
+PERFORMANCE_REL = "docs/performance.md"
+REGISTRY_REL = "tools/datasets/registry.json"
+KNOWN_DATASETS = [
+    "DamSegment", "HPatches", "POT-210", "POT-280", "PlanarTrack", "REVIEW", "DRIVE", "HRF",
+    "STARE", "CHASE_DB1", "Crack500", "CRACK500", "CFD", "CrackForest", "CrackTree",
+    "DeepCrack", "GAPs", "Oxford Affine", "MVTec AD", "MVTec ITODD", "BSDS500", "KITTI",
+    "MegaDepth", "ScanNet", "ETH3D", "Middlebury", "EuRoC", "TUM RGB-D", "GAN_Synth_Adhesive",
+]
 
 DEV_LINK = re.compile(r"docs/dev/|\]\((?:\./)?dev/")
 RUSTDOC = re.compile(r"^\s*//[/!]")
@@ -175,6 +192,47 @@ def size_cap_allowed(text: str) -> list[str]:
         if inside:
             paths.extend(BACKTICKED_RS.findall(line))
     return paths
+
+
+def dataset_problems() -> list[str]:
+    """Check 9: every dataset named in performance.md is registered with the status
+    `verified`, and every split file the registry names exists."""
+    perf, reg = REPO / PERFORMANCE_REL, REPO / REGISTRY_REL
+    if not perf.is_file():
+        return []
+    if not reg.is_file():
+        return [f"{REGISTRY_REL}: missing"]
+    try:
+        entries = json.loads(reg.read_text(encoding="utf-8"))["datasets"]
+    except (ValueError, KeyError) as err:
+        return [f"{REGISTRY_REL}: unreadable ({err})"]
+    problems = []
+    registered: dict[str, dict] = {}
+    for e in entries:
+        for name in [e["name"], *e.get("aliases", [])]:
+            registered[name.lower()] = e
+        split = e.get("split")
+        if split and not (reg.parent / split).is_file():
+            problems.append(f"{REGISTRY_REL}: {e['id']} names split {split}, which does not exist")
+    names = sorted({*KNOWN_DATASETS, *registered_names(entries)})
+    patterns = [(n, re.compile(r"(?<![\w-])" + re.escape(n) + r"(?![\w-])")) for n in names]
+    for lineno, line in enumerate(perf.read_text(encoding="utf-8").splitlines(), 1):
+        for name, pattern in patterns:
+            if not pattern.search(line):
+                continue
+            e = registered.get(name.lower())
+            where = f"{PERFORMANCE_REL}:{lineno}"
+            if e is None:
+                problems.append(f"{where}: names dataset '{name}', which {REGISTRY_REL} lacks")
+            elif e["status"] != "verified":
+                problems.append(
+                    f"{where}: names dataset '{name}', registered as '{e['status']}', not 'verified'"
+                )
+    return problems
+
+
+def registered_names(entries: list[dict]) -> list[str]:
+    return [n for e in entries for n in [e["name"], *e.get("aliases", [])]]
 
 
 def parse_invariants(text: str) -> list[int]:
@@ -322,6 +380,7 @@ def main() -> int:
         ("user-facing links into docs/dev/", links),
         (f"size cap of {SIZE_CAP} code lines (invariant 14)", sizes),
         ("private dataset leaks", private),
+        ("public datasets in the registry", dataset_problems()),
     ]
     failed = [(title, items) for title, items in sections if items]
     if failed:

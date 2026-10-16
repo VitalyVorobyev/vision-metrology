@@ -82,6 +82,17 @@ def image_stems(root: pathlib.Path, difficulty: str) -> list[str]:
     return [p.stem for p in sorted((root / difficulty / "Images").glob("*.jpg"), key=key)]
 
 
+#: The registered dev/test split of the images, IDs `<difficulty>/<stem>`.
+SPLIT_FILE = pathlib.Path(__file__).resolve().parent.parent / "datasets" / "splits" / "damsegment.json"
+
+
+def split_stems(split: str) -> set[str] | None:
+    """The image IDs of the registered `dev` or `test` split, or None for `all`."""
+    if split == "all":
+        return None
+    return set(json.loads(SPLIT_FILE.read_text(encoding="utf-8"))[split])
+
+
 def load_gray(path: pathlib.Path) -> np.ndarray:
     """An RGB image as float32 ITU-R BT.601 luma, `0.299 R + 0.587 G + 0.114 B`, on the
     8-bit scale (0-255) and not re-quantised."""

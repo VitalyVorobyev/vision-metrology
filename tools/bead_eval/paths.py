@@ -202,7 +202,14 @@ def main() -> None:
     )
     parser.add_argument("--smooth-px", type=float, default=3.0, help="Gaussian sigma (default 3)")
     parser.add_argument("--limit", type=int, default=None, help="first N images per difficulty")
+    parser.add_argument(
+        "--split",
+        choices=("all", "dev", "test"),
+        default="all",
+        help="images of the registered split, tools/datasets/splits/damsegment.json (default all)",
+    )
     args = parser.parse_args()
+    keep = common.split_stems(args.split)
     root = common.dataset_root(args.data_dir)
     out_dir = common.resolve_out_dir(args) / "paths"
 
@@ -213,9 +220,12 @@ def main() -> None:
         "smooth_px": args.smooth_px,
         "width": "2 * EDT - 1 of the crack mask, bilinear on the path, Gaussian sigma 5 px",
     }
-    index = {"params": params, "difficulties": {}, "paths": []}
+    index = {"params": params, "split": args.split, "difficulties": {}, "paths": []}
     for diff in common.DIFFICULTIES:
-        stems = common.image_stems(root, diff)[: args.limit]
+        stems = common.image_stems(root, diff)
+        if keep is not None:
+            stems = [s for s in stems if f"{diff}/{s}" in keep]
+        stems = stems[: args.limit]
         n_paths = n_cracked = 0
         for stem in stems:
             mask = common.load_crack_mask(common.mask_path(root, diff, stem))
