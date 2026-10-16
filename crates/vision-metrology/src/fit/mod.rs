@@ -204,15 +204,17 @@ pub struct Fit<M> {
     pub max_dev: f32,
     /// How many points the final fit used.
     pub n_used: usize,
-    /// Indices into the input slice of the points that were used.
-    ///
-    /// Empty when every point was used and no loss discarded any — check
-    /// `n_used` against the input length rather than assuming.
+    /// Indices into the input slice of the points the final fit used, in
+    /// ascending order: `inliers.len() == n_used`, and every index is listed
+    /// even when no point was discarded.
     pub inliers: Vec<u32>,
 }
 
 impl<M> Fit<M> {
     /// Build the residual summary for `model` over `pts`, given a distance fn.
+    ///
+    /// `inliers` lists the points used; empty here means all of them, which
+    /// the result spells out.
     pub(crate) fn summarize(
         model: M,
         pts: &[Point2f],
@@ -237,11 +239,7 @@ impl<M> Fit<M> {
             rms: (sum_sq / n as f64).sqrt() as f32,
             max_dev,
             n_used: idx.len(),
-            inliers: if idx.len() == pts.len() {
-                Vec::new()
-            } else {
-                idx
-            },
+            inliers: idx,
         }
     }
 }
@@ -325,5 +323,36 @@ mod tests {
                 assert_eq!(loss.weight(r), loss.weight(-r));
             }
         }
+    }
+
+    /// Invariant 10: `inliers` names the points used, also when that is all
+    /// of them, so it never needs `n_used` to be read correctly.
+    #[test]
+    fn inliers_always_list_the_points_used() {
+        use super::{FitConfig, fit_circle};
+        use vm_primitives::Point2f;
+
+        let mut pts: Vec<Point2f> = (0..24)
+            .map(|i| {
+                let a = i as f32 / 24.0 * core::f32::consts::TAU;
+                Point2f::new(50.0 + 20.0 * a.cos(), 40.0 + 20.0 * a.sin())
+            })
+            .collect();
+        let plain = fit_circle(&pts, &FitConfig::default()).expect("fits");
+        assert_eq!(plain.inliers, (0..24).collect::<Vec<u32>>());
+        assert_eq!(plain.inliers.len(), plain.n_used);
+
+        pts.push(Point2f::new(50.0, 90.0));
+        let robust = FitConfig {
+            loss: RobustLoss::Tukey { c: 2.0 },
+            ..FitConfig::default()
+        };
+        let fit = fit_circle(&pts, &robust).expect("fits");
+        assert_eq!(
+            fit.inliers,
+            (0..24).collect::<Vec<u32>>(),
+            "the outlier is dropped"
+        );
+        assert_eq!(fit.inliers.len(), fit.n_used);
     }
 }
