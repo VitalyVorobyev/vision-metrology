@@ -62,8 +62,11 @@ substrate is flagged, not absorbed as motion.
   `Cargo.toml`. Both publish jobs exist, over OIDC, gated to version tags on this
   repository.
 - The public Rust and Python surface is reviewed before the release fixes it, in four
-  phases, each approved on its own. It follows registration calibration, which settles
-  `TranslationConfig`.
+  phases, each approved on its own. Done: phase 1 (scaffolding and dead surface) and
+  phase 2 (honest structure: private model levels and stored-model types, the model
+  config's `tuning`, explicit preludes and facade root). Left: phase 3 (`#[non_exhaustive]`,
+  common traits, the registration status and region-check shapes, after registration
+  calibration settles `TranslationConfig`) and phase 4 (the Python surface).
 - CHANGELOG cut, versions 0.2.0, install sections point at crates.io and PyPI.
 - crates.io's first publish is manual (trusted publishing needs an existing crate). Then
   configure the trusted publishers (crates.io: both crates, `release-crates.yml`,

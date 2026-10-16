@@ -2,7 +2,9 @@
 //! mirrors `lab/backend/src/vm_lab/routers/models.py`, plus the geometry and
 //! crop commands a UI needs to *show* what was taught.
 
-use vision_metrology::matching::{Contrast, CropSpec, ShapeModelBuilder, ShapeModelConfig, ShapeModelTuning};
+use vision_metrology::matching::{
+    Contrast, CropSpec, ShapeModelBuilder, ShapeModelConfig, ShapeModelTuning,
+};
 use vision_metrology::warp::Interp;
 use vm_primitives::{BorderMode, Image, Point2f, Rect2f};
 

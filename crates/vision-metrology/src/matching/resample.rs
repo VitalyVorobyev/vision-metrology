@@ -16,7 +16,7 @@
 //! # What it needs, and why a format-3 model cannot do this
 //!
 //! Every [`ShapeModel`] already stores its level-0 points *after* grid
-//! decimation (`level(0).points()`), but decimation is exactly what a
+//! decimation (level 0's model points), but decimation is exactly what a
 //! different scale needs to redo — decimation must be spatially uniform,
 //! and a cell sized for scale 1.0 is the wrong size at scale
 //! 0.4 or 2.5. So the model additionally stores the *pre*-decimation level-0
