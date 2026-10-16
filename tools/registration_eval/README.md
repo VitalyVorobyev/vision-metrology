@@ -51,7 +51,8 @@ pixel), in the frame's own image.
 
 Each entry of `frames` is `{image, mask?, visibility?, group?}`:
 - `image`: a single-channel image Pillow can read (8- or 16-bit), or a 2-D `.npy` array.
-  Every frame has the same shape.
+  Every frame has the same shape. Several frames may name the same file, which is read
+  once.
 - `mask`: registration validity, nonzero where the pixel is substrate evidence. Without
   it the whole frame is valid. A mask should exclude everything that does not move with
   the substrate: stationary foreground, unlit regions, and the tracked object itself.
@@ -93,7 +94,9 @@ It is carried through unchanged and never scored as an annotation.
 
 The annotations file is `{version, protocol, sections, annotations}`. `sections` lists every
 station with its arc position and `source`: `uniform`, `span`, or `user` (added on the
-page). `protocol` records the seed, the count, the curve source and the profile settings.
+page), or `stratified`, chosen by another tool such as `tools/bead_eval/crosssections.py`.
+`protocol` records the seed, the count, the curve source and the profile settings. A
+resumed file keeps its `half_length_px` unless `--half-length` is given.
 
 ## Preprocessing
 
@@ -219,7 +222,7 @@ gives:
   visibility agreement;
 - the wall σ with the reference's own noise removed.
 
-`--annotator` and `--source uniform|span|user` restrict the annotations. The report holds
+`--annotator` and `--source uniform|span|user|stratified` restrict the annotations. The report holds
 aggregates only. `--per-section` adds per-section errors, which carry geometry and stay
 local. A held-out sequence needs `--held-out`.
 
