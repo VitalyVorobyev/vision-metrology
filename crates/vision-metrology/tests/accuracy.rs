@@ -47,6 +47,10 @@ mod strip;
 #[path = "accuracy/phase.rs"]
 mod phase;
 
+// The bead tracker over the same phase sweep.
+#[path = "accuracy/bead_phase.rs"]
+mod bead_phase;
+
 // The bead fixture: a ribbon along a curve, with continuous truth.
 #[path = "../examples/common/ribbon.rs"]
 mod ribbon;

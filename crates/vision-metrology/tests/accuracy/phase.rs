@@ -19,6 +19,8 @@
 //!   unbiased locator's histogram is flat up to noise (index ≈ 1) and a phase-dependent
 //!   bias `b(φ)` shows as a density `1 / (1 + b′(φ))`. The row reports the worst blur and
 //!   angle.
+//! - **Continuous profiles:** the default strip with `Derivative::Continuous` at σ 1, 1.5
+//!   and 2.5 px, and with the default derivative at σ 2.5 px for comparison.
 //!
 //! The error is the signed distance along the true normal, in px. Each image carries
 //! several independent samples: 7 strips (or 5 rect calipers) spaced along the edge, one
@@ -35,7 +37,8 @@
 use std::num::NonZeroUsize;
 
 use vision_metrology::measure::{
-    Caliper, EdgeSelect, Locate, MeasureConfig, MeasureRect, MeasureStrip, PolaritySelect,
+    Caliper, Derivative, EdgeSelect, Locate, MeasureConfig, MeasureRect, MeasureStrip,
+    PolaritySelect, ProfileConfig,
 };
 use vision_metrology::{
     Edge1DConfig, Edge1DDetector, Edge2DConfig, Edge2DDetector, EdgePolarity, Image, Point2f,
@@ -55,7 +58,7 @@ const GRID_TRIALS: u64 = 6;
 const DENSE_PHASES: usize = 200;
 const DENSE_TRIALS: u64 = 3;
 const DENSE_NOISE_DN: f64 = 2.0;
-const BINS: usize = 10;
+pub(super) const BINS: usize = 10;
 /// Tangential offsets of the strips and of the rect calipers along the edge, in px.
 const STRIP_OFFSETS: [f64; 7] = [-12.0, -8.0, -4.0, 0.0, 4.0, 8.0, 12.0];
 const RECT_OFFSETS: [f64; 5] = [-12.0, -6.0, 0.0, 6.0, 12.0];
@@ -192,6 +195,39 @@ fn strip_default(scene: &Scene, _: &mut Tools, out: &mut Vec<Hit>) {
     strips(scene, cfg, None, false, out);
 }
 
+/// The default strip at σ `sigma` px, with `derivative`: `Derivative::Continuous` rows at
+/// σ 1, 1.5 and 2.5 px, and the default derivative at σ 2.5 px, which shows that a wider
+/// kernel alone does not remove the bilinear profile's locking.
+fn strip_sigma(scene: &Scene, sigma: f32, derivative: Derivative, out: &mut Vec<Hit>) {
+    let cfg = MeasureConfig {
+        polarity: PolaritySelect::Rising,
+        select: EdgeSelect::Strongest,
+        profile: ProfileConfig {
+            sigma,
+            derivative,
+            ..ProfileConfig::default()
+        },
+        ..MeasureConfig::default()
+    };
+    strips(scene, cfg, None, false, out);
+}
+
+fn strip_default_sigma25(scene: &Scene, _: &mut Tools, out: &mut Vec<Hit>) {
+    strip_sigma(scene, 2.5, Derivative::DerivativeOfGaussian, out);
+}
+
+fn strip_continuous_sigma10(scene: &Scene, _: &mut Tools, out: &mut Vec<Hit>) {
+    strip_sigma(scene, 1.0, Derivative::Continuous, out);
+}
+
+fn strip_continuous_sigma15(scene: &Scene, _: &mut Tools, out: &mut Vec<Hit>) {
+    strip_sigma(scene, 1.5, Derivative::Continuous, out);
+}
+
+fn strip_continuous_sigma25(scene: &Scene, _: &mut Tools, out: &mut Vec<Hit>) {
+    strip_sigma(scene, 2.5, Derivative::Continuous, out);
+}
+
 /// `MeasureRect` with the default config, 30 px long and 5 px wide, along the normal.
 fn rect_default(scene: &Scene, _: &mut Tools, out: &mut Vec<Hit>) {
     let n = scene.n;
@@ -313,17 +349,17 @@ fn mean_std(v: &[Hit]) -> (f64, f64) {
 }
 
 /// The max/min ratio of a histogram's bins (infinite when a bin is empty).
-fn locking_index(hist: &[u64; BINS]) -> f64 {
+pub(super) fn locking_index(hist: &[u64; BINS]) -> f64 {
     let max = hist.iter().copied().max().unwrap_or(0) as f64;
     let min = hist.iter().copied().min().unwrap_or(0) as f64;
     if min == 0.0 { f64::INFINITY } else { max / min }
 }
 
-fn bin(x: f64) -> usize {
+pub(super) fn bin(x: f64) -> usize {
     ((x - x.floor()) * BINS as f64).min(BINS as f64 - 1.0) as usize
 }
 
-fn seed(parts: [u64; 5]) -> u64 {
+pub(super) fn seed(parts: [u64; 5]) -> u64 {
     parts.iter().fold(0x5851_F42D_4C95_7F2D, |h, &p| {
         (h ^ p).wrapping_mul(0x9E37_79B9_7F4A_7C15).rotate_left(29)
     })
@@ -420,7 +456,9 @@ fn sweep(family: Family, locators: &[&Locator]) -> Vec<Phased> {
 /// worst cell and the locking index `L` at `1 + 1.5 (L − 1)`; the measured numbers are in
 /// `docs/performance.md`. `edge1d_centroid` and `edge2d_parabolic_along_normal` leave a
 /// histogram bin empty (index ∞), so only their bias and sigma are guarded; both are
-/// recorded in `docs/dev/backlog.md` ("Edges").
+/// recorded in `docs/dev/backlog.md` ("Edges"). `strip_continuous_sigma2.5` pins its index
+/// at 1.2, the acceptance bar for a locator that does not lock, rather than 1.5× its
+/// measured 1.19.
 const LOCATORS: &[Locator] = &[
     Locator {
         name: "strip_textbook_parabolic",
@@ -461,6 +499,38 @@ const LOCATORS: &[Locator] = &[
         bias_envelope: 0.097,
         sigma_envelope: 0.095,
         locking_envelope: 2.2,
+    },
+    Locator {
+        name: "strip_default_sigma2.5",
+        family: Family::Scan,
+        locate: strip_default_sigma25,
+        bias_envelope: 0.059,
+        sigma_envelope: 0.076,
+        locking_envelope: 1.7,
+    },
+    Locator {
+        name: "strip_continuous_sigma1",
+        family: Family::Scan,
+        locate: strip_continuous_sigma10,
+        bias_envelope: 0.12,
+        sigma_envelope: 0.056,
+        locking_envelope: 3.5,
+    },
+    Locator {
+        name: "strip_continuous_sigma1.5",
+        family: Family::Scan,
+        locate: strip_continuous_sigma15,
+        bias_envelope: 0.048,
+        sigma_envelope: 0.031,
+        locking_envelope: 1.71,
+    },
+    Locator {
+        name: "strip_continuous_sigma2.5",
+        family: Family::Scan,
+        locate: strip_continuous_sigma25,
+        bias_envelope: 0.018,
+        sigma_envelope: 0.019,
+        locking_envelope: 1.2,
     },
     Locator {
         name: "caliper_rect_default",
