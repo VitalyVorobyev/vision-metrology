@@ -219,6 +219,12 @@ def test_shape_model_reports_its_structure():
     assert model.num_levels >= 2
     assert len(model.point_counts) == model.num_levels
     assert model.point_counts[0] > 20
+    infos = [model.level_info(i) for i in range(model.num_levels)]
+    assert [i.points for i in infos] == model.point_counts
+    assert all(isinstance(i, vm.LevelInfo) and i.radius > 0 and i.angle_step > 0 for i in infos)
+    assert infos[1].radius < infos[0].radius
+    assert model.level_info(model.num_levels) is None
+    assert "LevelInfo(points=" in repr(infos[0])
     ox, oy = model.origin
     # The reference point is the level-0 centroid, so it sits inside the ROI.
     assert BRACKET_ROI[0] <= ox <= BRACKET_ROI[0] + BRACKET_ROI[2]

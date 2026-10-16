@@ -164,6 +164,15 @@ class ShapeSearchConfig:
         tuning: Optional[ShapeSearchTuning] = ...,
     ) -> None: ...
 
+class LevelInfo:
+    """What one pyramid level of a `ShapeModel` holds. `radius` is in that
+    level's pixel units, `angle_step` in radians."""
+
+    points: int
+    radius: float
+    angle_step: float
+    scale_step: float
+
 class CropSpec:
     """Fixed crop geometry for `ShapeMatch.model_frame_map` — rectify a
     located match into a canonical, model-frame patch. `rect` is
@@ -1032,6 +1041,10 @@ class ShapeModel:
     def origin(self) -> Tuple[float, float]: ...
     @property
     def point_counts(self) -> List[int]: ...
+    def level_info(self, level: int) -> Optional[LevelInfo]:
+        """What pyramid level `level` holds -- point count, radius and search
+        steps -- or None when `level >= num_levels`. A diagnostic."""
+
     def reference_points(self) -> List[Tuple[float, float]]: ...
     @property
     def reference_angle(self) -> float:

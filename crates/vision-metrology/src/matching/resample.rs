@@ -191,8 +191,8 @@ mod tests {
         // Level-0 radius should match the original to within the grid
         // decimation's own jitter — resampling at 1.0 reruns the same
         // assembly, not an identity copy.
-        let r0 = model.level(0).unwrap().radius();
-        let r1 = same.level(0).unwrap().radius();
+        let r0 = model.level(0).unwrap().radius;
+        let r1 = same.level(0).unwrap().radius;
         assert!((r0 - r1).abs() < 1.0, "r0={r0} r1={r1}");
     }
 
@@ -200,8 +200,8 @@ mod tests {
     fn resample_at_half_halves_the_radius() {
         let model = build_disc_model();
         let half = model.resample_at(0.5).expect("resample at 0.5");
-        let r0 = model.level(0).unwrap().radius();
-        let r1 = half.level(0).unwrap().radius();
+        let r0 = model.level(0).unwrap().radius;
+        let r1 = half.level(0).unwrap().radius;
         assert!((r1 - 0.5 * r0).abs() < 1.0, "r0={r0} r1={r1}");
     }
 

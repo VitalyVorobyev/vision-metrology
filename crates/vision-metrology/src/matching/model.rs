@@ -9,24 +9,12 @@ use super::config::Polarity;
 /// 16 bytes, array-of-structs: all four floats are consumed by a single
 /// inner-loop iteration, so keeping them adjacent is what the cache wants.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ModelPoint {
-    pub(crate) d: Vec2f,
-    pub(crate) t: Vec2f,
-}
-
-impl ModelPoint {
+pub(crate) struct ModelPoint {
     /// Offset from this level's reference point, in this level's pixel units.
-    #[inline]
-    pub fn d(&self) -> Vec2f {
-        self.d
-    }
-
+    pub(crate) d: Vec2f,
     /// Unit gradient direction, dark-to-bright — the same convention as
     /// [`Edgel::n`](vm_primitives::Edgel).
-    #[inline]
-    pub fn t(&self) -> Vec2f {
-        self.t
-    }
+    pub(crate) t: Vec2f,
 }
 
 /// One teach-time edge point, stored **before** grid decimation, at level 0.
@@ -53,52 +41,42 @@ pub(crate) struct TeachPoint {
 }
 
 /// One pyramid level of a [`ShapeModel`].
+///
+/// Private: point order is load-bearing (greedy early termination evaluates a
+/// prefix of `points`, so the prefix must be spread over the whole contour),
+/// and the steps and radius are derived from the points.
+/// [`ShapeModel::level_info`] reports the numbers a caller can use.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ShapeModelLevel {
+pub(crate) struct ShapeModelLevel {
+    /// Model points, in spatially stratified order.
     pub(crate) points: Vec<ModelPoint>,
+    /// Angle step this level can be searched with, in radians.
     pub(crate) angle_step: f32,
+    /// Relative scale step this level can be searched with.
     pub(crate) scale_step: f32,
+    /// Largest `|d|` over the level's points, in this level's pixel units.
     pub(crate) radius: f32,
+    /// Bounding box of the points, relative to the level reference point.
     pub(crate) bbox: Rect2f,
 }
 
-impl ShapeModelLevel {
-    /// Model points, in spatially stratified order.
-    ///
-    /// The order matters: greedy early termination evaluates a prefix of this
-    /// list, so the prefix must be spread over the whole contour. In contour
-    /// order a localised occlusion would sit entirely inside the prefix and
-    /// abort a pose that is in fact correct. Read-only for that reason — a
-    /// caller who reorders or extends the points invalidates both the greedy
-    /// bound and `score ≈ 1 − occluded_fraction`.
-    #[inline]
-    pub fn points(&self) -> &[ModelPoint] {
-        &self.points
-    }
-
-    /// Angle step this level can be searched with, in radians.
-    #[inline]
-    pub fn angle_step(&self) -> f32 {
-        self.angle_step
-    }
-
-    /// Relative scale step this level can be searched with.
-    #[inline]
-    pub fn scale_step(&self) -> f32 {
-        self.scale_step
-    }
-
-    /// Largest `|d|` over the level's points, in this level's pixel units.
-    #[inline]
-    pub fn radius(&self) -> f32 {
-        self.radius
-    }
-
-    /// Bounding box of the points, relative to the level reference point.
-    #[inline]
-    pub fn bbox(&self) -> Rect2f {
-        self.bbox
-    }
+/// What one pyramid level of a [`ShapeModel`] holds, from
+/// [`ShapeModel::level_info`].
+///
+/// A diagnostic: it describes how the model was built, and gains fields as
+/// the model does.
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
+pub struct LevelInfo {
+    /// Number of model points at this level, the `n` the score divides by.
+    pub points: usize,
+    /// Largest distance of a point from the reference point, in this level's
+    /// pixel units.
+    pub radius: f32,
+    /// Angle step this level is searched with, in radians.
+    pub angle_step: f32,
+    /// Relative scale step this level is searched with.
+    pub scale_step: f32,
 }
 
 /// A rotation- and scale-searchable model of an object's edge geometry.
@@ -192,7 +170,7 @@ impl ShapeModel {
     /// are computed from differently band-limited images and disagree for
     /// reasons that have nothing to do with the object.
     #[inline]
-    pub fn smooth(&self) -> SmoothKind {
+    pub(crate) fn smooth(&self) -> SmoothKind {
         self.smooth
     }
 
@@ -206,20 +184,26 @@ impl ShapeModel {
     /// wrong kernel.
     // Invariant 3.
     #[inline]
-    pub fn pre_smooth(&self) -> PreSmooth {
+    pub(crate) fn pre_smooth(&self) -> PreSmooth {
         self.pre_smooth
-    }
-
-    /// All pyramid levels, finest first.
-    #[inline]
-    pub fn levels(&self) -> &[ShapeModelLevel] {
-        &self.levels
     }
 
     /// Level `i`, or `None` when `i >= num_levels()`.
     #[inline]
-    pub fn level(&self, i: usize) -> Option<&ShapeModelLevel> {
+    pub(crate) fn level(&self, i: usize) -> Option<&ShapeModelLevel> {
         self.levels.get(i)
+    }
+
+    /// What level `i` holds — its point count, radius and search steps — or
+    /// `None` when `i >= num_levels()`. A diagnostic, for printing or
+    /// checking how a model was built.
+    pub fn level_info(&self, i: usize) -> Option<LevelInfo> {
+        self.levels.get(i).map(|l| LevelInfo {
+            points: l.points.len(),
+            radius: l.radius,
+            angle_step: l.angle_step,
+            scale_step: l.scale_step,
+        })
     }
 
     /// Number of pyramid levels; always at least 1.
@@ -276,7 +260,7 @@ impl ShapeModel {
     ///
     /// | Frame | What is in it | Read it with |
     /// |---|---|---|
-    /// | model | [`ModelPoint::d`], [`CropSpec::rect`](super::CropSpec), what [`ShapeMatch::pose`](super::ShapeMatch::pose) consumes | [`model_geometry`](Self::model_geometry) |
+    /// | model | the stored point offsets, [`CropSpec::rect`](super::CropSpec), what [`ShapeMatch::pose`](super::ShapeMatch::pose) consumes | [`model_geometry`](Self::model_geometry) |
     /// | reference image | the pixels the model was taught from | [`reference_geometry`](Self::reference_geometry), [`reference_points`](Self::reference_points) |
     #[inline]
     pub fn reference_angle(&self) -> f32 {

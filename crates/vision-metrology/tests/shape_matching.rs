@@ -307,7 +307,7 @@ fn t17_auto_level_count_shrinks_with_the_model() {
     // the 6 px floor at which one angle step sweeps the whole model past
     // itself. Four levels is the honest answer, not five.
     assert_eq!(big.num_levels(), 4, "levels: {:?}", level_radii(&big));
-    assert!(big.levels()[3].radius() >= 6.0);
+    assert!(big.level_info(3).expect("level 3").radius >= 6.0);
 
     let small = render(
         &|p| sdf_box(p, (12.0, 12.0)),
@@ -335,7 +335,10 @@ fn t17_auto_level_count_shrinks_with_the_model() {
 }
 
 fn level_radii(m: &ShapeModel) -> Vec<f32> {
-    m.levels().iter().map(|l| l.radius()).collect()
+    (0..m.num_levels())
+        .filter_map(|i| m.level_info(i))
+        .map(|l| l.radius)
+        .collect()
 }
 
 #[test]
@@ -905,11 +908,12 @@ fn the_pyramid_kernel_survives_persistence() {
         ..Default::default()
     };
     let model = build_bracket_model(&cfg);
-    assert_eq!(model.pre_smooth(), PreSmooth::Binomial121);
+    let plain = build_bracket_model(&ShapeModelConfig::default());
+    assert_ne!(model, plain, "the kernel is part of the model");
 
     let restored =
         ShapeModel::from_bytes(&model.to_bytes().expect("serializes")).expect("deserializes");
-    assert_eq!(restored.pre_smooth(), PreSmooth::Binomial121);
+    assert_eq!(restored, model);
 
     let scene = bracket_at(300.0, 220.0, 0.6, 1.0);
     let a = find_one(&scene, &model, &ShapeSearchConfig::default()).expect("original finds");

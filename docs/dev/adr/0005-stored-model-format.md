@@ -20,10 +20,11 @@ quantities.
   arbitrary JSON past the version gate, and the in-memory layout can change without
   touching the format. `tests/model_format.rs` keeps a frozen format-5 document that must
   load and write back byte for byte.
-- **Readable, not writable.** `ModelPoint` and `ShapeModelLevel` can be read for overlays but
-  not constructed by callers. Point order is load-bearing (greedy termination evaluates a
+- **The levels are private.** Point order is load-bearing (greedy termination evaluates a
   prefix, which must sample the whole contour), and `radius`, `angle_step` and `scale_step`
-  are derived.
+  are derived, so callers neither build nor walk a level. They read a level's numbers
+  through `ShapeModel::level_info` (a `matching::diagnostics::LevelInfo`), and its points
+  through `model_geometry` / `reference_geometry`, which copy them out in one frame.
 - **The model carries its own `PreSmooth`.** `ShapeMatcher::find` reads it off the model,
   which makes invariant 3 impossible to break from the search config.
 - **Breaking bumps are batched; additive bumps are backward-loading.**

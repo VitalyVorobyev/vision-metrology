@@ -81,7 +81,7 @@ pub use config::{
 };
 pub use crop::CropSpec;
 pub use matcher::{ShapeMatch, ShapeMatcher};
-pub use model::{ModelPoint, ShapeModel, ShapeModelLevel};
+pub use model::ShapeModel;
 
 // Invariant 17.
 /// Re-exported for `scale::find_scale_invariant` only — not part of this

@@ -99,7 +99,7 @@ Each Rust config is a Python class with keyword arguments, for example
 | `edge` (profiles) | `ProfileSampler` (`sample` returns value, derivative and validity arrays; `sigma` is its config) |
 | `lsd` | `LsdDetector`, `detect_line_segments`, `LsdConfig`, `LineSegment` |
 | `fit` | `Fitter` (`fit_line`, `fit_circle`, `fit_ellipse`), `fit_line`, `fit_ellipse`, `FitConfig`, `Line`, `Circle`, `Ellipse` |
-| `matching` | `ShapeModel` (incl. `save`/`load`, `resample_at`), `ShapeMatcher`, `ShapeMatch`, `find_shape_model`, `ShapeModelConfig`, `ShapeSearchConfig`, `ShapeSearchTuning`, `Contrast`, `CropSpec` (`ShapeMatch.model_frame_map`) |
+| `matching` | `ShapeModel` (incl. `save`/`load`, `resample_at`, `level_info`), `LevelInfo`, `ShapeMatcher`, `ShapeMatch`, `find_shape_model`, `ShapeModelConfig`, `ShapeSearchConfig`, `ShapeSearchTuning`, `Contrast`, `CropSpec` (`ShapeMatch.model_frame_map`) |
 | `measure` | `Caliper` (`rect`/`arc`/`radial`/`strip`, `move_to_*`, `measure`, `measure_pairs`, `profile`, `levels`, `spacing`, `explain`), `MeasureEdge`, `MeasurePair`, `CaliperTrace`, `MeasureConfig`, `Locate`, `LevelEdge`, `MetrologyModel` (`apply`, `layout`, `explain`), `ObjectTrace`, `MetrologyObject`, `MetrologyShape`, `MetrologyResult`, `MetrologyError`, `CaliperPlacement`, `MeasureRejected` |
 | `measure` (bead) | `BeadTracker` (`track`, `explain`, `config`), `TrackedBead` (per-station arrays, reject strings, statistics), `BeadPass`, `BeadSolve`, `BeadTrace`, `BeadPassTrace` (per-station arrays), `BeadStationTrace`, `BeadConfig`, `BeadCaliper` (`to_measure_config`), `BeadTuning` |
 | `warp` | `Map` (`affine`, `projective`, `polar`, `log_polar`, `apply`, `apply_with_mask`) |

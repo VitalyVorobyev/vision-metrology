@@ -1,4 +1,5 @@
-//! Per-point match diagnostics.
+//! Per-point match diagnostics, and what a model's levels hold
+//! ([`LevelInfo`], from [`ShapeModel::level_info`]).
 //!
 //! A [`ShapeMatch`] reports one aggregate score; for auditing a result you
 //! want to see *which parts of the contour* carried it. This module computes
@@ -14,6 +15,7 @@ use vm_primitives::{DirectionField, Image, ImageView};
 
 use super::config::{Contrast, Polarity};
 use super::matcher::ShapeMatch;
+pub use super::model::LevelInfo;
 use super::model::ShapeModel;
 
 /// Individual score terms of every level-0 model point at `m`'s pose.

@@ -223,3 +223,40 @@ impl ShapeModel {
         Self::from_bytes(&bytes)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use vm_primitives::{Point2f, Polyline2f, PreSmooth};
+
+    use crate::matching::{ContourOrientation, ShapeModel, ShapeModelConfig};
+
+    /// Invariant 3: the pyramid kernel travels with the stored model.
+    #[test]
+    fn the_pyramid_kernel_survives_a_round_trip() {
+        let square: Vec<Point2f> = (0..40)
+            .map(|i| {
+                let (side, k) = (i / 10, (i % 10) as f32 * 4.0);
+                match side {
+                    0 => Point2f::new(k, 0.0),
+                    1 => Point2f::new(40.0, k),
+                    2 => Point2f::new(40.0 - k, 40.0),
+                    _ => Point2f::new(0.0, 40.0 - k),
+                }
+            })
+            .collect();
+        let cfg = ShapeModelConfig {
+            pre_smooth: PreSmooth::Binomial121,
+            ..Default::default()
+        };
+        let model = ShapeModel::from_polylines(
+            &[Polyline2f { points: square }],
+            ContourOrientation::Outward,
+            &cfg,
+        )
+        .expect("square model builds");
+        let restored =
+            ShapeModel::from_bytes(&model.to_bytes().expect("serializes")).expect("deserializes");
+        assert_eq!(restored.pre_smooth(), PreSmooth::Binomial121);
+        assert_eq!(restored, model);
+    }
+}

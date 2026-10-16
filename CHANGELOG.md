@@ -252,6 +252,12 @@ are relative to 0.1.0.
   `Serialize`/`Deserialize`. The stored format is private document types, unchanged byte
   for byte, so files saved before still load. Persist a model with
   `ShapeModel::{save, load, to_bytes, from_bytes}`.
+- **Breaking:** `ShapeModelLevel` and `ModelPoint` are private, and
+  `ShapeModel::{levels, level, smooth, pre_smooth}` are gone.
+  `ShapeModel::level_info(i)` returns a `matching::diagnostics::LevelInfo` (`points`,
+  `radius`, `angle_step`, `scale_step`); `point_count(i)` counts a level's points, and
+  `model_geometry(i)` copies them out. Python adds `ShapeModel.level_info` and
+  `vm.LevelInfo`.
 - Internal: `measure` holds two crate-private numerical cores (ADR-0020). One is an exact
   layered min-path with max-marginals, for the coupled two-boundary extraction and the
   bead-end rim. The other is a robust Whittaker smoother, on which `BeadTracker`'s

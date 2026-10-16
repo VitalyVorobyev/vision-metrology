@@ -174,12 +174,10 @@ fn build_model(args: &Args, model_path: &Path, roi: Rect2f) -> Result<ShapeModel
         model.num_levels(),
         t0.elapsed().as_secs_f64() * 1e3
     );
-    for (i, lvl) in model.levels().iter().enumerate() {
+    for (i, lvl) in (0..model.num_levels()).filter_map(|i| Some((i, model.level_info(i)?))) {
         println!(
             "  level {i}: {:4} points, radius {:6.1} px, angle step {:.4} rad",
-            lvl.points().len(),
-            lvl.radius(),
-            lvl.angle_step()
+            lvl.points, lvl.radius, lvl.angle_step
         );
     }
     Ok(model)
