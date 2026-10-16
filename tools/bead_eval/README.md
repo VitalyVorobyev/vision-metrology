@@ -39,18 +39,18 @@ scripts add their own directory explicitly.
 DamSegment, by Vahidreza Gharehbaghi, Caroline R. Bennett, Rémy Lequesne, Hang Zhao and
 Jian Li, Mendeley Data, V1, 2025, [doi:10.17632/z5z6gtt5t4.1](https://doi.org/10.17632/z5z6gtt5t4.1),
 licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). It is not
-distributed with this repository. To fetch it:
+distributed with this repository. Its source, checksum and dev/test split are in the
+[dataset registry](../datasets/README.md); to fetch, verify and extract it into the
+git-ignored `data/damsegment/`:
 
 ```bash
-mkdir -p data/damsegment && cd data/damsegment
-curl -L -o "Damage Segmentaion.zip" \
-  "https://data.mendeley.com/public-files/datasets/z5z6gtt5t4/files/bd928c77-1194-4ee3-ac1a-f6ba3036e193/file_downloaded"
-shasum -a 256 "Damage Segmentaion.zip"
-# d87849a70d7a2e280e49d3687d89a5850902804554a35d779c941ea71ffcff1a
-mkdir extracted && unzip -q "Damage Segmentaion.zip" -d extracted
+python3 tools/datasets/fetch.py damsegment
 ```
 
-`data/` is git-ignored. The archive holds `Damage Segmentaion/{Easy,Medium,Hard}/`, with
+`--split dev` or `--split test` on `paths.py` restricts every later step to one side of
+the registered split, by image. The default, `all`, is what the published numbers use.
+
+The archive holds `Damage Segmentaion/{Easy,Medium,Hard}/`, with
 the dataset's own spelling, each with 500 `Images/*.jpg` (640×640 RGB) and
 `Labels/{Mask,Pascal VOC,Yolo}`. The masks are RGB: cracks are pure red `(255, 0, 0)`,
 spalling pure blue `(0, 0, 255)`, the rest black. In the Pascal VOC polygons, cracks are
