@@ -45,7 +45,7 @@ deleted here.
   overlap/mask fixture first; then freeze the observation set at the start, fix the
   Huber scale after the first iteration, and test convergence on the motion step only.
   Preserve explicit regional model-mismatch rejection. Scheduled in the roadmap's
-  registration calibration stage.
+  registration calibration stage ([#81]).
 
 - **Similarity's regional check extrapolates, and is the likely cause of its low
   coverage.** Each quadrant fits a full similarity but keeps the full-image centre and
@@ -59,14 +59,14 @@ deleted here.
   covariance-normalized test at each region's own centroid and extent (translation: χ²
   on the pairwise regional shift differences). Do not loosen held-out thresholds or mute
   failures to get longer tracks. Scheduled in the roadmap's registration calibration
-  stage; the estimator stays behind `corr-experimental` until then.
+  stage ([#81]); the estimator stays behind `corr-experimental` until then.
 
 - **Similarity spends work it does not need.** Its initializer runs a full translation
   refinement (up to 20 iterations) and then discards everything but the seed; each
   regional fit runs up to 20 more six-parameter iterations; every iteration makes two
   full passes (a median select, then the normal equations). Native 320×97 latency is
   6.53 ms against translation's 2.92 ms, over the 5 ms online budget. Give the
-  initializer a search-only path, and measure before any online use.
+  initializer a search-only path, and measure before any online use. Scheduled ([#81]).
 
 - **Pixel-unit settings convert with the nominal `step`** for rect, arc and radial
   calipers: σ, the `SmoothThenCentral` radius and the half-contrast flank distances and
@@ -88,7 +88,8 @@ deleted here.
   loss did not stop it.
   - Options: a per-end support check, a down-weighted or frozen end once its station
     loses support, or a reported end status.
-  - Needs a design; tangential end extension is not observable with normal searches.
+  - Tangential end extension is not observable with normal searches. Scheduled: [#78]
+    measures the end as a polar rim pinned to the walls' last points.
 - **A distractor within about 2 px of a bead's edge merges with it.** The edge detector
   sees one edge, so `clearance` never sees the distractor, and the width reads about
   0.4 px short. `docs/bead.md` documents it. A fix would need a profile-shape check, such
@@ -217,3 +218,6 @@ deleted here.
   in `pose_audit` is valid at scale ≈ 1 only.
 - **corrmatch `u16`/`f32`.** `corr` is `u8`-only because corrmatch is
   ([ADR-0011](adr/0011-corr-delegates-to-corrmatch.md)).
+
+[#78]: https://github.com/VitalyVorobyev/vision-metrology/issues/78
+[#81]: https://github.com/VitalyVorobyev/vision-metrology/issues/81
