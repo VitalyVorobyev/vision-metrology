@@ -43,6 +43,10 @@ use vm_primitives::{Hysteresis, Subpix2D};
 #[path = "accuracy/strip.rs"]
 mod strip;
 
+// Every sub-pixel edge locator over a fine phase sweep: worst bias and the locking index.
+#[path = "accuracy/phase.rs"]
+mod phase;
+
 // The bead fixture: a ribbon along a curve, with continuous truth.
 #[path = "../examples/common/ribbon.rs"]
 mod ribbon;

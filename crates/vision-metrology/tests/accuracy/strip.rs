@@ -99,7 +99,7 @@ fn step_coverage(offset: f64, a: f64, b: f64, sigma: f64) -> f64 {
 }
 
 /// The unit normal at `deg` from +x, with CaliperBench's exact zeros on the axes.
-fn normal(deg: f64) -> (f64, f64) {
+pub(super) fn normal(deg: f64) -> (f64, f64) {
     let (s, c) = deg.to_radians().sin_cos();
     let snap = |v: f64| if v.abs() < 1e-12 { 0.0 } else { v };
     (snap(c), snap(s))
@@ -147,7 +147,7 @@ impl Gauss {
 }
 
 /// Add `noise_dn` of Gaussian noise (seeded by `seed`), round and clip to 8 bits.
-fn quantize(clean: &[f64], noise_dn: f64, seed: u64) -> Vec<u8> {
+pub(super) fn quantize(clean: &[f64], noise_dn: f64, seed: u64) -> Vec<u8> {
     let mut rng = Gauss(seed);
     clean
         .iter()
@@ -163,12 +163,12 @@ fn quantize(clean: &[f64], noise_dn: f64, seed: u64) -> Vec<u8> {
 }
 
 /// 8-bit pixels as `f32` in `[0, 1]`, the scale CaliperBench measures on.
-fn unit_image(size: usize, px: &[u8]) -> Image<f32> {
+pub(super) fn unit_image(size: usize, px: &[u8]) -> Image<f32> {
     let data = px.iter().map(|&v| f32::from(v) / 255.0).collect();
     Image::from_vec(size, size, data).expect("valid image")
 }
 
-fn u8_image(size: usize, px: Vec<u8>) -> Image<u8> {
+pub(super) fn u8_image(size: usize, px: Vec<u8>) -> Image<u8> {
     Image::from_vec(size, size, px).expect("valid image")
 }
 
@@ -184,7 +184,7 @@ fn seed(cell: u64, trial: u64) -> u64 {
 // ── strips ───────────────────────────────────────────────────────────────
 
 /// The textbook settings for a strip sampled every `spacing` px.
-fn textbook(locate: Locate, select: EdgeSelect, spacing: f32) -> MeasureConfig {
+pub(super) fn textbook(locate: Locate, select: EdgeSelect, spacing: f32) -> MeasureConfig {
     MeasureConfig {
         threshold: 0.01,
         polarity: PolaritySelect::Any,
@@ -202,11 +202,11 @@ fn textbook(locate: Locate, select: EdgeSelect, spacing: f32) -> MeasureConfig {
     }
 }
 
-fn in_order(first: PolaritySelect, second: Option<PolaritySelect>) -> EdgeSelect {
+pub(super) fn in_order(first: PolaritySelect, second: Option<PolaritySelect>) -> EdgeSelect {
     EdgeSelect::StrongestInOrder(EdgeSequence { first, second })
 }
 
-const PARABOLIC: Locate = Locate::GradientPeak {
+pub(super) const PARABOLIC: Locate = Locate::GradientPeak {
     refine: SubpixRefine::Parabolic3,
 };
 
