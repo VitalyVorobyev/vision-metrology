@@ -60,8 +60,8 @@ vision-metrology = { version = "0.1", default-features = false, features = ["mat
 
 ## Importing
 
-`use vision_metrology::prelude::*;` brings in the working set, including `vm-primitives`'
-own prelude. Every name also lives at its module path, for example
+`use vision_metrology::prelude::*;` brings in the working set, including the
+`vm-primitives` images, geometry, edge detectors and pyramid. Every name also lives at its module path, for example
 `vision_metrology::contour::ContourGraph`. The most-used `vm-primitives` names (`Image`,
 `Edge2DDetector`, `Pyramid`, geometry) are re-exported at this crate's root. The whole lower
 crate is reachable as `vision_metrology::vm_primitives`.

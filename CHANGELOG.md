@@ -270,6 +270,11 @@ are relative to 0.1.0.
 - **Breaking:** `MetrologyFit::{rms, max_dev, n_used}` are removed; they repeated
   `MetrologyResult::{rms, max_dev, n_used}`. Read the residuals off the result, or off
   the matched `Fit` (`MetrologyFit::Circle(f) => f.rms`).
+- **Breaking:** the `vision-metrology` prelude is an explicit list, with no glob of the
+  `vm-primitives` prelude. `DirectionField` leaves both preludes (import
+  `vm_primitives::edge::DirectionField`), and `corr::{find, find_topk, displacement}` leave
+  it (call them by module path). It gains `MeasureRect`, `MeasureStrip`, `EdgeSequence`,
+  `ScaleHint`, `ScaleInvariantConfig` and `component_stats`.
 - Internal: `measure` holds two crate-private numerical cores (ADR-0020). One is an exact
   layered min-path with max-marginals, for the coupled two-boundary extraction and the
   bead-end rim. The other is a robust Whittaker smoother, on which `BeadTracker`'s
