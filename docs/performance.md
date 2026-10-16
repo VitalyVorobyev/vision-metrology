@@ -950,32 +950,34 @@ support; foreground is dilated by 3 px. Caller preprocessing uses masked normali
 sigma 1/4 px; registration uses the native estimator defaults. Source images and
 annotations are not distributed.
 
-| Split / run | Accepted / pairs | Coverage (before) | Closure median / p95 px (p95 before) | Python estimate median (ms) |
+| Split / run | Accepted / pairs | Coverage (before; at 0.06 px) | Closure median / p95 px (p95 before; at 0.06 px) | Python estimate median (ms) |
 |---|---|---|---|---|
-| development A | 149 / 484 | 30.8% (58.7%) | 0.0103 / 0.0316 (0.0398) | 3.55 |
-| development B | 106 / 546 | 19.4% (59.9%) | 0.0254 / 0.2740 (0.3112) | 3.30 |
-| development C | 23 / 139 | 16.5% (50.4%) | 0.0241 / 0.0241 (0.0753) | 3.45 |
-| development D | 7 / 259 | 2.7% (18.1%) | 0.0148 / 0.0334 (0.1383) | 2.18 |
-| held out E | 10 / 197 | 5.1% (52.8%) | 0.0182 / 0.0941 (0.0331) | 3.92 |
-| held out F | 10 / 237 | 4.2% (6.8%) | 0.0666 / 0.1499 (0.2079) | 1.37 |
+| development A | 265 / 484 | 54.8% (58.7%; 30.8%) | 0.0102 / 0.0386 (0.0398; 0.0316) | 3.24 |
+| development B | 205 / 546 | 37.5% (59.9%; 19.4%) | 0.0243 / 0.2667 (0.3112; 0.2740) | 2.88 |
+| development C | 63 / 139 | 45.3% (50.4%; 16.5%) | 0.0230 / 0.0321 (0.0753; 0.0241) | 2.99 |
+| development D | 20 / 259 | 7.7% (18.1%; 2.7%) | 0.0147 / 0.1296 (0.1383; 0.0334) | 1.87 |
+| held out E | 54 / 197 | 27.4% (52.8%; 5.1%) | 0.0157 / 0.0318 (0.0331; 0.0941) | 3.68 |
+| held out F | 15 / 237 | 6.3% (6.8%; 4.2%) | 0.0782 / 0.1458 (0.2079; 0.1499) | 1.35 |
 
-"Before" is the fixed 0.5 px regional limit and the previous solver, on the same inputs;
-the regional check is now the covariance-normalized `RegionCheck` with its defaults
-(registration calibration, below). Coverage counts every pair, including camera handovers. Closure statistics include only
+"Before" is the fixed 0.5 px regional limit and the previous solver, on the same inputs.
+The regional check is now the covariance-normalized `RegionCheck` with its default
+`bias_floor_px` of 0.1 px, a tolerance chosen by the user; "at 0.06 px" is the
+calibrated minimum floor (registration calibration, below). E and F ran once at each
+floor, with the settings frozen. Coverage counts every pair, including camera handovers. Closure statistics include only
 pairs accepted in both directions. Python estimate times include image/mask conversion
 but exclude I/O, mask preparation and filtering; those preparation costs are separately
 reported by the evaluator. Their p95 can exceed the eventual 5 ms online budget.
 
 The failure counts (model mismatch / ambiguity / refinement budget / camera handover)
-are 274/60/1/0, 425/5/9/1, 114/2/0/0, 249/3/0/0, 185/0/0/2 and 133/93/0/1 in table
+are 158/60/1/0, 326/5/9/1, 74/2/0/0, 236/3/0/0, 141/0/0/2 and 128/93/0/1 in table
 order (before: 103/60/37/0, 147/5/66/1, 67/2/0/0, 204/3/5/0, 89/0/2/2 and 126/93/1/1).
 Low coverage is a material limitation: translation alone does not cover these runs. Most
 regional disagreement here is a real departure from translation, not noise (below). Even accepted estimates have
 nonzero closure, and local covariance does not account for accumulated drift. Similarity
 registration and anchored sequence consistency need separate validation.
 
-Median distances to another estimator's saved raw motion estimates are 0.026, 0.074,
-0.050, 0.083, 0.015 and 0.076 px. Those saved estimates are generated comparisons,
+Median distances to another estimator's saved raw motion estimates are 0.024, 0.074,
+0.047, 0.065, 0.020 and 0.153 px. Those saved estimates are generated comparisons,
 not independent motion ground truth. Blank differences give foreground support;
 precise bead boundaries still come from original bead images.
 
@@ -991,9 +993,13 @@ and local wall measurements. No image or annotation artifacts are committed.
 ## Registration calibration: the regional check
 
 Measured 2026-10-16. The regional check compares independently refined quadrants by a
-covariance-normalized χ² (`RegionCheck { max_chi2, bias_floor_px }`; translation 13.8,
-similarity 18.5, both 0.06 px; [registration.md](registration.md)). False rejects are
-`ModelMismatch` results of motions the model represents exactly.
+covariance-normalized χ² (`RegionCheck { max_chi2, bias_floor_px }`; translation 13.8 and
+0.1 px, similarity 18.5 and 0.06 px; [registration.md](registration.md)). False rejects
+are `ModelMismatch` results of motions the model represents exactly. 0.06 px is the
+calibrated minimum floor for both estimators; translation's default 0.1 px is a
+tolerance above it, chosen by the user after the private results, and the translation
+rows below were re-run at it (the HPatches test split included, as a tolerance decision
+rather than tuning).
 
 ### Synthetic false rejects
 
@@ -1006,13 +1012,13 @@ of read noise: it reproduces the development sequences' median formal translatio
 (about 0.007 px against 0.005–0.017 px). 1000 trials per cell after (seed 2; the
 defaults were chosen on seed 1), 400 before.
 
-| Texture / noise / preprocessing | Translation before → after | Similarity before → after |
+| Texture / noise / preprocessing | Translation before → after (at 0.06 px) | Similarity before → after |
 |---|---|---|
-| 4 DN / 2 DN / DoG | 0.0% → 0.0% | 0.3% → 0.0% |
-| **4 DN / 4 DN / DoG (stated)** | **0.0% → 0.1%** | **37.2% → 0.0%** |
-| 4 DN / 8 DN / DoG | 0.3% → 17.4% | 93.8% → 8.5% |
-| 12 DN / 1 DN / none | 0.0% → 0.0% | 0.0% → 0.0% |
-| 12 DN / 4 DN / none | 0.0% → 0.7% | 4.8% → 0.4% |
+| 4 DN / 2 DN / DoG | 0.0% → 0.0% (0.0%) | 0.3% → 0.0% |
+| **4 DN / 4 DN / DoG (stated)** | **0.0% → 0.0% (0.1%)** | **37.2% → 0.0%** |
+| 4 DN / 8 DN / DoG | 0.3% → 4.5% (17.4%) | 93.8% → 8.5% |
+| 12 DN / 1 DN / none | 0.0% → 0.0% (0.0%) | 0.0% → 0.0% |
+| 12 DN / 4 DN / none | 0.0% → 0.2% (0.7%) | 4.8% → 0.4% |
 
 The local covariance assumes independent residuals; after a band-pass they are
 correlated, so at heavier noise the covariance is optimistic and false rejects grow
@@ -1021,7 +1027,7 @@ trials (100 before):
 
 | Departure | Rejected |
 |---|---|
-| rotation 0.001 / 0.002 / 0.003 / 0.005 / 0.01 rad, translation | 20% / 100% / 100% / 100% / 100% (0% / 3% / 68% / 100% / 100%) |
+| rotation 0.001 / 0.002 / 0.003 / 0.005 / 0.01 rad, translation | 0.5% / 36% / 100% / 100% / 100% (0% / 3% / 68% / 100% / 100%; at 0.06 px 20% / 100% / 100% / 100% / 100%) |
 | anisotropic scale ±0.1 / 0.2 / 0.3 / 0.5 / 1%, similarity | 0% / 0.5% / 8.5% / 98.5% / 100% (43% / 72% / 95% / 100% / –) |
 
 Before, similarity rejected small anisotropy only because it rejected nearly everything at
@@ -1034,19 +1040,20 @@ split by sequence (`tools/datasets/splits/hpatches.json`): 35 development sequen
 (17 `i_`, 18 `v_`) tuned the similarity floor (0.035 → 0.06 px); the 81 test sequences
 (40 `i_`, 41 `v_`) ran once with the settings frozen. Crops of 320×97 on a 194×388 px
 grid of image 1, against images 2–6; masked DoG σ 1/4 px. Rates are of the pairs that
-reached the regional check. Test split, after (before):
+reached the regional check. Test split, after (before); translation at 0.06 px in
+brackets:
 
 | Pairs | Model | `i_` | `v_` |
 |---|---|---|---|
-| self, known motion: false rejects | translation | 0.86% (0.10%) | 0.38% (0.08%) |
+| self, known motion: false rejects | translation | 0.45% (0.10%) [0.86%] | 0.19% (0.08%) [0.38%] |
 | self, known motion: false rejects | similarity | 0.55% (2.9%) | 0.92% (2.8%) |
-| self, + 2 DN noise: false rejects | translation | 6.3% (2.1%) | 1.4% (0.4%) |
+| self, + 2 DN noise: false rejects | translation | 2.8% (2.1%) [6.3%] | 0.46% (0.4%) [1.4%] |
 | self, + 2 DN noise: false rejects | similarity | 5.8% (21.5%) | 2.0% (8.7%) |
-| self, + 0.01 rad rotation: rejected | translation | 99.7% (99.4%) | 100% (99.8%) |
+| self, + 0.01 rad rotation: rejected | translation | 99.4% (99.4%) [99.7%] | 100% (99.8%) [100%] |
 | self, + 0.5% anisotropic scale: rejected | similarity | 83.8% (94.7%) | 79.0% (91.4%) |
-| rectified through H, + 0.01 rad rotation: rejected | translation | 98.3% | 98.9% |
+| rectified through H, + 0.01 rad rotation: rejected | translation | 97.7% [98.3%] | 98.8% [98.9%] |
 | rectified through H, + 0.5% anisotropic scale: rejected | similarity | 82.7% | 92.3% |
-| rectified through H, known motion: rejected | translation | 64.1% (34.8%) | 92.0% (73.0%) |
+| rectified through H, known motion: rejected | translation | 44.8% (34.8%) [64.1%] | 82.0% (73.0%) [92.0%] |
 | rectified through H, known motion: rejected | similarity | 49.8% (75.3%) | 70.9% (91.7%) |
 
 Self pairs (about 2 000–2 600 per row) resample image 1 by the known map: real texture, exact
@@ -1056,7 +1063,8 @@ real illumination (`i_`) or viewpoint (`v_`) change, but the homography's own er
 crop scale is in the truth. With the check off, accepted rectified translations are
 0.43 (`i_`) and 0.70 px (`v_`) from it at the median, so those rejections are mostly
 real disagreement rather than false rejects. On the development split the self-pair
-false rejects are 0.53% / 0.30% (translation) and 0.90% / 0.89% (similarity).
+false rejects are 0.36% / 0.30% (translation; 0.53% / 0.30% at 0.06 px) and
+0.90% / 0.89% (similarity).
 
 ### Private sequences: what the regional disagreement is
 
@@ -1070,11 +1078,11 @@ rotation-like part, about 1 mrad, correlates 0.5–0.6 with the similarity estim
 angle. With the check off, similarity's chained steps disagree with direct anchors by
 0.79–2.0 px median per eight steps.
 
-The calibrated test therefore rejects more on these strips, and reciprocal closure
-improves (table above). A larger floor tolerates more model error: with
-`bias_floor_px` 0.1 the development coverage is 54.8%, 37.5%, 45.3% and 7.7%, with closure
-p95 0.039, 0.267, 0.032 and 0.130 px (development only; not run on E/F). That is a
-tolerance choice, not a calibration (backlog).
+At the calibrated minimum floor the test therefore rejects much more on these strips
+than the old check: translation coverage at 0.06 px is 30.8%, 19.4%, 16.5% and 2.7% (E
+5.1%, F 4.2%). The default 0.1 px tolerates more of that model error, close to the old
+limit, with closure p95 no worse than before on A–F (table above). That is a tolerance
+choice, not a calibration (backlog).
 
 ### Convergence
 
@@ -1131,7 +1139,9 @@ The following compares the two operators using identical prepared inputs, with t
 calibrated regional check; "before" is the previous check (corner extrapolation, fixed
 0.5 px) on the same inputs. Sequences A–F keep their development/held-out split, camera
 groups and masks, and E and F ran once with the settings frozen. The raw multi-strip
-sequence G was not re-evaluated in this calibration.
+sequence G has 141 frames, with each of its three strips evaluated independently using the
+explicit caller-selected valid texture ROI x/y/w/h = 5/5/100/85. It has no camera groups,
+foreground mask, blank pair or reference curve; there is no invented bead seed.
 
 Native acceptance is distinct from caller-owned sequence support. Sequence steps require
 accepted reverse registration and at most 0.25 px maximum corner closure. Anchors obey the
@@ -1140,14 +1150,15 @@ Camera handover, registration or reciprocity loss breaks composition. Failed con
 stay unavailable. The closure column reports all native estimates accepted in both
 directions, including those withheld by the sequence gate.
 
-| Run | Translation accepted | Similarity accepted / pairs (before) | Reciprocal sequence steps (before) | Closure samples; median / p95 px (before) | Python estimate median ms |
+| Run | Translation accepted (before) | Similarity accepted / pairs (before) | Reciprocal sequence steps (before) | Closure samples; median / p95 px (before) | Python estimate median ms |
 |---|---|---|---|---|---|
-| A | 149 | 246 / 484 (53) | 190 (20) | 209; 0.040 / 0.379 (22; 0.099 / 0.268) | 6.91 |
-| B | 106 | 205 / 546 (68) | 160 (31) | 179; 0.069 / 0.381 (32; 0.077 / 0.162) | 7.32 |
-| C | 23 | 3 / 139 (0) | 1 (0) | 1; 0.014 / 0.014 (0) | 7.16 |
-| D | 7 | 18 / 259 (10) | 10 (2) | 10; 0.060 / 0.178 (3; 0.201 / 1.401) | 4.96 |
-| E | 10 | 3 / 197 (9) | 3 (2) | 3; 0.099 / 0.196 (2; 0.120 / 0.183) | 7.77 |
-| F | 10 | 12 / 237 (6) | 1 (1) | 2; 0.206 / 0.377 (1; 0.157) | 3.01 |
+| G | 326 (289) | 255 / 420 (147) | 213 (118) | 232; 0.089 / 0.287 (124; 0.069 / 0.237) | 2.02 |
+| A | 265 (284) | 246 / 484 (53) | 190 (20) | 209; 0.040 / 0.379 (22; 0.099 / 0.268) | 6.91 |
+| B | 205 (327) | 205 / 546 (68) | 160 (31) | 179; 0.069 / 0.381 (32; 0.077 / 0.162) | 7.32 |
+| C | 63 (70) | 3 / 139 (0) | 1 (0) | 1; 0.014 / 0.014 (0) | 7.16 |
+| D | 20 (47) | 18 / 259 (10) | 10 (2) | 10; 0.060 / 0.178 (3; 0.201 / 1.401) | 4.96 |
+| E | 54 (104) | 3 / 197 (9) | 3 (2) | 3; 0.099 / 0.196 (2; 0.120 / 0.183) | 7.77 |
+| F | 15 (16) | 12 / 237 (6) | 1 (1) | 2; 0.206 / 0.377 (1; 0.157) | 3.01 |
 
 On A and B similarity now accepts more pairs than translation, and many more than before;
 its closure p95 is worse than before there. On the pairs accepted both before and after,
@@ -1155,8 +1166,16 @@ A's p95 is 0.309 → 0.422 px (16 pairs) and B's 0.163 → 0.165 px (21); the ne
 pairs' p95 is 0.38 px on both. Similarity's closure is a corner distance over the whole
 strip, translation's a shift distance, so the two columns do not compare directly.
 
+On G, translation accepts 326 of 420 pairs (289 before), and its closure p95 widens
+from 0.064 to 0.146 px. On the 259 pairs accepted both before and after it is
+0.065 → 0.069 px; the 61 newly accepted pairs, 38 of which used to fail refinement,
+carry a p95 of 0.24 px. Pairs that converge only slowly are lower-quality evidence, even
+when the regional check accepts them. G similarity's closure p95 also widens
+(0.237 → 0.287 px) as its coverage rises from 35.0% to 60.7%.
+
 | Run | Model mismatch | Ambiguity | Low texture | Refinement | Search bound | Handover |
 |---|---|---|---|---|---|---|
+| G | 7 (101) | 76 | 74 (89) | 6 (5) | 2 | 0 |
 | A | 156 (352) | 60 | 21 (17) | 1 (2) | 0 | 0 |
 | B | 288 (411) | 11 | 0 | 41 (55) | 0 | 1 |
 | C | 134 (137) | 2 | 0 | 0 | 0 | 0 |
@@ -1164,7 +1183,8 @@ strip, translation's a shift distance, so the two columns do not compare directl
 | E | 192 (186) | 0 | 0 | 0 | 0 | 2 |
 | F | 126 (123) | 93 | 0 | 5 (14) | 0 | 1 |
 
-A–F provide no reciprocally supported anchor correction. Closures and generated cached
+G provides three reciprocally supported anchor corrections (three before); A–F provide
+none. Closures and generated cached
 estimates are not independent motion truth. This is exploratory validation; it does not
 establish accuracy on private pixels or a production reference-learning pipeline, and
 similarity stays experimental (backlog).

@@ -30,15 +30,15 @@ deleted here.
 
 ## Measurement
 
-- **Translation's calibrated regional check halves coverage on the bead strips.** On the
-  private development sequences most regional disagreement is real: it far exceeds the
-  local covariance, part of it is a rotation that the similarity fit absorbs, and part is
-  neither. The covariance-normalized test, calibrated to about 1% false rejects, is
-  stricter than the old fixed 0.5 px limit, so translation coverage falls while
-  reciprocal closure improves. A larger `bias_floor_px` restores coverage at the cost of
-  accepting more model error; that is a caller's tolerance, not a calibration, and the
-  measured alternative is in `docs/performance.md`. The likely remedy is similarity
-  where rotation is the departure, once it is promoted.
+- **Translation's default bias floor is a tolerance, not a calibration.** On the private
+  strips most regional disagreement is real model error: it far exceeds the local
+  covariance, part of it is a rotation that the similarity fit absorbs, and part is
+  neither. The calibrated minimum floor (at most 1% false rejects of true translations)
+  halved coverage; the default, chosen by the user, tolerates more, close to the old fixed
+  limit, and coverage is still below the old check's on some sequences
+  (`docs/performance.md`). Pairs that used to fail refinement and now converge are
+  accepted with wider closure. The remedy for rotation is similarity, once promoted; for
+  the rest, a model of the departure, not a looser gate.
 - **The regional covariance ignores a caller's band-pass.** Residuals of DoG-filtered
   images are spatially correlated, so the local covariance is optimistic by a roughly
   constant factor; the bias floor covers it at the stated noise, but false rejects grow
