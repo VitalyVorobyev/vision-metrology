@@ -921,7 +921,7 @@ The accuracy suite pins the worst seed: translation |bias| 0.0002 mm and σ 0.00
 `tools/sequence_bench` presets `rig-bridged`, `rig-gross` and `rig-single-view`, seed 86,
 measured 2026-10-16 on `main` at 2d3294b with this operator, by
 `tools/sequence_bench/rig_eval.py`. The settings were frozen before the run:
-`TranslationEstimator` defaults except `max_region_error=None` (the substrate rotates
+`TranslationEstimator` defaults except `region_check=None` (the substrate rotates
 0.48° per frame on the arc, so one view's regions disagree by design), the shift lifted
 at the centroid of the previous frame's registration mask, and `RigPoseEstimator`
 defaults anchored at the given frame-0 pose. Errors are per-step increment errors over
@@ -938,6 +938,10 @@ of each lift point, the accepted shifts err by 0.002 ± 0.037 px in x and 0.052 
 in y (111 shifts, rig-bridged), and the 1.2% path shortfall follows from it. Under that
 error, the steps' residual scale has median 1.00 at the default 0.05 px shift floor; the
 registration's own covariances (σ 0.003–0.005 px) would put every view 10–50σ off.
+Re-run with the registration-calibration solver (frozen observations, 30 iterations), the
+same presets move by at most 0.004 su in translation bias and σ and 0.002° in rotation, the
+accepted shifts err by 0.004 ± 0.038 px in x and 0.054 ± 0.034 px in y, and the path
+ratios are unchanged (0.987–0.988).
 
 ## Real data: masked translation
 
