@@ -254,6 +254,11 @@ are relative to 0.1.0.
   other σ. It now compares σ exactly and refills its kernel buffers in place, so a caliper
   moved across strips of slightly different spacing no longer allocates, and a reused
   detector matches a fresh one bit for bit.
+- **`cargo test --release` failed the caliper bit pin** on aarch64 macOS. An optimised
+  build lowers a `sin`/`cos` pair to one `sincos` call, which differs from separate
+  `sinf`/`cosf` by an ulp on some inputs. The pin now holds one hash per build profile and
+  documents what it guarantees. A new CI job runs the workspace tests in release on Linux,
+  Windows and macOS.
 
 ### Lab
 

@@ -4,12 +4,24 @@
 //! every reported edge (position, `t`, amplitude, polarity) or the rejection reason. A
 //! refactor that is meant to change nothing must keep every hash.
 //!
-//! The `f32` transcendental functions (`sin_cos`, `exp`) are not bit-identical across
-//! platforms, so the hashes are only compared on the platform they were captured on
-//! (aarch64 macOS); elsewhere the cases still run.
+//! What the pin guarantees: the same bits from the same source, **on one platform and in
+//! one build profile**. It does not claim the bits are portable, and it says nothing about
+//! accuracy; the accuracy suites cover that.
+//!
+//! - *Platform.* The `f32` transcendental functions (`sin_cos`, `exp`) come from the
+//!   platform's libm and are not bit-identical across platforms. The hashes are compared
+//!   only on the platform they were captured on (aarch64 macOS); elsewhere the cases
+//!   still run.
+//! - *Profile.* An optimised build lowers a `sin`/`cos` pair on one argument to a single
+//!   `sincos` call. On macOS that call differs from separate `sinf`/`cosf` by an ulp on a
+//!   few percent of inputs, so a few cases move by an ulp between profiles. The pin
+//!   therefore holds one hash per profile, chosen by `debug_assertions`: the `dev`/`test`
+//!   profile (opt-level 0), and the `release`/`bench` profile. A custom profile that pairs
+//!   debug assertions with optimisation, or the reverse, matches neither.
 //!
 //! To print the current hashes (for a change that is *meant* to move results), run
-//! `CALIPER_PIN_PRINT=1 cargo test -p vision-metrology --test caliper_bits -- --nocapture`.
+//! `CALIPER_PIN_PRINT=1 cargo test -p vision-metrology --test caliper_bits -- --nocapture`,
+//! then the same with `--release`, and update both constants.
 
 use vision_metrology::measure::{
     Caliper, EdgeSelect, MeasureArc, MeasureConfig, MeasureEdge, MeasureRadial, MeasureRect,
@@ -428,12 +440,23 @@ fn caliper_output_is_bit_identical_to_the_pinned_implementation() {
     }
     assert_eq!(cases.len(), EXPECTED_CASES, "the case list itself changed");
     if cfg!(all(target_arch = "aarch64", target_os = "macos")) {
+        let (expected, profile) = if cfg!(debug_assertions) {
+            (EXPECTED_COMBINED_DEBUG, "debug")
+        } else {
+            (EXPECTED_COMBINED_RELEASE, "release")
+        };
         assert_eq!(
-            all.0, EXPECTED_COMBINED,
-            "caliper output changed; rerun with CALIPER_PIN_PRINT=1 to see which cases"
+            all.0, expected,
+            "caliper output changed in the {profile} profile; rerun with CALIPER_PIN_PRINT=1 \
+             to see which cases"
         );
     }
 }
 
 const EXPECTED_CASES: usize = 2132;
-const EXPECTED_COMBINED: u64 = 0x5e9a_2663_38b6_7136;
+/// The combined hash at opt-level 0 (`cargo test`).
+const EXPECTED_COMBINED_DEBUG: u64 = 0x5e9a_2663_38b6_7136;
+/// The combined hash in an optimised build (`cargo test --release`). Two cases differ
+/// from the debug build, `radial/0.9/10/0.45` and `model/apply`, both from one-ulp
+/// `sincos` differences in the sample points.
+const EXPECTED_COMBINED_RELEASE: u64 = 0x56eb_bb4c_19b6_8050;
