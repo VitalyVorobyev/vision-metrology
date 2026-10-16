@@ -588,7 +588,7 @@ def test_caliper_derivative_and_refinement_options_find_the_same_step():
     """Every operator and refinement must put an ideal step between the two pixels."""
     img = np.zeros((64, 64), dtype=np.uint8)
     img[:, 30:] = 200
-    for derivative in ("dog", "smooth_central"):
+    for derivative in ("dog", "smooth_central", "continuous"):
         for refine in ("parabolic", "gaussian"):
             cfg = vm.MeasureConfig(
                 derivative=derivative,
@@ -602,6 +602,41 @@ def test_caliper_derivative_and_refinement_options_find_the_same_step():
         vm.Locate.gradient_peak(refine="cubic")
     with pytest.raises(ValueError):
         vm.MeasureConfig(derivative="sobel")
+
+
+def test_profile_sampler_samples_a_ramp_and_honours_the_mask():
+    """A ramp's derivative is its slope along each normal; masked or off-image support
+    is invalid and reads NaN."""
+    ys, xs = np.mgrid[0:40, 0:40].astype(np.float32)
+    ramp = (3.0 * xs - 2.0 * ys + 100.0).astype(np.float32)
+    points = np.array([[20.0, 20.0], [10.0, 25.0], [1.0, 20.0]], dtype=np.float32)
+    normals = np.array([[2.0, 0.0], [0.0, 1.0], [1.0, 0.0]], dtype=np.float32)
+    offsets = np.array([-1.0, 0.0, 1.5], dtype=np.float32)
+    sampler = vm.ProfileSampler(sigma=1.0)
+    value, derivative, valid = sampler.sample(ramp, points, normals, offsets)
+    assert value.shape == derivative.shape == valid.shape == (3, 3)
+    assert valid[:2].all() and not valid[2].any(), valid
+    np.testing.assert_allclose(derivative[0], 3.0, atol=1e-4)
+    np.testing.assert_allclose(derivative[1], -2.0, atol=1e-4)
+    np.testing.assert_allclose(value[0], 3.0 * (20.0 + offsets) - 40.0 + 100.0, atol=1e-3)
+    assert np.isnan(value[2]).all() and np.isnan(derivative[2]).all()
+
+    mask = np.full((40, 40), 255, dtype=np.uint8)
+    mask[20, 22] = 0
+    _, _, valid = sampler.sample(ramp, points[:1], normals[:1], offsets, mask=mask)
+    assert not valid.any(), "every sample of station 0 reaches the masked pixel"
+
+    # Every image dtype gives the same samples.
+    for img in (ramp.astype(np.uint16), ramp.astype(np.uint8)):
+        _, d, _ = sampler.sample(img, points[:2], normals[:2], offsets)
+        np.testing.assert_allclose(d, derivative[:2], atol=1e-4)
+
+    with pytest.raises(ValueError):
+        vm.ProfileSampler(sigma=0.0)
+    with pytest.raises(ValueError):
+        sampler.sample(ramp, points, normals[:2], offsets)
+    with pytest.raises(ValueError):
+        sampler.sample(ramp, points[:1], np.zeros((1, 2), dtype=np.float32), offsets)
 
 
 def test_caliper_dtype_dispatch_agrees_on_a_synthetic_edge():
