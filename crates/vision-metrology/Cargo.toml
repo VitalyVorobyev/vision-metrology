@@ -50,8 +50,8 @@ contour = []
 ## inter-frame subpixel `displacement`, over the `corrmatch` engine.
 corr = ["dep:corrmatch"]
 ## Experimental: local masked similarity registration (`corr::SimilarityEstimator`,
-## `SimilarityConfig`, `Similarity`). Outside the semver promise until its regional
-## consistency check is recalibrated for real data. Implies `corr`.
+## `SimilarityConfig`, `Similarity`). Outside the semver promise until the evidence
+## supports promotion (backlog, Measurement). Implies `corr`.
 corr-experimental = ["corr"]
 ## Robust line / circle / ellipse fitting with reported residuals.
 fit = []

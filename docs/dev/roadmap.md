@@ -65,8 +65,9 @@ substrate is flagged, not absorbed as motion.
   phases, each approved on its own. Done: phase 1 (scaffolding and dead surface) and
   phase 2 (honest structure: private model levels and stored-model types, the model
   config's `tuning`, explicit preludes and facade root). Left: phase 3 (`#[non_exhaustive]`,
-  common traits, the registration status and region-check shapes, after registration
-  calibration settles `TranslationConfig`) and phase 4 (the Python surface).
+  common traits, the registration status and region-check shapes; registration
+  calibration has settled `TranslationConfig` with `region_check: Option<RegionCheck>`)
+  and phase 4 (the Python surface).
 - CHANGELOG cut, versions 0.2.0, install sections point at crates.io and PyPI.
 - crates.io's first publish is manual (trusted publishing needs an existing crate). Then
   configure the trusted publishers (crates.io: both crates, `release-crates.yml`,
@@ -76,33 +77,6 @@ substrate is flagged, not absorbed as motion.
 **Accept:** `vm-primitives` and `vision-metrology` 0.2.0 on crates.io with docs.rs builds;
 the `vision-metrology` 0.2.0 wheel on PyPI imports and runs the README quick start on all
 four targets.
-
-### Registration calibration, `planned` ([#81])
-
-The similarity design is in [registration-stage2.md](registration-stage2.md).
-- Diagnose first. Synthetic: a true translation or similarity on DoG-band texture at
-  320×97 with realistic noise, measuring the current false-reject rate. Private: on
-  development sequences A and B, disable the regional check and compare `region_error`
-  with reciprocal closure and anchor corrections.
-- Replace the fixed-px regional threshold with a covariance-normalized test.
-  Translation: χ² on pairwise regional shift differences, from the summed regional
-  covariances plus a model-bias floor in px². Similarity: compare each regional fit with
-  the global one at that region's own centroid and extent, without extrapolation.
-  Config: `region_check: Option<RegionCheck { max_chi2, bias_floor_px }>`.
-- Convergence: freeze the observation set at the start of refinement, fix the Huber scale
-  after the first iteration, and test convergence on the motion step only. Reproduce the
-  failure first with a synthetic overlap/mask fixture.
-- Give the similarity initializer a search-only path.
-- Public real data: HPatches, registered with its split by sequence
-  ([dataset registry](../../tools/datasets/README.md)). Its illumination sequences, with
-  a known identity homography, for false rejects on real texture; its viewpoint pairs for
-  rejection of an observable rotation or affine.
-
-**Accept:** synthetic false rejects ≤ 1% at the stated noise; an observable 0.01 rad
-rotation (translation) and a mild affine (similarity) are still rejected; the public
-numbers published with the split and the settings frozen; before/after coverage on the
-development sequences, with reciprocal-closure p95 no worse; the held-out sequences
-reported with the settings frozen; benches updated.
 
 ---
 
@@ -294,7 +268,6 @@ Mosaic works on the desktop.
 [#75]: https://github.com/VitalyVorobyev/vision-metrology/issues/75
 [#78]: https://github.com/VitalyVorobyev/vision-metrology/issues/78
 [#79]: https://github.com/VitalyVorobyev/vision-metrology/issues/79
-[#81]: https://github.com/VitalyVorobyev/vision-metrology/issues/81
 [#85]: https://github.com/VitalyVorobyev/vision-metrology/issues/85
 [#86]: https://github.com/VitalyVorobyev/vision-metrology/issues/86
 [#89]: https://github.com/VitalyVorobyev/vision-metrology/issues/89

@@ -12,8 +12,8 @@ use vm_primitives::{Error, ImageView, Pixel, Similarity2f, Vec2f, similarity_par
 
 /// Reusable local estimator of rotation, uniform scale and translation.
 ///
-/// **Experimental** (feature `corr-experimental`): outside the semver promise until its
-/// regional consistency check is recalibrated for real data. Its API may change or be
+/// **Experimental** (feature `corr-experimental`): outside the semver promise until the
+/// evidence supports promotion. Its API may change or be
 /// removed in any release.
 ///
 /// Maps previous pixel centres into current coordinates. Mask-safe prediction warping
