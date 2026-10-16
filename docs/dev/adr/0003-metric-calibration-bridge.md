@@ -17,7 +17,7 @@ numbers with the right shape and wrong values, not a crash.
 
 - **Offline/runtime split.** `calibration-rs` stays the offline calibration system. `metric`
   mirrors only the parameter types (`CameraModel`, `Pose3`, `Plane3`, `PlaneGrid`) on
-  nalgebra 0.35 and loads calibration-rs JSON exports. A golden-file test pins the import.
+  the workspace's nalgebra and loads calibration-rs JSON exports. A golden-file test pins the import.
 - **Millimetres throughout.** Every 3-D and plane quantity is in mm, and pixel quantities
   stay in pixels. Importers convert at the boundary. A format that documents no unit is
   interpreted at its importer, with the reasoning written next to the code.

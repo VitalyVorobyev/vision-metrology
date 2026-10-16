@@ -89,7 +89,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       # Keep in step with `rust-version` in the root Cargo.toml. corrmatch sets
-      # it (it needs 1.91); nalgebra 0.35 needs only 1.89.
+      # it (it needs 1.91); nalgebra needs at most 1.89 across its range.
       MSRV: 1.91.0
     steps:
       - name: Checkout
@@ -107,6 +107,72 @@ jobs:
       # pins this step back to stable and silently defeats the check.
       - name: Check
         run: cargo +${{ env.MSRV }} check --workspace --all-targets --all-features
+
+  nalgebra-min:
+    name: Lowest nalgebra (ubuntu)
+    runs-on: ubuntu-latest
+    env:
+      # The bottom of the `nalgebra` range in the root Cargo.toml (invariant 13).
+      # The committed Cargo.lock stays on the newest version, which every other
+      # job tests; this one rewrites the lock before building.
+      NALGEBRA_MIN: 0.34.0
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Pin nalgebra ${{ env.NALGEBRA_MIN }}
+        run: |
+          cargo update -p nalgebra --precise "$NALGEBRA_MIN"
+          cargo tree -i nalgebra --depth 0
+
+      - name: Lint
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace --all-features
+
+      - name: Docs
+        run: cargo doc --workspace --all-features --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+  downstream-smoke:
+    name: Downstream with calibration-rs (ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tools/downstream-smoke
+
+      # A standalone crate that depends on vision-metrology and on calibration-rs
+      # (nalgebra 0.34) together. check.sh resolves it from scratch, applies the
+      # unification recipe of invariant 13, fails unless one nalgebra is left, and
+      # runs a point round trip across both public APIs.
+      - name: Resolve, check for one nalgebra, and run
+        run: tools/downstream-smoke/check.sh
+
+      - name: Lint
+        working-directory: tools/downstream-smoke
+        run: |
+          cargo fmt --check
+          cargo clippy --all-targets -- -D warnings
 
   examples:
     name: Examples (ubuntu)

@@ -26,6 +26,8 @@ CI runs these and more:
 | Rust quality | fmt, clippy, test, doc |
 | Feature matrix | `cargo hack clippy` over each `vision-metrology` feature and the `vm-primitives` feature powerset |
 | MSRV | `cargo check --workspace --all-targets --all-features` on the `rust-version` toolchain of the root `Cargo.toml` |
+| Lowest nalgebra | clippy, test and doc after `cargo update -p nalgebra --precise 0.34.0`, the bottom of the supported range |
+| Downstream with calibration-rs | `tools/downstream-smoke/check.sh`: a standalone crate on `vision-metrology` and `vision-calibration-core` must resolve to one nalgebra and run |
 | Invariant numbering | `python3 tools/check-invariants.py` |
 | Examples | the self-asserting examples listed in `ci.yml` |
 | Python bindings | `pip install crates/vm-python`, then `pytest crates/vm-python/tests` and `pytest tools/registration_eval` |
@@ -61,6 +63,11 @@ pins day-to-day work to stable, and the MSRV job overrides it.
 allow-list for crates.io: sources, README, licence texts, benches and, for
 `vision-metrology`, the integration tests with fixtures under 64 KiB. The examples stay in
 the repository. Check a change with `cargo package -p vm-primitives -p vision-metrology --list`.
+
+**nalgebra.** The workspace accepts `>=0.34, <0.36` (ADR-0002), and `Cargo.lock` stays on
+the newest version. Code must compile against both ends: use only nalgebra API that 0.34
+has, and run the lowest-nalgebra job's `cargo update` locally when unsure. Do not commit
+that lock change.
 
 ## Python bindings
 
