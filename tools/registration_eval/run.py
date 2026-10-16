@@ -14,6 +14,7 @@ import vision_metrology as vm
 
 from anchors import corner_distance
 from manifest import Sequence
+from settings import describe_translation, translation_config
 
 FIELDS = ('shift', 'score', 'margin', 'support', 'residual_rms', 'residual_max',
           'gain', 'offset', 'covariance', 'regions', 'region_error', 'status')
@@ -59,8 +60,8 @@ def summary(rows):
     }
 
 
-def evaluate(sequence, stride, preprocess):
-    estimator = vm.TranslationEstimator()
+def evaluate(sequence, stride, preprocess, check=True):
+    estimator = vm.TranslationEstimator(translation_config(check))
     rows = []
     for frame in range(0, len(sequence)-1, stride):
         group = sequence.group(frame)
@@ -258,9 +259,13 @@ def main():
     parser.add_argument('--propagate', action='store_true')
     parser.add_argument('--max-frames', type=int, default=100)
     parser.add_argument('--preprocess', choices=('dog', 'none'), default='dog')
+    parser.add_argument('--region-check', choices=('on', 'off'), default='on',
+                        help='off reports the regional statistics without rejecting on them')
     args = parser.parse_args()
     if args.stride < 1 or args.max_frames < 1:
         parser.error('stride and max-frames must be positive')
+    if args.region_check == 'off' and args.propagate:
+        parser.error('propagation uses the regional check; --region-check off is for diagnosis')
     sequences = [Sequence(path) for path in args.manifest]
     if len({s.name for s in sequences}) != len(sequences):
         parser.error('sequence names must be unique')
@@ -273,14 +278,11 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     report = {'preprocessing': ('masked normalized DoG sigma 1/4 px' if args.preprocess == 'dog'
                                 else 'none'),
-              'configuration': 'TranslationConfig defaults', 'sequences': {}}
-    defaults = vm.TranslationConfig()
-    report['settings'] = {name: getattr(defaults, name) for name in
-                          ('search_radius', 'min_support', 'min_score', 'min_margin', 'max_region_error')}
-    report['settings']['tuning'] = {name: getattr(defaults.tuning, name) for name in
-                                   ('max_levels', 'iterations', 'tolerance', 'huber', 'min_texture')}
+              'configuration': 'TranslationConfig defaults', 'region_check': args.region_check,
+              'sequences': {}}
+    report['settings'] = describe_translation(translation_config(args.region_check == 'on'))
     for sequence in sequences:
-        evaluated = evaluate(sequence, args.stride, args.preprocess)
+        evaluated = evaluate(sequence, args.stride, args.preprocess, args.region_check == 'on')
         evaluated['split'] = sequence.split
         evaluated['provenance'] = sequence.provenance
         if args.propagate:
