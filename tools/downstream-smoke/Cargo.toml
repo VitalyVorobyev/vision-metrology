@@ -1,0 +1,21 @@
+# A downstream consumer that depends on this workspace and on calibration-rs
+# together. Both expose nalgebra types in their public APIs, so the build only
+# succeeds when the graph resolves to one nalgebra: the check behind the
+# supported range in invariant 13.
+#
+# Standalone on purpose: the empty `[workspace]` keeps it out of the root
+# workspace, so its lockfile and its nalgebra resolution are its own, as they
+# would be in a real downstream crate.
+[package]
+name = "downstream-smoke"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+vision-metrology = { path = "../../crates/vision-metrology", default-features = false, features = ["fit"] }
+# The crates.io release, as a downstream crate uses it (ADR-0002). Its solver
+# backends pin nalgebra 0.34; bump this when calibration-rs moves.
+vision-calibration-core = "0.9"

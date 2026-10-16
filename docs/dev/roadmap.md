@@ -74,18 +74,6 @@ substrate is flagged, not absorbed as motion.
 the `vision-metrology` 0.2.0 wheel on PyPI imports and runs the README quick start on all
 four targets.
 
-### A nalgebra range for downstream crates, `planned` ([#80])
-
-Crates that also depend on calibration-rs are held at nalgebra 0.34 by its solvers, so
-today they cannot depend on these crates at all. Declare `>=0.34, <0.36`, with a CI job
-that pins the lowest version, and a smoke crate that resolves both dependencies to one
-nalgebra.
-
-**Accept:** both versions green in clippy, tests and docs; invariant 13 and
-[ADR-0002](adr/0002-dependency-and-toolchain-policy.md) state the range and how it is
-tested. If the differences between versions make this impractical, ADR-0002 records it,
-and consumers use the wheel and versioned artifacts.
-
 ### Registration calibration, `planned` ([#81])
 
 The similarity design is in [registration-stage2.md](registration-stage2.md).
@@ -346,9 +334,10 @@ Mosaic works on the desktop.
 
 ## Later
 
-- **Direct `calibration-rs` dependency** once its solver chain shares our nalgebra, through
-  the range above or a move to 0.35. It replaces the `metric` mirror types
-  ([ADR-0003](adr/0003-metric-calibration-bridge.md)).
+- **Direct `calibration-rs` dependency.** It replaces the `metric` mirror types
+  ([ADR-0003](adr/0003-metric-calibration-bridge.md)). The nalgebra range already lets
+  the two share one nalgebra ([ADR-0002](adr/0002-dependency-and-toolchain-policy.md)),
+  but until calibration-rs's solver chain moves to 0.35 our own lock would sit on 0.34.
 - **A shared raster substrate.** Several sibling crates carry their own `ImageView`.
   Publishing `core::raster` as a common crate would end that, and is worth doing after the
   first release settles the API ([ADR-0004](adr/0004-core-raster-and-geometry.md)).
@@ -359,7 +348,6 @@ Mosaic works on the desktop.
 [#76]: https://github.com/VitalyVorobyev/vision-metrology/pull/76
 [#78]: https://github.com/VitalyVorobyev/vision-metrology/issues/78
 [#79]: https://github.com/VitalyVorobyev/vision-metrology/issues/79
-[#80]: https://github.com/VitalyVorobyev/vision-metrology/issues/80
 [#81]: https://github.com/VitalyVorobyev/vision-metrology/issues/81
 [#82]: https://github.com/VitalyVorobyev/vision-metrology/issues/82
 [#84]: https://github.com/VitalyVorobyev/vision-metrology/issues/84

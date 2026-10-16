@@ -224,10 +224,14 @@ are relative to 0.1.0.
 - **Breaking:** `Edge1DConfig` gains a `derivative` field (`Derivative1D`), and the
   parabolic peak offset is clamped to ±0.5 samples, the most a strict local maximum can
   produce (±1.0 in 0.1.0).
-- **Breaking:** `Point2f` / `Vec2f` are nalgebra 0.35 aliases (`Point2<f32>` /
+- **Breaking:** `Point2f` / `Vec2f` are nalgebra aliases (`Point2<f32>` /
   `Vector2<f32>`), so nalgebra is a dependency. `Vec2fExt` adds `perp`, `cross` and
   `normalized_or_zero`, which returns the zero vector for a zero input; nalgebra's
   `normalize` returns `NaN` there.
+- The crates accept nalgebra `>=0.34, <0.36`, so a crate that also uses calibration-rs
+  (nalgebra 0.34) can depend on them with one nalgebra in its graph. Cargo picks 0.35 for
+  a fresh lock; run `cargo update -p nalgebra@0.35.0 --precise 0.34.<n>` once to unify.
+  CI tests 0.34.0 and the newest 0.35, and builds such a downstream crate.
 - **Breaking:** `Error` is `#[non_exhaustive]` and adds `InsufficientData`, `Degenerate`
   and `InvalidConfig`.
 - The crates declare `rust-version = "1.91"`.

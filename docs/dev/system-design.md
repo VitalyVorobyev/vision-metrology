@@ -87,9 +87,11 @@ the list is contiguous and that every citation resolves.
 12. **Determinism.** No RNG in library code. Tests use synthetic fixtures, seeded if
     randomness is unavoidable. f32 sort ties are broken explicitly, e.g. `(−score, x, y)`.
 13. **Toolchain.** Edition 2024; the MSRV is `rust-version` in the root `Cargo.toml`;
-    nalgebra 0.35 is the workspace dependency. Linear algebra that nalgebra provides is
-    never re-implemented; a structured solve it lacks lives beside its callers, in the
-    module that owns them ([ADR-0002](adr/0002-dependency-and-toolchain-policy.md),
+    nalgebra is `>=0.34, <0.36`, so a downstream crate can share one nalgebra with
+    calibration-rs. `Cargo.lock` stays on the newest version, and CI tests both ends of
+    the range plus a downstream build with calibration-rs. Linear algebra that nalgebra
+    provides is never re-implemented; a structured solve it lacks lives beside its callers,
+    in the module that owns them ([ADR-0002](adr/0002-dependency-and-toolchain-policy.md),
     [ADR-0020](adr/0020-shared-path-and-smoother-cores.md)).
 14. **File size.** Soft cap of about 600 code lines per source file (tests excluded).
     Crossing it means splitting in the same change. Known offenders are listed in

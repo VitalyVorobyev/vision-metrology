@@ -2,10 +2,10 @@
 //!
 //! `metric` mirrors the parameter types a real calibration produces
 //! ([`PinholeIntrinsics`], [`BrownConrady5`], [`CameraModel`], [`Pose3`],
-//! [`Plane3`], [`PlaneGrid`]) on `nalgebra` 0.35, and turns them into pixel
+//! [`Plane3`], [`PlaneGrid`]) on `nalgebra`, and turns them into pixel
 //! ↔ millimetre conversions. `calibration-rs` remains the **offline**
-//! calibration system (it is pinned to nalgebra 0.34 and cannot be a direct
-//! dependency here); [`io`] imports its JSON exports.
+//! calibration system and is not a dependency here; [`io`] imports its JSON
+//! exports.
 //!
 //! ## Units: this module works in millimetres
 //! Every 3-D/plane quantity here (`Pose3` translations, `Plane3::d`,

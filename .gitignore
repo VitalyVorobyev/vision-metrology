@@ -32,3 +32,6 @@ lab/frontend/src-tauri/gen/schemas/
 # Private dataset adapters and their local term list (never tracked; see
 # tools/check-invariants.py).
 tools/private/
+
+# The downstream smoke crate resolves fresh in CI (tools/downstream-smoke/check.sh).
+tools/downstream-smoke/Cargo.lock
