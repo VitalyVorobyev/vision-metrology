@@ -88,8 +88,9 @@ the list is contiguous and that every citation resolves.
     randomness is unavoidable. f32 sort ties are broken explicitly, e.g. `(−score, x, y)`.
 13. **Toolchain.** Edition 2024; the MSRV is `rust-version` in the root `Cargo.toml`;
     nalgebra 0.35 is the workspace dependency. Linear algebra that nalgebra provides is
-    never re-implemented; a structured solve it lacks lives beside its only caller
-    ([ADR-0002](adr/0002-dependency-and-toolchain-policy.md)).
+    never re-implemented; a structured solve it lacks lives beside its callers, in the
+    module that owns them ([ADR-0002](adr/0002-dependency-and-toolchain-policy.md),
+    [ADR-0020](adr/0020-shared-path-and-smoother-cores.md)).
 14. **File size.** Soft cap of about 600 code lines per source file (tests excluded).
     Crossing it means splitting in the same change. Known offenders are listed in
     `backlog.md`, and `tools/check-invariants.py` fails on any other file over 600.
@@ -140,3 +141,4 @@ update its status and date. Do not append a contradicting one.
 | [0016](adr/0016-scope-what-we-do-not-build.md) | Scope: what this library deliberately does not build |
 | [0017](adr/0017-textbook-edge-location.md) | Textbook edge location and CaliperBench compatibility |
 | [0018](adr/0018-tracked-curves.md) | Tracked curves: a prior, two caliper stages and a regularised normal solve |
+| [0020](adr/0020-shared-path-and-smoother-cores.md) | The shared min-path and smoother cores stay inside `measure` |

@@ -79,6 +79,28 @@ Where the time goes, in the 3-pass case:
 - **A longer reach lengthens every tracking strip, and a gap costs as much as the bead.**
   The strips in a gap are sampled all the same.
 
+`measure`'s crate-private numerical cores (ADR-0020), measured 2026-10-16 on an Apple M4
+Pro (`benches/measure_numeric.rs`):
+
+| Operation | Time |
+|---|---|
+| robust Whittaker smoother, 1 000 samples, 1 + 5 Huber solves | 119 µs |
+| robust Whittaker smoother, 10 000 samples | 1.32 ms |
+| robust Whittaker smoother, 100 000 samples | 12.3 ms |
+| min-path, 300 layers × 65 × 21 cells × 2 planes, bands 8 and 2 | 3.31 ms |
+| min-path, 61 rays × 113 radii, band 8, ends pinned | 24.7 µs |
+
+- **The smoother is linear in its length.** It takes about 20 ns per sample and solve at
+  every size: 119, 132 and 123 ns per sample over its six solves. The bead tracker's own
+  solves are a few hundred samples long.
+- **The min-path is linear in its states.** It costs about 4 ns per state for the forward
+  pass, the backward pass and the backtrack together. Most of that is the band passes.
+- **The coupled state space is the prototype's.** It has a ±8 px reach on a ¼ px grid,
+  widths of 2–12 px on a ½ px grid, and present and absent planes. At 300 stations
+  it costs more than the tracker's whole 3-pass `track` call. ADR-0019 requires a bench
+  that shows the tracker's budget holds, so a smaller reach, a coarser grid or fewer
+  stations are its levers.
+
 ## Accuracy envelopes
 
 Masked translation, measured 2026-10-12: analytic f32 texture at nine subpixel shifts,

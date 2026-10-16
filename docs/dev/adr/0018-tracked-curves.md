@@ -65,7 +65,7 @@ bead-specific gates out of `Caliper`.
     `ℓ2` are suppressed.
   - Rejected stations have zero weight. `ρ` is `fit::RobustLoss`, applied by IRLS.
   - The system is symmetric pentadiagonal and is solved by a banded LDLᵀ in O(N)
-    (ADR-0002).
+    (ADR-0002): the robust smoother that `measure` shares (ADR-0020).
   - A curvature guard clips the offset window on the concave side, so no observation asks
     a station to cross its centre of curvature. The window gates evidence only. Folding
     is prevented by a step scale α ≤ 1:

@@ -1,7 +1,7 @@
 # ADR-0002: Dependency and toolchain policy
 
 - Status: Accepted
-- Date: 2026-10-06
+- Date: 2026-10-16
 
 ## Context
 
@@ -17,10 +17,11 @@ publishable and its CI reproducible, and its users build it on their own toolcha
 - **nalgebra 0.35 is a workspace dependency, and linear algebra that nalgebra provides is
   never re-implemented.** The geometry aliases (`Point2f`, `Similarity2f`, …) are nalgebra
   types (ADR-0004).
-- **A structured solve nalgebra lacks gets a small routine beside its only caller.** It runs
-  in `f64`, and its tests check it against nalgebra's dense solver. The bead tracker's
-  pentadiagonal system (ADR-0018) is the case: nalgebra has no banded solver, and a dense
-  Cholesky costs O(N³) where the band costs O(N).
+- **A structured solve nalgebra lacks gets a small routine beside its callers,** in the
+  module that owns them. It runs in `f64`, and its tests check it against nalgebra's dense
+  solver. The pentadiagonal smoother that `measure` shares (ADR-0018, ADR-0020) is the
+  case: nalgebra has no banded solver, and a dense Cholesky costs O(N³) where the band
+  costs O(N).
 - **The MSRV follows the strictest dependency.** `rust-version` in the root `Cargo.toml`
   is the highest `rust-version` of any dependency, dev-dependencies included, because the
   MSRV CI job builds `--all-targets`; `corrmatch` sets it. Clippy's `incompatible_msrv`

@@ -231,6 +231,11 @@ are relative to 0.1.0.
 - **Breaking:** `Error` is `#[non_exhaustive]` and adds `InsufficientData`, `Degenerate`
   and `InvalidConfig`.
 - The crates declare `rust-version = "1.91"`.
+- Internal: `measure` holds two crate-private numerical cores (ADR-0020). One is an exact
+  layered min-path with max-marginals, for the coupled two-boundary extraction and the
+  bead-end rim. The other is a robust Whittaker smoother, on which `BeadTracker`'s
+  regularised solve now runs, with its results unchanged to the bit. No public API
+  changes, and there is nothing new to bind.
 
 ### Removed
 
