@@ -1288,6 +1288,121 @@ def load_table_calibration(source: Union[str, bytes]) -> List[Tuple[CameraModel,
     raw bytes). One `(CameraModel, pose)` pair per camera, sorted by index."""
 
 # ---------------------------------------------------------------------------
+# metric.rig: planar rig substrate poses
+# ---------------------------------------------------------------------------
+
+ArrayF64 = npt.NDArray[np.float64]
+
+class MotionNoise:
+    """Per-step 1-σ change of the increment, at the rig's lever centre."""
+    translation_mm: float
+    rotation_rad: float
+    def __init__(self, *, translation_mm: float = 0.1, rotation_rad: float = 1e-3) -> None: ...
+
+class RigPoseTuning:
+    iterations: int
+    tolerance_mm: float
+    shift_sigma_floor_px: float
+    def __init__(self, *, iterations: int = 20, tolerance_mm: float = 1e-7,
+                 shift_sigma_floor_px: float = 0.05) -> None: ...
+
+class RigPoseConfig:
+    """`anchor` is the frame-0 substrate→plane `(tx, ty, theta)`; `rotation_hold` is
+    `'previous'` or `'zero'`."""
+    anchor: tuple[float, float, float]
+    huber_k: float
+    tukey_c: float | None
+    max_closure_px: float | None
+    rotation_hold: str
+    rotation_prior_sigma_rad: float
+    motion_noise: MotionNoise
+    tuning: RigPoseTuning
+    def __init__(self, *, anchor: tuple[float, float, float] = (0.0, 0.0, 0.0),
+                 huber_k: float = 2.0, tukey_c: float | None = 6.0,
+                 max_closure_px: float | None = None, rotation_hold: str = "previous",
+                 rotation_prior_sigma_rad: float = 1e-3,
+                 motion_noise: MotionNoise | None = None,
+                 tuning: RigPoseTuning | None = None) -> None: ...
+
+class RigSmootherConfig:
+    motion_noise: MotionNoise
+    gate_sigma: float | None
+    def __init__(self, *, motion_noise: MotionNoise | None = None,
+                 gate_sigma: float | None = 5.0) -> None: ...
+
+class RigTrajectory:
+    """Per-frame arrays have one row per frame, the anchor first; per-view arrays
+    one row per step. NaN marks an absent value."""
+    @property
+    def poses(self) -> ArrayF64: ...                    # (F, 3) tx, ty, theta
+    @property
+    def covariances(self) -> ArrayF64: ...              # (F, 3, 3)
+    @property
+    def increments(self) -> ArrayF64: ...               # (F, 3)
+    @property
+    def increment_covariances(self) -> ArrayF64: ...    # (F, 3, 3)
+    @property
+    def steps(self) -> List[str]: ...                   # anchor/measured/single_view/bridged
+    @property
+    def views_used(self) -> List[int]: ...
+    @property
+    def residual_rms_mm(self) -> ArrayF64: ...          # (F,)
+    @property
+    def residual_max_mm(self) -> ArrayF64: ...          # (F,)
+    @property
+    def residual_scale(self) -> ArrayF64: ...           # (F,) >= 1
+    @property
+    def view_outcomes(self) -> List[List[str]]: ...     # (S, V)
+    @property
+    def view_weights(self) -> ArrayF64: ...             # (S, V)
+    @property
+    def view_residuals_mm(self) -> ArrayF64: ...        # (S, V)
+    @property
+    def view_levers_mm(self) -> ArrayF64: ...           # (S, V, 2)
+    @property
+    def view_displacements_mm(self) -> ArrayF64: ...    # (S, V, 2)
+    @property
+    def measured(self) -> int: ...
+    @property
+    def single_view(self) -> int: ...
+    @property
+    def bridged(self) -> int: ...
+    @property
+    def longest_bridge(self) -> int: ...
+    @property
+    def residual_median_mm(self) -> float | None: ...
+    @property
+    def residual_max_overall_mm(self) -> float | None: ...
+    def path_length_ratio(self, point: tuple[float, float],
+                          external: ArrayF64) -> float | None: ...
+
+class RigSmoothed:
+    @property
+    def poses(self) -> ArrayF64: ...                    # (F, 3)
+    @property
+    def increments(self) -> ArrayF64: ...               # (F, 3)
+    @property
+    def increment_covariances(self) -> ArrayF64: ...    # (F, 3, 3)
+    @property
+    def gated(self) -> List[bool]: ...
+    @property
+    def gated_count(self) -> int: ...
+    def path_length_ratio(self, point: tuple[float, float],
+                          external: ArrayF64) -> float | None: ...
+
+class RigPoseEstimator:
+    """One rigid SE(2) substrate pose per frame from per-view translations."""
+    def __init__(self, config: RigPoseConfig | None = None) -> None: ...
+    def estimate(self, plane_to_image: ArrayF64, d_px: ArrayF64, covariance: ArrayF64,
+                 centroid: ArrayF64, accepted: npt.NDArray[np.bool_],
+                 closure: ArrayF64 | None = None) -> RigTrajectory:
+        """`plane_to_image` (V, 3, 3); `d_px`, `centroid` (S, V, 2); `covariance`
+        (S, V, 3) as [xx, xy, yy] px²; `accepted` (S, V); `closure` (S, V), NaN where
+        absent. All float64. A NaN in `d_px` marks a missing shift."""
+    def smooth(self, trajectory: RigTrajectory,
+               config: RigSmootherConfig | None = None) -> RigSmoothed: ...
+
+# ---------------------------------------------------------------------------
 # corr: cross-correlation matching + displacement
 
 class TranslationTuning:

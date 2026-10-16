@@ -104,6 +104,7 @@ Each Rust config is a Python class with keyword arguments, for example
 | `measure` (bead) | `BeadTracker` (`track`, `explain`, `config`), `TrackedBead` (per-station arrays, reject strings, statistics), `BeadPass`, `BeadSolve`, `BeadTrace`, `BeadPassTrace` (per-station arrays), `BeadStationTrace`, `BeadConfig`, `BeadCaliper` (`to_measure_config`), `BeadTuning` |
 | `warp` | `Map` (`affine`, `projective`, `polar`, `log_polar`, `apply`, `apply_with_mask`) |
 | `metric` | `CameraModel`, `PinholeIntrinsics`, `BrownConrady5`, `Plane3`, `PlaneGrid`, `pixel_to_plane`, `project_plane_points`, `plane_grid_map`, `undistort_map`, `load_rig_extrinsics`, `load_table_calibration` |
+| `metric::rig` | `RigPoseEstimator` (`estimate` over `(S, V, …)` arrays, `smooth`), `RigTrajectory` (per-frame and per-view arrays, step and outcome strings, statistics, `path_length_ratio`), `RigSmoothed`, `RigPoseConfig` (`rotation_hold` as a string), `RigPoseTuning`, `RigSmootherConfig`, `MotionNoise` |
 | `corr` | `CorrTemplate`, `find`, `find_topk`, `CorrMatch`, `displacement`, `Displacement`, `CorrConfig`, `CorrSearchTuning`, `CorrTemplateConfig`, `CorrTemplateTuning`, `DisplacementConfig`, `Refine`; generic masked `TranslationEstimator`, `TranslationConfig`, `TranslationTuning`, `Translation` (`TranslationStatus` is the result's string `status`); experimental local `SimilarityEstimator`, `SimilarityConfig`, `Similarity` under `vision_metrology.experimental`, outside the compatibility promise (transform is tx/ty/radians/scale) |
 | `scale` | `estimate_scale_moments`, `estimate_scale_logpolar`, `find_scale_invariant_roi`, `find_scale_invariant_center`, `ScaleEstimate`, `MomentScaleConfig`, `LogPolarScaleConfig`, `ScaleInvariantConfig` |
 | `segment` | `Segmenter`, `otsu_threshold`, `threshold_binary`, `label_components`, `component_stats`, `ComponentStats` |
@@ -119,7 +120,8 @@ Each Rust config is a Python class with keyword arguments, for example
   carry the edges' positions but not their amplitudes;
 - a tracking pass's chosen pairs: `BeadPassTrace` carries each pair's offset
   (`observed`), and its `calipers` every edge the pair was chosen from;
-- pyramids and direction fields.
+- pyramids and direction fields;
+- `RigPoseEstimator`'s streaming `begin`/`step`: Python passes the whole sequence.
 
 Runnable scripts are in
 [`examples/python/`](https://github.com/VitalyVorobyev/vision-metrology/tree/main/examples/python).

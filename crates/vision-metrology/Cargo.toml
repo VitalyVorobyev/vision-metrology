@@ -150,6 +150,11 @@ name = "corr"
 harness = false
 required-features = ["corr"]
 
+[[bench]]
+name = "rig"
+harness = false
+required-features = ["metric"]
+
 
 # Examples and integration tests are auto-discovered, so the gated ones need an
 # explicit target entry declaring which module they exercise. Without this,
@@ -258,7 +263,7 @@ required-features = ["measure"]
 
 [[test]]
 name = "accuracy"
-required-features = ["corr", "fit", "measure", "matching"]
+required-features = ["corr", "fit", "measure", "matching", "metric"]
 
 [[test]]
 name = "metric_rectify"
@@ -274,3 +279,11 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [lints]
 workspace = true
+
+[[test]]
+name = "rig_pose"
+required-features = ["metric"]
+
+[[test]]
+name = "rig_alloc"
+required-features = ["metric"]

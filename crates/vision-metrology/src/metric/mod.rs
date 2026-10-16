@@ -49,6 +49,7 @@ mod distortion;
 mod homography;
 pub mod io;
 mod project;
+pub mod rig;
 mod types;
 mod undistort_map;
 

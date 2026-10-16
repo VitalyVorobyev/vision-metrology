@@ -214,6 +214,8 @@ Report the bias and σ, and the count they rest on.
   against `truth.poses`, the provenance per step against the case (bridged at time 20,
   single-view at time 20, the third view's weight over times 15–24), and the path-length
   ratio.
+  `rig_eval.py <out-dir>…` runs `RigPoseEstimator` on a generated rig preset and prints
+  these as JSON, with the registration's own error against the exact image motion.
 - **Caps.** The rim's radial error along rays from the chord's midpoint, against
   `truth.caps` (`scene.ray_hit` intersects a ray with a rim polyline): bias and σ over the
   rays, and the share of rays reported unmeasured.

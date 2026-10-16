@@ -156,20 +156,6 @@ bootstrap intervals in `performance.md`.
 
 ## v0.4: many observations, one model
 
-### Planar rig substrate pose, `planned` ([#74])
-
-Several views of one planar substrate under a fixed rig, each with a plane→image
-homography and a masked translation per frame pair, give one rigid SE(2) pose per frame.
-Each view's translation is lifted at the centroid of its measured region, so rotation
-comes from the lever arms between views. Start robustly from the cross-view median, then
-IRLS. A step with one view holds rotation at the prior and says `single_view`; a step
-with none is bridged at constant velocity with growing uncertainty and says `bridged`.
-Also: a smoother over the shift series, and the path-length ratio as a separate scale
-diagnostic. Its home is settled in an ADR.
-
-**Accept:** #74's synthetic cases (a bridged step, a gross view down-weighted, a
-single-view step held at the prior); provenance per step.
-
 ### Synthetic sequence benchmark, `in progress` ([#86])
 
 A deterministic generator writing `sequence.json` with truth: a curved ribbon with
@@ -180,8 +166,8 @@ registration error, and a bead that moves relative to its substrate. No public d
 has many registered observations of one curve, so this is the public stand-in.
 
 The generator is available in [`tools/sequence_bench/`](../../tools/sequence_bench/README.md),
-deterministic and in CI, with presets for #73, #74 and #78. What remains is the consuming
-operators' numbers, which they report as they land.
+deterministic and in CI, with presets for #73, #74 and #78. The rig poses (#74) report on
+it; what remains is the fusion's and the bead ends' numbers, which they report as they land.
 
 **Accept:** deterministic and in CI; truth per station, per frame and per view; the
 consuming operators' numbers in `performance.md`.
@@ -327,7 +313,6 @@ Mosaic works on the desktop.
   first release settles the API ([ADR-0004](adr/0004-core-raster-and-geometry.md)).
 
 [#73]: https://github.com/VitalyVorobyev/vision-metrology/issues/73
-[#74]: https://github.com/VitalyVorobyev/vision-metrology/issues/74
 [#75]: https://github.com/VitalyVorobyev/vision-metrology/issues/75
 [#76]: https://github.com/VitalyVorobyev/vision-metrology/pull/76
 [#78]: https://github.com/VitalyVorobyev/vision-metrology/issues/78

@@ -21,6 +21,7 @@ mod measure_py;
 mod metric_py;
 mod morph_py;
 mod profile_py;
+mod rig_py;
 mod scale_py;
 mod segment;
 mod shape;
@@ -33,6 +34,7 @@ use pyo3::prelude::*;
 use pyo3::wrap_pyfunction;
 
 use crate::config::SimilarityConfig;
+use crate::config::{MotionNoise, RigPoseConfig, RigPoseTuning, RigSmootherConfig};
 use config::{
     BeadCaliper, BeadConfig, BeadTuning, Contrast, CorrConfig, CorrSearchTuning,
     CorrTemplateConfig, CorrTemplateTuning, DisplacementConfig, EdgeConfig, FitConfig, Locate,
@@ -52,6 +54,7 @@ use metric_py::{
     load_table_calibration, pixel_to_plane, plane_grid_map, project_plane_points, undistort_map,
 };
 use profile_py::ProfileSampler;
+use rig_py::{RigPoseEstimator, RigSmoothed, RigTrajectory};
 use scale_py::{
     ScaleEstimate, estimate_scale_logpolar, estimate_scale_moments, find_scale_invariant_center,
     find_scale_invariant_roi,
@@ -114,6 +117,13 @@ fn vision_metrology(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<CameraModel>()?;
     m.add_class::<Plane3>()?;
     m.add_class::<PlaneGrid>()?;
+    m.add_class::<MotionNoise>()?;
+    m.add_class::<RigPoseTuning>()?;
+    m.add_class::<RigPoseConfig>()?;
+    m.add_class::<RigSmootherConfig>()?;
+    m.add_class::<RigPoseEstimator>()?;
+    m.add_class::<RigTrajectory>()?;
+    m.add_class::<RigSmoothed>()?;
 
     // Result types
     m.add_class::<Edgel>()?;
