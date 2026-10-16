@@ -60,7 +60,7 @@ impl Default for RegionCheck {
     fn default() -> Self {
         Self {
             max_chi2: 13.8,
-            bias_floor_px: 0.05,
+            bias_floor_px: 0.06,
         }
     }
 }

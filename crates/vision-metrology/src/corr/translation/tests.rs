@@ -369,10 +369,12 @@ fn speckled_masks_near_integer_shifts_converge() {
         ..Default::default()
     };
     let mut outcomes = Vec::new();
-    for k in 0..12u64 {
+    for k in 0..16u64 {
+        // Within 0.01 px of an integer, or (from k = 12) of a half-integer.
+        let half = if k >= 12 { 0.5 } else { 0.0 };
         let shift = [
-            (k % 5) as f64 - 2.0 + 0.003 * (k as f64 - 6.0) / 6.0,
-            (k % 3) as f64 - 1.0 - 0.004 * (k as f64 - 5.0) / 6.0,
+            (k % 5) as f64 - 2.0 + half + 0.003 * (k as f64 - 6.0) / 6.0,
+            (k % 3) as f64 - 1.0 + half - 0.004 * (k as f64 - 5.0) / 6.0,
         ];
         let (ma, mb) = (speckle(w, h, 0.1, 2 * k), speckle(w, h, 0.1, 2 * k + 1));
         let a = bandpass(&image(w, h, [0.0, 0.0], 1.0, 0.0, 0.0), &ma);
@@ -405,12 +407,16 @@ fn tap_window_matches_a_brute_force_block_check() {
     let (w, h) = (23, 17);
     let mask = crate::corr::fixtures::speckle(w, h, 0.08, 5);
     let mut p = Plane::default();
-    p.load(&Image::new_fill(w, h, 1.0f32).as_view(), Some(&mask.as_view()))
-        .unwrap();
+    p.load(
+        &Image::new_fill(w, h, 1.0f32).as_view(),
+        Some(&mask.as_view()),
+    )
+    .unwrap();
     for y in -2..h as i64 + 2 {
         for x in -2..w as i64 + 2 {
-            let brute = (y - 1..=y + 2).all(|yy| {
-                (x - 1..=x + 2).all(|xx| {
+            // (x + 0.3, y - 0.3) rounds to (x, y): its block is [x-1, x+1] × [y-1, y+1].
+            let brute = (y - 1..=y + 1).all(|yy| {
+                (x - 1..=x + 1).all(|xx| {
                     xx >= 0
                         && yy >= 0
                         && xx < w as i64
@@ -418,10 +424,14 @@ fn tap_window_matches_a_brute_force_block_check() {
                         && p.valid[yy as usize * w + xx as usize]
                 })
             });
-            assert_eq!(p.window_valid(x as f64 + 0.3, y as f64 + 0.7), brute, "{x} {y}");
+            assert_eq!(
+                p.window_valid(x as f64 + 0.3, y as f64 - 0.3),
+                brute,
+                "{x} {y}"
+            );
             if brute {
-                for (dx, dy) in [(-0.99, -0.99), (0.99, 0.99), (-0.99, 0.99)] {
-                    let (sx, sy) = (x as f64 + 0.3 + dx, y as f64 + 0.7 + dy);
+                for (dx, dy) in [(-0.49, -0.49), (0.49, 0.49), (-0.49, 0.49)] {
+                    let (sx, sy) = (x as f64 + 0.3 + dx, y as f64 - 0.3 + dy);
                     assert!(p.sample(sx, sy).is_some(), "{sx} {sy}");
                 }
             }

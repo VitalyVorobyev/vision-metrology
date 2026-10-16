@@ -21,7 +21,7 @@ pub(super) struct Workspace {
 }
 
 /// Freeze the observations: valid previous pixels whose current-image taps stay valid for
-/// every shift within ±1 px of `centre`. The set then stays fixed while the shift moves, so
+/// every shift within ±½ px of `centre`. The set then stays fixed while the shift moves, so
 /// taps entering or leaving validity cannot make the objective chatter.
 fn freeze(
     a: &Plane,
@@ -91,7 +91,7 @@ fn robust_scale(
 
 /// Robust Gauss–Newton for `(dx, dy, gain, offset)` over a frozen observation set.
 ///
-/// The set is frozen about the seed, and re-frozen only if the shift leaves that ±1 px
+/// The set is frozen about the seed, and re-frozen only if the shift leaves that ±½ px
 /// window. The Huber scale is estimated at the seed and once more after the first step,
 /// then fixed. Convergence tests the translation step alone.
 pub(super) fn refine(
@@ -109,7 +109,7 @@ pub(super) fn refine(
     let mut cutoff = 0.0;
     let mut converged = false;
     for iteration in 0..tuning.iterations.get() {
-        if (p[0] - centre[0]).abs() >= 1.0 || (p[1] - centre[1]).abs() >= 1.0 {
+        if (p[0] - centre[0]).abs() >= 0.5 || (p[1] - centre[1]).abs() >= 0.5 {
             centre = p;
             support = freeze(a, b, centre, region, &mut scratch.observations);
         }
@@ -163,7 +163,7 @@ pub(super) fn refine(
     if !converged {
         return Err(TranslationStatus::RefinementFailed);
     }
-    if (p[0] - centre[0]).abs() >= 1.0 || (p[1] - centre[1]).abs() >= 1.0 {
+    if (p[0] - centre[0]).abs() >= 0.5 || (p[1] - centre[1]).abs() >= 0.5 {
         freeze(a, b, p, region, &mut scratch.observations);
     }
     let (h, _, sum, max, n) = system(a, b, p, gain, offset, cutoff, region, &scratch.observations);

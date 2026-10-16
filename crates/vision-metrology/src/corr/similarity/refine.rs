@@ -62,7 +62,7 @@ pub(super) struct Workspace {
     pub observations: Vec<bool>,
 }
 /// Valid previous pixels whose current-image taps stay valid while the map moves by less
-/// than 1 px from `pose` (see `Plane::window_valid`). The set is then fixed.
+/// than ½ px from `pose` (see `Plane::window_valid`). The set is then fixed.
 fn freeze(a: &Plane, b: &Plane, pose: &Pose, region: [usize; 4], out: &mut Vec<bool>) -> usize {
     out.resize(a.w * a.h, false);
     let mut n = 0;
@@ -171,7 +171,7 @@ fn system(
     (h, rhs, sum, max, n)
 }
 /// Robust six-parameter Gauss–Newton over a frozen observation set, re-frozen only when
-/// the map leaves the ±1 px window of the pose it was frozen at. The Huber scale is
+/// the map leaves the ±½ px window of the pose it was frozen at. The Huber scale is
 /// estimated at the seed and after the first step, then fixed; convergence tests the
 /// motion step alone.
 pub(super) fn refine(
@@ -188,7 +188,7 @@ pub(super) fn refine(
     let mut cutoff = 0.0;
     let mut converged = false;
     for iteration in 0..tuning.iterations.get() {
-        if departure(&pose, &frozen_at, region) >= 1.0 {
+        if departure(&pose, &frozen_at, region) >= 0.5 {
             frozen_at = pose;
             support = freeze(a, b, &frozen_at, region, &mut scratch.observations);
         }
@@ -235,7 +235,7 @@ pub(super) fn refine(
     if !converged {
         return Err(TranslationStatus::RefinementFailed);
     }
-    if departure(&pose, &frozen_at, region) >= 1.0 {
+    if departure(&pose, &frozen_at, region) >= 0.5 {
         freeze(a, b, &pose, region, &mut scratch.observations);
     }
     let (h, _, sum, max, n) = system(a, b, pose, cutoff, region, &scratch.observations);
