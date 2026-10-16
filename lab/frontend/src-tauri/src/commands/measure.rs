@@ -232,7 +232,8 @@ fn caliper_results(
     let mut results = Vec::with_capacity(trace.calipers.len());
     let mut overlay = Vec::new();
 
-    for (i, (shape, cal)) in trace.placements.iter().zip(&trace.calipers).enumerate() {
+    for (i, c) in trace.calipers.iter().enumerate() {
+        let (shape, cal) = (&c.placement, &c.trace);
         let (center, angle, half_len, half_width) = placement_geometry(shape);
         let id = caliper_id(object_index, i);
         let step_px = cal.spacing;

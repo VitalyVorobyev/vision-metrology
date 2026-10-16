@@ -1116,17 +1116,23 @@ def test_metrology_model_explain_is_apply_with_every_calipers_trace():
         applied[0].circle.cy,
         applied[0].circle.r,
     )
-    assert len(rim.placements) == len(rim.calipers) == 16
+    assert len(rim.calipers) == 16
+    assert all(isinstance(d, vm.CaliperDiagnostics) for d in rim.calipers)
     placed = model.layout(c[0], c[1])[:16]
-    assert [(p.center, p.angle) for p in rim.placements] == [(p.center, p.angle) for p in placed]
-    assert all(isinstance(t, vm.CaliperTrace) and t.reject is None for t in rim.calipers)
-    firsts = [(t.edges[0].x, t.edges[0].y) for t in rim.calipers]
+    assert [(d.placement.center, d.placement.angle) for d in rim.calipers] == [
+        (p.center, p.angle) for p in placed
+    ]
+    assert [d.placement.caliper_index for d in rim.calipers] == list(range(16))
+    traces_ = [d.trace for d in rim.calipers]
+    assert all(isinstance(t, vm.CaliperTrace) and t.reject is None for t in traces_)
+    assert "CaliperDiagnostics(caliper_index=0" in repr(rim.calipers[0])
+    firsts = [(t.edges[0].x, t.edges[0].y) for t in traces_]
     assert firsts == [(h.x, h.y) for h in rim.result.hits]
 
     flat = traces[1]
     assert isinstance(flat.result, vm.MetrologyError) and isinstance(applied[1], vm.MetrologyError)
     assert flat.result.message == applied[1].message
-    assert [t.reject for t in flat.calipers] == ["no_edge", "no_edge"]
+    assert [d.trace.reject for d in flat.calipers] == ["no_edge", "no_edge"]
     assert "ObjectTrace(object_index=1" in repr(flat)
 
 

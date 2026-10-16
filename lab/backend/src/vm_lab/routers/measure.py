@@ -140,7 +140,8 @@ def _caliper_results(
     fit = None if isinstance(trace.result, vm.MetrologyError) else trace.result
     results: list[CaliperResultOut] = []
     overlay: list[OverlayPrimitiveOut] = []
-    for placement, cal in zip(trace.placements, trace.calipers, strict=True):
+    for caliper in trace.calipers:
+        placement, cal = caliper.placement, caliper.trace
         cx, cy = _box_center(placement)
         box_angle = placement.angle
         i = placement.caliper_index

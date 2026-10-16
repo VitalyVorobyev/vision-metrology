@@ -44,8 +44,8 @@ use detector::EdgeDetector;
 use match_py::{CropSpec, LevelInfo, ShapeMatcher, ShapeModel};
 use measure_py::{
     BeadPass, BeadPassTrace, BeadSolve, BeadStationTrace, BeadTrace, BeadTracker, Caliper,
-    CaliperPlacement, CaliperTrace, MeasureRejected, MetrologyError, MetrologyModel,
-    MetrologyObject, MetrologyResult, MetrologyShape, ObjectTrace, TrackedBead,
+    CaliperDiagnostics, CaliperPlacement, CaliperTrace, MeasureRejected, MetrologyError,
+    MetrologyModel, MetrologyObject, MetrologyResult, MetrologyShape, ObjectTrace, TrackedBead,
 };
 use metric_py::{
     BrownConrady5, CameraModel, PinholeIntrinsics, Plane3, PlaneGrid, load_rig_extrinsics,
@@ -133,6 +133,7 @@ fn vision_metrology(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<CaliperPlacement>()?;
     m.add_class::<CaliperTrace>()?;
     m.add_class::<ObjectTrace>()?;
+    m.add_class::<CaliperDiagnostics>()?;
     m.add_class::<TrackedBead>()?;
     m.add_class::<BeadPass>()?;
     m.add_class::<BeadSolve>()?;

@@ -704,14 +704,20 @@ class MetrologyModel:
 
 class ObjectTrace:
     """One object of a `MetrologyModel`, measured and explained. `result` is
-    what `apply` returns for it; `placements` and `calipers` are parallel, one
-    entry per caliper. A caliper hit when its trace has `edges`, and its first
-    edge is the one the fit used."""
+    what `apply` returns for it; `calipers` holds one `CaliperDiagnostics` per
+    caliper, in caliper order."""
 
     object_index: int
     result: Union[MetrologyResult, MetrologyError]
-    placements: List[CaliperPlacement]
-    calipers: List[CaliperTrace]
+    calipers: List[CaliperDiagnostics]
+
+class CaliperDiagnostics:
+    """One caliper of an `ObjectTrace`: where it sat (`placement`, as `layout`
+    reports it) and what it computed (`trace`). The caliper hit when
+    `trace.edges` is not empty, and its first edge is the one the fit used."""
+
+    placement: CaliperPlacement
+    trace: CaliperTrace
 
 class Caliper:
     """A reusable caliper. Construct with `rect`, `arc`, `radial` or `strip`;

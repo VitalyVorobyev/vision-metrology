@@ -279,6 +279,11 @@ are relative to 0.1.0.
   functions `sample_bilinear_at`, `sample_bilinear_f32`, `sample_nearest`,
   `similarity_from_parts`, `similarity_parts`, `transform_point`, `transform_vec` and
   `wrap_angle` are reached through `vision_metrology::vm_primitives::…`.
+- **Breaking:** `measure::diagnostics::ObjectTrace` drops its parallel `placements` and
+  `calipers` vectors for one `calipers: Vec<CaliperDiagnostics>`, each with the caliper's
+  `placement` and its `trace`. Read `c.placement` and `c.trace` instead of zipping. Python
+  mirrors it: `ObjectTrace.calipers` is a list of `vm.CaliperDiagnostics`, and
+  `ObjectTrace.placements` is gone. The lab's HTTP and Tauri outputs are unchanged.
 - Internal: `measure` holds two crate-private numerical cores (ADR-0020). One is an exact
   layered min-path with max-marginals, for the coupled two-boundary extraction and the
   bead-end rim. The other is a robust Whittaker smoother, on which `BeadTracker`'s
