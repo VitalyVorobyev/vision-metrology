@@ -57,16 +57,14 @@ def test_a_locked_locator_gives_a_large_index_and_an_unlocked_one_near_one(tmp_p
     assert locked['normalized'][0] > 1.3 and locked['normalized'][4] < .1
 
 
-def test_the_reference_is_flat_and_the_detector_locks_on_smooth_data(tmp_path):
+def test_the_reference_and_the_detector_are_flat_on_smooth_data(tmp_path):
     s = smooth_field(tmp_path)
     reference = ph.evaluate(s, 'none', refine='dog')['pooled']
     assert reference['edges'] > 5000 and reference['locking_index'] < 1.3, reference
-    # `Subpix2D::ParabolicAlongNormal` fits its parabola to non-maximum-suppressed values,
-    # whose neighbours along the normal are zero on a one-pixel ridge: the edgels stay at
-    # pixel centres. This pins that finding until the detector is fixed.
+    # `Subpix2D::ParabolicAlongNormal` fits the pre-suppression gradient magnitude, so the
+    # edgels leave their pixel centres (issue #99).
     detector = ph.evaluate(s, 'none')['pooled']
-    assert detector['locking_index'] is None or detector['locking_index'] > 10, detector
-    assert detector['normalized'][0] > 2 and detector['normalized'][9] > 2
+    assert detector['edges'] > 5000 and detector['locking_index'] < 1.3, detector
 
 
 def test_the_library_sampler_agrees_with_the_reference(tmp_path):

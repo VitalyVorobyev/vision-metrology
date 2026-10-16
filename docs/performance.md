@@ -145,21 +145,26 @@ with seeded uniform noise of up to 5 LSB, quantized to `u8`.
 | Operator | Unit | Worst \|bias\| | Worst σ | Envelope (bias / σ) |
 |---|---|---:|---:|---|
 | `Edge1DDetector` position | px | 0.042 | 0.095 | 0.07 / 0.15 |
-| `Edge2DDetector` position | px | 0.085 | 1.195 | 0.13 / 1.80 |
+| `Edge2DDetector` position | px | 0.097 | 1.608 | 0.15 / 2.40 |
 | `Caliper` (rect) position | px | 0.026 | 0.062 | 0.05 / 0.12 |
 | `fit_circle` radius and centre | px | 0.325 | 1.135 | 0.50 / 1.75 |
 | `ShapeMatcher` translation | px | 0.003 | 0.011 | 0.02 / 0.03 |
 | `ShapeMatcher` rotation | deg | 0.000 | 0.001 | 0.05 / 0.05 |
-| `ShapeMatcher` scale, 0.5–2.0× | fraction | 0.0014 | 0.0003 | 0.003 / 0.001 |
-| `ShapeMatcher` position under scale, 0.5–2.0× | px | 0.0218 | 0.0039 | 0.04 / 0.01 |
-| estimate-then-verify scale, 0.5–2.0× | fraction | 0.0014 | 0.0003 | 0.003 / 0.001 |
-| estimate-then-verify position | px | 0.0218 | 0.0039 | 0.04 / 0.01 |
+| `ShapeMatcher` scale, 0.5–2.0× | fraction | 0.0017 | 0.0012 | 0.003 / 0.0018 |
+| `ShapeMatcher` position under scale, 0.5–2.0× | px | 0.0191 | 0.0048 | 0.04 / 0.01 |
+| estimate-then-verify scale, 0.5–2.0× | fraction | 0.0013 | 0.0002 | 0.003 / 0.001 |
+| estimate-then-verify position | px | 0.0191 | 0.0048 | 0.04 / 0.01 |
 | rectified crop repeatability | 8-bit grey levels | 0.88 | 1.69 | 1.3 / 2.5 |
 | `corr::displacement`, quadratic | px | 0.0239 | 0.0164 | 0.04 / 0.025 |
 | `corr::displacement`, Lucas–Kanade | px | 0.0204 | 0.0141 | 0.035 / 0.022 |
 
 How to read the hard rows:
-- **`Edge2DDetector`.** The worst cell is blur σ = 3 with 5 LSB noise.
+- **`Edge2DDetector`.** The worst cell is blur σ = 3 with 5 LSB noise at 45°. Its σ is
+  noise edgels chained to the line: a quarter of that cell's edgels lie more than 1.5 px
+  off it, and the rest have σ 0.69 px and no bias. Every other cell is under 0.35 px, and
+  at 30° and 45° up to blur σ = 1 under 0.05 px.
+- **`ShapeMatcher` scale.** The worst cell is 1.37×, where the 120° and 240° scenes read
+  0.0025 high and the 0° scene reads true. Every other scale's σ is at most 0.0002.
 - **`fit_circle`.** The worst cell is a 30° arc (nearly a chord) with 10% gross outliers.
   At arcs of 90° or more it is well inside 0.05 px.
 - **Scale rows.** Every scale in the sweep found every rotation.
@@ -238,7 +243,7 @@ config, and an edgel's `x` is where its tangent crosses its own pixel row.
 | `Edge1DDetector`, `Parabolic3` | 0.032 | 0.057 | 1.24 / 1.50 / 1.39 | 0.048 / 0.086 / 1.75 |
 | `Edge1DDetector`, `Gaussian3` | 0.043 | 0.052 | 1.69 / 1.10 / 1.07 | 0.065 / 0.078 / 2.05 |
 | `Edge1DDetector`, `Centroid { radius: 2 }` | 0.181 | 0.186 | 2.88 / 111 / ∞ | 0.27 / 0.28 / ∞ |
-| `Edge2DDetector`, `ParabolicAlongNormal` | 0.450 | 0.500 | ∞ / ∞ / ∞ | 0.68 / 0.75 / ∞ |
+| `Edge2DDetector`, `ParabolicAlongNormal` | 0.031 | 0.029 | 1.49 / 1.47 / 1.40 | 0.046 / 0.043 / 1.74 |
 
 The index envelope is `1 + 1.5 (index − 1)`.
 
@@ -250,13 +255,18 @@ How to read them:
   default strips, the rect caliper and the 1-D parabola. The level methods (1.12) and
   the 1-D log-parabola (1.07) show what an index this close to 1 looks like at this noise.
   The continuous profile below is the remedy.
-- **`Edge2DDetector` does not refine at all.** `ParabolicAlongNormal` fits its parabola to
-  the non-maximum-suppressed magnitude. Along the normal of a one-pixel ridge, both
-  neighbours are suppressed to zero, so the offset is zero and the edgel stays on its pixel
-  centre: bias up to ½ px, the same with refinement off, at every blur. The older
-  `edge2d_position` row above missed it because its edge sits on pixel centres at 0°.
+- **`Edgel`s are as close to the edge as a 1-D profile.** `ParabolicAlongNormal` fits
+  the pre-suppression gradient magnitude at the edgel's pixel and its two neighbours along
+  the image axis closest to the normal, the axis suppression compares along; the 1-D
+  parabola's index (1.39 at σ 1.0) is its counterpart. Before issue #99 it fitted the
+  suppressed magnitude, whose two neighbours on a one-pixel ridge are zero, so every edgel
+  stayed on its pixel centre (bias 0.45 px, index ∞ at every blur). Suppression along the
+  diagonal also kept two pixels per row of a 30° or 45° edge; along the axis it keeps one.
 - **`Centroid { radius: 2 }` locks badly** once the response is wider than its window: the
-  window's truncation pulls the centroid to the peak sample.
+  window's truncation pulls the centroid to the peak sample. The response's σ is about
+  `√(σ² + σ_psf² + 1/12)` samples (1.04, 1.16 and 1.47 here). Measured at σ 1.0 px of
+  blur, radius 3 locks at 7.1, radius 4 at 1.54 and radius 5 at 1.27; a radius of at
+  least 3× the response's σ keeps the index under about 1.5 at every blur here.
 
 #### Continuous profiles
 
@@ -321,24 +331,27 @@ On private development sequences A–D, with the visibility mask, eroded by 5 px
 
 | Sequence | Edgels | Detector index | Detector normalized range | DoG reference index | Reference range |
 |---|---:|---:|---|---:|---|
-| A | 108,685 | 316 | 0.015–4.82 | 1.10 | 0.97–1.06 |
-| B | 79,125 | 81 | 0.059–4.78 | 1.06 | 0.97–1.02 |
-| C | 16,598 | 122 | 0.034–4.12 | 1.18 | 0.92–1.08 |
-| D | 10,270 | 254 | 0.020–5.19 | 1.20 | 0.91–1.10 |
-| all | 214,678 | 140 | 0.034–4.77 | 1.08 | 0.97–1.05 |
+| A | 100,897 | 1.31 | 0.84–1.10 | 1.06 | 0.97–1.02 |
+| B | 73,132 | 1.45 | 0.80–1.15 | 1.07 | 0.97–1.03 |
+| C | 14,213 | 1.41 | 0.79–1.12 | 1.07 | 0.96–1.03 |
+| D | 9,331 | 1.35 | 0.85–1.15 | 1.18 | 0.92–1.09 |
+| all | 197,573 | 1.32 | 0.85–1.12 | 1.06 | 0.96–1.03 |
 
 The normalized range is the lowest and highest bin as a multiple of the uniform rate.
-With the registration-validity mask instead (84,369 edgels, the tracked object excluded),
-the pooled detector index is 69 and the reference's 1.06. The real data confirm the
-synthetic finding: the 2-D detector's edgels sit on pixel centres, at up to 5× the uniform
-rate, while a continuous derivative of Gaussian on the same edges is flat to within 10%.
+Measured after issue #99. Before it, on 214,678 edgels (more, since suppression then kept
+two pixels per row of an oblique edge), the detector's index was 81–316 per sequence and
+140 pooled, with bins at up to 5× the uniform rate: its edgels sat on pixel centres. With
+the registration-validity mask instead (76,193 edgels, the tracked object excluded), the
+pooled detector index is 1.33, against 69 before the fix, and the reference's 1.08. The
+detector is now about as flat on real data as on the synthetic sweep; the derivative of
+Gaussian is flatter still.
 
-With `--refine sampler` at σ 1 px, on the same edgels, the indices are A 1.10, B 1.06,
-C 1.18, D 1.21 and 1.08 pooled, the reference's to within 0.01: the library's sampler
-reproduces it, and no edgel's support reaches the eroded mask's edge. At σ 2.5 px the tool
-is not a fair test. It re-locates each edgel within ±1.1 px of the detector's fine-scale
-position, and for about a quarter of them the wider kernel's peak lies beyond that, so
-they keep the detector's locking.
+With `--refine sampler` at σ 1 px, on the same edgels, the indices are A 1.06, B 1.07,
+C 1.07, D 1.18 and 1.06 pooled, the reference's to within 0.01: the library's sampler
+reproduces it, and no edgel's support reaches the eroded mask's edge. At σ 2.5 px the
+tool is not a fair test of the wider kernel. It re-locates each edgel within ±1.1 px of
+the detector's fine-scale position, and the wider kernel's peak can lie beyond that. On
+the 165,837 edgels whose support stays in the mask, it gives 1.06 pooled.
 
 ### The bead tracker
 

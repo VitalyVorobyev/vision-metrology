@@ -21,6 +21,12 @@ pub enum SubpixRefine {
     /// is not strictly positive in the peak's own polarity.
     Gaussian3,
     /// Intensity-weighted centroid over `±radius` samples around the peak.
+    ///
+    /// The window truncates a response wider than itself and pulls the centroid
+    /// toward the peak sample, so located positions cluster at sample centres.
+    /// Choose `radius` at least 3× the response's σ, about
+    /// `√(sigma² + σ_psf² + 1/12)` samples for a step blurred by a PSF of σ_psf;
+    /// `docs/performance.md` has the measured locking index per radius.
     Centroid {
         /// Half-width of the centroid window in samples.
         radius: usize,

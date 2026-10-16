@@ -161,18 +161,12 @@ deleted here.
   Making it the default would re-pin every accuracy envelope, the can-end baseline and the
   lab's contract fixtures; decide it with the release, from `docs/performance.md`'s costs.
 
-- **`Edge2DDetector`'s `ParabolicAlongNormal` does not refine.** It fits the parabola to
-  the non-maximum-suppressed image, whose two neighbours along the normal of a one-pixel
-  ridge are suppressed to zero, so the offset is zero and edgels stay on pixel centres
-  (bias up to ½ px, locking index ∞ in `tests/accuracy/phase.rs`, and the same on private
-  sequences A–D). Fit it to the gradient magnitude instead, or sample a continuous
-  derivative of Gaussian ([#82]); then re-pin the `edge2d_parabolic_along_normal` row and
-  `test_phase_histogram.py`'s detector assertion.
 - **`SubpixRefine::Centroid` locks** when the derivative peak is wider than its window:
-  the truncated window pulls the centroid to the peak sample (index 111 at PSF σ 0.5 px,
-  ∞ at σ 1.0 px, with `radius: 2`). Document the window it needs, or subtract a baseline.
-
-[#82]: https://github.com/VitalyVorobyev/vision-metrology/issues/82
+  the truncated window pulls the centroid to the peak sample. A radius of at least 3× the
+  response's σ, `√(σ² + σ_psf² + 1/12)` samples, keeps the locking index near that of the
+  parabola (measured bounds in `docs/performance.md`); the variant's doc says so. A
+  window that follows the response width, or a baseline subtracted before the centroid,
+  would remove the need to choose it.
 
 ## Contour
 

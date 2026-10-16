@@ -34,9 +34,8 @@ are relative to 0.1.0.
   locking index (the max/min ratio of a 10-bin histogram of fractional positions over a
   dense phase sweep under noise). `tools/registration_eval/phase_histogram.py` computes
   the same histogram over a `sequence.json` manifest without ground truth, with a
-  continuous derivative-of-Gaussian reference. Results, including that
-  `Edge2DDetector`'s `ParabolicAlongNormal` leaves edgels on pixel centres, are in
-  `docs/performance.md`.
+  continuous derivative-of-Gaussian reference. Results are in `docs/performance.md`; the
+  sweep found the `Edge2DDetector` defect under Fixed.
 
 - **Local masked similarity, experimental** (`corr::SimilarityEstimator`, behind the
   non-default `corr-experimental` feature; in Python, `vision_metrology.experimental`).
@@ -282,6 +281,16 @@ are relative to 0.1.0.
 
 ### Fixed
 
+- **Behaviour change: `Edge2DDetector` edgels no longer stay on pixel centres.**
+  `Subpix2D::ParabolicAlongNormal` fitted its parabola to the non-maximum-suppressed
+  magnitude, whose two neighbours on a one-pixel ridge are zero, so it never moved an
+  edgel. It now fits the pre-suppression gradient magnitude at the pixel and its two
+  neighbours along the image axis closest to the normal, and suppression compares along
+  the same axis. Edgel positions move by up to ½ px, and an edge at 30° or 45° gives one
+  edgel per row instead of two, so detection returns fewer edgels on oblique edges.
+  Shape models built from edgels change with them. The phase-sweep and real-data numbers
+  are in `docs/performance.md` (issue #99). `Edge2DConfig::border` is documented as
+  having no effect, which was already the case.
 - **Contour graphs shattered into fragments** because the edgel mask was not thinned.
   `ContourBuildConfig::thin` (on by default) thins it before tracing.
 - **A reused `Edge1DDetector` could differ from a fresh one**, because it kept its kernel
