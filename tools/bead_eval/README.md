@@ -1,12 +1,15 @@
 # Bead-tracker evaluation on real data
 
 Offline scripts that run `BeadTracker`, through the `vision_metrology` Python bindings, on
-real curvilinear structures: the cracks of the DamSegment dataset. They answer three
+real curvilinear structures: the cracks of the DamSegment dataset. They answer four
 questions:
 - does the tracker lock onto a real crack and follow it from a perturbed prior?
 - do its own quality signals tell a call that locked from one that did not?
 - without a prior, can a ridge detector find candidate centrelines good enough to seed
   it ([acquisition](#acquisition-without-a-prior))?
+- does choosing both walls together along the whole curve lock more often and wrongly
+  less often, and does its max-marginal ambiguity flag the wrong locks
+  ([coupled extraction](#coupled-two-boundary-extraction))?
 
 This is **development tooling**, not a library demo, and it is not run in CI. For
 runnable library examples see [`examples/python/`](../../examples/python).
@@ -81,6 +84,7 @@ The steps hand over through files there, so any step can be re-run alone:
 | `report.md`, `report.json`, `overlays/*.png` | `report.py` | the metrics, and a few overlays for a look |
 | `signals_report.md`, `signals_report.json` | `signals.py` | whether the tracker's own signals separate locked calls, and how close they come to `Converged` |
 | `acquire_report.md`, `acquire_report.json`, `acquire_overlays/*.png` | `acquire_eval.py` | acquisition without a prior, and tracking from what it found |
+| `coupled_report.md`, `coupled_report.json`, `coupled_report_rows.json` | `coupled_eval.py` | the coupled extraction against the tracker, and every call's row |
 
 Never commit anything from the output directory.
 
@@ -232,6 +236,93 @@ use the library's defaults with a width range of `0.5w` to `1.5w`, and DamSegmen
 `run_tracker.py`'s settings. The metrics are `report.py`'s, with *converged* measured
 against the run from the reference itself. Cutting the acquired path uses the reference,
 so this measures how good a found path is as a prior, not how to pick the right one.
+
+## Coupled two-boundary extraction
+
+`coupled.py` is a prototype of a global choice of both walls along a curve, from one
+image. The tracker picks each station's edge pair on its own; here the pairs along the
+whole curve are one shortest path, and the path's max-marginals say what a different
+choice at each station would cost. `coupled_eval.py` compares it with the tracker. It is
+an evaluation, not a library feature. The measured numbers are in
+[`docs/performance.md`](../../docs/performance.md#choosing-both-walls-along-the-curve).
+
+```bash
+python -I tools/bead_eval/coupled_eval.py --data-dir $D --workers 6   # about 1 min; after priors.py
+python -I tools/bead_eval/coupled_eval.py --out-dir /tmp/c --datasets synthetic   # no data needed
+python -m pytest tools/bead_eval/test_coupled.py   # needs pytest
+```
+
+**Stations and profiles.** The prior is resampled at `spacing` px, with chord tangents over
+±10 px that shrink at the ends. Each station runs one strip caliper along its normal with
+the tracking stage's settings, every edge of either polarity, and a profile step of
+0.25 px. The caliper's signed derivative response is the evidence, and its sub-pixel edges
+are the candidate walls and the final wall positions: each wall the dense variant chooses
+moves to the nearest caliper edge of its polarity within 1 px. There is no second edge
+detector. The caliper's response is a difference per profile sample, so its threshold and
+amplitudes are rescaled to per px.
+
+**Costs.** A dark bead's left wall falls and its right wall rises; a light bead's the
+reverse. With the derivative `g` signed so the expected polarity is positive and softly
+saturated, `e(g) = (g/g0) / (1 + |g|/g0)`, so one strong edge cannot dominate, a station
+costs per px of curve:
+- present, with walls `l < r`, centre `c` and width `w`:
+  `−e(g(l)) − e(g(r)) + λ_w·huber(ln(w/w0)/s_w) + λ_0·(c/reach)²`;
+- absent: `−2·e(absent_level)`.
+
+Between stations `h` px apart the walls pay `κ·(Δl² + Δr²)/h + κ_w·Δw²/h`, with steps bounded
+by `max_wall_slope·h` and `max_width_slope·h`, and a change between present and absent pays
+`switch_cost`. The data terms are per px and the smoothness goes as `1/h`, so the solution
+does not depend on the station spacing; a test checks that.
+
+**The two variants.**
+- **Sparse**: a Viterbi over the caliper's candidate pairs per station (polarity order,
+  width range, centre within the reach). A gap of up to 20 px is a skip edge whose
+  smoothness and step bounds scale with its length; a longer one passes through absent
+  states and pays `reacquire_cost` to resume.
+- **Dense**: a dynamic programme over every (centre, width) bin, centres 0.25 px and
+  widths 0.5 px apart, so both walls fall on profile samples. Since
+  `Δl² + Δr² = 2Δc² + Δw²/2`, the transition is separable in centre and width, and the
+  minimum over it is two banded passes. The absent layer keeps a geometry, so a gap is
+  bridged smoothly.
+
+Both are solved exactly, forward and backward; tests check both against brute force on
+small problems, max-marginals included.
+
+**Ambiguity.** At a present station, the margin is the cost of the best path that puts a
+wall more than `tol` px from the chosen one there, minus the best path's. The call's
+ambiguity is the 0.25 quantile of its stations' margins at `tol` 5 px: low means another
+line was almost as good. `evidence`, the best path's mean gain per px over absence, is a
+second whole-call signal. The margins come from the first extraction, whose window is the
+prior's: re-stationing on the chosen line would move a competitor out of the window.
+
+**Settings.** Reach, spacing, width range, threshold and profile sigma are
+`run_tracker.py`'s. The costs were chosen on a seeded tuning subset of 40 paths per
+difficulty, disjoint from the evaluation's paths, and on the synthetic scenes:
+`g0` 10 DN/px, `absent_level` 4, `κ` 0.2, `κ_w` 0.5, slopes 1 and 0.5, `λ_0` 0.1,
+`switch_cost` 2, and no width prior (`λ_w` 0), which lowered the lock rate on cracks,
+whose width varies. `--subset tune` reruns the tuning subset, and `--set key=value`
+overrides any cost.
+
+**The data.**
+- **DamSegment**: `signals.py`'s calls, every prior within the reach on 100 seeded paths
+  per difficulty, with `report.py`'s lock. A path is *lockable* when the call from the
+  reference itself locks for every method.
+- **Synthetic** (`synthetic.py`): beads with walls known exactly, on a line, an arc and a
+  sine, with two noise seeds: clean; asymmetric walls of varying width; a stripe 2 px
+  outside one wall; an identical parallel bead 14 px away; a gap; an occluding disc; and
+  a highlight inside the bead. Priors are the truth moved 0, ±3, ±6 and +7 px along its
+  normals (+7 is midway to the parallel bead) and a 3 px sine.
+
+**The metrics,** with 90% bootstrap intervals over paths, since a path that fails tends to
+fail from every prior:
+- lock rate and false locks (not locked, support of at least 0.5);
+- the AUC of each signal for telling locked calls from the others;
+- **wrong at equal coverage**: each method's signal accepts the same share of all calls as
+  locked as the tracker does at support 0.5, and the share accepted but not locked is
+  read off. Paired differences from the tracker are bootstrapped too;
+- on the synthetic scenes, at every visible station, the wall error: more than 1 px is a
+  wrong wall, and bias and σ are over the rest;
+- the median time per call: the prototype is Python around the bindings' caliper.
 
 ## GAN_Synth_Adhesive: local, qualitative use only
 
