@@ -128,18 +128,6 @@ is bounded and documented.
 **Accept:** locking index ≤ 1.2 over the phase sweep; worst bias reported per σ; an
 allocation gate, a bench and Python parity.
 
-### Shared DP core and robust smoother, `planned` ([#83])
-
-- An exact min-path over layered states with banded quadratic transitions, separable
-  where the state allows, max-marginals per layer, and soft pins (a hard constraint can
-  make a step-bounded path infeasible).
-- A robust Whittaker smoother, `Σ wᵢ ρ(uᵢ − ûᵢ) + (ℓ/h)⁴ Σ (Δ²u)²`, solved with a banded
-  LDLᵀ in O(n) under IRLS. It removes the bin quantization a path leaves, and ADR-0018's
-  regularized solve shares it.
-
-**Accept:** path and max-marginals equal brute force on random small instances; the
-smoother matches a dense solve and benches O(n); the bead accuracy rows do not change.
-
 ### Coupled two-boundary extraction, `in progress` ([#76], [#84])
 
 A global choice of both walls along a curve instead of `pairing::choose`'s choice at each
@@ -147,7 +135,7 @@ station alone. The Python prototype in `tools/bead_eval` met its decision gate o
 DamSegment: the dense variant locks 91.0% of calls against the tracker's 85.3%, with 7.1%
 wrong at equal coverage against 13.0%. Its max-marginals flag a competing parallel line,
 but on cracks most wrong locks are not close calls. The design is ADR-0019, proposed.
-- A dense path over (centre, width) bins on the shared core, with costs from the
+- A dense path over (centre, width) bins on the shared core (ADR-0020), with costs from the
   continuous profiles, in ADR-0018's length-scale parameters so the result does not
   depend on station spacing.
 - States for both walls, **left only and right only**, and absent: where one side leaves
@@ -374,7 +362,6 @@ Mosaic works on the desktop.
 [#80]: https://github.com/VitalyVorobyev/vision-metrology/issues/80
 [#81]: https://github.com/VitalyVorobyev/vision-metrology/issues/81
 [#82]: https://github.com/VitalyVorobyev/vision-metrology/issues/82
-[#83]: https://github.com/VitalyVorobyev/vision-metrology/issues/83
 [#84]: https://github.com/VitalyVorobyev/vision-metrology/issues/84
 [#85]: https://github.com/VitalyVorobyev/vision-metrology/issues/85
 [#86]: https://github.com/VitalyVorobyev/vision-metrology/issues/86
