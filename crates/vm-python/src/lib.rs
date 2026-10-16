@@ -36,7 +36,7 @@ use pyo3::wrap_pyfunction;
 use crate::config::SimilarityConfig;
 use crate::config::{MotionNoise, RigPoseConfig, RigPoseTuning, RigSmootherConfig};
 use config::{
-    BeadCaliper, BeadConfig, BeadTuning, Contrast, CorrConfig, CorrSearchTuning,
+    BeadCaliper, BeadConfig, BeadCoupling, BeadTuning, Contrast, CorrConfig, CorrSearchTuning,
     CorrTemplateConfig, CorrTemplateTuning, DisplacementConfig, EdgeConfig, FitConfig, Locate,
     LogPolarScaleConfig, LsdConfig, MeasureConfig, MomentScaleConfig, Refine, ScaleInvariantConfig,
     ShapeModelConfig, ShapeSearchConfig, ShapeSearchTuning, TranslationConfig, TranslationTuning,
@@ -85,6 +85,7 @@ fn vision_metrology(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<BeadCaliper>()?;
     m.add_class::<BeadTuning>()?;
     m.add_class::<BeadConfig>()?;
+    m.add_class::<BeadCoupling>()?;
     m.add_class::<CropSpec>()?;
     m.add_class::<CorrTemplateTuning>()?;
     m.add_class::<CorrTemplateConfig>()?;

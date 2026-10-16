@@ -105,6 +105,10 @@ pub(crate) struct LayeredPath {
     tmp: Vec<f32>,
     path: Vec<usize>,
     solved: bool,
+    /// Whether the last solve ran the backward pass.
+    marginals: bool,
+    /// `layers × planes`: whether a plane has a finite unary in a layer.
+    live: Vec<bool>,
 }
 
 impl LayeredPath {
@@ -204,9 +208,25 @@ impl LayeredPath {
     /// Solve: the forward and backward passes, then the best path by backtracking.
     /// Returns the best path's cost, or `None` when no path has a finite cost.
     pub(crate) fn solve(&mut self) -> Option<f64> {
+        self.solve_with(true)
+    }
+
+    /// [`solve`](Self::solve), with the backward pass only when `marginals`: the path and
+    /// its cost need the forward pass alone, the max-marginals both. Without it, the
+    /// max-marginals are not available until the next solve that computes them.
+    pub(crate) fn solve_with(&mut self, marginals: bool) -> Option<f64> {
         debug_assert!(!self.unary.iter().any(|v| v.is_nan()), "a NaN unary");
         self.solved = false;
+        self.marginals = false;
         let (g, s, n) = (self.grid, self.grid.states(), self.layers);
+        let (cells, planes) = (g.cells(), g.planes);
+        self.live.clear();
+        self.live.extend(
+            self.unary
+                .chunks_exact(cells)
+                .map(|plane| plane.iter().any(|u| u.is_finite())),
+        );
+        let live = |k: usize| &self.live[k * planes..(k + 1) * planes];
 
         // Forward: α_0 = u_0, α_k = min over predecessors (α_{k−1} + T) + u_k.
         self.alpha[..s].copy_from_slice(&self.unary[..s]);
@@ -223,6 +243,7 @@ impl LayeredPath {
                 &self.pen,
                 &mut self.tmp,
                 false,
+                (live(k - 1), live(k)),
             );
             for (a, &u) in dst.iter_mut().zip(&self.unary[k * s..(k + 1) * s]) {
                 *a += u;
@@ -236,7 +257,7 @@ impl LayeredPath {
         self.beta[(n - 1) * s..].fill(0.0);
         self.beta_off[n - 1] = 0.0;
         let mut off = 0.0;
-        for k in (0..n - 1).rev() {
+        for k in (0..n - 1).rev().filter(|_| marginals) {
             for ((a, &b), &u) in self
                 .acc
                 .iter_mut()
@@ -254,6 +275,7 @@ impl LayeredPath {
                 &self.pen,
                 &mut self.tmp,
                 true,
+                (live(k + 1), live(k)),
             );
             off += normalise(dst)?;
             self.beta_off[k] = off;
@@ -265,6 +287,7 @@ impl LayeredPath {
             self.path[k] = self.predecessor(k, self.path[k + 1]);
         }
         self.solved = true;
+        self.marginals = marginals;
         Some(best)
     }
 
@@ -302,10 +325,23 @@ impl LayeredPath {
         &self.path
     }
 
+    /// Layer `k`'s max-marginals in parts: `M_k(s) = off + (α[s] + β[s])`, for a caller
+    /// that scans a layer. The parts are relative to the layer's own minima, so their `f32`
+    /// sum is exact to the rounding of a few layers' costs.
+    pub(crate) fn marginal_parts(&self, k: usize) -> (f64, &[f32], &[f32]) {
+        debug_assert!(self.solved && self.marginals, "no max-marginals");
+        let s = self.grid.states();
+        (
+            self.alpha_off[k] + self.beta_off[k],
+            &self.alpha[k * s..(k + 1) * s],
+            &self.beta[k * s..(k + 1) * s],
+        )
+    }
+
     /// `M_k(s)`: the cost of the best path through state `s` at layer `k`; `+∞` when no
     /// path through it is finite.
     pub(crate) fn max_marginal(&self, k: usize, state: usize) -> f64 {
-        debug_assert!(self.solved, "no solved path");
+        debug_assert!(self.solved && self.marginals, "no max-marginals");
         let i = k * self.grid.states() + state;
         self.alpha_off[k] + self.beta_off[k] + f64::from(self.alpha[i]) + f64::from(self.beta[i])
     }
@@ -337,6 +373,12 @@ fn argmin(v: &[f32]) -> usize {
 
 /// `dst(q, ·) = bandmin(min_p src(p, ·) + S[p][q])`, or with `Sᵀ` when `transpose` (the
 /// backward pass). The step cost is symmetric in `Δ`, so one band pass serves both ways.
+///
+/// A plane is *live* in a layer when one of its unaries there is finite. A source plane
+/// that is not live is `+∞` throughout and is skipped; a destination plane that is not
+/// live is set to `+∞`, which is exact wherever it is read: its forward cost adds its own
+/// `+∞` unaries, and its backward cost meets them in every max-marginal and earlier layer.
+#[allow(clippy::too_many_arguments)]
 fn transfer(
     src: &[f32],
     dst: &mut [f32],
@@ -345,6 +387,7 @@ fn transfer(
     pen: &[Vec<f32>; 2],
     tmp: &mut [f32],
     transpose: bool,
+    (src_live, dst_live): (&[bool], &[bool]),
 ) {
     let cells = g.cells();
     let sw = |p: usize, q: usize| {
@@ -356,11 +399,11 @@ fn transfer(
     };
     for q in 0..g.planes {
         let out = &mut dst[q * cells..(q + 1) * cells];
-        let s0 = sw(0, q);
-        for (o, &v) in out.iter_mut().zip(&src[..cells]) {
-            *o = v + s0;
+        out.fill(f32::INFINITY);
+        if !dst_live[q] {
+            continue;
         }
-        for p in 1..g.planes {
+        for p in (0..g.planes).filter(|&p| src_live[p]) {
             let sp = sw(p, q);
             for (o, &v) in out.iter_mut().zip(&src[p * cells..(p + 1) * cells]) {
                 *o = o.min(v + sp);

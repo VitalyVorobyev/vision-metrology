@@ -460,10 +460,47 @@ class BeadTuning:
         min_support: Optional[float] = ...,
     ) -> None: ...
 
+class BeadCoupling:
+    """The costs of a `BeadTracker`'s coupled pairing: set `BeadConfig.pairing` to one
+    to choose both walls at every station together, as one exact path along the curve,
+    with states for one visible wall and for absence. `saturation` and `absent_level`
+    are derivative responses in input units per px; the stiffnesses, `switch_cost` and
+    `offset_prior` are dimensionless; the slopes are px per px of curve; `bin_px` and
+    `margin_tol_px` are px; `margin_quantile` is in (0, 1]."""
+
+    saturation: float
+    absent_level: float
+    wall_stiffness: float
+    width_stiffness: float
+    max_wall_slope: float
+    max_width_slope: float
+    switch_cost: float
+    offset_prior: float
+    bin_px: float
+    margin_tol_px: float
+    margin_quantile: float
+    def __init__(
+        self,
+        saturation: Optional[float] = ...,
+        absent_level: Optional[float] = ...,
+        wall_stiffness: Optional[float] = ...,
+        width_stiffness: Optional[float] = ...,
+        max_wall_slope: Optional[float] = ...,
+        max_width_slope: Optional[float] = ...,
+        switch_cost: Optional[float] = ...,
+        offset_prior: Optional[float] = ...,
+        bin_px: Optional[float] = ...,
+        margin_tol_px: Optional[float] = ...,
+        margin_quantile: Optional[float] = ...,
+    ) -> None: ...
+
 class BeadConfig:
     """What a `BeadTracker` tracks and measures. `polarity` is "light" (default) or
     "dark". `clearance` and `min_margin` are off when `None`. `track`, `measure` and
-    `tuning` are copies: assign a whole new value to change one."""
+    `tuning` are copies: assign a whole new value to change one. `pairing` is `None`
+    (each station's pair chosen on its own) or a `BeadCoupling` (both walls along the
+    whole curve at once); coupled pairing needs `min_margin` to be `None` and reads
+    `clearance` as a cost."""
 
     polarity: str
     min_width: float
@@ -474,6 +511,7 @@ class BeadConfig:
     track: BeadCaliper
     measure: BeadCaliper
     tuning: BeadTuning
+    pairing: Optional[BeadCoupling]
     def __init__(
         self,
         polarity: Optional[str] = ...,
@@ -485,6 +523,7 @@ class BeadConfig:
         track: Optional[BeadCaliper] = ...,
         measure: Optional[BeadCaliper] = ...,
         tuning: Optional[BeadTuning] = ...,
+        pairing: Optional[BeadCoupling] = ...,
     ) -> None: ...
 
 # ---------------------------------------------------------------------------
@@ -859,13 +898,19 @@ class BeadSolve:
 
 class BeadPass:
     """One tracking pass. `longest_gap` is in px; `solve` is `None` when the pass
-    found too few pairs to solve and left the curve where it was."""
+    found too few pairs to solve and left the curve where it was. With coupled
+    pairing, `path_margin` is the pass's whole-call margin (the first pass's window is
+    the prior's, so its margin flags a competing line; later passes do not compute
+    it) and `path_evidence` the path's mean gain per px over absence; both are `None`
+    with per-station pairing."""
 
     n_valid: int
     support: float
     longest_gap: float
     solve: Optional[BeadSolve]
     rejects: Dict[str, int]
+    path_margin: Optional[float]
+    path_evidence: Optional[float]
 
 class TrackedBead:
     """A tracked bead, one array row per station of the refined curve. `centerline`
@@ -875,7 +920,11 @@ class TrackedBead:
     `None` without a hit. `stop` is "converged" (the last solved correction was below
     `tol` and applied in full), "pass_limit" or "too_few_valid"; it says the loop
     stopped, while `center_rms` and `center_max_dev` say whether the curve sits on the
-    bead. `rejects` counts the final stage's rejections by reason, in a fixed order."""
+    bead. `rejects` counts the final stage's rejections by reason, in a fixed order.
+    With coupled pairing, `margin` is each station's max-marginal margin (NaN where the
+    path found no wall), `wall` the one wall of a "one_sided" station (NaN elsewhere)
+    and `wall_side` its side, "first" or "second"; `path_margin` and `path_evidence`
+    score the final stage's path. With per-station pairing they are NaN and `None`."""
 
     centerline: npt.NDArray[np.float32]
     spacing: float
@@ -887,6 +936,11 @@ class TrackedBead:
     first: npt.NDArray[np.float32]
     second: npt.NDArray[np.float32]
     reject: List[Optional[str]]
+    margin: npt.NDArray[np.float32]
+    wall: npt.NDArray[np.float32]
+    wall_side: List[Optional[str]]
+    path_margin: Optional[float]
+    path_evidence: Optional[float]
     support: float
     longest_gap: float
     n_used: int
@@ -914,7 +968,8 @@ class BeadTracker:
         with every station rejected; a prior with fewer than two points, a non-finite
         point or no length raises `ValueError`. Reject reasons are the caliper's
         (`"no_edge"`, `"off_image"`, ...) or the pair gates' (`"no_pair"`, `"width"`,
-        `"offset"`, `"clearance"`, `"ambiguous"`)."""
+        `"offset"`, `"clearance"`, `"ambiguous"`), and with coupled pairing the path's
+        (`"absent"`, `"one_sided"`)."""
         ...
     def explain(
         self, image: ImageAny, prior: Union[PointsF32, npt.NDArray[np.float64]]
@@ -943,7 +998,9 @@ class BeadPassTrace:
     rejected; `weights` is the weight each observation carried in the pass's
     last solve, 0 at a rejected station; `corrections` is the correction the
     pass applied, in px along the normal. `reject` names each rejection (`None`
-    at a hit), and `calipers` holds each strip's `CaliperTrace`."""
+    at a hit), and `calipers` holds each strip's `CaliperTrace`. `margins` is the
+    coupled path's margin at each station, NaN where it found no wall, in the passes
+    after the first, or with per-station pairing."""
 
     points: npt.NDArray[np.float32]
     tangents: npt.NDArray[np.float32]
@@ -956,6 +1013,7 @@ class BeadPassTrace:
     corrections: npt.NDArray[np.float32]
     reject: List[Optional[str]]
     calipers: List[CaliperTrace]
+    margins: npt.NDArray[np.float32]
 
 class BeadStationTrace:
     """One station of the final stage, explained. Points and directions are
@@ -963,7 +1021,9 @@ class BeadStationTrace:
     `window` is `(lo, hi)` in px along the normal. `caliper` is everything the
     strip's caliper computed. At a hit `pair`, `offset` and `confidence`
     describe the bead's pair and `reject` is `None`; at a rejection they are
-    `None` and `reject` names the reason."""
+    `None` and `reject` names the reason. With coupled pairing `margin` is the
+    path's margin there, and `wall` and `wall_side` the one wall of a
+    "one_sided" station; `None` otherwise."""
 
     point: Tuple[float, float]
     tangent: Tuple[float, float]
@@ -976,6 +1036,9 @@ class BeadStationTrace:
     offset: Optional[float]
     confidence: Optional[float]
     reject: Optional[str]
+    margin: Optional[float]
+    wall: Optional[Tuple[float, float]]
+    wall_side: Optional[str]
 
 # ---------------------------------------------------------------------------
 # Detectors, fitters, matchers, segmentation

@@ -6,7 +6,7 @@
 ## Context
 
 Three planned `measure` features choose a sequence of states under a continuity penalty:
-- the coupled two-boundary extraction (ADR-0019, proposed), over (centre, width) bins per
+- the coupled two-boundary extraction (ADR-0019), over (centre, width) bins per
   station;
 - the bead-end rim, over a radius per ray, with its end rays pinned to the walls;
 - the fusion of boundary evidence.
@@ -35,7 +35,11 @@ more than one caller.
     bounded by a band. The cost is separable, so the minimum over predecessors is one
     banded pass per dimension. ADR-0019's (centre, width) state fits this, since
     `Δl² + Δr² = 2Δc² + Δw²/2`.
-  - Forward and backward passes give the path and the max-marginals.
+  - Forward and backward passes give the path and the max-marginals; a caller that needs
+    only the path runs the forward pass alone.
+  - A plane with no finite unary in a layer is skipped in both passes. It holds `+∞`
+    there, which is exact, so a plane that exists only at a few layers costs nothing
+    elsewhere.
   - Soft pins are strong finite unaries.
   - Ties go to the lower state index.
 - **Precision.** Costs are stored in `f32`, each layer relative to its own minimum, and
@@ -68,8 +72,8 @@ more than one caller.
 
 ## Consequences
 
-- The min-path has no caller in the library until ADR-0019's mode or the bead-end rim
-  lands, so its tests, bench and allocation gate are its only users until then.
+- ADR-0019's coupled pairing is the min-path's first caller; the bead-end rim will be the
+  second, and the first to pin.
 - `benches/measure_numeric.rs` tracks both cores. Its numbers are in
   `docs/performance.md`.
 - A caller's costs and units, such as ADR-0019's per-unit-length data and `1/h`

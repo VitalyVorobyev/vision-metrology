@@ -35,7 +35,7 @@ use std::f64::consts::TAU;
 use std::sync::OnceLock;
 
 use vision_metrology::Point2f;
-use vision_metrology::measure::{BeadConfig, BeadTracker};
+use vision_metrology::measure::{BeadConfig, BeadCoupling, BeadPairing, BeadTracker};
 
 use super::ribbon::{Curve, P2, Raster, Ribbon, Scene, Step, Stripe, Width};
 use super::strip::{HI, LO, render_steps};
@@ -460,7 +460,18 @@ impl TrackErrors {
 /// the three rows that report it.
 fn track_sweep() -> &'static [Measured; 3] {
     static SWEEP: OnceLock<[Measured; 3]> = OnceLock::new();
-    SWEEP.get_or_init(|| {
+    SWEEP.get_or_init(|| sweep(BeadPairing::PerStation))
+}
+
+/// The same sweep with coupled pairing (ADR-0019), its defaults.
+fn coupled_sweep() -> &'static [Measured; 3] {
+    static SWEEP: OnceLock<[Measured; 3]> = OnceLock::new();
+    SWEEP.get_or_init(|| sweep(BeadPairing::Coupled(BeadCoupling::default())))
+}
+
+/// The sweep's worst cells with `pairing`.
+fn sweep(pairing: BeadPairing) -> [Measured; 3] {
+    {
         let mut cells: [Vec<(f32, f32)>; 3] = Default::default();
         let mut cell = 0u64;
         for (name, make) in track_curves() {
@@ -468,6 +479,7 @@ fn track_sweep() -> &'static [Measured; 3] {
                 let cfg = BeadConfig {
                     min_width: (0.5 * w) as f32,
                     max_width: (1.5 * w) as f32,
+                    pairing,
                     ..BeadConfig::default()
                 };
                 let mut tracker = BeadTracker::new(cfg).expect("a valid config");
@@ -489,8 +501,13 @@ fn track_sweep() -> &'static [Measured; 3] {
                         );
                         let errors = [&errs.center, &errs.width, &errs.curve];
                         let [c, wd, cv] = errors.map(|e| mean_std(e));
+                        let mode = if pairing == BeadPairing::PerStation {
+                            ""
+                        } else {
+                            "coupled "
+                        };
                         eprintln!(
-                            "bead {} at {noise} DN: centre {:+.4} ± {:.4}, width {:+.4} ± \
+                            "{mode}bead {} at {noise} DN: centre {:+.4} ± {:.4}, width {:+.4} ± \
                              {:.4}, curve {:+.4} ± {:.4} ({hits} hits of {n})",
                             scene.label, c.0, c.1, wd.0, wd.1, cv.0, cv.1
                         );
@@ -502,7 +519,7 @@ fn track_sweep() -> &'static [Measured; 3] {
             }
         }
         cells.map(|c| Measured::worst_of(c.into_iter()))
-    })
+    }
 }
 
 pub(super) fn bead_center_normal_sweep() -> Measured {
@@ -515,4 +532,16 @@ pub(super) fn bead_width_sweep() -> Measured {
 
 pub(super) fn bead_track_curve_sweep() -> Measured {
     track_sweep()[2]
+}
+
+pub(super) fn bead_coupled_center_normal_sweep() -> Measured {
+    coupled_sweep()[0]
+}
+
+pub(super) fn bead_coupled_width_sweep() -> Measured {
+    coupled_sweep()[1]
+}
+
+pub(super) fn bead_coupled_track_curve_sweep() -> Measured {
+    coupled_sweep()[2]
 }

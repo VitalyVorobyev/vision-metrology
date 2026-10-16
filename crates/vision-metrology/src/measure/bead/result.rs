@@ -3,7 +3,7 @@
 
 use vm_primitives::{Point2f, Vec2f};
 
-use crate::measure::{MeasurePair, RejectReason};
+use crate::measure::{MeasureEdge, MeasurePair, RejectReason};
 
 /// A tracked bead: the refined centreline, the final measurement at each of its stations,
 /// and the quality of both.
@@ -36,6 +36,56 @@ pub struct BeadSample {
     pub normal: Vec2f,
     /// The bead's edge pair, or the gate that rejected every pair.
     pub hit: Result<BeadHit, BeadReject>,
+    /// The one wall measured where the other left the image: set exactly when `hit` is
+    /// [`BeadReject::OneSided`].
+    pub wall: Option<BeadWall>,
+    /// [`BeadPairing::Coupled`](super::BeadPairing::Coupled) only, at a station with a
+    /// wall: what the best path that moves a wall more than
+    /// [`margin_tol_px`](super::BeadCoupling::margin_tol_px) here costs more than the
+    /// chosen one, in the path's dimensionless cost; `+∞` when no such path exists. Low
+    /// means another line was nearly as good.
+    pub margin: Option<f32>,
+}
+
+/// Which wall of a bead: the one on the `−n` side of the station, or on the `+n` side.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum BeadSide {
+    /// The `−n` side: a pair's `first` edge.
+    First,
+    /// The `+n` side: a pair's `second` edge.
+    Second,
+}
+
+/// One wall of a bead, measured alone.
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub struct BeadWall {
+    /// Which wall it is.
+    pub side: BeadSide,
+    /// The caliper's edge, with `t` along the station's strip.
+    pub edge: MeasureEdge,
+    /// The edge's signed distance from the station along the normal, in pixels.
+    pub offset: f32,
+}
+
+/// What a coupled path ([`BeadPairing::Coupled`](super::BeadPairing::Coupled)) says about
+/// one stage's stations as a whole.
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub struct BeadPathScore {
+    /// The [`margin_quantile`](super::BeadCoupling::margin_quantile) of the station
+    /// margins ([`BeadSample::margin`]) over the stations with a wall; `None` without
+    /// any, and in the tracking passes after the first, which choose the path without
+    /// its margins; `+∞` when no station has a different answer. A low value means another line
+    /// in the window was nearly as good as the one chosen: it flags a competitor, and
+    /// does not certify a lock.
+    pub margin: Option<f32>,
+    /// The path's mean gain per pixel of curve over calling every station absent, in the
+    /// path's cost units: how much evidence the chosen walls have, smoothness included.
+    pub evidence: f32,
 }
 
 /// The bead found at a station.
@@ -58,7 +108,10 @@ pub struct BeadHit {
 ///
 /// The gates run in this order: the caliper itself, then [`NoPair`](Self::NoPair),
 /// [`Width`](Self::Width), [`Offset`](Self::Offset), [`Clearance`](Self::Clearance) and,
-/// on the chosen pair, [`Ambiguous`](Self::Ambiguous).
+/// on the chosen pair, [`Ambiguous`](Self::Ambiguous). With
+/// [`BeadPairing::Coupled`](super::BeadPairing::Coupled) the path replaces the pair
+/// gates: a station is [`Absent`](Self::Absent), [`OneSided`](Self::OneSided), or
+/// [`NoPair`](Self::NoPair) when no caliper edge lies at a wall the path chose.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
@@ -68,6 +121,8 @@ pub enum BeadReject {
     /// there is not evidence, so the tracker drops it before pairing.
     Caliper(RejectReason),
     /// No edge of the bead's leading polarity is followed by one of the trailing polarity.
+    /// With coupled pairing: no caliper edge of its polarity lies within a pixel of
+    /// either wall the path chose.
     NoPair,
     /// Every ordered pair is narrower than `min_width` or wider than `max_width`.
     Width,
@@ -77,11 +132,17 @@ pub enum BeadReject {
     Clearance,
     /// The best pair's margin over the next is below `min_margin`.
     Ambiguous,
+    /// Coupled pairing: the path found no bead at the station, although its strip had
+    /// valid evidence and edges.
+    Absent,
+    /// Coupled pairing: one wall was measured and the other left the image, so there is
+    /// no width. [`BeadSample::wall`] holds the measured wall.
+    OneSided,
 }
 
 impl BeadReject {
     /// Every reason in the order tallies list them: the caliper's, then the pair gates'.
-    pub(super) const ALL: [Self; 13] = [
+    pub(super) const ALL: [Self; 15] = [
         Self::Caliper(RejectReason::ProfileTooShort),
         Self::Caliper(RejectReason::NoEdge),
         Self::Caliper(RejectReason::WrongPolarity),
@@ -95,6 +156,8 @@ impl BeadReject {
         Self::Offset,
         Self::Clearance,
         Self::Ambiguous,
+        Self::Absent,
+        Self::OneSided,
     ];
 
     /// The reason's position in [`ALL`](Self::ALL).
@@ -115,11 +178,14 @@ impl BeadReject {
             Self::Offset => 10,
             Self::Clearance => 11,
             Self::Ambiguous => 12,
+            Self::Absent => 13,
+            Self::OneSided => 14,
         }
     }
 
     /// A stable snake_case name: the caliper's reason (`"no_edge"`, `"off_image"`, …) or
-    /// the gate (`"no_pair"`, `"width"`, `"offset"`, `"clearance"`, `"ambiguous"`).
+    /// the gate (`"no_pair"`, `"width"`, `"offset"`, `"clearance"`, `"ambiguous"`,
+    /// `"absent"`, `"one_sided"`).
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Caliper(r) => match r {
@@ -137,6 +203,8 @@ impl BeadReject {
             Self::Offset => "offset",
             Self::Clearance => "clearance",
             Self::Ambiguous => "ambiguous",
+            Self::Absent => "absent",
+            Self::OneSided => "one_sided",
         }
     }
 }
@@ -156,6 +224,10 @@ pub struct BeadSummary {
     /// Stations rejected, counted by reason, in [`BeadReject`] declaration order; reasons
     /// that did not occur are left out.
     pub rejects: Vec<(BeadReject, usize)>,
+    /// The final stage's path, with coupled pairing; `None` per station. The call's
+    /// competitor flag is the first tracking pass's
+    /// ([`BeadPass::path`]), whose window is the prior's.
+    pub path: Option<BeadPathScore>,
 }
 
 /// Statistics over the final stage's hits.
@@ -207,6 +279,9 @@ pub struct BeadPass {
     pub solve: Option<BeadSolve>,
     /// Stations rejected, counted by reason, as in [`BeadSummary::rejects`].
     pub rejects: Vec<(BeadReject, usize)>,
+    /// The pass's path, with coupled pairing; `None` per station. The first pass's
+    /// window is the prior's, so its margin is the call's flag for a competing line.
+    pub path: Option<BeadPathScore>,
 }
 
 /// One pass's solve and the correction it applied to the stations.

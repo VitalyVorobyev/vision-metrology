@@ -179,6 +179,56 @@ The best score wins. A tie goes to the smaller `|offset|`, then to the earlier e
 `BeadHit::confidence` is that margin times the balance of the two amplitudes, `min/max`. It
 is for diagnostics; no gate reads it.
 
+## Choosing both walls along the curve: coupled pairing
+
+The gates choose each station's pair on its own. A wrong pair as strong as the bead's,
+such as another line in the window, is then measured as well as the bead would be.
+`BeadConfig::pairing = BeadPairing::Coupled(BeadCoupling::default())` instead chooses the
+walls of every station together, as one exact shortest path along the curve:
+
+```rust
+use vision_metrology::measure::{BeadConfig, BeadCoupling, BeadPairing, BeadTuning};
+use std::num::NonZeroUsize;
+
+let cfg = BeadConfig {
+    min_width: 2.0,
+    max_width: 12.0,
+    pairing: BeadPairing::Coupled(BeadCoupling::default()),
+    // One tracking pass: a later one re-centres the window on the chosen line.
+    tuning: BeadTuning { passes: NonZeroUsize::MIN, ..BeadTuning::default() },
+    ..BeadConfig::default()
+};
+```
+
+- **What it chooses.** Per station, the bead's centre and width on a grid of `bin_px`
+  (rounded to whole profile samples), and whether it measures both walls, one, or none.
+  The evidence is each strip's caliper response, signed to the bead's polarity and softly
+  saturated (`saturation`), so one strong edge cannot carry a pair. The path pays for every
+  step of either wall and of the width along the curve (`wall_stiffness`,
+  `width_stiffness`, bounded by the slopes), and `switch_cost` for each change between
+  present and absent. The costs are per pixel of curve, so the result does not depend on
+  `spacing`.
+- **One wall.** Where one wall's position lies off the image, the station can measure the
+  other alone: `hit` is `Err(BeadReject::OneSided)` and `BeadSample::wall` holds the wall.
+  On the image a station measures both walls or neither.
+- **Absence** is `BeadReject::Absent`, or the caliper's own reason when the strip found no
+  edge or lay off the image. The path bridges a gap with the geometry on either side.
+- **Edge location stays the caliper's.** Each chosen wall moves to the nearest caliper edge
+  of its polarity within a pixel. A wall with no such edge is not measured, and a station
+  with neither is `NoPair`.
+- **`clearance` is a cost**, not a gate: a wall pays the evidence of the strongest other
+  edge within `clearance` px outside it. It keeps a strong edge just inside the bead, such
+  as a dark reversal, from standing in for a wall. `min_margin` must be `None`.
+- **Margins.** `BeadSample::margin` is what the best path that moves a wall more than
+  `margin_tol_px` at that station costs over the chosen one. Each stage's
+  `BeadPathScore` has a low quantile of them and the path's mean evidence per pixel. The
+  first pass's (`track.passes[0].path`) is the call's competitor flag, because its window
+  is the prior's: a low margin means another line in the window was nearly as good. It
+  flags a parallel line; it does not certify a lock, since most wrong locks on textured
+  surfaces have a stronger structure behind them.
+- **Cost.** The path adds a dynamic programme per stage to the strips. The
+  [benchmarks](performance.md) give the time at 300 stations, and the real-data numbers.
+
 ## The regulariser
 
 A pass observes an offset `d̂ᵢ` at each station that found the bead. It then solves for the
@@ -460,6 +510,12 @@ bead.reject            # per station: None, or "no_edge", "width", "offset", ...
 bead.support, bead.longest_gap, bead.center_rms, bead.width_mean
 bead.stop              # "converged", "pass_limit" or "too_few_valid"
 bead.rejects           # {"width": 3, ...}, in a fixed order
+
+coupled = vm.BeadTracker(vm.BeadConfig(pairing=vm.BeadCoupling()))
+bead = coupled.track(image, prior)
+bead.margin            # per station; NaN where the path found no wall
+bead.wall, bead.wall_side   # the one wall of a "one_sided" station
+bead.passes[0].path_margin  # the call's competitor flag
 ```
 
 An invalid config, or a prior with fewer than two points, a non-finite point or no length,
@@ -484,6 +540,8 @@ raises `ValueError`. A missing bead does not raise: every station is rejected.
   `bending_px`, more passes, a previous result or a densely sampled path all help.
 - **Thresholds are on the input pixel scale.** Scale `threshold` with the image, e.g. by
   256 for a `u16` image that holds 8-bit data shifted up.
+- **No mask.** The tracker reads the whole image; a wall goes one-sided only where it
+  leaves the image, not where an occluder covers it.
 - **`Locate::HalfContrast` is fragile near distractors.** It refines every edge on the
   strip, and one that fails rejects the whole strip. Its flanks must not reach the
   opposite edge (`flank_far_px < min_width`), and `Locate::MidpointCrossing` is not

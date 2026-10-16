@@ -4,8 +4,8 @@
 use vm_primitives::{Error, ImageView, Pixel, Point2f, Vec2f};
 
 use super::BeadTracker;
-use super::result::{BeadHit, BeadReject, TrackedBead};
-use super::run::{Pose, Probe};
+use super::result::{BeadHit, BeadReject, BeadWall, TrackedBead};
+use super::run::{Outcome, Pose, Probe};
 use crate::measure::diagnostics::{CaliperTrace, explain};
 use crate::measure::{Caliper, MeasureEdge, MeasureStrip, RejectReason};
 
@@ -77,6 +77,13 @@ pub struct BeadStationTrace {
     pub caliper: CaliperTrace,
     /// The bead's pair, or the gate that rejected every pair.
     pub hit: Result<BeadHit, BeadReject>,
+    /// The one wall of a [`BeadReject::OneSided`] station, as in
+    /// [`BeadSample::wall`](super::BeadSample::wall).
+    pub wall: Option<BeadWall>,
+    /// The coupled path's margin at the station, as in
+    /// [`BeadSample::margin`](super::BeadSample::margin): with coupled pairing, at a
+    /// station with a wall; `None` otherwise.
+    pub margin: Option<f32>,
 }
 
 /// Track the bead on `img` from `prior` as [`BeadTracker::track`] does, and keep each
@@ -165,7 +172,7 @@ impl Probe for Tracer {
         pose: &Pose,
         strip: &MeasureStrip,
         seen: CaliperTrace,
-        hit: &Result<BeadHit, BeadReject>,
+        out: &Outcome,
     ) {
         let v = |[x, y]: [f64; 2]| Vec2f::new(x as f32, y as f32);
         let station = BeadStationTrace {
@@ -175,7 +182,9 @@ impl Probe for Tracer {
             window: (pose.window.0 as f32, pose.window.1 as f32),
             strip: *strip,
             caliper: seen,
-            hit: *hit,
+            hit: out.hit,
+            wall: out.wall,
+            margin: out.margin,
         };
         let Some(pass) = pass else {
             self.measure.push(station);

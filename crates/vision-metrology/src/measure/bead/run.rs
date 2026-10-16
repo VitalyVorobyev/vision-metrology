@@ -2,21 +2,25 @@
 //!
 //! The algorithm is written once, over a [`Probe`] that performs each caliper measurement
 //! and is told what each station and pass did. [`Quiet`] only measures; the tracing probe
-//! in `trace.rs` measures through `diagnostics::explain` and records everything.
+//! in `trace.rs` measures through `diagnostics::explain` and records everything. Each stage
+//! chooses its stations' walls per station (`pairing.rs`) or along the whole curve
+//! (`coupled_stage.rs`), as the config's pairing says.
 
 use std::num::NonZeroUsize;
 
 use vm_primitives::{Error, ImageView, Pixel, Point2f, Vec2f};
 
 use super::config::{BeadCaliper, BeadConfig, strip_extent};
+use super::coupled_stage::{self, CoupledScratch, Stage};
+use super::coupling::BeadPairing;
 use super::curve::{
     V2, arc_lengths, chord_tangents, curvature, load_prior, offset_window, perp, resample,
     station_count, step_scale,
 };
 use super::pairing::{Gates, choose, sort_edges};
 use super::result::{
-    BeadHit, BeadPass, BeadReject, BeadSample, BeadSolve, BeadStop, BeadSummary, BeadTrack,
-    TrackedBead,
+    BeadHit, BeadPass, BeadPathScore, BeadReject, BeadSample, BeadSolve, BeadStop, BeadSummary,
+    BeadTrack, BeadWall, TrackedBead,
 };
 use super::solve::{Penalty, SolveScratch, solve_offsets};
 use super::stats::{Tally, bead_stats, longest_run_missing};
@@ -30,6 +34,31 @@ pub(super) struct Pose {
     pub tangent: V2,
     pub normal: V2,
     pub window: (f64, f64),
+}
+
+/// What one stage made of one station.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct Outcome {
+    /// The pair, or why there is none.
+    pub hit: Result<BeadHit, BeadReject>,
+    /// The one wall of a [`BeadReject::OneSided`] station.
+    pub wall: Option<BeadWall>,
+    /// The coupled path's margin, at a station with a wall.
+    pub margin: Option<f32>,
+    /// The bead's centre offset for the tracking solve, where the stage saw the bead.
+    pub obs: Option<f64>,
+}
+
+impl Outcome {
+    /// A per-station pair or rejection.
+    fn pair(hit: Result<BeadHit, BeadReject>) -> Self {
+        Self {
+            obs: hit.as_ref().ok().map(|h| f64::from(h.offset)),
+            hit,
+            wall: None,
+            margin: None,
+        }
+    }
 }
 
 /// What the run reports to, and measures through.
@@ -46,7 +75,7 @@ pub(super) trait Probe {
     ) -> (Result<(), RejectReason>, Self::Seen);
 
     /// Station `i` measured, in tracking pass `pass` or in the final stage when `None`:
-    /// where, what `measure` saw there, and the pair or the reason.
+    /// where, what `measure` saw there, and what the stage made of it.
     fn station(
         &mut self,
         _pass: Option<usize>,
@@ -54,7 +83,7 @@ pub(super) trait Probe {
         _pose: &Pose,
         _strip: &MeasureStrip,
         _seen: Self::Seen,
-        _hit: &Result<BeadHit, BeadReject>,
+        _out: &Outcome,
     ) {
     }
 
@@ -95,6 +124,9 @@ pub(super) struct Scratch {
     tan: Vec<V2>,
     normals: Vec<V2>,
     kappa: Vec<f64>,
+    /// One stage's poses and outcomes.
+    poses: Vec<Pose>,
+    outs: Vec<Outcome>,
     /// Each station's observed centre offset, read where `valid`.
     obs: Vec<f64>,
     valid: Vec<bool>,
@@ -102,14 +134,15 @@ pub(super) struct Scratch {
     applied: Vec<f64>,
     edges: Vec<MeasureEdge>,
     solve: SolveScratch,
+    coupled: CoupledScratch,
 }
 
 /// One stage's strip geometry: every strip of the stage has the same length and counts.
 #[derive(Debug, Clone, Copy)]
-struct StripSpec {
+pub(super) struct StripSpec {
     half_len: f64,
     half_width: f32,
-    samples: NonZeroUsize,
+    pub samples: NonZeroUsize,
     across: NonZeroUsize,
 }
 
@@ -128,7 +161,7 @@ impl StripSpec {
     }
 
     /// The strip through `pose`, scanning along its normal.
-    fn place(&self, pose: &Pose) -> MeasureStrip {
+    pub(super) fn place(&self, pose: &Pose) -> MeasureStrip {
         let ([x, y], [nx, ny]) = (pose.point, pose.normal);
         let h = self.half_len;
         MeasureStrip {
@@ -161,6 +194,17 @@ fn frame(s: &mut Scratch, h: f64, window: f64) {
     s.normals.extend(s.tan.iter().map(|&t| perp(t)));
 }
 
+/// Drop the edges located outside the image, in border fill: they are not evidence, and a
+/// strip off the image would otherwise find whatever the border mode extends from the
+/// image's edge.
+pub(super) fn retain_inside<P: Pixel>(edges: &mut Vec<MeasureEdge>, img: &ImageView<'_, P>) {
+    let (w, h) = (
+        img.width().saturating_sub(1) as f32,
+        img.height().saturating_sub(1) as f32,
+    );
+    edges.retain(|e| e.p.x >= 0.0 && e.p.y >= 0.0 && e.p.x <= w && e.p.y <= h);
+}
+
 /// Place `cal` at `pose`, measure through `probe`, and choose the pair.
 #[allow(clippy::too_many_arguments)]
 fn measure_station<P: Pixel, R: Probe>(
@@ -172,19 +216,13 @@ fn measure_station<P: Pixel, R: Probe>(
     g: &Gates,
     pose: &Pose,
     station: (Option<usize>, usize),
-) -> Result<BeadHit, BeadReject> {
+) -> Outcome {
     let strip = spec.place(pose);
     cal.set_strip(strip);
     let (measured, seen) = probe.measure(cal, img, edges);
     let hit = match measured {
         Ok(()) => {
-            // An edge located in border fill is not evidence: a strip off the image would
-            // otherwise find whatever the border mode extends from the image's edge.
-            let (w, h) = (
-                img.width().saturating_sub(1) as f32,
-                img.height().saturating_sub(1) as f32,
-            );
-            edges.retain(|e| e.p.x >= 0.0 && e.p.y >= 0.0 && e.p.x <= w && e.p.y <= h);
+            retain_inside(edges, img);
             if edges.is_empty() {
                 Err(BeadReject::Caliper(RejectReason::OffImage))
             } else {
@@ -197,8 +235,9 @@ fn measure_station<P: Pixel, R: Probe>(
         }
         Err(reason) => Err(BeadReject::Caliper(reason)),
     };
-    probe.station(station.0, station.1, pose, &strip, seen, &hit);
-    hit
+    let out = Outcome::pair(hit);
+    probe.station(station.0, station.1, pose, &strip, seen, &out);
+    out
 }
 
 /// The pose of station `i` with an offset reach of `reach` px.
@@ -208,6 +247,64 @@ fn pose_at(s: &Scratch, i: usize, reach: f64) -> Pose {
         tangent: s.tan[i],
         normal: s.normals[i],
         window: offset_window(s.kappa[i], reach),
+    }
+}
+
+/// One stage over every station, as `cfg.pairing` says: each station's outcome into
+/// `s.outs`, each reported to `probe`, and the coupled path's score. `h` is the station
+/// spacing and `pass` the tracking pass, `None` in the final stage.
+#[allow(clippy::too_many_arguments)]
+fn measure_stage<P: Pixel, R: Probe>(
+    probe: &mut R,
+    cal: &mut Caliper,
+    img: &ImageView<'_, P>,
+    s: &mut Scratch,
+    cfg: &BeadConfig,
+    c: &BeadCaliper,
+    h: f64,
+    pass: Option<usize>,
+) -> Option<BeadPathScore> {
+    let spec = StripSpec::new(c, cfg);
+    let reach = f64::from(c.max_offset);
+    s.poses.clear();
+    for i in 0..s.pts.len() {
+        let pose = pose_at(s, i, reach);
+        s.poses.push(pose);
+    }
+    s.outs.clear();
+    match &cfg.pairing {
+        BeadPairing::PerStation => {
+            let g = gates(cfg, c);
+            for (i, pose) in s.poses.iter().enumerate() {
+                let out =
+                    measure_station(probe, cal, img, &mut s.edges, &spec, &g, pose, (pass, i));
+                s.outs.push(out);
+            }
+            None
+        }
+        BeadPairing::Coupled(coupling) => {
+            let stage = Stage {
+                spec,
+                polarity: cfg.polarity,
+                min_width: f64::from(cfg.min_width),
+                max_width: f64::from(cfg.max_width),
+                reach,
+                h,
+                clearance: cfg.clearance.map(f64::from),
+                cfg: coupling,
+            };
+            Some(coupled_stage::measure(
+                probe,
+                cal,
+                img,
+                &s.poses,
+                &mut s.edges,
+                &mut s.outs,
+                &mut s.coupled,
+                &stage,
+                pass,
+            ))
+        }
     }
 }
 
@@ -232,39 +329,20 @@ pub(super) fn run<P: Pixel, R: Probe>(
 
     let t = &cfg.tuning;
     let window = f64::from(t.tangent_window_px);
-    let track_spec = StripSpec::new(&cfg.track, cfg);
-    let track_gates = gates(cfg, &cfg.track);
-    let reach = f64::from(cfg.track.max_offset);
     let mut passes = Vec::with_capacity(t.passes.get());
     let mut stop = BeadStop::PassLimit;
     for pass in 0..t.passes.get() {
         frame(s, h, window);
+        let path = measure_stage(probe, track_cal, img, s, cfg, &cfg.track, h, Some(pass));
         let mut tally = Tally::default();
         s.obs.clear();
         s.valid.clear();
-        for i in 0..n {
-            let pose = pose_at(s, i, reach);
-            let hit = measure_station(
-                probe,
-                track_cal,
-                img,
-                &mut s.edges,
-                &track_spec,
-                &track_gates,
-                &pose,
-                (Some(pass), i),
-            );
-            match hit {
-                Ok(hit) => {
-                    s.obs.push(f64::from(hit.offset));
-                    s.valid.push(true);
-                }
-                Err(r) => {
-                    tally.add(r);
-                    s.obs.push(0.0);
-                    s.valid.push(false);
-                }
+        for out in &s.outs {
+            if let Err(r) = out.hit {
+                tally.add(r);
             }
+            s.obs.push(out.obs.unwrap_or(0.0));
+            s.valid.push(out.obs.is_some());
         }
         let n_valid = s.valid.iter().filter(|&&v| v).count();
         let support = n_valid as f64 / n as f64;
@@ -275,6 +353,7 @@ pub(super) fn run<P: Pixel, R: Probe>(
             longest_gap: gap as f32,
             solve: None,
             rejects: tally.to_vec(),
+            path,
         };
         if n_valid == 0 || support < f64::from(t.min_support) {
             s.applied.clear();
@@ -338,30 +417,19 @@ pub(super) fn run<P: Pixel, R: Probe>(
     // The final stage: new poses on the refined stations, the stricter caliper, no
     // feedback into the curve.
     frame(s, h, window);
-    let spec = StripSpec::new(&cfg.measure, cfg);
-    let g = gates(cfg, &cfg.measure);
-    let reach = f64::from(cfg.measure.max_offset);
+    let path = measure_stage(probe, measure_cal, img, s, cfg, &cfg.measure, h, None);
     let mut tally = Tally::default();
     let mut samples = Vec::with_capacity(n);
-    for i in 0..n {
-        let pose = pose_at(s, i, reach);
-        let hit = measure_station(
-            probe,
-            measure_cal,
-            img,
-            &mut s.edges,
-            &spec,
-            &g,
-            &pose,
-            (None, i),
-        );
-        if let Err(r) = hit {
+    for (pose, out) in s.poses.iter().zip(&s.outs) {
+        if let Err(r) = out.hit {
             tally.add(r);
         }
         samples.push(BeadSample {
             point: Point2f::new(pose.point[0] as f32, pose.point[1] as f32),
             normal: Vec2f::new(pose.normal[0] as f32, pose.normal[1] as f32),
-            hit,
+            hit: out.hit,
+            wall: out.wall,
+            margin: out.margin,
         });
     }
     let hits = samples.iter().filter_map(|smp| smp.hit.as_ref().ok());
@@ -376,6 +444,7 @@ pub(super) fn run<P: Pixel, R: Probe>(
             longest_gap: (gap as f64 * h) as f32,
             stats,
             rejects: tally.to_vec(),
+            path,
         },
         samples,
         track: BeadTrack { passes, stop },

@@ -124,6 +124,12 @@ fn random_instance(rng: &mut Lcg, dp: &mut LayeredPath) -> Steps {
             };
         }
     }
+    // Now and then a whole plane is missing from a layer, which the solver skips.
+    if planes > 1 && rng.next() < 0.4 {
+        let (k, p) = (rng.below(layers), rng.below(planes));
+        let cells = dims[0] * dims[1];
+        dp.unary_mut(k)[p * cells..(p + 1) * cells].fill(f32::INFINITY);
+    }
     if rng.next() < 0.5 {
         let k = rng.below(layers);
         let (i0, i1) = (rng.below(dims[0]), rng.below(dims[1]));
@@ -180,6 +186,18 @@ fn the_path_and_max_marginals_equal_brute_force() {
         "{checked} instances, {paths} unique paths, {infeasible} infeasible; worst {worst:e}"
     );
     assert!(checked > 300 && paths > 250 && infeasible > 5);
+}
+
+#[test]
+fn the_forward_pass_alone_gives_the_same_path() {
+    let mut rng = Lcg(19);
+    let mut dp = LayeredPath::default();
+    for _ in 0..200 {
+        random_instance(&mut rng, &mut dp);
+        let full = dp.solve().map(|c| (c, dp.path().to_vec()));
+        let fwd = dp.solve_with(false).map(|c| (c, dp.path().to_vec()));
+        assert_eq!(full, fwd);
+    }
 }
 
 #[test]

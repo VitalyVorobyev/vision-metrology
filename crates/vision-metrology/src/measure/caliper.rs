@@ -71,6 +71,8 @@ pub struct Caliper {
     levels: Vec<LevelEdge>,
     edges: Vec<MeasureEdge>,
     pairs: Vec<MeasurePair>,
+    /// Whether the last call computed a derivative response for its profile.
+    fresh: bool,
 }
 
 impl Caliper {
@@ -113,6 +115,7 @@ impl Caliper {
             levels: Vec::new(),
             edges: Vec::new(),
             pairs: Vec::new(),
+            fresh: false,
         }
     }
 
@@ -179,6 +182,22 @@ impl Caliper {
     /// before `select`.
     pub(crate) fn candidates(&self) -> impl ExactSizeIterator<Item = MeasureEdge> + '_ {
         self.cands.iter().map(|c| c.edge)
+    }
+
+    /// The derivative response of the last call's profile, in input units per profile
+    /// sample, with [`Derivative::Continuous`]'s validity per sample (`None` otherwise:
+    /// every sample of the default derivatives is read, border fill included); `None`
+    /// when the last call stopped before differentiating its profile. Valid until the next
+    /// call.
+    pub(crate) fn response(&self) -> Option<(&[f32], Option<&[bool]>)> {
+        if !self.fresh {
+            return None;
+        }
+        Some(if self.continuous() {
+            (&self.cont.resp, Some(self.cont.valid()))
+        } else {
+            (self.det.response(), None)
+        })
     }
 
     /// The smoothed profile and the derivative response of the last profile, recomputed
@@ -315,6 +334,7 @@ impl Caliper {
     }
 
     fn clear_results(&mut self) {
+        self.fresh = false;
         self.cands.clear();
         self.chosen.clear();
         self.levels.clear();
@@ -420,6 +440,7 @@ impl Caliper {
         } else {
             self.det.detect_in_ref(&self.profile, &det_cfg)
         };
+        self.fresh = true;
         let mut any_peak = false;
         for pk in peaks.iter().filter(|pk| pk.strength >= threshold) {
             any_peak = true;

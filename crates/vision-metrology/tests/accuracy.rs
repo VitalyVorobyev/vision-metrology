@@ -61,6 +61,11 @@ mod bead;
 
 #[path = "accuracy/rig.rs"]
 mod rig;
+
+// Coupled pairing's walls on the bead fixture's hard cases.
+#[path = "accuracy/bead_coupled.rs"]
+mod bead_coupled;
+
 #[cfg(feature = "corr-experimental")]
 #[path = "accuracy/similarity.rs"]
 mod similarity;
@@ -1318,6 +1323,26 @@ struct Row {
 /// | bead_width (px)                      | 0.0213              | 0.1696           | 0.032           | 0.25              |
 /// | bead_track_curve (px)                | 0.0119              | 0.0487           | 0.018           | 0.073             |
 ///
+/// The coupled rows (`accuracy/bead.rs` with `BeadPairing::Coupled`, and
+/// `accuracy/bead_coupled.rs`, measured 2026-10-16) run the same sweep with coupled
+/// pairing, then a light bead 8 px wide at 60 DN contrast under 2 DN, from a prior 2 px
+/// off, with each final wall's signed error pooled over a line, an arc and a sine. The
+/// walls snap to the caliper's edges, so the sweep's rows match per-station pairing's. A
+/// stripe 2 px outside a wall and a highlight inside the bead merge with it in the
+/// derivative, which no choice between edges undoes:
+///
+/// | Row                                 | measured \|bias\| | measured sigma | envelope bias | envelope sigma |
+/// |--------------------------------------|-------------------:|----------------:|---------------:|-----------------:|
+/// | bead_coupled_center_normal (px)      | 0.0113              | 0.0868           | 0.017           | 0.13              |
+/// | bead_coupled_width (px)              | 0.0213              | 0.1696           | 0.032           | 0.25              |
+/// | bead_coupled_track_curve (px)        | 0.0120              | 0.0487           | 0.018           | 0.073             |
+/// | bead_coupled_walls (px)              | 0.0025              | 0.0578           | 0.004           | 0.087             |
+/// | bead_coupled_walls_continuous (px)   | 0.0041              | 0.0674           | 0.0062          | 0.10              |
+/// | bead_coupled_varying_width (px)      | 0.0055              | 0.0608           | 0.0083          | 0.091             |
+/// | bead_coupled_distractor_2px (px)     | 0.4561              | 0.0513           | 0.68            | 0.077             |
+/// | bead_coupled_gap (px)                | 0.0028              | 0.0579           | 0.0042          | 0.087             |
+/// | bead_coupled_highlight (px)          | 0.1722              | 0.2142           | 0.26            | 0.32              |
+///
 /// Rows 5-6 are the scale sweep: 12 true scales geometrically spaced 0.5..2.0x, 3 rotations each,
 /// model taught at scale 1.0 with `scale_range = (0.45, 2.1)`. Every scale
 /// found every rotation (100% found-rate — see `BASELINE_FOUND_RATE`'s full
@@ -1599,6 +1624,69 @@ const ROWS: &[Row] = &[
         measure: bead::bead_track_curve_sweep,
         bias_envelope: 0.018,
         sigma_envelope: 0.073,
+    },
+    Row {
+        // Measured: |bias| 0.0113, sigma 0.0868. ~1.5x, rounded.
+        name: "bead_coupled_center_normal",
+        measure: bead::bead_coupled_center_normal_sweep,
+        bias_envelope: 0.017,
+        sigma_envelope: 0.13,
+    },
+    Row {
+        // Measured: |bias| 0.0213, sigma 0.1696. ~1.5x, rounded.
+        name: "bead_coupled_width",
+        measure: bead::bead_coupled_width_sweep,
+        bias_envelope: 0.032,
+        sigma_envelope: 0.25,
+    },
+    Row {
+        // Measured: |bias| 0.0120, sigma 0.0487. ~1.5x, rounded.
+        name: "bead_coupled_track_curve",
+        measure: bead::bead_coupled_track_curve_sweep,
+        bias_envelope: 0.018,
+        sigma_envelope: 0.073,
+    },
+    Row {
+        // Measured: |bias| 0.0025, sigma 0.0578. ~1.5x, rounded.
+        name: "bead_coupled_walls",
+        measure: bead_coupled::walls,
+        bias_envelope: 0.004,
+        sigma_envelope: 0.087,
+    },
+    Row {
+        // Measured: |bias| 0.0041, sigma 0.0674. ~1.5x, rounded.
+        name: "bead_coupled_walls_continuous",
+        measure: bead_coupled::walls_continuous,
+        bias_envelope: 0.0062,
+        sigma_envelope: 0.10,
+    },
+    Row {
+        // Measured: |bias| 0.0055, sigma 0.0608. ~1.5x, rounded.
+        name: "bead_coupled_varying_width",
+        measure: bead_coupled::varying_width,
+        bias_envelope: 0.0083,
+        sigma_envelope: 0.091,
+    },
+    Row {
+        // Measured: |bias| 0.4561, sigma 0.0513. ~1.5x, rounded.
+        name: "bead_coupled_distractor_2px",
+        measure: bead_coupled::distractor_2px,
+        bias_envelope: 0.68,
+        sigma_envelope: 0.077,
+    },
+    Row {
+        // Measured: |bias| 0.0028, sigma 0.0579. ~1.5x, rounded.
+        name: "bead_coupled_gap",
+        measure: bead_coupled::gap,
+        bias_envelope: 0.0042,
+        sigma_envelope: 0.087,
+    },
+    Row {
+        // Measured: |bias| 0.1722, sigma 0.2142. ~1.5x, rounded.
+        name: "bead_coupled_highlight",
+        measure: bead_coupled::highlight,
+        bias_envelope: 0.26,
+        sigma_envelope: 0.32,
     },
 ];
 

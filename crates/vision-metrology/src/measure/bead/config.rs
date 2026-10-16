@@ -4,6 +4,7 @@ use std::num::NonZeroUsize;
 
 use vm_primitives::Error;
 
+use super::coupling::{BeadPairing, validate_pairing};
 use crate::fit::RobustLoss;
 use crate::measure::{
     Derivative, EdgeSelect, Locate, MeasureConfig, PolaritySelect, ProfileConfig,
@@ -147,6 +148,7 @@ pub struct BeadConfig {
     pub spacing: f32,
     /// When set, a pair is rejected if any other edge lies within this many pixels
     /// outside either of its edges. Edges between the pair (a highlight) are allowed.
+    /// With [`BeadPairing::Coupled`] it is a cost instead of a gate.
     pub clearance: Option<f32>,
     /// When set, a pair is rejected as ambiguous unless its margin over the best other
     /// pair, `1 − s₂/s₁` in scores, reaches this value, in `(0, 1)`.
@@ -157,6 +159,8 @@ pub struct BeadConfig {
     pub measure: BeadCaliper,
     /// The loop's effort and the correction's stiffness.
     pub tuning: BeadTuning,
+    /// How each stage chooses the bead's walls at its stations.
+    pub pairing: BeadPairing,
 }
 
 impl Default for BeadConfig {
@@ -181,12 +185,13 @@ impl Default for BeadConfig {
                 ..track
             },
             tuning: BeadTuning::default(),
+            pairing: BeadPairing::PerStation,
         }
     }
 }
 
 /// `Ok` when `v` is finite and `v > 0`.
-fn positive(v: f32, what: &'static str) -> Result<(), Error> {
+pub(super) fn positive(v: f32, what: &'static str) -> Result<(), Error> {
     if v.is_finite() && v > 0.0 {
         Ok(())
     } else {
@@ -195,7 +200,7 @@ fn positive(v: f32, what: &'static str) -> Result<(), Error> {
 }
 
 /// `Ok` when `v` is finite and `v ≥ 0`.
-fn non_negative(v: f32, what: &'static str) -> Result<(), Error> {
+pub(super) fn non_negative(v: f32, what: &'static str) -> Result<(), Error> {
     if v.is_finite() && v >= 0.0 {
         Ok(())
     } else {
@@ -263,7 +268,8 @@ pub(super) fn validate(cfg: &BeadConfig) -> Result<(), Error> {
             ));
         }
     }
-    validate_tuning(&cfg.tuning)
+    validate_tuning(&cfg.tuning)?;
+    validate_pairing(cfg)
 }
 
 fn validate_caliper(c: &BeadCaliper, min_width: f32) -> Result<(), Error> {

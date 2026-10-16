@@ -40,6 +40,10 @@ mod ribbon;
 #[path = "bead/basins.rs"]
 mod basins;
 
+// Coupled pairing (ADR-0019).
+#[path = "bead/coupled.rs"]
+mod coupled;
+
 use std::f64::consts::TAU;
 use std::num::NonZeroUsize;
 

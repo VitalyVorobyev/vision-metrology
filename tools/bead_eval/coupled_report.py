@@ -11,7 +11,7 @@ from __future__ import annotations
 import numpy as np
 from scipy.stats import rankdata
 
-METHODS = ("tracker", "sparse", "dense")
+METHODS = ("tracker", "sparse", "dense", "rust")
 #: The ambiguity score chosen on the tuning subset, before the evaluation run.
 MAIN_SCORE = "amb_q0.25_t5"
 SIGNALS = ("support", MAIN_SCORE, "evidence")
@@ -117,6 +117,14 @@ def compare(rows: list[dict], keys: list[str], boot: int, seed: int = 0) -> dict
                     "point": res[m]["point"][k] - res["tracker"]["point"][k],
                     "ci": [float(np.nanquantile(d, 0.05)), float(np.nanquantile(d, 0.95))],
                 }
+        if m == "rust" and "dense" in arrs:
+            res[m]["minus_dense"] = {}
+            for k in ("locked", "false_lock", "wrong support"):
+                d = np.array([s[k] - t[k] for s, t in zip(samples[m], samples["dense"])])
+                res[m]["minus_dense"][k] = {
+                    "point": res[m]["point"][k] - res["dense"]["point"][k],
+                    "ci": [float(np.nanquantile(d, 0.05)), float(np.nanquantile(d, 0.95))],
+                }
         res[m]["auc_all"] = {k: auc(arrs[m][k], arrs[m]["locked"]) for k in keys if k in arrs[m]}
     return {"calls": len(paths), "paths": len(members), "coverage": cov, "methods": res}
 
@@ -205,8 +213,10 @@ def headline(cmp: dict) -> list[str]:
         cells += [_ci(r, f"wrong {k}", True) if f"wrong {k}" in r["point"] else "–" for k in SIGNALS]
         out.append(f"| {m} | " + " | ".join(cells) + " |")
     diffs = [(m, r["minus_tracker"]) for m, r in cmp["methods"].items() if "minus_tracker" in r]
+    diffs += [("rust − dense", r["minus_dense"]) for m, r in cmp["methods"].items() if "minus_dense" in r]
     if diffs:
-        out += ["", "| Minus the tracker, paired | Locked | False lock | Wrong, by support |", "|---|---:|---:|---:|"]
+        out += ["", "| Paired difference (minus the tracker unless named) | Locked | False lock | Wrong, by support |",
+                "|---|---:|---:|---:|"]
         for m, d in diffs:
             out.append(
                 f"| {m} | " + " | ".join(
@@ -223,7 +233,8 @@ def markdown(rep: dict) -> str:
     out = [
         "# Coupled two-boundary extraction",
         "",
-        f"Subset: {rep['subset']}. Coupled config: " + ", ".join(f"{k} {v}" for k, v in cfg.items()) + ".",
+        f"Subset: {rep['subset']}, split: {rep.get('split', 'all')}. Coupled config: "
+        + ", ".join(f"{k} {v}" for k, v in cfg.items()) + ". Rust overrides: " + (str(rep.get("rust")) or "none") + ".",
         "",
         f"Signals: `support`, the share of stations with a hit; ambiguity, `{MAIN_SCORE}`: the 0.25 "
         "quantile of the station max-marginal margins for alternatives with a wall more than 5 px "

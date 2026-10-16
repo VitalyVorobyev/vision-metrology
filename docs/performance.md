@@ -77,12 +77,29 @@ prior 2 px off and bent by a further 1 px, every configured pass run:
 
 | Operation | Time |
 |---|---|
-| `track`, 100 stations, 1 pass | 0.44 ms |
-| `track`, 300 stations, 1 pass | 1.30 ms |
-| `track`, 300 stations, 3 passes | 2.54 ms |
-| `track`, 300 stations, 3 passes, reach ±30 px | 2.97 ms |
-| `track`, 300 stations, 3 passes, 30% of the bead in gaps and a distractor beside it | 2.58 ms |
-| `explain_bead`, 300 stations, 3 passes | 3.60 ms |
+| `track`, 100 stations, 1 pass | 0.45 ms |
+| `track`, 300 stations, 1 pass | 1.35 ms |
+| `track`, 300 stations, 3 passes | 2.60 ms |
+| `track`, 300 stations, 3 passes, reach ±30 px | 3.03 ms |
+| `track`, 300 stations, 3 passes, 30% of the bead in gaps and a distractor beside it | 2.66 ms |
+| `explain_bead`, 300 stations, 3 passes | 3.68 ms |
+
+With coupled pairing (ADR-0019), on the same S-bend with a bead 6 px wide under 2 DN of
+noise, a width range of 2–12 px, a reach of ±8 px and 300 stations: the prototype's state
+space, on the tracking stage's 1 px profile grid and the final stage's 0.5 px one.
+
+| Operation | Time |
+|---|---|
+| `track`, per-station pairing, 3 passes | 0.95 ms |
+| `track`, coupled pairing, 1 pass | 1.51 ms |
+| `track`, coupled pairing, 3 passes | 2.46 ms |
+
+- **Within the tracker's budget.** The coupled call costs less than the default 3-pass
+  `track` above, 2.60 ms, with one tracking pass or three.
+- **The path's planes are pruned.** A one-wall plane has no state where both walls lie on
+  the image, and the min-path skips it there, which is exact; that took the 3-pass call
+  from 2.76 to 2.46 ms. The passes between the first and the final stage run the forward
+  pass alone, since their margins are not reported.
 
 Where the time goes, in the 3-pass case:
 - **Each strip costs about 2.1 µs.** A call measures one strip per station in each pass and
@@ -101,22 +118,23 @@ Pro (`benches/measure_numeric.rs`):
 
 | Operation | Time |
 |---|---|
-| robust Whittaker smoother, 1 000 samples, 1 + 5 Huber solves | 119 µs |
-| robust Whittaker smoother, 10 000 samples | 1.32 ms |
-| robust Whittaker smoother, 100 000 samples | 12.3 ms |
-| min-path, 300 layers × 65 × 21 cells × 2 planes, bands 8 and 2 | 3.31 ms |
-| min-path, 61 rays × 113 radii, band 8, ends pinned | 24.7 µs |
+| robust Whittaker smoother, 1 000 samples, 1 + 5 Huber solves | 116 µs |
+| robust Whittaker smoother, 10 000 samples | 1.22 ms |
+| robust Whittaker smoother, 100 000 samples | 12.1 ms |
+| min-path, 300 layers × 65 × 21 cells × 2 planes, bands 8 and 2 | 2.99 ms |
+| min-path, 61 rays × 113 radii, band 8, ends pinned | 25.0 µs |
 
 - **The smoother is linear in its length.** It takes about 20 ns per sample and solve at
   every size: 119, 132 and 123 ns per sample over its six solves. The bead tracker's own
   solves are a few hundred samples long.
-- **The min-path is linear in its states.** It costs about 4 ns per state for the forward
-  pass, the backward pass and the backtrack together. Most of that is the band passes.
-- **The coupled state space is the prototype's.** It has a ±8 px reach on a ¼ px grid,
-  widths of 2–12 px on a ½ px grid, and present and absent planes. At 300 stations
-  it costs more than the tracker's whole 3-pass `track` call. ADR-0019 requires a bench
-  that shows the tracker's budget holds, so a smaller reach, a coarser grid or fewer
-  stations are its levers.
+- **The min-path is linear in its states.** It costs about 3.7 ns per state for the
+  forward pass, the backward pass and the backtrack together. Most of that is the band
+  passes.
+- **The bench's state space is the Python prototype's.** It has a ±8 px reach on a ¼ px
+  grid, widths of 2–12 px on a ½ px grid, and present and absent planes. The tracker's
+  coupled pairing runs on its stages' profile grids instead (1 px when tracking, 0.5 px
+  in the final stage), and prunes the planes a layer lacks; its `track` call is in the
+  [speed table](#speed).
 
 ## Accuracy envelopes
 
@@ -373,6 +391,39 @@ station of 5 noisy trials.
 | final centre, distance from the true centreline | px | 0.0113 | 0.0869 | 0.017 / 0.13 |
 | final width, minus the true width | px | 0.0213 | 0.1696 | 0.032 / 0.25 |
 | refined centreline, distance from the true one | px | 0.0119 | 0.0487 | 0.018 / 0.073 |
+
+With coupled pairing the same sweep gives the same rows to the third decimal (0.0113 /
+0.0868, 0.0213 / 0.1696, 0.0120 / 0.0487): the walls snap to the same caliper edges.
+`tests/accuracy/bead_coupled.rs` adds the hard cases on a light bead 8 px wide at 60 DN
+contrast under 2 DN, along a line, an arc and a sine, from a prior 2 px off. Each row is
+both walls' signed error over every final hit, worst over the curves:
+
+| Case | Worst \|bias\| | Worst σ | Envelope (bias / σ) |
+|---|---:|---:|---|
+| clean | 0.0025 | 0.0578 | 0.004 / 0.087 |
+| clean, both stages on `Derivative::Continuous` (σ 1 px) | 0.0041 | 0.0674 | 0.0062 / 0.10 |
+| width from 6 to 12 px along the curve | 0.0055 | 0.0608 | 0.0083 / 0.091 |
+| a 3 px stripe 2 px outside the `+n` wall (that wall only) | 0.4561 | 0.0513 | 0.68 / 0.077 |
+| no bead over 30 px (no hit inside the gap) | 0.0028 | 0.0579 | 0.0042 / 0.087 |
+| a 1.5 px highlight inside the bead, off centre | 0.1722 | 0.2142 | 0.26 / 0.32 |
+
+- **The snap uses the default derivative.** At this blur the continuous profile's walls
+  are noisier, so coupled pairing refines on the stage's own caliper edges and leaves
+  `Derivative::Continuous` a stage setting.
+- **A merge in the derivative stays a bias.** The stripe 2 px outside a wall pulls it
+  0.46 px inwards, and the highlight, whose edge lies 2 px inside the `+n` wall, biases
+  the walls by −0.17 px on average with a σ of 0.21 px: the path chooses between edges and
+  cannot separate them.
+- **A parallel bead flags itself.** From a prior midway between two identical beads 14 px
+  apart, the first pass's margin is 0.02, against 9.1 for one bead alone
+  (`tests/bead.rs`).
+- **Issue #73's profiles.** On the issue's exact profiles, with the given occlusion and the
+  `+n` side off the image from station 45, the path chooses absence where every sample is
+  occluded and keeps the `−n` wall alone in the one-sided stretch; the walls are within
+  0.003 px of the truth away from the three stations next to each end and break, when a
+  clearance of 4 px keeps the internal reversal's edge from standing in for the wall.
+  Without it the reversal, as strong as the wall, pairs with the visible wall along the
+  whole curve.
 
 How to read them:
 - **The worst cell is σ 1.5 px with 5 DN of noise, in every row.** Without noise, every bias
@@ -734,6 +785,51 @@ least 0.5 does, 84.5% of all calls, and counts the calls it accepts that did not
 The settings were chosen on a tuning subset of 120 other paths and on the synthetic
 scenes. [`tools/bead_eval/README.md`](../tools/bead_eval/README.md#coupled-two-boundary-extraction)
 reproduces the numbers.
+
+### The library's operator
+
+`BeadPairing::Coupled` is the dense variant in the library. `coupled_eval.py` runs it as
+the `rust` method: `run_tracker.py`'s config with coupled pairing at its defaults and one
+tracking pass. The tracking stage's profile step stays at 1 px, so the path's grid is
+1 px there and 0.5 px in the final stage, against the prototype's 0.25 px. The settings
+were chosen on the registry split's development images (`tools/datasets/splits/damsegment.json`,
+100 seeded paths per difficulty): there, a second and third tracking pass locked 1.9
+points less often, and a 0.25 px profile step changed the lock rate by half a point or
+less. The test split was then run once.
+
+| Set | Method | Locked | Wrong at equal coverage | AUC: support / ambiguity / path evidence | Time per call |
+|---|---|---:|---:|---:|---:|
+| test split, 5400 calls on 300 paths | tracker | 85.6% [83.4, 87.8] | 13.2% [11.0, 15.2] | 0.71 / – / – | 0.4 ms |
+| | dense (Python) | 91.4% [89.4, 93.2] | 6.5% [4.7, 8.2] | 0.60 / 0.57 / 0.75 | 25 ms |
+| | coupled (Rust) | 91.0% [89.1, 93.0] | 5.8% [4.2, 7.5] | 0.71 / 0.59 / 0.77 | 0.6 ms |
+| #76's set, 5400 calls on 300 paths | tracker | 85.3% [82.6, 88.0] | 13.0% [10.5, 15.4] | 0.71 / – / – | 0.4 ms |
+| | dense (Python) | 91.0% [88.8, 93.3] | 7.1% [5.0, 8.8] | 0.58 / 0.50 / 0.72 | 23 ms |
+| | coupled (Rust) | 91.1% [89.2, 93.2] | 5.8% [4.1, 7.5] | 0.67 / 0.50 / 0.72 | 0.6 ms |
+
+- **The Rust operator reproduces the prototype.** On the test split, paired on the same
+  calls, it locks 0.4 points less than the dense prototype [−1.3, +0.5] and accepts 0.7
+  points fewer wrong locks at equal coverage [−1.8, +0.4]; against the tracker it locks
+  5.4 points more [3.6, 7.2] and accepts 7.4 fewer wrong locks [5.3, 9.6]. On #76's set it
+  locks 0.1 points more than the prototype [−0.7, +1.0].
+- **Its support is a better signal than the prototype's.** It has fewer stations with a
+  wall that no caliper edge supports, so support separates locked calls about as well as
+  the tracker's does, and its false locks (support ≥ 0.5, not locked) are 6.0% against
+  the prototype's 8.2%.
+- **The margin still does not predict wrong locks on cracks**, as for the prototype (AUC
+  0.50–0.59). The path's mean evidence is the best whole-call signal.
+- **Synthetic walls.** On `synthetic.py`'s scenes it matches the prototype's lock and
+  coverage in every condition, the ambiguity's AUC included (1.00 on the parallel bead).
+  Its walls snap to the final stage's 0.5 px profile, so their σ is the tracker's,
+  0.052 px, against the prototype's 0.046 px on a 0.25 px profile.
+- **Development sequence A** (private, aggregates only). On the 445 frames with saved
+  ribbon geometry, from that geometry and from it moved ±4 px along its normals (1335
+  calls, the same width range and a reach of ±8 px), the tracker stays on the reference
+  in 93.6% of calls with per-station pairing and in 100% with coupled pairing (one pass).
+  Both walls are measured at a median 79% of stations per call with per-station pairing
+  and 74% with coupled pairing, which measures one wall at a further 25% of stations, most
+  of them where the other wall leaves the image.
+
+`tools/bead_eval/README.md` reproduces the public numbers.
 
 ## Real data: shape matching
 

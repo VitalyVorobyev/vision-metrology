@@ -23,6 +23,9 @@
 // 21 (residuals reported) shape this module.
 
 mod config;
+mod coupled;
+mod coupled_stage;
+mod coupling;
 mod curve;
 mod pairing;
 mod result;
@@ -32,14 +35,17 @@ mod stats;
 mod trace;
 
 #[cfg(test)]
+mod coupled_tests;
+#[cfg(test)]
 mod tests;
 
 use vm_primitives::{Error, ImageView, Pixel, Point2f};
 
 pub use config::{BeadCaliper, BeadConfig, BeadPolarity, BeadTuning};
+pub use coupling::{BeadCoupling, BeadPairing};
 pub use result::{
-    BeadHit, BeadPass, BeadReject, BeadSample, BeadSolve, BeadStats, BeadStop, BeadSummary,
-    BeadTrack, TrackedBead,
+    BeadHit, BeadPass, BeadPathScore, BeadReject, BeadSample, BeadSide, BeadSolve, BeadStats,
+    BeadStop, BeadSummary, BeadTrack, BeadWall, TrackedBead,
 };
 // Reached only through `measure::diagnostics` (invariant 17).
 pub use trace::{BeadPassTrace, BeadStationTrace, BeadTrace, explain_bead};
@@ -55,6 +61,10 @@ use super::{Caliper, MeasureStrip};
 /// refined curve with a stricter caliper, without moving it. A bead that is not there is
 /// still a result: every station is rejected with a reason, and the tracking stops with
 /// [`BeadStop::TooFewValid`].
+///
+/// With [`BeadPairing::Coupled`] each stage chooses the walls of all its stations together,
+/// as one exact path along the curve, instead of each station's pair on its own; see
+/// [`BeadCoupling`].
 ///
 /// The tracker owns both stages' calipers and every buffer, so after the first call at a
 /// given size [`track`](Self::track) allocates only its result.

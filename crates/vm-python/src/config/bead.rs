@@ -12,8 +12,11 @@ use pyo3::prelude::*;
 use vision_metrology::fit::RobustLoss as NativeRobustLoss;
 use vision_metrology::measure::{
     BeadCaliper as NativeBeadCaliper, BeadConfig as NativeBeadConfig,
-    BeadPolarity as NativeBeadPolarity, BeadTuning as NativeBeadTuning,
+    BeadPairing as NativeBeadPairing, BeadPolarity as NativeBeadPolarity,
+    BeadTuning as NativeBeadTuning,
 };
+
+use super::bead_coupling::BeadCoupling;
 
 use super::measure::{
     BORDER_MODES, DERIVATIVES, Locate, MeasureConfig, OFF_IMAGES, Profile, check_name, not_one_of,
@@ -339,6 +342,10 @@ pub struct BeadConfig {
     /// The final stage's caliper.
     pub measure: BeadCaliper,
     pub tuning: BeadTuning,
+    /// `None` chooses each station's pair on its own; a `BeadCoupling` chooses both walls
+    /// along the whole curve at once, as one exact path. Coupled pairing needs
+    /// `min_margin` to be `None`, and reads `clearance` as a cost.
+    pub pairing: Option<BeadCoupling>,
 }
 
 #[pymethods]
@@ -347,7 +354,7 @@ impl BeadConfig {
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (
         polarity=None, min_width=None, max_width=None, spacing=None, clearance=None,
-        min_margin=None, track=None, measure=None, tuning=None
+        min_margin=None, track=None, measure=None, tuning=None, pairing=None
     ))]
     pub fn new(
         polarity: Option<String>,
@@ -359,6 +366,7 @@ impl BeadConfig {
         track: Option<BeadCaliper>,
         measure: Option<BeadCaliper>,
         tuning: Option<BeadTuning>,
+        pairing: Option<BeadCoupling>,
     ) -> PyResult<Self> {
         if let Some(p) = polarity.as_deref() {
             check_name("polarity", p, POLARITIES)?;
@@ -374,19 +382,25 @@ impl BeadConfig {
             track: track.unwrap_or(d.track),
             measure: measure.unwrap_or(d.measure),
             tuning: tuning.unwrap_or(d.tuning),
+            pairing,
         })
     }
 
     fn __repr__(&self) -> String {
         format!(
             "BeadConfig(polarity='{}', min_width={}, max_width={}, spacing={}, clearance={:?}, \
-             min_margin={:?})",
+             min_margin={:?}, pairing={})",
             self.polarity,
             self.min_width,
             self.max_width,
             self.spacing,
             self.clearance,
-            self.min_margin
+            self.min_margin,
+            if self.pairing.is_some() {
+                "coupled"
+            } else {
+                "per_station"
+            }
         )
     }
 }
@@ -404,6 +418,10 @@ impl Default for BeadConfig {
             track: BeadCaliper::from_native(&n.track),
             measure: BeadCaliper::from_native(&n.measure),
             tuning: BeadTuning::from_native(&n.tuning),
+            pairing: match &n.pairing {
+                NativeBeadPairing::Coupled(c) => Some(BeadCoupling::from_native(c)),
+                _ => None,
+            },
         }
     }
 }
@@ -427,6 +445,12 @@ impl BeadConfig {
             track: self.track.to_native()?,
             measure: self.measure.to_native()?,
             tuning: self.tuning.to_native()?,
+            pairing: self
+                .pairing
+                .as_ref()
+                .map_or(NativeBeadPairing::PerStation, |c| {
+                    NativeBeadPairing::Coupled(c.to_native())
+                }),
         })
     }
 }

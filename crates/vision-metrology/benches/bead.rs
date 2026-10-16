@@ -11,18 +11,25 @@
 //!
 //! The gaps bench removes the bead over 30% of its length, in three gaps, and adds a
 //! distractor step beside it. The explain bench runs `diagnostics::explain_bead` on the
-//! 300-pose, 3-pass case.
+//! 300-pose, 3-pass case. The narrow benches put a bead 6 px wide on the same S-bend,
+//! with a width range of 2–12 px and a reach of 8 px, the coupled path's prototype state
+//! space, with per-station and with coupled pairing (ADR-0019).
 //!
-//! ## Measured numbers (2026-10-06, Apple M4 Pro, release, `lto = "thin"`, `codegen-units = 1`)
+//! ## Measured numbers (2026-10-16, Apple M4 Pro, release, `lto = "thin"`, `codegen-units = 1`)
 //!
 //! | Benchmark                                               | Time      |
 //! |----------------------------------------------------------|-----------|
-//! | `bead_track_1280x1024_100poses_s15_1pass`                 | ~0.44 ms  |
-//! | `bead_track_1280x1024_300poses_s15_1pass`                 | ~1.30 ms  |
-//! | `bead_track_1280x1024_300poses_s15_3pass`                 | ~2.54 ms  |
-//! | `bead_track_1280x1024_300poses_s30_3pass`                 | ~2.97 ms  |
-//! | `bead_track_1280x1024_300poses_s15_3pass_30pct_gaps`      | ~2.58 ms  |
-//! | `bead_explain_1280x1024_300poses_s15_3pass`               | ~3.60 ms  |
+//! | `bead_track_1280x1024_100poses_s15_1pass`                 | ~0.45 ms  |
+//! | `bead_track_1280x1024_300poses_s15_1pass`                 | ~1.35 ms  |
+//! | `bead_track_1280x1024_300poses_s15_3pass`                 | ~2.60 ms  |
+//! | `bead_track_1280x1024_300poses_s30_3pass`                 | ~3.03 ms  |
+//! | `bead_track_1280x1024_300poses_s15_3pass_30pct_gaps`      | ~2.66 ms  |
+//! | `bead_explain_1280x1024_300poses_s15_3pass`               | ~3.68 ms  |
+//! | `bead_track_narrow_300poses_s8_3pass`                     | ~0.95 ms  |
+//! | `bead_track_narrow_300poses_s8_1pass_coupled`             | ~1.51 ms  |
+//! | `bead_track_narrow_300poses_s8_3pass_coupled`             | ~2.46 ms  |
+//!
+//! The coupled calls stay within the default 3-pass call's 2.6 ms: the tracker's budget.
 //!
 //! A call measures one strip per station in each pass and once more in the final stage,
 //! about 2.1 µs a strip at a reach of 15 px. Profiled on the 300-pose, 3-pass case, the
@@ -44,7 +51,9 @@ use std::num::NonZeroUsize;
 use criterion::{Criterion, criterion_group, criterion_main};
 use ribbon::{Curve, P2, Ribbon, Scene, Step, Width};
 use vision_metrology::measure::diagnostics::explain_bead;
-use vision_metrology::measure::{BeadCaliper, BeadConfig, BeadTracker, BeadTuning};
+use vision_metrology::measure::{
+    BeadCaliper, BeadConfig, BeadCoupling, BeadPairing, BeadTracker, BeadTuning,
+};
 use vision_metrology::{Image, Point2f};
 
 const SIZE: (usize, usize) = (1280, 1024);
@@ -172,5 +181,61 @@ fn bench_explain(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, bench_track, bench_track_gaps, bench_explain);
+/// A narrow bead, 6 px wide on the S-bend under 2 DN of noise, searched with a width range
+/// of 2–12 px and a reach of 8 px: the coupled path's state space is the prototype's.
+fn bench_coupled(c: &mut Criterion) {
+    let ribbon = Ribbon::new(
+        Curve::s_bend(P2::new(150.0, 740.0), 0.0, 600.0, -0.9),
+        Width::Const(6.0),
+    );
+    let img = render(Scene::new(SIZE.0, SIZE.1, ribbon.clone(), 40.0, 180.0, 1.0));
+    let view = img.as_view();
+    let prior = prior(&ribbon);
+    for (id, passes, pairing) in [
+        (
+            "bead_track_narrow_300poses_s8_3pass",
+            3,
+            BeadPairing::PerStation,
+        ),
+        (
+            "bead_track_narrow_300poses_s8_1pass_coupled",
+            1,
+            BeadPairing::Coupled(BeadCoupling::default()),
+        ),
+        (
+            "bead_track_narrow_300poses_s8_3pass_coupled",
+            3,
+            BeadPairing::Coupled(BeadCoupling::default()),
+        ),
+    ] {
+        let cfg = BeadConfig {
+            min_width: 2.0,
+            max_width: 12.0,
+            pairing,
+            ..config(&prior, 300, passes, 8.0)
+        };
+        let mut tracker = BeadTracker::new(cfg).expect("valid");
+        let got = tracker.track(&view, &prior).expect("tracked");
+        assert_eq!(got.samples.len(), 300, "{id}");
+        assert!(
+            got.summary.support > 0.95,
+            "{id}: {:?}",
+            got.summary.rejects
+        );
+        c.bench_function(id, |b| {
+            b.iter(|| {
+                let bead = tracker.track(black_box(&view), black_box(&prior));
+                black_box(bead.expect("tracked").samples.len());
+            });
+        });
+    }
+}
+
+criterion_group!(
+    benches,
+    bench_track,
+    bench_track_gaps,
+    bench_explain,
+    bench_coupled
+);
 criterion_main!(benches);
