@@ -17,11 +17,14 @@ impl Default for SimilarityConfig {
     fn default() -> Self {
         let mut translation = TranslationConfig::default();
         translation.tuning.iterations = std::num::NonZeroUsize::new(30).unwrap();
-        // About 1% false rejects of true similarities on the synthetic study in
-        // `tools/registration_eval/false_reject.py`.
+        // 18.5 is the 99.9% quantile of chi-square with 4 dof. The floor keeps false
+        // rejects of true similarities at or under 1% on the synthetic study
+        // (`tools/registration_eval/false_reject.py`) and on HPatches development
+        // self-pairs (`hpatches.py --pairs self`), where bilinear interpolation of real
+        // texture adds regional bias.
         translation.region_check = Some(RegionCheck {
             max_chi2: 18.5,
-            bias_floor_px: 0.035,
+            bias_floor_px: 0.06,
         });
         Self {
             translation,

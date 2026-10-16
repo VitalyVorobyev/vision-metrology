@@ -55,8 +55,10 @@ pub struct RegionCheck {
 }
 
 impl Default for RegionCheck {
-    /// Translation's defaults, chosen for about 1% false rejects of true translations on
-    /// the synthetic study in `tools/registration_eval/false_reject.py`.
+    /// Translation's defaults: 13.8 is the 99.9% quantile of chi-square with 2 degrees of
+    /// freedom, and the 0.06 px floor keeps false rejects of true translations at or under
+    /// 1% on the synthetic study (`tools/registration_eval/false_reject.py`, DoG-band
+    /// texture 4 DN under 4 DN read noise) and on HPatches development self-pairs.
     fn default() -> Self {
         Self {
             max_chi2: 13.8,
