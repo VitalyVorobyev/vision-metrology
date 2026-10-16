@@ -167,7 +167,7 @@ diagnostic. Its home is settled in an ADR.
 **Accept:** #74's synthetic cases (a bridged step, a gross view down-weighted, a
 single-view step held at the prior); provenance per step.
 
-### Synthetic sequence benchmark, `planned` ([#86])
+### Synthetic sequence benchmark, `in progress` ([#86])
 
 A deterministic generator writing `sequence.json` with truth: a curved ribbon with
 asymmetric, variable-width walls on a moving textured substrate, one to three affine
@@ -175,6 +175,10 @@ views with a handover, camera-fixed highlights, occlusions, a parallel line, a
 distractor also present in the blank, missing observations, an actual gap, injected
 registration error, and a bead that moves relative to its substrate. No public dataset
 has many registered observations of one curve, so this is the public stand-in.
+
+The generator is available in [`tools/sequence_bench/`](../../tools/sequence_bench/README.md),
+deterministic and in CI, with presets for #73, #74 and #78. What remains is the consuming
+operators' numbers, which they report as they land.
 
 **Accept:** deterministic and in CI; truth per station, per frame and per view; the
 consuming operators' numbers in `performance.md`.
