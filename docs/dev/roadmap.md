@@ -121,11 +121,20 @@ and reports the end as unmeasured.
 bias and σ; the 1-in-270 swing does not occur with measured ends; Python parity and a
 bench.
 
-### Public two-boundary benchmark, `planned` ([#85])
+### Public two-boundary benchmark, `in progress`: awaiting annotation ([#85])
 
-Paired boundary positions annotated by several observers, such as a vessel-width
-database, or OCT layer annotations as the fallback. Edge and width error against the
-observer mean, beside the inter-observer spread, for the tracker and the coupled mode.
+The existing paired-edge datasets are research-only or carry no licence. We therefore
+annotate cross-sections ourselves on CC BY 4.0 images, HRF vessels and DamSegment cracks,
+and publish the annotations under CC BY 4.0. The stations are frozen: 120 per dataset,
+36 dev and 84 test, by image. The manifests, the evaluation driver and its synthetic
+end-to-end test are in place
+([`tools/bead_eval`](../../tools/bead_eval/README.md#hand-annotated-cross-sections)).
+Remaining work:
+- a person annotates both datasets in two blind passes, about 4 hours;
+- the settings are frozen on dev, including HRF's provisional thresholds;
+- test runs once;
+- the wall and width error go into `performance.md`, for the tracker and the coupled mode,
+  against the annotation mean and beside the annotator's σ.
 
 **Accept:** licence recorded; dev/test split with the settings frozen on dev; numbers with
 bootstrap intervals in `performance.md`.

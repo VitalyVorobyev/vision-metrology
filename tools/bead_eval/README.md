@@ -1,8 +1,8 @@
 # Bead-tracker evaluation on real data
 
 Offline scripts that run `BeadTracker`, through the `vision_metrology` Python bindings, on
-real curvilinear structures: the cracks of the DamSegment dataset. They answer four
-questions:
+real curvilinear structures: the cracks of the DamSegment dataset, and the vessels of HRF.
+They answer five questions:
 - does the tracker lock onto a real crack and follow it from a perturbed prior?
 - do its own quality signals tell a call that locked from one that did not?
 - without a prior, can a ridge detector find candidate centrelines good enough to seed
@@ -10,6 +10,8 @@ questions:
 - does choosing both walls together along the whole curve lock more often and wrongly
   less often, and does its max-marginal ambiguity flag the wrong locks
   ([coupled extraction](#coupled-two-boundary-extraction))?
+- how far are the walls from where a person puts them, against the annotator's own
+  repeatability ([hand-annotated cross-sections](#hand-annotated-cross-sections))?
 
 This is **development tooling**, not a library demo, and it is not run in CI. For
 runnable library examples see [`examples/python/`](../../examples/python).
@@ -335,6 +337,117 @@ fail from every prior:
 - on the synthetic scenes, at every visible station, the wall error: more than 1 px is a
   wrong wall, and bias and σ are over the rest;
 - the median time per call: the prototype is Python around the bindings' caliper.
+
+## Hand-annotated cross-sections
+
+A public benchmark of both walls, annotated by hand on CC BY 4.0 images: HRF vessels and
+DamSegment cracks. The annotations are our own work, committed under CC BY 4.0 in
+[`tools/datasets/annotations/`](../datasets/annotations), with the stations frozen before
+anyone annotates. No numbers are published until the annotations exist.
+
+**Status: awaiting annotation.** The stations are frozen; nobody has annotated them yet.
+
+| | HRF | DamSegment |
+|---|---:|---:|
+| stations, dev / test | 36 / 84 | 36 / 84 |
+| images with stations, dev / test | 11 / 30 | 36 / 84 |
+| width range (mask width) | 3–20 px | 3–14 px |
+| profile reach, `half_length_px` | ±20 px | ±12 px |
+| frame | the green channel, 8-bit | BT.601 luma, float32 |
+
+**Stations** (`crosssections.py`). Per image of the registry split, the dataset's mask goes
+through `paths.py`'s skeleton graph into non-branching centreline segments. Candidates
+lie every 10 px along each segment. A candidate is kept when:
+- it is at least `max(10, 2w)` px from its segment's ends, and `max(15, 2w + 6)` px from
+  every skeleton junction;
+- the chord over `±max(8, 1.5w)` px is at least 0.95 of the arc, so the segment is
+  locally straight;
+- the mask width `w` is in the range;
+- across the normal, at the station and `w/2` either side, the mask is one run with
+  nothing else in reach;
+- the profile lies inside the frame and its field of view;
+- the contrast is at least 2 grey levels. The contrast is the weaker side's background
+  median minus the core mean.
+
+Per split, about 30% of the stations go to dev and the rest to test, by image, as the
+registry split assigns them. Each split gets an equal quota per cell of the width ×
+contrast terciles, pooled over both splits. Candidates are taken in seeded SHA-256 rank
+order, at most `ceil(1.5 · count / images)` per image, and at least 40 px apart on one
+image. A frame of the manifest is one segment, and the frames of one image share its
+file. The cell of each station is stored with it.
+
+```bash
+python3 tools/datasets/fetch.py hrf                      # 73 MB; damsegment is 110 MB
+python -I tools/bead_eval/crosssections.py hrf           # about 1 min; damsegment the same
+python -I tools/bead_eval/crosssections.py hrf --check   # the frozen stations reproduce
+```
+
+It writes `data/<id>/crosssections/`: `sequence.json`, `curves.json`, `frames/`,
+`visibility/` and `masks/`. It never overwrites the committed stations: a rerun compares
+them and fails on any difference.
+
+**Annotating.** One session per dataset and annotator, on the
+[annotation page](../registration_eval/README.md#cross-section-annotation-annotatepy):
+
+```bash
+python tools/registration_eval/annotate.py --manifest data/hrf/crosssections/sequence.json \
+  --curves data/hrf/crosssections/curves.json \
+  --annotations tools/datasets/annotations/hrf/annotations.json --annotator <initials>
+```
+
+Do the same with `damsegment` in place of `hrf`. The page opens at
+`http://127.0.0.1:8766/`. It takes its profile reach from the file, and it resumes where
+it stopped. Follow the [protocol](../registration_eval/README.md#annotation-protocol):
+- place each wall at the profile's inflection;
+- mark a wall not visible rather than guess it;
+- pass 1 visits all 120 stations, and pass 2 visits them again, blind, in another order;
+- take a break between the passes.
+
+At about 30 s per section per pass, one dataset takes about 2 hours: 120 sections × 2
+passes. Both datasets take about 4 hours, which splits naturally into four sittings. A
+second annotator adds their own two passes to the same file. Commit the file when a pass
+ends.
+
+**Evaluation** (`crosssection_eval.py`). For each annotated frame of a split, the tracker
+runs along the segment's curve in two modes:
+- `tracker`: per-station pairing;
+- `coupled`: coupled pairing, with one tracking pass.
+
+Both modes use `run_tracker.py`'s reach, spacing, sigma and obliquity. The width range is
+`max(2, 0.25w)` to `2w` for DamSegment and `max(2, 0.5w)` to `2w` for HRF, where `w` is
+the segment's median mask width. The edge threshold is 3 grey levels on DamSegment and 0.5
+on HRF, whose vessel edges change by a few grey levels per pixel. For the same reason, HRF's
+coupled mode uses `absent_level` 1 and `saturation` 3. These HRF values are provisional:
+they were chosen on dev against synthetic annotations, and they are frozen on dev against
+the real annotations before test runs.
+
+An annotated station's walls are where its normal crosses the tracker's two wall
+polylines, between consecutive measured stations. A station in a gap has no wall.
+`annotations_eval.py` then scores the walls: wall bias and σ, width error, coverage, and
+the annotator's two-pass σ beside them. The report adds 90% bootstrap intervals over
+images.
+
+```bash
+python -I tools/bead_eval/crosssection_eval.py --manifest data/hrf/crosssections/sequence.json \
+  --annotations tools/datasets/annotations/hrf/annotations.json --split dev --out /tmp/hrf-dev.json
+# once the settings are frozen on dev:
+python -I tools/bead_eval/crosssection_eval.py ... --split test --held-out --out /tmp/hrf-test.json
+```
+
+**Testing without annotations.** `crosssection_synth.py` writes **synthetic** annotations,
+outside the repository only. They are the mask's own walls plus 0.25 px of noise per pass,
+under the annotator `synthetic-mask`, and the protocol is marked `"synthetic": true`. The
+evaluator labels its report as synthetic. `tools/check-invariants.py` refuses a committed
+annotation file that holds any. `test_crosssections.py` runs the whole chain on a rendered
+bead whose walls are known exactly.
+
+```bash
+python -I tools/bead_eval/crosssection_synth.py --manifest data/hrf/crosssections/sequence.json \
+  --annotations tools/datasets/annotations/hrf/annotations.json --out /tmp/hrf-synthetic.json
+python -I tools/bead_eval/crosssection_eval.py --manifest data/hrf/crosssections/sequence.json \
+  --annotations /tmp/hrf-synthetic.json --split dev
+python -m pytest tools/bead_eval/test_crosssections.py
+```
 
 ## GAN_Synth_Adhesive: local, qualitative use only
 

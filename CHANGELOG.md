@@ -258,6 +258,22 @@ are relative to 0.1.0.
   wall bias and σ, its width error and its coverage, with the annotator's σ from pass 1
   against pass 2 beside them. It writes aggregates only by default. The README holds the
   protocol: how to choose sections, how many, and how to keep held-out sequences apart.
+- **Hand-annotated cross-section benchmark, stations frozen** (`tools/bead_eval`,
+  `tools/datasets/annotations/`). HRF (retinal vessels, CC BY 4.0) is registered with
+  checksums and a split by image. It has 12 dev and 33 test images.
+  `crosssections.py` derives centrelines from the HRF vessel masks and the DamSegment
+  crack masks, and picks 120 stations per dataset, 36 dev and 84 test. The stations are
+  chosen by a seeded rule, stratified by width and contrast, away from junctions and
+  isolated across the normal. It writes a `sequence.json` per dataset that `annotate.py`
+  opens. The stations are committed with no annotations yet, under CC BY 4.0 with
+  attribution to the source datasets. `crosssection_eval.py` runs the tracker in its
+  per-station and coupled pairing modes along each annotated curve. It reports wall bias
+  and σ, width error and coverage with 90% bootstrap intervals over images, beside the
+  annotator's σ. `crosssection_synth.py` writes synthetic mask-wall annotations for
+  testing, outside the repository only. `tools/check-invariants.py` checks that a
+  committed annotation file belongs to a verified dataset, carries a licence and is
+  never synthetic. Frames of a manifest may share a file, and `annotate.py` keeps a
+  resumed file's profile reach.
 - An accuracy regression suite with pinned envelopes; its strip and caliper rows run on
   CaliperBench's pixel-integrated image model: each `Locate` method on steps, bar centre
   and width, oblique strips, and rect, arc and radial calipers; its bead rows pin the
