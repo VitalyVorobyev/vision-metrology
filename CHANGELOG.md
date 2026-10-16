@@ -149,7 +149,7 @@ are relative to 0.1.0.
   `ComponentStats`, marker-based `watershed` that partitions plateaus and draws 1 px
   boundaries, and `grow_regions`, which grows regions bounded by a `ContourGraph`.
 - **Contour geometry** (`contour`): `ContourBuildConfig::record_geometry` with per-edge
-  `tangents`, `curvatures` and `arc_params` (`GraphEdge::compute_geometry`),
+  `tangents`, `curvatures` and `arc_params`,
   `ContourGraph::{iter_edges_by_length, filter_edges_min_length}`, and
   `contour::smooth_polyline` (Gaussian polyline smoothing).
 - **Image warping** (`warp`): `Map::{affine, projective, polar, log_polar, from_fn}` and
@@ -258,6 +258,10 @@ are relative to 0.1.0.
   `metric::{normalized_to_pixel, pixel_to_normalized_linear}` (the last two are now
   crate-private). Use `wrap_angle` for angles, `fit_ellipse` for ellipses (it reports
   residuals), and `distort_pixel` / `undistort_pixel` for the camera model.
+- **Breaking:** `contour::Node::degree`; read `incident_edges.len()`. `Node::idx` is
+  crate-private (`p` is the node's position).
+- `GraphEdge::compute_geometry` and `ContourGraph::compute_all_geometry`; set
+  `ContourBuildConfig::record_geometry` to get `tangents`, `curvatures` and `arc_params`.
 
 ### Fixed
 
