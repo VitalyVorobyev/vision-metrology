@@ -26,6 +26,20 @@ descent of well-scoring candidates (about 4.2 ms).
 Scale-invariant search (estimate, resample, verify) is about 2.2–2.4× faster than scanning
 the equivalent scale range on the same scene, with the same found-rate and accuracy.
 
+Continuous profiles (`ProfileSampler`, measured 2026-10-16) on a 1280×1024 `u8` frame,
+stations on a circle of radius 300 px with radial directions, offsets 0.5 px apart:
+
+| Operation | σ 1 px | σ 2.5 px |
+|---|---:|---:|
+| 100 stations × 11 offsets | 128 µs | 572 µs |
+| 100 stations × 41 offsets | 495 µs | 2.05 ms |
+| 400 stations × 11 offsets | 510 µs | 2.17 ms |
+| 400 stations × 41 offsets | 2.00 ms | 6.29 ms |
+| one strip caliper, 40 px, 41 samples (`Derivative::Continuous`) | 5.4 µs | 23.5 µs |
+
+A sample costs about 0.12 µs at σ 1 px and 0.4–0.5 µs at σ 2.5 px, growing with the
+support's `π (4σ)²` pixels. The same strip with the default derivative takes 0.39 µs.
+
 Other operators:
 
 | Operation | Time |
@@ -235,7 +249,7 @@ How to read them:
 - **At σ 1.0 px the gradient-peak profiles still lock at 1.31–1.39**: the textbook and
   default strips, the rect caliper and the 1-D parabola. The level methods (1.12) and
   the 1-D log-parabola (1.07) show what an index this close to 1 looks like at this noise.
-  Bounding the profile locators' locking is [#82](https://github.com/VitalyVorobyev/vision-metrology/issues/82).
+  The continuous profile below is the remedy.
 - **`Edge2DDetector` does not refine at all.** `ParabolicAlongNormal` fits its parabola to
   the non-maximum-suppressed magnitude. Along the normal of a one-pixel ridge, both
   neighbours are suppressed to zero, so the offset is zero and the edgel stays on its pixel
@@ -244,6 +258,55 @@ How to read them:
 - **`Centroid { radius: 2 }` locks badly** once the response is wider than its window: the
   window's truncation pulls the centroid to the peak sample.
 
+#### Continuous profiles
+
+`Derivative::Continuous` samples the tapered 2-D derivative of Gaussian at each profile
+point (`ProfileSampler`) and refines each peak on that continuous response. The rows are
+the default strip (one sample per pixel, `Strongest` rising edge) on the same sweep,
+changing only the derivative and σ:
+
+| Strip | Worst \|bias\| (px) | Worst σ (px) | Locking index, no blur / σ 0.5 / σ 1.0 | Envelope (bias / σ / index) |
+|---|---:|---:|---|---|
+| default derivative, σ 1 px (the row above) | 0.065 | 0.064 | 1.79 / 1.48 / 1.37 | 0.097 / 0.095 / 2.2 |
+| default derivative, σ 2.5 px | 0.039 | 0.050 | 1.45 / 1.13 / 1.22 | 0.059 / 0.076 / 1.7 |
+| `Continuous`, σ 1 px | 0.080 | 0.037 | 2.66 / 1.38 / 1.15 | 0.12 / 0.056 / 3.5 |
+| `Continuous`, σ 1.5 px | 0.032 | 0.020 | 1.47 / 1.08 / 1.09 | 0.048 / 0.031 / 1.71 |
+| `Continuous`, σ 2.5 px | 0.012 | 0.013 | 1.19 / 1.07 / 1.07 | 0.018 / 0.019 / 1.2 |
+
+The worst |bias| per σ and blur, over angles, phases and noise:
+
+| Strip | No blur | PSF σ 0.5 px | PSF σ 1.0 px |
+|---|---:|---:|---:|
+| default derivative, σ 1 px | 0.065 | 0.064 | 0.046 |
+| default derivative, σ 2.5 px | 0.039 | 0.028 | 0.022 |
+| `Continuous`, σ 1 px | 0.080 | 0.029 | 0.014 |
+| `Continuous`, σ 1.5 px | 0.032 | 0.010 | 0.008 |
+| `Continuous`, σ 2.5 px | 0.012 | 0.007 | 0.006 |
+
+How to read them:
+- **At σ 2.5 px the continuous profile stays at or under 1.2 over the whole sweep,**
+  unblurred steps included, and its worst bias is 0.012 px. Its index row is pinned at
+  1.2 rather than 1.5× the measured value. From PSF σ 0.5 px, σ 1.5 px is enough (1.08).
+- **A wider σ does not fix the bilinear profile.** The default derivative at σ 2.5 px still
+  locks at 1.45 unblurred and 1.22 at PSF σ 1.0 px, with 3× the continuous profile's
+  bias: the interpolation's knots, not the smoothing, cause it.
+- **The unblurred step is the hard case for any linear locator.** A pixel-integrated step
+  with no optical blur aliases into the kernel's passband, which gives a bias odd in the
+  phase that falls with σ (0.080, 0.032 and 0.012 px at σ 1, 1.5 and 2.5 px) and with blur.
+  At σ 1 px the continuous profile is unbiased to 0.014 px with PSF σ 1.0 px and locks
+  less than the default there (1.15 against 1.37), but locks more on the unblurred step.
+- **Its spread is lower** at every σ: the 2-D kernel also averages across the scan.
+
+The same check on the whole bead tracker (`tests/accuracy/bead_phase.rs`): a straight light
+bar 16 px wide with its normal along +x, the angle at which the strips lock most; the
+three blurs; 2 DN of noise; a prior 2 px off; 200 phases. The rows read both final-stage
+edges of every station:
+
+| `BeadTracker` | Worst \|bias\| (px) | Locking index, no blur / σ 0.5 / σ 1.0 | Envelope (bias / index) |
+|---|---:|---|---|
+| default config | 0.045 | 1.76 / 1.16 / 1.13 | 0.067 / 2.15 |
+| both stages `Continuous`, σ 2.5 px | 0.015 | 1.17 / 1.07 / 1.06 | 0.022 / 1.2 |
+
 #### The diagnostic on real data
 
 `tools/registration_eval/phase_histogram.py` computes the same histogram over a
@@ -251,7 +314,8 @@ How to read them:
 is within 25° of an axis and whose pixel lies in the eroded mask. A flat histogram is
 necessary, not sufficient, for an unbiased locator. `--refine dog` re-locates the same
 edgels with a continuous derivative of Gaussian (σ 1 px, tapered to zero at 4σ) as a
-reference that does not lock.
+reference that does not lock. `--refine sampler` does it with the library's
+`ProfileSampler`, which also honours the mask.
 
 On private development sequences A–D, with the visibility mask, eroded by 5 px:
 
@@ -268,6 +332,13 @@ With the registration-validity mask instead (84,369 edgels, the tracked object e
 the pooled detector index is 69 and the reference's 1.06. The real data confirm the
 synthetic finding: the 2-D detector's edgels sit on pixel centres, at up to 5× the uniform
 rate, while a continuous derivative of Gaussian on the same edges is flat to within 10%.
+
+With `--refine sampler` at σ 1 px, on the same edgels, the indices are A 1.10, B 1.06,
+C 1.18, D 1.21 and 1.08 pooled, the reference's to within 0.01: the library's sampler
+reproduces it, and no edgel's support reaches the eroded mask's edge. At σ 2.5 px the tool
+is not a fair test. It re-locates each edgel within ±1.1 px of the detector's fine-scale
+position, and for about a quarter of them the wider kernel's peak lies beyond that, so
+they keep the detector's locking.
 
 ### The bead tracker
 

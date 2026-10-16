@@ -15,6 +15,20 @@ are relative to 0.1.0.
 
 ### Added
 
+- **Continuous derivative-of-Gaussian profiles.** `vm_primitives::edge::ProfileSampler`
+  samples the smoothed intensity and its derivative along any direction at continuous
+  points, with a Gaussian tapered by `(1 − d²/r²)²` to zero at `r = 4σ`, so both are C¹.
+  A sample whose support leaves the image or touches a masked pixel is `None`. It is
+  allocation-free once warm, with Python parity (`ProfileSampler`).
+  `measure::Derivative::Continuous` (Python `derivative="continuous"`) uses it in every
+  caliper placement and the bead tracker's stages, and refines each gradient peak on the
+  continuous response. Over the phase sweep it stops locking to the pixel grid at σ 2.5 px,
+  unblurred steps included, where the default strip still locks; the default does not
+  change. The sweep's rows per σ, the bead tracker's and the costs are in
+  `docs/performance.md`.
+  `phase_histogram.py --refine sampler` runs the same diagnostic with the library's
+  sampler.
+
 - **Sub-pixel locking evidence.** `tests/accuracy/phase.rs` sweeps every sub-pixel edge
   locator over 20 phases × 4 angles × 3 blurs and pins its worst per-phase bias, σ and
   locking index (the max/min ratio of a 10-bin histogram of fractional positions over a

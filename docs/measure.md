@@ -320,7 +320,16 @@ pub struct MeasureConfig {
   `Derivative::SmoothThenCentral { radius_px }` smooths with a Gaussian of the given
   half-width and takes central differences, the textbook operator. It smooths and
   differences in `f64`, so a broad, flat derivative peak lands where a `float64`
-  reference puts it.
+  reference puts it. `Derivative::Continuous` does not interpolate a profile at all: it
+  samples the 2-D derivative of a Gaussian of σ, tapered to zero at 4σ, straight from the
+  pixels at each profile point, and refines each peak on that continuous response
+  (`vm_primitives::edge::ProfileSampler`). A bilinear profile's derivative has knots at
+  the pixel boundaries, so located edges cluster at particular sub-pixel phases; the
+  continuous one does not, at several times the cost. Its profile is the smoothed
+  intensity, which the level methods read as it is. A sample whose support leaves the
+  image reads 0 and is never evidence: `border` is not used, gradient peaks are found on
+  the rest of the profile, and a level method rejects it with `OffImage`. The phase sweep
+  in [`performance.md`](performance.md) gives the bias and locking per σ.
 - **`profile.step`** — profile sampling step along the scan axis, in pixels.
   `1.0` is one entry per pixel; oversampling (`0.5`) buys resolution on a
   sharp edge at proportional cost. `sigma` stays in pixels and is converted to

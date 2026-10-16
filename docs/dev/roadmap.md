@@ -105,17 +105,6 @@ reported with the settings frozen; benches updated.
 
 ## v0.3: native boundary evidence
 
-### Continuous derivative-of-Gaussian profiles, `planned` ([#82])
-
-A public, allocation-free sampler of profiles along curve normals. It evaluates
-`R(p) = Σ_q I(q) ∇G_σ(p − q)·n` at continuous points, honours a validity mask, and tapers
-the kernel by `(1 − d²/r²)²` to zero at r = 4σ, so the response is C¹. It brings forward
-`filter`'s separable Gaussian and its derivatives. `MeasureStrip` uses it, or its locking
-is bounded and documented.
-
-**Accept:** locking index ≤ 1.2 over the phase sweep; worst bias reported per σ; an
-allocation gate, a bench and Python parity.
-
 ### Coupled two-boundary extraction, `in progress` ([#76], [#84])
 
 A global choice of both walls along a curve instead of `pairing::choose`'s choice at each
@@ -266,9 +255,8 @@ Then a backlog item and an update to
 
 ## Interleaved tracks
 
-These run between the milestones. `filter`'s Gaussian part moves forward into the
-continuous profiles, and among the bindings `Edge1DDetector` and the level crossings come
-first, because a consumer needs them.
+These run between the milestones. Among the bindings `Edge1DDetector` and the level
+crossings come first, because a consumer needs them.
 
 ### C1: accuracy coverage, `in progress`
 
@@ -349,7 +337,6 @@ Mosaic works on the desktop.
 [#78]: https://github.com/VitalyVorobyev/vision-metrology/issues/78
 [#79]: https://github.com/VitalyVorobyev/vision-metrology/issues/79
 [#81]: https://github.com/VitalyVorobyev/vision-metrology/issues/81
-[#82]: https://github.com/VitalyVorobyev/vision-metrology/issues/82
 [#84]: https://github.com/VitalyVorobyev/vision-metrology/issues/84
 [#85]: https://github.com/VitalyVorobyev/vision-metrology/issues/85
 [#86]: https://github.com/VitalyVorobyev/vision-metrology/issues/86
