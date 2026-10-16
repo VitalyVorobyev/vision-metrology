@@ -1,28 +1,50 @@
 name: Python Wheels
 
+# Every PR builds the wheels exactly as a release does and installs each one into a clean
+# virtual environment, so what reaches PyPI has been imported and run on its own platform.
+# Only a published GitHub release on this repository uploads, over PyPI trusted publishing
+# (OIDC); no token is stored.
 on:
+  pull_request:
+  push:
+    branches: [main]
   workflow_dispatch:
   release:
     types: [published]
 
+concurrency:
+  group: wheels-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
 jobs:
   build-wheels:
-    name: Build ${{ matrix.target }}
+    name: Build ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - name: linux-x86_64
+            os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             manylinux: '2_28'
-          - os: ubuntu-latest
+          # A native arm runner: the wheel is built and smoke-tested on aarch64 itself,
+          # with no emulation.
+          - name: linux-aarch64
+            os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             manylinux: '2_28'
-          - os: macos-13
+          # One universal2 wheel serves Intel and Apple-silicon Macs; the smoke job runs
+          # its arm64 slice.
+          - name: macos-universal2
+            os: macos-14
             target: universal2-apple-darwin
             manylinux: ''
-          - os: windows-latest
+          - name: windows-x86_64
+            os: windows-latest
             target: x86_64-pc-windows-msvc
             manylinux: ''
 
@@ -42,8 +64,62 @@ jobs:
       - name: Upload wheel artifact
         uses: actions/upload-artifact@v7
         with:
-          name: wheels-${{ matrix.target }}
+          name: wheels-${{ matrix.name }}
           path: dist/*.whl
+
+  smoke:
+    name: Smoke ${{ matrix.name }} py${{ matrix.python }}
+    needs: build-wheels
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        name: [linux-x86_64, linux-aarch64, macos-universal2, windows-x86_64]
+        # The abi3 floor and the newest CPython: one wheel serves both.
+        python: ['3.10', '3.13']
+        include:
+          - name: linux-x86_64
+            os: ubuntu-latest
+          - name: linux-aarch64
+            os: ubuntu-24.04-arm
+          - name: macos-universal2
+            os: macos-14
+          - name: windows-x86_64
+            os: windows-latest
+    steps:
+      # For the READMEs and the smoke script only; the package under test is the wheel.
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Download wheel
+        uses: actions/download-artifact@v8
+        with:
+          name: wheels-${{ matrix.name }}
+          path: dist
+
+      # A fresh venv with nothing but the wheel and its declared dependencies. The wheel is
+      # named by path, so pip fails if its tags do not fit this interpreter. `-I` keeps the
+      # checkout off `sys.path`: the import can only find the installed package.
+      - name: Install into a clean venv and run the README quick starts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m venv "$RUNNER_TEMP/venv"
+          if [ -x "$RUNNER_TEMP/venv/Scripts/python.exe" ]; then
+            VPY="$RUNNER_TEMP/venv/Scripts/python.exe"
+          else
+            VPY="$RUNNER_TEMP/venv/bin/python"
+          fi
+          wheels=(dist/*.whl)
+          [ "${#wheels[@]}" -eq 1 ] || { echo "::error::expected one wheel, got ${wheels[*]}"; exit 1; }
+          "$VPY" -m pip install --disable-pip-version-check "${wheels[0]}"
+          "$VPY" -m pip list
+          "$VPY" -I crates/vm-python/tests/test_readme_quickstart.py
 
   build-sdist:
     name: Build sdist
@@ -66,11 +142,17 @@ jobs:
 
   publish:
     name: Publish to PyPI
-    if: github.event_name == 'release' && github.event.action == 'published'
+    # Inert on forks and on releases whose tag is not a version. The PyPI side is a trusted
+    # publisher for this repository, this workflow and the `pypi` environment.
+    if: >-
+      github.repository == 'VitalyVorobyev/vision-metrology' &&
+      github.event_name == 'release' && github.event.action == 'published' &&
+      startsWith(github.event.release.tag_name, 'v')
     runs-on: ubuntu-latest
+    environment: pypi
     permissions:
       id-token: write
-    needs: [build-wheels, build-sdist]
+    needs: [build-wheels, smoke, build-sdist]
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@v8
@@ -78,6 +160,21 @@ jobs:
           pattern: '*'
           path: dist
           merge-multiple: true
+
+      # The version comes from Cargo.toml; a release tag that disagrees with it would put a
+      # wheel on PyPI under a version nobody tagged.
+      - name: Check the artifacts carry the tag's version
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          ver="${TAG#v}"
+          for f in dist/*; do
+            case "$(basename "$f")" in
+              "vision_metrology-$ver-"*.whl | "vision_metrology-$ver.tar.gz") ;;
+              *) echo "::error::$f does not match tag $TAG"; exit 1 ;;
+            esac
+          done
 
       - name: Publish
         uses: pypa/gh-action-pypi-publish@release/v1
