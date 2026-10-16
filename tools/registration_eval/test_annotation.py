@@ -155,6 +155,13 @@ def test_annotations_round_trip_through_the_manifest(synthetic, tmp_path):
     inline['annotations'] = reread.annotations
     sequence.path.write_text(json.dumps(inline))
     assert Sequence(sequence.path).annotations == reread.annotations
+    exact = {'frame': 0, 'station': 3, 'point': [60., BEAD_Y], 'normal': [0., 1.],
+             'left': [60., BEAD_Y - BEAD_HALF], 'right': [60., BEAD_Y + BEAD_HALF]}
+    inline['annotations'] = reread.annotations + [exact]
+    sequence.path.write_text(json.dumps(inline))
+    mixed = Sequence(sequence.path)
+    assert mixed.annotations[-1] == exact and mixed.annotated == reread.annotations, \
+        'a generator cross-section is carried through, not scored'
     good = reread.annotations[0]
     for bad, message in [({'left': 5.}, 'before right'), ({'left_visible': False}, 'hidden'),
                          ({'pass': 3}, 'pass'), ({'normal': [1., 1.]}, 'unit'),

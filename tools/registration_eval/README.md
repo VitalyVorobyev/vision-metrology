@@ -87,6 +87,10 @@ right_visible, annotator, pass, timestamp}`:
   flag is then false.
 - `pass` is 1 or 2, the blind repeat. `timestamp` is ISO 8601 UTC.
 
+An inline entry with no `annotator` is an exact cross-section from a generator, such as
+`tools/sequence_bench`'s `{frame, station, s, point, normal, left, right}` with wall points.
+It is carried through unchanged and never scored as an annotation.
+
 The annotations file is `{version, protocol, sections, annotations}`. `sections` lists every
 station with its arc position and `source`: `uniform`, `span`, or `user` (added on the
 page). `protocol` records the seed, the count, the curve source and the profile settings.

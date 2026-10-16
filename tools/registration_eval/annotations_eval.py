@@ -208,7 +208,7 @@ def main():
     sequence = Sequence(args.manifest)
     if sequence.split == 'held_out' and not args.held_out:
         parser.error('a held-out sequence needs --held-out; freeze settings on development first')
-    annotations = sequence.annotations
+    annotations = sequence.annotated
     if args.source:
         if sequence.annotations_path is None:
             parser.error('--source needs an annotations file, which records each section\'s source')

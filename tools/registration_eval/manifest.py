@@ -100,12 +100,20 @@ class Sequence:
             annotations = (annotation.read(self.annotations_path, len(self.frames))['annotations']
                            if self.annotations_path.exists() else [])
         elif isinstance(annotations, list):
+            # An entry with no annotator is an exact cross-section from a generator, with
+            # wall points; it is carried through unchanged and never scored as an annotation.
             for entry in annotations:
-                annotation.check(entry, len(self.frames))
+                if 'annotator' in entry:
+                    annotation.check(entry, len(self.frames))
         else:
             raise ValueError('annotations is a list or the path of an annotations file')
         self.annotations = annotations
         self._images, self._masks, self._visible, self._prepared = {}, {}, {}, {}
+
+    @property
+    def annotated(self):
+        """The hand annotations: the `annotations` entries that name an annotator."""
+        return [entry for entry in self.annotations if 'annotator' in entry]
 
     def __len__(self):
         return len(self.frames)
