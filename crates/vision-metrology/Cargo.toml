@@ -217,6 +217,10 @@ name = "shape_matching"
 required-features = ["matching"]
 
 [[test]]
+name = "model_format"
+required-features = ["serde"]
+
+[[test]]
 name = "corr"
 required-features = ["corr"]
 
