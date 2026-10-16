@@ -15,6 +15,15 @@ are relative to 0.1.0.
 
 ### Added
 
+- **Sub-pixel locking evidence.** `tests/accuracy/phase.rs` sweeps every sub-pixel edge
+  locator over 20 phases × 4 angles × 3 blurs and pins its worst per-phase bias, σ and
+  locking index (the max/min ratio of a 10-bin histogram of fractional positions over a
+  dense phase sweep under noise). `tools/registration_eval/phase_histogram.py` computes
+  the same histogram over a `sequence.json` manifest without ground truth, with a
+  continuous derivative-of-Gaussian reference. Results, including that
+  `Edge2DDetector`'s `ParabolicAlongNormal` leaves edgels on pixel centres, are in
+  `docs/performance.md`.
+
 - **Local masked similarity, experimental** (`corr::SimilarityEstimator`, behind the
   non-default `corr-experimental` feature; in Python, `vision_metrology.experimental`).
   Outside the semver promise until its regional check is recalibrated. Previous-to-current

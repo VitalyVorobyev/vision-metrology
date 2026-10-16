@@ -81,19 +81,6 @@ nalgebra.
 tested. If the differences between versions make this impractical, ADR-0002 records it,
 and consumers use the wheel and versioned artifacts.
 
-### Edge fidelity: phase-swept accuracy and a locking diagnostic, `planned` ([#77])
-
-A sub-pixel locator can be unbiased at phases 0, ¼, ½ and ¾ and biased between them, and
-on real data it shows as a non-uniform histogram of fractional positions.
-- Sweep 20 phases × 4 angles × 3 blurs for the strip and caliper rows, and report the
-  worst bias and a locking index: the max/min ratio of a 10-bin histogram of fractional
-  positions under noise.
-- A ground-truth-free histogram of fractional edge coordinates, over a `sequence.json`
-  manifest.
-
-**Accept:** worst bias and locking index published for every locator; the private
-development sequences' histograms reported as aggregates.
-
 ### Registration calibration, `planned` ([#81])
 
 The similarity design is in [registration-stage2.md](registration-stage2.md).
@@ -377,7 +364,6 @@ Mosaic works on the desktop.
 [#74]: https://github.com/VitalyVorobyev/vision-metrology/issues/74
 [#75]: https://github.com/VitalyVorobyev/vision-metrology/issues/75
 [#76]: https://github.com/VitalyVorobyev/vision-metrology/pull/76
-[#77]: https://github.com/VitalyVorobyev/vision-metrology/issues/77
 [#78]: https://github.com/VitalyVorobyev/vision-metrology/issues/78
 [#79]: https://github.com/VitalyVorobyev/vision-metrology/issues/79
 [#80]: https://github.com/VitalyVorobyev/vision-metrology/issues/80

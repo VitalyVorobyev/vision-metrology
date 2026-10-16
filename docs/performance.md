@@ -170,6 +170,83 @@ How to read them:
   px of bias at any caliper width, which is the reason it averages along the arc.
   `MeasureArc` reads a spoke's position along the arc to 0.074 px.
 
+### Sub-pixel phase sweep and the locking index
+
+A locator can be unbiased at phases 0, ¼, ½ and ¾ and biased between them. These rows
+(`tests/accuracy/phase.rs`, measured 2026-10-16) sweep the phase finely on the same
+pixel-integrated step, 40 to 200 DN:
+
+- 20 sub-pixel phases × edges at 0, 15, 30 and 45° × no blur, PSF σ 0.5 and σ 1.0 px;
+- noise-free and under 2 DN of seeded Gaussian noise (6 trials);
+- worst |bias| and σ are per phase, so a bias that changes sign between phases is not
+  averaged away;
+- the **locking index** is the max/min bin ratio of a 10-bin histogram of the located
+  positions' fractional pixel `x`, over 200 phases × 3 trials under 2 DN. The sweep moves
+  every sample's true position by exactly one pixel in equal steps, so an unbiased
+  locator gives about 1. An empty bin makes it ∞.
+
+Errors are along the true normal. The strips use CaliperBench's textbook settings (above)
+except "default strip", which uses `MeasureConfig::default()` (one sample per pixel,
+derivative of Gaussian σ 1 px). The rect caliper is the default `MeasureConfig`, 5 px wide.
+`Edge1DDetector` (σ 1 px) runs on each image row; `Edge2DDetector` uses its default
+config, and an edgel's `x` is where its tangent crosses its own pixel row.
+
+| Locator | Worst \|bias\| (px) | Worst σ (px) | Locking index, no blur / σ 0.5 / σ 1.0 | Envelope (bias / σ / index) |
+|---|---:|---:|---|---|
+| strip, `GradientPeak` (parabola) | 0.101 | 0.079 | 4.26 / 1.81 / 1.35 | 0.15 / 0.12 / 5.9 |
+| strip, `GradientPeak` (log-parabola) | 0.109 | 0.078 | 3.66 / 1.72 / 1.31 | 0.17 / 0.12 / 5.0 |
+| strip, `MidpointCrossing` | 0.054 | 0.063 | 1.83 / 1.20 / 1.12 | 0.08 / 0.094 / 2.25 |
+| strip, `HalfContrast` | 0.055 | 0.060 | 1.81 / 1.21 / 1.12 | 0.084 / 0.09 / 2.2 |
+| default strip, `GradientPeak` | 0.065 | 0.064 | 1.79 / 1.48 / 1.37 | 0.097 / 0.095 / 2.2 |
+| `Caliper` (rect), default | 0.070 | 0.019 | 2.10 / 1.54 / 1.35 | 0.105 / 0.029 / 2.65 |
+| `Edge1DDetector`, `Parabolic3` | 0.032 | 0.057 | 1.24 / 1.50 / 1.39 | 0.048 / 0.086 / 1.75 |
+| `Edge1DDetector`, `Gaussian3` | 0.043 | 0.052 | 1.69 / 1.10 / 1.07 | 0.065 / 0.078 / 2.05 |
+| `Edge1DDetector`, `Centroid { radius: 2 }` | 0.181 | 0.186 | 2.88 / 111 / ∞ | 0.27 / 0.28 / ∞ |
+| `Edge2DDetector`, `ParabolicAlongNormal` | 0.450 | 0.500 | ∞ / ∞ / ∞ | 0.68 / 0.75 / ∞ |
+
+The index envelope is `1 + 1.5 (index − 1)`.
+
+How to read them:
+- **Every locator locks above 1.2 on an unblurred step**, the worst blur here. With σ 0.5
+  px of optical blur only the level methods and the log-parabola come down to about 1.2.
+  The worst bias is also at no blur, about 0.1 px for the textbook gradient strips.
+- **At σ 1.0 px the gradient-peak profiles still lock at 1.31–1.39**: the textbook and
+  default strips, the rect caliper and the 1-D parabola. The level methods (1.12) and
+  the 1-D log-parabola (1.07) show what an index this close to 1 looks like at this noise.
+  Bounding the profile locators' locking is [#82](https://github.com/VitalyVorobyev/vision-metrology/issues/82).
+- **`Edge2DDetector` does not refine at all.** `ParabolicAlongNormal` fits its parabola to
+  the non-maximum-suppressed magnitude. Along the normal of a one-pixel ridge, both
+  neighbours are suppressed to zero, so the offset is zero and the edgel stays on its pixel
+  centre: bias up to ½ px, the same with refinement off, at every blur. The older
+  `edge2d_position` row above missed it because its edge sits on pixel centres at 0°.
+- **`Centroid { radius: 2 }` locks badly** once the response is wider than its window: the
+  window's truncation pulls the centroid to the peak sample.
+
+#### The diagnostic on real data
+
+`tools/registration_eval/phase_histogram.py` computes the same histogram over a
+`sequence.json` manifest, without ground truth. It takes `detect_edges` edgels whose normal
+is within 25° of an axis and whose pixel lies in the eroded mask. A flat histogram is
+necessary, not sufficient, for an unbiased locator. `--refine dog` re-locates the same
+edgels with a continuous derivative of Gaussian (σ 1 px, tapered to zero at 4σ) as a
+reference that does not lock.
+
+On private development sequences A–D, with the visibility mask, eroded by 5 px:
+
+| Sequence | Edgels | Detector index | Detector normalized range | DoG reference index | Reference range |
+|---|---:|---:|---|---:|---|
+| A | 108,685 | 316 | 0.015–4.82 | 1.10 | 0.97–1.06 |
+| B | 79,125 | 81 | 0.059–4.78 | 1.06 | 0.97–1.02 |
+| C | 16,598 | 122 | 0.034–4.12 | 1.18 | 0.92–1.08 |
+| D | 10,270 | 254 | 0.020–5.19 | 1.20 | 0.91–1.10 |
+| all | 214,678 | 140 | 0.034–4.77 | 1.08 | 0.97–1.05 |
+
+The normalized range is the lowest and highest bin as a multiple of the uniform rate.
+With the registration-validity mask instead (84,369 edgels, the tracked object excluded),
+the pooled detector index is 69 and the reference's 1.06. The real data confirm the
+synthetic finding: the 2-D detector's edgels sit on pixel centres, at up to 5× the uniform
+rate, while a continuous derivative of Gaussian on the same edges is flat to within 10%.
+
 ### The bead tracker
 
 `BeadTracker` with the default config tracks the bead fixture of `tests/accuracy/bead.rs`:
