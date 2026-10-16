@@ -7,7 +7,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use vision_metrology::measure::diagnostics::explain_bead;
 use vision_metrology::measure::{
-    BeadPass as NativeBeadPass, BeadReject, BeadSolve as NativeBeadSolve,
+    BeadPass as NativeBeadPass, BeadPathScore, BeadReject, BeadSide, BeadSolve as NativeBeadSolve,
     BeadTracker as NativeBeadTracker, TrackedBead as NativeTrackedBead,
 };
 use vm_primitives::Point2f;
@@ -45,6 +45,20 @@ fn prior_from_numpy(prior: &Bound<'_, PyAny>) -> PyResult<Vec<Point2f>> {
             "prior must be a 2-D (N, 2) float32 or float64 numpy array",
         ))
     }
+}
+
+/// A wall side's name: "first" (the −n side) or "second" (the +n side).
+pub(super) fn side_name(s: BeadSide) -> &'static str {
+    match s {
+        BeadSide::First => "first",
+        BeadSide::Second => "second",
+    }
+}
+
+/// A coupled path's score as `(margin, evidence)`; both `None` with per-station pairing,
+/// and the margin `None` without a station with a wall.
+fn path_parts(p: Option<BeadPathScore>) -> (Option<f32>, Option<f32>) {
+    (p.and_then(|p| p.margin), p.map(|p| p.evidence))
 }
 
 /// Reject counts as a dict, in the fixed reason order.
@@ -108,6 +122,9 @@ impl BeadSolve {
 ///
 /// `longest_gap` is in px; `solve` is `None` when the pass found too few pairs to solve
 /// and left the curve where it was; `rejects` counts the stations rejected, by reason.
+/// With coupled pairing, `path_margin` is the pass's whole-call margin (the first pass's
+/// window is the prior's, so its margin flags a competing line) and `path_evidence` the
+/// path's mean gain per px over absence; both are `None` with per-station pairing.
 #[pyclass(get_all, skip_from_py_object)]
 pub struct BeadPass {
     pub n_valid: usize,
@@ -115,11 +132,16 @@ pub struct BeadPass {
     pub longest_gap: f32,
     pub solve: Option<BeadSolve>,
     pub rejects: Py<PyDict>,
+    pub path_margin: Option<f32>,
+    pub path_evidence: Option<f32>,
 }
 
 impl BeadPass {
     fn from_native(py: Python<'_>, p: &NativeBeadPass) -> PyResult<Self> {
+        let (path_margin, path_evidence) = path_parts(p.path);
         Ok(Self {
+            path_margin,
+            path_evidence,
             n_valid: p.n_valid,
             support: p.support,
             longest_gap: p.longest_gap,
@@ -149,6 +171,11 @@ impl BeadPass {
 /// the −n and +n sides) come from the final stage and are NaN where it rejected, and
 /// `reject` names the reason there (`None` at a hit). The statistics over the hits are
 /// `None` when there are none.
+///
+/// With coupled pairing, `margin` is each station's max-marginal margin (NaN where the
+/// path found no wall), `wall` the one wall of a `"one_sided"` station (NaN elsewhere)
+/// and `wall_side` its side, `"first"` or `"second"`; `path_margin` and `path_evidence`
+/// score the final stage's path. With per-station pairing they are NaN and `None`.
 #[pyclass(get_all, skip_from_py_object)]
 pub struct TrackedBead {
     pub centerline: Py<PyArray2<f32>>,
@@ -161,6 +188,11 @@ pub struct TrackedBead {
     pub first: Py<PyArray2<f32>>,
     pub second: Py<PyArray2<f32>>,
     pub reject: Vec<Option<&'static str>>,
+    pub margin: Py<PyArray1<f32>>,
+    pub wall: Py<PyArray2<f32>>,
+    pub wall_side: Vec<Option<&'static str>>,
+    pub path_margin: Option<f32>,
+    pub path_evidence: Option<f32>,
     pub support: f32,
     pub longest_gap: f32,
     pub n_used: usize,
@@ -191,8 +223,24 @@ impl TrackedBead {
             Vec::with_capacity(n),
         );
         let mut reject = Vec::with_capacity(n);
+        let (mut margin, mut wall, mut wall_side) = (
+            Vec::with_capacity(n),
+            Vec::with_capacity(2 * n),
+            Vec::with_capacity(n),
+        );
         for s in &b.samples {
             normals.extend([s.normal.x, s.normal.y]);
+            margin.push(s.margin.unwrap_or(f32::NAN));
+            match &s.wall {
+                Some(w) => {
+                    wall.extend([w.edge.p.x, w.edge.p.y]);
+                    wall_side.push(Some(side_name(w.side)));
+                }
+                None => {
+                    wall.extend([f32::NAN, f32::NAN]);
+                    wall_side.push(None);
+                }
+            }
             match &s.hit {
                 Ok(h) => {
                     center.extend([h.pair.center.x, h.pair.center.y]);
@@ -222,7 +270,13 @@ impl TrackedBead {
             .iter()
             .map(|p| Py::new(py, BeadPass::from_native(py, p)?))
             .collect::<PyResult<_>>()?;
+        let (path_margin, path_evidence) = path_parts(b.summary.path);
         Ok(Self {
+            margin: margin.into_pyarray(py).unbind(),
+            wall: rows(py, wall)?,
+            wall_side,
+            path_margin,
+            path_evidence,
             centerline: rows(py, centerline)?,
             spacing: b.spacing,
             normals: rows(py, normals)?,

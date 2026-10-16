@@ -2,16 +2,15 @@
 //! and a robust Whittaker smoother (ADR-0020).
 //!
 //! Both are crate-private. The bead tracker's regularised solve (ADR-0018) runs on the
-//! smoother. The coupled two-boundary extraction and the bead-end rim are the min-path's
-//! callers; until they land it is exercised by its tests, its bench and its allocation
-//! gate only.
+//! smoother, and its coupled pairing (ADR-0019) on the min-path. The bead-end rim will
+//! be the min-path's second caller, and the first to pin.
 
-// The callers of the min-path are not merged yet; its tests use all of it.
+// Soft pins have no caller until the bead-end rim lands; the tests use them.
 #[cfg_attr(
     not(test),
     allow(
         dead_code,
-        reason = "its callers, the coupled extraction and the bead-end rim, are not merged yet"
+        reason = "soft pins' caller, the bead-end rim, is not merged yet"
     )
 )]
 pub(crate) mod minpath;

@@ -86,6 +86,11 @@ impl ContinuousProfile {
         self.valid.iter().all(|&v| v)
     }
 
+    /// Whether each sample of the last [`build`](Self::build) was valid.
+    pub fn valid(&self) -> &[bool] {
+        &self.valid
+    }
+
     /// The derivative peaks of `resp` above `threshold`, each refined on the continuous
     /// response, into `peaks`. A peak next to an invalid sample, or whose refinement
     /// reaches one, is dropped: it is not evidence.

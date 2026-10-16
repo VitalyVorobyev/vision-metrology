@@ -24,6 +24,7 @@
 //!   searched for, `tuning`'s six fields say *how hard* the search works.
 
 mod bead;
+mod bead_coupling;
 mod corr;
 mod edge;
 mod fit;
@@ -33,6 +34,7 @@ mod measure;
 mod scale;
 
 pub use bead::{BeadCaliper, BeadConfig, BeadTuning};
+pub use bead_coupling::BeadCoupling;
 pub use corr::{
     CorrConfig, CorrSearchTuning, CorrTemplateConfig, CorrTemplateTuning, DisplacementConfig,
     Refine,

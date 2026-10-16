@@ -2047,6 +2047,43 @@ def test_bead_tracker_explain_never_raises_on_a_missing_bead():
         vm.BeadTracker().explain(flat, np.zeros((1, 2), dtype=np.float32))
 
 
+def test_bead_coupling_mirrors_the_native_defaults():
+    c = vm.BeadCoupling()
+    assert (c.saturation, c.absent_level, c.switch_cost, c.bin_px) == (10.0, 4.0, 2.0, 0.5)
+    assert (c.margin_tol_px, c.margin_quantile) == (5.0, 0.25)
+    assert vm.BeadConfig().pairing is None
+    assert vm.BeadConfig(pairing=vm.BeadCoupling(bin_px=1.0)).pairing.bin_px == 1.0
+
+
+def test_coupled_pairing_tracks_and_reports_its_margins():
+    img, a, t = make_bead()
+    u8 = img.round().astype(np.uint8)
+    prior = bead_prior(a, t, offset=6.0)
+    tracker = vm.BeadTracker(vm.BeadConfig(pairing=vm.BeadCoupling()))
+    bead = tracker.track(u8, prior)
+    n = np.array([-t[1], t[0]])
+    assert bead.support == 1.0
+    assert np.abs((bead.centerline - a) @ n).max() < 0.05
+    assert np.abs(bead.width - 40.0).max() < 0.1
+    assert np.isfinite(bead.margin).all() and np.isnan(bead.wall).all()
+    assert bead.wall_side == [None] * len(bead.reject)
+    assert bead.path_margin is not None and bead.path_margin > 1.0
+    assert bead.passes[0].path_margin is not None and bead.passes[0].path_evidence > 0.0
+    # Per-station pairing reports no path.
+    plain = vm.BeadTracker().track(u8, prior)
+    assert plain.path_margin is None and np.isnan(plain.margin).all()
+    assert plain.passes[0].path_margin is None
+
+    trace = tracker.explain(u8, prior)
+    assert np.array_equal(trace.result.margin, bead.margin)
+    assert np.isfinite(trace.passes[0].margins).all()
+    assert trace.measure[0].margin == bead.margin[0] and trace.measure[0].wall is None
+    with pytest.raises(ValueError):
+        vm.BeadTracker(vm.BeadConfig(min_margin=0.2, pairing=vm.BeadCoupling()))
+    with pytest.raises(ValueError):
+        vm.BeadTracker(vm.BeadConfig(pairing=vm.BeadCoupling(margin_quantile=0.0)))
+
+
 def test_bead_caliper_to_measure_config_keeps_every_edge():
     cal = vm.BeadCaliper(threshold=7.0, sigma=1.5, step=0.5, off_image="reject")
     m = cal.to_measure_config()

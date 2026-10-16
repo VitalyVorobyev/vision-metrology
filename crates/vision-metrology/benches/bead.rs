@@ -44,7 +44,9 @@ use std::num::NonZeroUsize;
 use criterion::{Criterion, criterion_group, criterion_main};
 use ribbon::{Curve, P2, Ribbon, Scene, Step, Width};
 use vision_metrology::measure::diagnostics::explain_bead;
-use vision_metrology::measure::{BeadCaliper, BeadConfig, BeadTracker, BeadTuning};
+use vision_metrology::measure::{
+    BeadCaliper, BeadConfig, BeadCoupling, BeadPairing, BeadTracker, BeadTuning,
+};
 use vision_metrology::{Image, Point2f};
 
 const SIZE: (usize, usize) = (1280, 1024);
@@ -172,5 +174,61 @@ fn bench_explain(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, bench_track, bench_track_gaps, bench_explain);
+/// A narrow bead, 6 px wide on the S-bend under 2 DN of noise, searched with a width range
+/// of 2–12 px and a reach of 8 px: the coupled path's state space is the prototype's.
+fn bench_coupled(c: &mut Criterion) {
+    let ribbon = Ribbon::new(
+        Curve::s_bend(P2::new(150.0, 740.0), 0.0, 600.0, -0.9),
+        Width::Const(6.0),
+    );
+    let img = render(Scene::new(SIZE.0, SIZE.1, ribbon.clone(), 40.0, 180.0, 1.0));
+    let view = img.as_view();
+    let prior = prior(&ribbon);
+    for (id, passes, pairing) in [
+        (
+            "bead_track_narrow_300poses_s8_3pass",
+            3,
+            BeadPairing::PerStation,
+        ),
+        (
+            "bead_track_narrow_300poses_s8_1pass_coupled",
+            1,
+            BeadPairing::Coupled(BeadCoupling::default()),
+        ),
+        (
+            "bead_track_narrow_300poses_s8_3pass_coupled",
+            3,
+            BeadPairing::Coupled(BeadCoupling::default()),
+        ),
+    ] {
+        let cfg = BeadConfig {
+            min_width: 2.0,
+            max_width: 12.0,
+            pairing,
+            ..config(&prior, 300, passes, 8.0)
+        };
+        let mut tracker = BeadTracker::new(cfg).expect("valid");
+        let got = tracker.track(&view, &prior).expect("tracked");
+        assert_eq!(got.samples.len(), 300, "{id}");
+        assert!(
+            got.summary.support > 0.95,
+            "{id}: {:?}",
+            got.summary.rejects
+        );
+        c.bench_function(id, |b| {
+            b.iter(|| {
+                let bead = tracker.track(black_box(&view), black_box(&prior));
+                black_box(bead.expect("tracked").samples.len());
+            });
+        });
+    }
+}
+
+criterion_group!(
+    benches,
+    bench_track,
+    bench_track_gaps,
+    bench_explain,
+    bench_coupled
+);
 criterion_main!(benches);

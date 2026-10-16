@@ -7,7 +7,7 @@ use vision_metrology::measure::diagnostics::{
     BeadTrace as NativeBeadTrace,
 };
 
-use super::bead::{TrackedBead, rows};
+use super::bead::{TrackedBead, rows, side_name};
 use super::caliper::CaliperTrace;
 use crate::types::MeasurePair;
 
@@ -24,7 +24,9 @@ fn xy(p: impl Into<[f32; 2]>) -> (f32, f32) {
 /// `(lo, hi)`, in px along the normal, that a pair's midpoint had to fall in. `caliper` is
 /// everything the strip's caliper computed. At a hit, `pair`, `offset` and `confidence`
 /// describe the bead's pair and `reject` is `None`; at a rejection they are `None` and
-/// `reject` names the reason.
+/// `reject` names the reason. With coupled pairing, `margin` is the path's margin at the
+/// station, and `wall` and `wall_side` the one wall of a `"one_sided"` station; `None`
+/// otherwise.
 #[pyclass(get_all, skip_from_py_object)]
 pub struct BeadStationTrace {
     pub point: (f32, f32),
@@ -38,6 +40,9 @@ pub struct BeadStationTrace {
     pub offset: Option<f32>,
     pub confidence: Option<f32>,
     pub reject: Option<&'static str>,
+    pub margin: Option<f32>,
+    pub wall: Option<(f32, f32)>,
+    pub wall_side: Option<&'static str>,
 }
 
 impl BeadStationTrace {
@@ -55,6 +60,9 @@ impl BeadStationTrace {
             offset: hit.map(|h| h.offset),
             confidence: hit.map(|h| h.confidence),
             reject: s.hit.err().map(|r| r.as_str()),
+            margin: s.margin,
+            wall: s.wall.map(|w| xy(w.edge.p.coords)),
+            wall_side: s.wall.map(|w| side_name(w.side)),
         })
     }
 }
@@ -78,8 +86,9 @@ impl BeadStationTrace {
 /// offset, NaN where it was rejected; `weights` is the weight each observation carried in
 /// the pass's last solve, 0 at a rejected station; `corrections` is the correction the
 /// pass applied, in px along the normal. `reject` names each rejection (`None` at a hit)
-/// and `calipers` holds each strip's `CaliperTrace`. The pass's summary is the same entry
-/// of `result.passes`.
+/// and `calipers` holds each strip's `CaliperTrace`. `margins` is the coupled path's
+/// margin at each station, NaN where it found no wall or with per-station pairing. The
+/// pass's summary is the same entry of `result.passes`.
 #[pyclass(get_all, skip_from_py_object)]
 pub struct BeadPassTrace {
     pub points: Py<PyArray2<f32>>,
@@ -93,6 +102,7 @@ pub struct BeadPassTrace {
     pub corrections: Py<PyArray1<f32>>,
     pub reject: Vec<Option<&'static str>>,
     pub calipers: Vec<Py<CaliperTrace>>,
+    pub margins: Py<PyArray1<f32>>,
 }
 
 impl BeadPassTrace {
@@ -102,7 +112,9 @@ impl BeadPassTrace {
         let mut observed = Vec::with_capacity(n);
         let mut reject = Vec::with_capacity(n);
         let mut calipers = Vec::with_capacity(n);
+        let mut margins = Vec::with_capacity(n);
         for s in p.stations {
+            margins.push(s.margin.unwrap_or(f32::NAN));
             let pairs = [
                 xy(s.point.coords),
                 xy(s.tangent),
@@ -131,6 +143,7 @@ impl BeadPassTrace {
             corrections: p.corrections.into_pyarray(py).unbind(),
             reject,
             calipers,
+            margins: margins.into_pyarray(py).unbind(),
         })
     }
 }
