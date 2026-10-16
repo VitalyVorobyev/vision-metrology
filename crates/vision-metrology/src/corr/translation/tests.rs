@@ -354,3 +354,48 @@ fn unrepresentable_photometry_is_a_failed_result_not_infinity() {
     assert_eq!(result.gain, None);
     assert_eq!(result.residual_rms, None);
 }
+
+#[test]
+fn speckled_masks_near_integer_shifts_converge() {
+    // A masked DoG of a speckled mask, and shifts within 0.01 px of an integer: taps
+    // enter and leave validity as the shift crosses pixel boundaries. Refinement over a
+    // re-derived observation set with a re-estimated Huber scale chattered here until its
+    // budget ran out (`RefinementFailed`).
+    use crate::corr::fixtures::{bandpass, speckle};
+    let (w, h) = (320, 97);
+    let mut e = TranslationEstimator::new();
+    let cfg = TranslationConfig {
+        region_check: None,
+        ..Default::default()
+    };
+    let mut outcomes = Vec::new();
+    for k in 0..12u64 {
+        let shift = [
+            (k % 5) as f64 - 2.0 + 0.003 * (k as f64 - 6.0) / 6.0,
+            (k % 3) as f64 - 1.0 - 0.004 * (k as f64 - 5.0) / 6.0,
+        ];
+        let (ma, mb) = (speckle(w, h, 0.1, 2 * k), speckle(w, h, 0.1, 2 * k + 1));
+        let a = bandpass(&image(w, h, [0.0, 0.0], 1.0, 0.0, 0.0), &ma);
+        let b = bandpass(&image(w, h, shift, 1.0, 0.0, 0.0), &mb);
+        let f = e
+            .estimate(
+                &a.as_view(),
+                &b.as_view(),
+                Some(&ma.as_view()),
+                Some(&mb.as_view()),
+                None,
+                &cfg,
+            )
+            .unwrap();
+        let error = f
+            .shift
+            .map(|p| (p.x as f64 - shift[0]).hypot(p.y as f64 - shift[1]));
+        outcomes.push((f.status, error));
+    }
+    assert!(
+        outcomes
+            .iter()
+            .all(|(s, e)| *s == TranslationStatus::Accepted && e.unwrap() < 0.1),
+        "{outcomes:?}"
+    );
+}

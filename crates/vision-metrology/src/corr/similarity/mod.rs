@@ -27,7 +27,7 @@ pub struct SimilarityEstimator {
     warped: Vec<f32>,
     previous_valid: Vec<u8>,
     warped_valid: Vec<u8>,
-    residuals: Vec<f64>,
+    scratch: refine::Workspace,
     initializer: TranslationEstimator,
 }
 impl SimilarityEstimator {
@@ -84,7 +84,13 @@ impl SimilarityEstimator {
         self.warped.resize(n, 0.);
         self.previous_valid.resize(n, 0);
         self.warped_valid.resize(n, 0);
-        self.residuals.reserve(n - self.residuals.len().min(n));
+        let scratch = &mut self.scratch;
+        scratch
+            .residuals
+            .reserve(n - scratch.residuals.len().min(n));
+        scratch
+            .observations
+            .reserve(n - scratch.observations.len().min(n));
         let center = [(a.w - 1) as f64 * 0.5, (a.h - 1) as f64 * 0.5];
         let radius = center[0].hypot(center[1]).max(1.0);
         let (sin, cos) = (angle as f64).sin_cos();
@@ -153,7 +159,7 @@ impl SimilarityEstimator {
             [0, a.w, 0, a.h],
             cfg.translation.min_support.get(),
             &cfg.translation.tuning,
-            &mut self.residuals,
+            &mut self.scratch,
         ) {
             Ok(f) => f,
             Err(s) => {
@@ -221,7 +227,7 @@ impl SimilarityEstimator {
                     r,
                     (cfg.translation.min_support.get() / 4).max(16),
                     &cfg.translation.tuning,
-                    &mut self.residuals,
+                    &mut self.scratch,
                 ) {
                     regions[out.regions] = (f.pose, f.covariance);
                     out.regions += 1;

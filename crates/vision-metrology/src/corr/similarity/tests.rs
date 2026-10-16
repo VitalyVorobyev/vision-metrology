@@ -226,7 +226,7 @@ fn native_rank_loss_and_single_region_are_explicit() {
             [0, w, 0, h],
             400,
             &SimilarityConfig::default().translation.tuning,
-            &mut Vec::new()
+            &mut refine::Workspace::default()
         ),
         Err(TranslationStatus::LowTexture)
     ));
@@ -330,4 +330,47 @@ fn a_mild_affine_is_rejected_and_the_similarity_is_not() {
         .estimate(&a.as_view(), &stretched.as_view(), None, None, None, &cfg)
         .unwrap();
     assert_eq!(f.status, TranslationStatus::ModelMismatch, "{f:?}");
+}
+
+#[test]
+fn speckled_masks_converge() {
+    use crate::corr::fixtures::{bandpass, speckle};
+    let (w, h) = (320, 97);
+    let a = render(w, h, Similarity2f::identity(), 1., 0.);
+    let mut e = SimilarityEstimator::new();
+    let mut cfg = SimilarityConfig::default();
+    cfg.translation.region_check = None;
+    let mut outcomes = Vec::new();
+    for k in 0..6u64 {
+        let truth = centered(
+            w,
+            h,
+            [(k % 3) as f32 - 1. + 0.003, 1. - (k % 2) as f32 - 0.004],
+            0.0005 * (k as f32 - 2.5),
+            1. + 0.0002 * (k as f32 - 2.5),
+        );
+        let (ma, mb) = (
+            speckle(w, h, 0.1, 40 + 2 * k),
+            speckle(w, h, 0.1, 41 + 2 * k),
+        );
+        let pa = bandpass(&a, &ma);
+        let pb = bandpass(&render(w, h, truth, 1., 0.), &mb);
+        let f = e
+            .estimate(
+                &pa.as_view(),
+                &pb.as_view(),
+                Some(&ma.as_view()),
+                Some(&mb.as_view()),
+                None,
+                &cfg,
+            )
+            .unwrap();
+        outcomes.push((f.status, f.transform.map(|t| error(t, truth, w, h))));
+    }
+    assert!(
+        outcomes
+            .iter()
+            .all(|(s, e)| *s == TranslationStatus::Accepted && e.unwrap() < 0.15),
+        "{outcomes:?}"
+    );
 }

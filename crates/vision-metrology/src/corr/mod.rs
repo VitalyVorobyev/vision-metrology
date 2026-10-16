@@ -57,6 +57,8 @@
 mod adapter;
 mod config;
 mod displacement;
+#[cfg(test)]
+mod fixtures;
 mod plane;
 #[cfg(feature = "corr-experimental")]
 mod similarity;

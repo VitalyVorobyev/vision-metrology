@@ -99,14 +99,14 @@ impl TranslationEstimator {
             let (a, b) = self.current.split_at_mut(l);
             b[0].downsample(&a[l - 1]);
         }
-        self.scratch.residuals.reserve(
-            previous.width() * previous.height()
-                - self
-                    .scratch
-                    .residuals
-                    .len()
-                    .min(previous.width() * previous.height()),
-        );
+        let n = previous.width() * previous.height();
+        let scratch = &mut self.scratch;
+        scratch
+            .residuals
+            .reserve(n - scratch.residuals.len().min(n));
+        scratch
+            .observations
+            .reserve(n - scratch.observations.len().min(n));
         let mut shift = [prediction.x as f64, prediction.y as f64];
         let mut peak = None;
         let mut margin = f64::INFINITY;
