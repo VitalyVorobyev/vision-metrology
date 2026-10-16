@@ -30,6 +30,44 @@ deleted here.
 
 ## Measurement
 
+- **Masked refinement can exhaust its budget on real crops.** Translation and similarity
+  return `TranslationStatus::RefinementFailed`, and never promote the integer initializer
+  to an accepted pose. The root cause is in `corr/translation/refine.rs` and
+  `corr/similarity/refine.rs`, where three things let the solve chatter until its
+  iteration budget runs out:
+  - the observation set is re-derived at every iteration, because taps enter or leave
+    validity as the pose moves;
+  - the MAD/Huber scale is re-estimated at every iteration;
+  - convergence also requires the standardized photometric steps to fall below 0.005.
+
+  The evaluation and failure counts are in `docs/performance.md`, and
+  `tools/registration_eval` reproduces them. Reproduce the failure with a synthetic
+  overlap/mask fixture first; then freeze the observation set at the start, fix the
+  Huber scale after the first iteration, and test convergence on the motion step only.
+  Preserve explicit regional model-mismatch rejection. Scheduled in the roadmap's
+  registration calibration stage.
+
+- **Similarity's regional check extrapolates, and is the likely cause of its low
+  coverage.** Each quadrant fits a full similarity but keeps the full-image centre and
+  radius, so its angle and scale are much noisier than the global fit's, and every pair
+  of regional maps is compared at the four full-image corners against a fixed 0.5 px
+  limit. Across a 320×97 strip's diagonal, about 1.5 mrad of regional angle disagreement
+  already rejects. The accuracy suite passes on a smooth analytic texture, but on the
+  private development sequences most rejections are `ModelMismatch`, and coverage is
+  0–12.5%. Translation's check has the same fixed-px shape without covariance, so its
+  rejections may be real rotation or perspective, or noise. The fix is a
+  covariance-normalized test at each region's own centroid and extent (translation: χ²
+  on the pairwise regional shift differences). Do not loosen held-out thresholds or mute
+  failures to get longer tracks. Scheduled in the roadmap's registration calibration
+  stage; the estimator stays behind `corr-experimental` until then.
+
+- **Similarity spends work it does not need.** Its initializer runs a full translation
+  refinement (up to 20 iterations) and then discards everything but the seed; each
+  regional fit runs up to 20 more six-parameter iterations; every iteration makes two
+  full passes (a median select, then the normal equations). Native 320×97 latency is
+  6.53 ms against translation's 2.92 ms, over the 5 ms online budget. Give the
+  initializer a search-only path, and measure before any online use.
+
 - **Pixel-unit settings convert with the nominal `step`** for rect, arc and radial
   calipers: σ, the `SmoothThenCentral` radius and the half-contrast flank distances and
   tolerance go to samples through `Placement::sigma_spacing`, not the real spacing that

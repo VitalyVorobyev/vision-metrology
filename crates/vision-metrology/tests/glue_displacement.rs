@@ -1,9 +1,9 @@
-//! Real-data cross-check: `corr::displacement` on the `data/42781` glue rig.
+//! Real-data cross-check: `corr::displacement` on the local glue-rig sequence.
 //!
 //! This dataset (no calibration, three cameras glued vertically into one
-//! 320x291 frame) has no recorded ground truth for inter-frame motion — `tools/glue-42781/motion.py` (phase correlation) only
-//! ever wrote PNG plots, no numeric trajectory file to compare against (see
-//! `data/42781/output/`). So this is **agreement, not a gate**: it asserts
+//! 320x291 frame) has no recorded ground truth for inter-frame motion: the
+//! exploratory phase-correlation analysis only ever wrote plots, no numeric
+//! trajectory to compare against. So this is **agreement, not a gate**: it asserts
 //! the trajectory this crate's `displacement` produces is internally
 //! consistent (bounded frame-to-frame delta, no NaN/degenerate steps) and
 //! prints a summary. Skips cleanly when the (gitignored,
@@ -15,11 +15,14 @@ use std::path::{Path, PathBuf};
 use vision_metrology::corr::{DisplacementConfig, Refine, displacement};
 use vision_metrology::{Image, Rect2f};
 
-/// `../../data/42781` relative to this crate's manifest directory, so the
-/// test finds the dataset regardless of the directory `cargo test` was
-/// invoked from.
+/// `VM_GLUE_RIG_DATA` when set, else `../../data/glue-rig` relative to this
+/// crate's manifest directory, so the test finds the dataset regardless of
+/// the directory `cargo test` was invoked from.
 fn data_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data/42781")
+    std::env::var_os("VM_GLUE_RIG_DATA").map_or_else(
+        || Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data/glue-rig"),
+        PathBuf::from,
+    )
 }
 
 fn frames_in(dir: &Path) -> Vec<PathBuf> {
@@ -59,7 +62,7 @@ fn glue_rig_trajectory_is_smooth() {
     let frames = frames_in(&data_dir());
     if frames.is_empty() {
         eprintln!(
-            "glue_rig_trajectory_is_smooth: data/42781 not found locally, skipping \
+            "glue_rig_trajectory_is_smooth: data/glue-rig not found locally, skipping \
              (gitignored dataset, not part of the checkout)"
         );
         return;

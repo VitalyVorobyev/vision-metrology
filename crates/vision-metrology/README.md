@@ -4,7 +4,7 @@ Algorithms for industrial machine-vision metrology:
 - shape-based object detection;
 - calipers and robust primitive fitting;
 - the pixel → millimetre calibration bridge;
-- image warping, cross-correlation and displacement;
+- image warping, cross-correlation and masked displacement ([registration guide](https://github.com/VitalyVorobyev/vision-metrology/blob/main/docs/registration.md));
 - contour topology, laser stripe extraction, segmentation and line segments.
 
 Pure Rust: no OpenCV, no FFI.
@@ -22,7 +22,7 @@ vision-metrology = "0.1"
 | Module | Content |
 |---|---|
 | `contour` | `ContourGraph`: junction-aware topology (T/Y junctions, loops) built from edgels, with per-edge tangent, curvature, arc-length parameterization, and Gaussian polyline smoothing |
-| `corr` | Cross-correlation matching over `corrmatch` (`CorrTemplate`, `find`, `find_topk`) plus inter-frame `displacement` with optional Lucas–Kanade refinement |
+| `corr` | Cross-correlation matching over `corrmatch` (`CorrTemplate`, `find`, `find_topk`), inter-frame `displacement`, and reusable two-mask `TranslationEstimator` with photometry and motion diagnostics; the experimental local `SimilarityEstimator` is behind `corr-experimental` |
 | `fit` | `fit_line` / `fit_circle` / `fit_ellipse`: algebraic start then geometric refinement, optional `RobustLoss` (Huber/Tukey) and `RansacConfig`; every `Fit<M>` reports `rms` / `max_dev` / `n_used` |
 | `laser` | `LaserExtractor`: laser stripe centrelines from opposite-polarity 1-D edge pairs, scanning rows or columns, with ROI and prior tracking |
 | `lsd` | `LsdDetector`: line-segment detection with NFA validation |
@@ -35,7 +35,8 @@ vision-metrology = "0.1"
 
 ## Features
 
-Each module is a Cargo feature, and all are on by default. Build only what you use:
+Each module is a Cargo feature, and all are on by default; `corr-experimental` is the one
+feature that is off. Build only what you use:
 
 ```toml
 vision-metrology = { version = "0.1", default-features = false, features = ["matching", "measure"] }
@@ -45,6 +46,7 @@ vision-metrology = { version = "0.1", default-features = false, features = ["mat
 |---|---|---|
 | `contour` | `contour` | — |
 | `corr` | `corr` | — |
+| `corr-experimental` | `corr::SimilarityEstimator`, `SimilarityConfig`, `Similarity`: experimental, outside the semver promise until the regional check is recalibrated; off by default | `corr` |
 | `fit` | `fit` | — |
 | `laser` | `laser` | — |
 | `lsd` | `lsd` | — |

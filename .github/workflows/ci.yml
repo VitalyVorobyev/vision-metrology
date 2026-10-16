@@ -164,6 +164,13 @@ jobs:
       - name: Test
         run: pytest crates/vm-python/tests -q
 
+      # The sequence evaluator's manifest reader, synthetic generator and
+      # evaluators, on synthetic sequences only.
+      - name: Test the registration evaluator
+        run: |
+          pip install scipy pillow
+          pytest tools/registration_eval -q
+
   cross-build:
     name: Cross-platform Build/Test
     strategy:

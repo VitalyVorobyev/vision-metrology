@@ -15,6 +15,20 @@ are relative to 0.1.0.
 
 ### Added
 
+- **Local masked similarity, experimental** (`corr::SimilarityEstimator`, behind the
+  non-default `corr-experimental` feature; in Python, `vision_metrology.experimental`).
+  Outside the semver promise until its regional check is recalibrated. Previous-to-current
+  `Similarity2f`, explicit prediction/bounds, robust photometry, motion rank checks,
+  covariance and independent regional map comparisons; native scratch reuse and
+  matching Python bindings. Development tooling (`tools/registration_eval`) reads a
+  neutral sequence manifest and adds reciprocal seed anchors and a standalone overlay
+  viewer.
+
+- **Masked subpixel translation** (`corr::TranslationEstimator`): reusable scratch,
+  independent per-image validity masks, bounded spatial registration with gain/offset
+  refinement, typed acceptance, photometric residuals, covariance and regional motion
+  consistency. Generic over u8/u16/f32, with Python bindings and allocation/accuracy gates.
+
 - **Shape-based object detection** (`matching`).
   - `ShapeModel` / `ShapeMatcher`: gradient-orientation similarity with
     `Polarity::{Match, IgnoreGlobal, IgnoreLocal}`, coarse-to-fine search over translation,

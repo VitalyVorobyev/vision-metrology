@@ -28,7 +28,7 @@ CI runs these and more:
 | MSRV | `cargo check --workspace --all-targets --all-features` on the `rust-version` toolchain of the root `Cargo.toml` |
 | Invariant numbering | `python3 tools/check-invariants.py` |
 | Examples | the self-asserting examples listed in `ci.yml` |
-| Python bindings | `pip install crates/vm-python`, then `pytest crates/vm-python/tests` |
+| Python bindings | `pip install crates/vm-python`, then `pytest crates/vm-python/tests` and `pytest tools/registration_eval` |
 | Cross-platform | build and test on Windows and macOS |
 | Lab | frontend typecheck, lint, test and build; desktop crate fmt, clippy and test, which includes the contract replay |
 
@@ -100,7 +100,7 @@ pytest tests/
 - **Private datasets.** Tests that need one skip with a message when it is absent. The
   datasets are not distributed:
   - the can-end frames used by `inspect_canend`, `pose_audit` and the lab's folder test;
-  - the glue-rig sequence.
+  - the glue-rig sequence, read from `data/glue-rig` or from `VM_GLUE_RIG_DATA`.
 
 ## Benchmarks
 
@@ -113,6 +113,8 @@ cargo bench -p vision-metrology --bench match_shape
 # also: build_graph, detect_shape, extract, segment, measure, bead, warp, corr
 cargo bench -p vm-primitives --bench downsample -- downsample2x2_to_f32_u8_1280x1024
 ```
+
+The experimental similarity benches in `corr` need `--features corr-experimental`.
 
 Add a benchmark when you add or change a hot path, and put before/after numbers in the PR
 description. Published numbers live in [`docs/performance.md`](docs/performance.md);
@@ -142,6 +144,13 @@ update it when a change moves them.
   checks that every citation resolves, and rejects plan labels outside the roadmap and the
   changelog, links into `docs/dev/` from user-facing files, and one external project name.
   It also enforces the size cap of invariant 14 against the list in `backlog.md`.
+- **Private datasets only test the workspace.** Their adapters live in the git-ignored
+  `tools/private/` and write a neutral manifest that the tracked tools read
+  (`tools/registration_eval/README.md`). Tracked files report private runs only under
+  opaque labels and as aggregates. `tools/check-invariants.py` fails if anything under
+  `tools/private/` is tracked, and, when the local, git-ignored
+  `tools/private/forbidden-terms.txt` exists, if a tracked file contains one of its terms
+  (one per line). CI has no such list and skips that check.
 
 ### Illustrations
 

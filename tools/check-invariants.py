@@ -29,6 +29,12 @@ Checks, over every file tracked by git:
      SIZE_CAP must be listed in docs/dev/backlog.md's size-cap item (the "Code health"
      bullet naming the size cap, with one backticked path per offender), and a listed
      file must still be over the cap.
+  7. Nothing under tools/private/ is tracked. That directory is git-ignored: it holds the
+     adapters for private datasets, which must never be distributed.
+  8. When tools/private/forbidden-terms.txt exists, no tracked file contains any of its
+     terms (one per line, `#` comments allowed), case-insensitively and not as part of a
+     longer word or number. The list names private dataset identifiers; it is itself
+     git-ignored, so CI, which never has it, skips this check silently.
 
 Retiring an invariant is still allowed — keep its number and mark the entry
 `**(retired)**`, saying what replaced it. That keeps the list contiguous and every old
@@ -79,6 +85,10 @@ LABEL_EXEMPT = {"CHANGELOG.md", "docs/dev/roadmap.md", SELF_REL}
 # Written with a character class so that this file does not itself contain the name.
 FORBIDDEN_NAME = re.compile(r"rt[v]t", re.IGNORECASE)
 
+# Private dataset adapters: git-ignored, never tracked. The term list beside them is local.
+PRIVATE_DIR = "tools/private/"
+PRIVATE_TERMS = REPO / PRIVATE_DIR / "forbidden-terms.txt"
+
 DEV_LINK = re.compile(r"docs/dev/|\]\((?:\./)?dev/")
 RUSTDOC = re.compile(r"^\s*//[/!]")
 COMMENT = re.compile(r"^\s*(?://|#|\*|/\*|<!--)")
@@ -91,18 +101,29 @@ TAURI_SRC = "lab/frontend/src-tauri/src/"
 BACKTICKED_RS = re.compile(r"`([^`\s]+\.rs)`")
 
 
-def tracked_files() -> list[str]:
+def all_tracked() -> list[str]:
     out = subprocess.run(
         ["git", "ls-files", "-z"], cwd=REPO, check=True, capture_output=True
     ).stdout.decode("utf-8")
-    files = []
-    for rel in out.split("\0"):
-        if not rel:
-            continue
-        if SKIP_PARTS.intersection(PurePosixPath(rel).parts):
-            continue
-        files.append(rel)
-    return files
+    return [rel for rel in out.split("\0") if rel]
+
+
+def tracked_files() -> list[str]:
+    return [rel for rel in all_tracked() if not SKIP_PARTS.intersection(PurePosixPath(rel).parts)]
+
+
+def private_terms() -> re.Pattern[str] | None:
+    """The local forbidden-terms list as one pattern, or None when the list is absent."""
+    if not PRIVATE_TERMS.is_file():
+        return None
+    terms = []
+    for line in PRIVATE_TERMS.read_text(encoding="utf-8").splitlines():
+        term = line.strip()
+        if term and not term.startswith("#"):
+            terms.append(re.escape(term))
+    if not terms:
+        return None
+    return re.compile(r"(?<![0-9A-Za-z])(?:" + "|".join(terms) + r")(?![0-9A-Za-z])", re.IGNORECASE)
 
 
 def is_user_facing(rel: str) -> bool:
@@ -196,7 +217,13 @@ def main() -> int:
     names: list[str] = []
     links: list[str] = []
     sizes: list[str] = []
+    private: list[str] = []
     counts: dict[str, int] = {}
+
+    for rel in all_tracked():
+        if rel.startswith(PRIVATE_DIR):
+            private.append(f"{rel}: tracked under {PRIVATE_DIR}, which must stay git-ignored")
+    terms = private_terms()
 
     if not numbers:
         numbering.append(f"{SPEC_REL}: the '## Invariants' section has no numbered items")
@@ -237,6 +264,9 @@ def main() -> int:
 
             if FORBIDDEN_NAME.search(line):
                 names.append(f"{where}: names the external project (regex {FORBIDDEN_NAME.pattern})")
+            if terms is not None:
+                for m in terms.finditer(line):
+                    private.append(f"{where}: private term '{m.group(0)}' ({PRIVATE_TERMS.name})")
 
             if not text_file:
                 continue
@@ -291,6 +321,7 @@ def main() -> int:
         ("external project name", names),
         ("user-facing links into docs/dev/", links),
         (f"size cap of {SIZE_CAP} code lines (invariant 14)", sizes),
+        ("private dataset leaks", private),
     ]
     failed = [(title, items) for title, items in sections if items]
     if failed:
@@ -303,6 +334,8 @@ def main() -> int:
         return 1
 
     print(f"documentation check OK: {len(numbers)} invariants, all citations resolve")
+    if terms is not None:
+        print(f"  private terms from {PRIVATE_DIR}{PRIVATE_TERMS.name}: none in tracked files")
     for rel, n in over.items():
         print(f"  over the size cap, listed in {BACKLOG_REL}: {rel} ({n} code lines)")
     return 0
