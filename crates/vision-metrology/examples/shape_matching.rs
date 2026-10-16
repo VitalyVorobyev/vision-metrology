@@ -29,7 +29,7 @@ use clap::{Parser, ValueEnum};
 use image::ImageReader;
 use vision_metrology::matching::{
     Contrast, Polarity, Refinement, ShapeMatch, ShapeMatcher, ShapeModel, ShapeModelBuilder,
-    ShapeModelConfig, ShapeSearchConfig, ShapeSearchTuning,
+    ShapeModelConfig, ShapeModelTuning, ShapeSearchConfig, ShapeSearchTuning,
 };
 use vision_metrology::{Image, Point2f, Rect2f};
 
@@ -161,9 +161,12 @@ fn load_gray(path: &Path) -> Result<Image<u8>> {
 fn build_model(args: &Args, model_path: &Path, roi: Rect2f) -> Result<ShapeModel> {
     let reference = load_gray(model_path)?;
     let cfg = ShapeModelConfig {
-        max_points: NonZeroUsize::new(args.max_points),
         polarity: args.polarity.into(),
         min_contrast: Contrast::Raw(args.model_min_contrast),
+        tuning: ShapeModelTuning {
+            max_points: NonZeroUsize::new(args.max_points),
+            ..Default::default()
+        },
         ..Default::default()
     };
     let t0 = Instant::now();
@@ -174,12 +177,10 @@ fn build_model(args: &Args, model_path: &Path, roi: Rect2f) -> Result<ShapeModel
         model.num_levels(),
         t0.elapsed().as_secs_f64() * 1e3
     );
-    for (i, lvl) in model.levels().iter().enumerate() {
+    for (i, lvl) in (0..model.num_levels()).filter_map(|i| Some((i, model.level_info(i)?))) {
         println!(
             "  level {i}: {:4} points, radius {:6.1} px, angle step {:.4} rad",
-            lvl.points().len(),
-            lvl.radius(),
-            lvl.angle_step()
+            lvl.points, lvl.radius, lvl.angle_step
         );
     }
     Ok(model)
@@ -478,7 +479,7 @@ fn synthetic() -> Result<()> {
             let q = m.pose * nalgebra::Point2::new(150.0f32, 130.0);
             (q.x - cx).abs() < 1.5
                 && (q.y - cy).abs() < 1.5
-                && vision_metrology::wrap_angle(m.angle() - angle).abs() < 0.05
+                && vision_metrology::vm_primitives::wrap_angle(m.angle() - angle).abs() < 0.05
         });
         assert!(hit, "no match for ground truth ({cx}, {cy}, {angle})");
         println!("  ok: ({cx:.0}, {cy:.0}) at {:.1} deg", angle.to_degrees());

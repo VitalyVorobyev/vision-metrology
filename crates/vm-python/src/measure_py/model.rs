@@ -250,15 +250,37 @@ fn outcome_to_py(
 /// `vision_metrology::measure::diagnostics::ObjectTrace`.
 ///
 /// `result` is what `apply` returns for the object (a `MetrologyResult` or a
-/// `MetrologyError`); `placements` and `calipers` are parallel lists, one entry per
-/// caliper in caliper order. A caliper hit when its trace's `edges` is not empty, and its
-/// first edge is the one the fit used.
+/// `MetrologyError`); `calipers` holds one `CaliperDiagnostics` per caliper, in
+/// caliper order.
 #[pyclass(get_all, skip_from_py_object)]
 pub struct ObjectTrace {
     pub object_index: usize,
     pub result: Py<PyAny>,
-    pub placements: Vec<CaliperPlacement>,
-    pub calipers: Vec<Py<CaliperTrace>>,
+    pub calipers: Vec<Py<CaliperDiagnostics>>,
+}
+
+/// One caliper of an `ObjectTrace` — mirrors
+/// `vision_metrology::measure::diagnostics::CaliperDiagnostics`.
+///
+/// `placement` is where the caliper sat, as `MetrologyModel.layout` reports it;
+/// `trace` is what it computed. The caliper hit when `trace.edges` is not empty,
+/// and its first edge is the one the fit used.
+#[pyclass(get_all, skip_from_py_object)]
+pub struct CaliperDiagnostics {
+    pub placement: CaliperPlacement,
+    pub trace: Py<CaliperTrace>,
+}
+
+#[pymethods]
+impl CaliperDiagnostics {
+    fn __repr__(&self, py: Python<'_>) -> String {
+        format!(
+            "CaliperDiagnostics(caliper_index={}, kind='{}', hit={})",
+            self.placement.caliper_index,
+            self.placement.kind,
+            self.trace.borrow(py).reject.is_none()
+        )
+    }
 }
 
 #[pymethods]
@@ -428,27 +450,23 @@ impl MetrologyModel {
             .into_iter()
             .enumerate()
             .map(|(object_index, t)| {
-                let placements = t
-                    .placements
-                    .into_iter()
-                    .enumerate()
-                    .map(|(caliper_index, shape)| {
-                        CaliperPlacement::from(NativeCaliperPlacement {
-                            object_index,
-                            caliper_index,
-                            shape,
-                        })
-                    })
-                    .collect();
                 let calipers = t
                     .calipers
                     .into_iter()
-                    .map(|c| Py::new(py, CaliperTrace::from_native(py, c)))
+                    .enumerate()
+                    .map(|(caliper_index, c)| {
+                        let placement = CaliperPlacement::from(NativeCaliperPlacement {
+                            object_index,
+                            caliper_index,
+                            shape: c.placement,
+                        });
+                        let trace = Py::new(py, CaliperTrace::from_native(py, c.trace))?;
+                        Py::new(py, CaliperDiagnostics { placement, trace })
+                    })
                     .collect::<PyResult<_>>()?;
                 Ok(ObjectTrace {
                     object_index,
                     result: outcome_to_py(py, t.result)?,
-                    placements,
                     calipers,
                 })
             })

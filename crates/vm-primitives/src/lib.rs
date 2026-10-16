@@ -9,16 +9,15 @@ pub mod pyr;
 ///
 /// Everything here is also reachable by its module path — the prelude is a
 /// convenience, not a second API. Types that only a few callers need
-/// (`DoGKernel1D`, `StructuringElement`, the morphology functions) are
-/// deliberately left out; import those from their module.
+/// (`DirectionField`, `DoGKernel1D`, `StructuringElement`, the morphology
+/// functions) are deliberately left out; import those from their module.
 pub mod prelude {
     pub use crate::core::{
         BorderMode, Circle2f, Conic2f, Ellipse2f, Error, Image, ImageView, ImageViewMut, Line2f,
         Pixel, Point2f, Rect2f, Similarity2f, Vec2f, Vec2fExt,
     };
     pub use crate::edge::{
-        DirectionField, Edge1DConfig, Edge1DDetector, Edge2DConfig, Edge2DDetector, EdgePolarity,
-        Edgel, SmoothKind,
+        Edge1DConfig, Edge1DDetector, Edge2DConfig, Edge2DDetector, EdgePolarity, Edgel, SmoothKind,
     };
     pub use crate::pyr::{PreSmooth, Pyramid, PyramidConfig};
 }

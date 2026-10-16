@@ -138,7 +138,7 @@ pub fn estimate_scale_moments(
     debug_assert!(n > 0, "component_stats already filtered empty labels");
     let r_scene = max_sq.sqrt();
 
-    let r_model = model.level(0).map_or(0.0, |l| l.radius() as f64);
+    let r_model = model.level(0).map_or(0.0, |l| l.radius as f64);
     if r_model <= 0.0 {
         return Err(Error::Degenerate(
             "estimate_scale_moments: model has zero spatial extent",

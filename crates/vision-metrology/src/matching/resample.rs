@@ -16,7 +16,7 @@
 //! # What it needs, and why a format-3 model cannot do this
 //!
 //! Every [`ShapeModel`] already stores its level-0 points *after* grid
-//! decimation (`level(0).points()`), but decimation is exactly what a
+//! decimation (level 0's model points), but decimation is exactly what a
 //! different scale needs to redo — decimation must be spatially uniform,
 //! and a cell sized for scale 1.0 is the wrong size at scale
 //! 0.4 or 2.5. So the model additionally stores the *pre*-decimation level-0
@@ -48,7 +48,7 @@
 use vm_primitives::{Edge2DConfig, Error, Point2f};
 
 use super::build::{MAX_LEVELS, RawPoint, from_raw};
-use super::config::{Contrast, ShapeModelConfig};
+use super::config::{Contrast, ShapeModelConfig, ShapeModelTuning};
 use super::model::ShapeModel;
 
 /// A narrow scale_range on the resampled model, centered on 1.0 — the
@@ -118,11 +118,7 @@ impl ShapeModel {
             ..Edge2DConfig::default()
         };
         let cfg = ShapeModelConfig {
-            num_levels: core::num::NonZeroUsize::new(self.num_levels().min(MAX_LEVELS)),
-            edge,
-            pre_smooth: self.pre_smooth(),
             min_contrast: Contrast::Raw(0.0),
-            max_points: core::num::NonZeroUsize::new(self.point_count(0).max(8)),
             origin: Some(Point2f::new(0.0, 0.0)),
             // Zero, not `self.reference_angle()`: `teach_points` are already
             // stored in the rotated model frame (`build::assemble` rotates
@@ -135,7 +131,13 @@ impl ShapeModel {
             angle_range: self.angle_range(),
             scale_range: VERIFY_SCALE_RANGE,
             polarity: self.polarity(),
-            min_points_per_level: 8,
+            tuning: ShapeModelTuning {
+                num_levels: core::num::NonZeroUsize::new(self.num_levels().min(MAX_LEVELS)),
+                edge,
+                pre_smooth: self.pre_smooth(),
+                max_points: core::num::NonZeroUsize::new(self.point_count(0).max(8)),
+                min_points_per_level: 8,
+            },
         };
 
         let mut out = from_raw(raw, &cfg)?;
@@ -191,8 +193,8 @@ mod tests {
         // Level-0 radius should match the original to within the grid
         // decimation's own jitter — resampling at 1.0 reruns the same
         // assembly, not an identity copy.
-        let r0 = model.level(0).unwrap().radius();
-        let r1 = same.level(0).unwrap().radius();
+        let r0 = model.level(0).unwrap().radius;
+        let r1 = same.level(0).unwrap().radius;
         assert!((r0 - r1).abs() < 1.0, "r0={r0} r1={r1}");
     }
 
@@ -200,8 +202,8 @@ mod tests {
     fn resample_at_half_halves_the_radius() {
         let model = build_disc_model();
         let half = model.resample_at(0.5).expect("resample at 0.5");
-        let r0 = model.level(0).unwrap().radius();
-        let r1 = half.level(0).unwrap().radius();
+        let r0 = model.level(0).unwrap().radius;
+        let r1 = half.level(0).unwrap().radius;
         assert!((r1 - 0.5 * r0).abs() < 1.0, "r0={r0} r1={r1}");
     }
 

@@ -259,6 +259,42 @@ are relative to 0.1.0.
 - **Breaking:** `Error` is `#[non_exhaustive]` and adds `InsufficientData`, `Degenerate`
   and `InvalidConfig`.
 - The crates declare `rust-version = "1.91"`.
+- **Breaking:** `ShapeModel`, `ShapeModelLevel` and `ModelPoint` no longer implement
+  `Serialize`/`Deserialize`. The stored format is private document types, unchanged byte
+  for byte, so files saved before still load. Persist a model with
+  `ShapeModel::{save, load, to_bytes, from_bytes}`.
+- **Breaking:** `ShapeModelLevel` and `ModelPoint` are private, and
+  `ShapeModel::{levels, level, smooth, pre_smooth}` are gone.
+  `ShapeModel::level_info(i)` returns a `matching::diagnostics::LevelInfo` (`points`,
+  `radius`, `angle_step`, `scale_step`); `point_count(i)` counts a level's points, and
+  `model_geometry(i)` copies them out. Python adds `ShapeModel.level_info` and
+  `vm.LevelInfo`.
+- **Breaking:** `ShapeModelConfig` keeps what the model is (`min_contrast`, `origin`,
+  `reference_angle`, `angle_range`, `scale_range`, `polarity`) and moves the extraction
+  effort into `tuning` (`ShapeModelTuning`: `num_levels`, `edge`, `pre_smooth`,
+  `max_points`, `min_points_per_level`), as `ShapeSearchConfig` does. Write
+  `cfg.tuning.max_points`, or `tuning: ShapeModelTuning { max_points, ..Default::default() }`
+  in a literal. Python's `ShapeModelConfig` keeps its flat keywords.
+- **Breaking:** `Fit::inliers` always lists the indices of the points the fit used, in
+  ascending order, so `inliers.len() == n_used`; it is no longer empty when every point
+  was used. Drop any `inliers.is_empty()` "all points" check.
+- **Breaking:** `MetrologyFit::{rms, max_dev, n_used}` are removed; they repeated
+  `MetrologyResult::{rms, max_dev, n_used}`. Read the residuals off the result, or off
+  the matched `Fit` (`MetrologyFit::Circle(f) => f.rms`).
+- **Breaking:** the `vision-metrology` prelude is an explicit list, with no glob of the
+  `vm-primitives` prelude. `DirectionField` leaves both preludes (import
+  `vm_primitives::edge::DirectionField`), and `corr::{find, find_topk, displacement}` leave
+  it (call them by module path). It gains `MeasureRect`, `MeasureStrip`, `EdgeSequence`,
+  `ScaleHint`, `ScaleInvariantConfig` and `component_stats`.
+- **Breaking:** the `vision-metrology` root re-exports only `vm-primitives` types. The free
+  functions `sample_bilinear_at`, `sample_bilinear_f32`, `sample_nearest`,
+  `similarity_from_parts`, `similarity_parts`, `transform_point`, `transform_vec` and
+  `wrap_angle` are reached through `vision_metrology::vm_primitives::…`.
+- **Breaking:** `measure::diagnostics::ObjectTrace` drops its parallel `placements` and
+  `calipers` vectors for one `calipers: Vec<CaliperDiagnostics>`, each with the caliper's
+  `placement` and its `trace`. Read `c.placement` and `c.trace` instead of zipping. Python
+  mirrors it: `ObjectTrace.calipers` is a list of `vm.CaliperDiagnostics`, and
+  `ObjectTrace.placements` is gone. The lab's HTTP and Tauri outputs are unchanged.
 - Internal: `measure` holds two crate-private numerical cores (ADR-0020). One is an exact
   layered min-path with max-marginals, for the coupled two-boundary extraction and the
   bead-end rim. The other is a robust Whittaker smoother, on which `BeadTracker`'s

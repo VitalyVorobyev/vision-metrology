@@ -44,8 +44,8 @@ pub use bead::{BeadPass, BeadSolve, BeadTracker, TrackedBead};
 pub use bead_trace::{BeadPassTrace, BeadStationTrace, BeadTrace};
 pub use caliper::{Caliper, CaliperTrace};
 pub use model::{
-    CaliperPlacement, MetrologyError, MetrologyModel, MetrologyObject, MetrologyResult,
-    MetrologyShape, ObjectTrace,
+    CaliperDiagnostics, CaliperPlacement, MetrologyError, MetrologyModel, MetrologyObject,
+    MetrologyResult, MetrologyShape, ObjectTrace,
 };
 
 create_exception!(

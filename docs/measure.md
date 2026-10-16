@@ -435,8 +435,7 @@ A whole [`MetrologyModel`] is explained in one pass with
 | `ObjectTrace` field | What it holds |
 |---|---|
 | `result` | what `apply` returns for the object: the fit and its hits, or the error |
-| `placements` | where each caliper sat, in caliper order, as `layout` places it |
-| `calipers` | each caliper's `CaliperTrace`, parallel to `placements` |
+| `calipers` | one `CaliperDiagnostics` per caliper, in caliper order: its `placement`, as `layout` places it, and its `trace`, a `CaliperTrace` |
 
 Each caliper is measured once. A caliper hit when its trace has edges, and its
 first edge is the one the fit used, so `result` is exactly what `apply` returns

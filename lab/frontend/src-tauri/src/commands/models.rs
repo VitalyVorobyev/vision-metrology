@@ -2,7 +2,9 @@
 //! mirrors `lab/backend/src/vm_lab/routers/models.py`, plus the geometry and
 //! crop commands a UI needs to *show* what was taught.
 
-use vision_metrology::matching::{Contrast, CropSpec, ShapeModelBuilder, ShapeModelConfig};
+use vision_metrology::matching::{
+    Contrast, CropSpec, ShapeModelBuilder, ShapeModelConfig, ShapeModelTuning,
+};
 use vision_metrology::warp::Interp;
 use vm_primitives::{BorderMode, Image, Point2f, Rect2f};
 
@@ -17,10 +19,13 @@ pub fn models_create(state: &AppState, req: ModelCreateRequest) -> AppResult<Mod
 
     let roi = to_rect(req.roi);
     let config = ShapeModelConfig {
-        num_levels: req.num_levels.and_then(std::num::NonZeroUsize::new),
         min_contrast: Contrast::FractionOfRange(req.min_contrast),
         origin: req.origin.map(|o| Point2f::new(o[0], o[1])),
         reference_angle: req.reference_angle,
+        tuning: ShapeModelTuning {
+            num_levels: req.num_levels.and_then(std::num::NonZeroUsize::new),
+            ..Default::default()
+        },
         ..ShapeModelConfig::default()
     };
 

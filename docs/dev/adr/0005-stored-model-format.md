@@ -1,7 +1,7 @@
 # ADR-0005: The stored shape model is opaque, read-only and versioned
 
 - Status: Accepted
-- Date: 2026-08-21
+- Date: 2026-10-16
 
 ## Context
 
@@ -14,10 +14,17 @@ quantities.
 - **Opaque.** The API is `save`/`load` and `to_bytes`/`from_bytes`. The encoding (JSON) is
   not a promise, and the format version is `pub(crate)`. `load` refuses a foreign or
   too-old document with an error instead of mis-reading it.
-- **Readable, not writable.** `ModelPoint` and `ShapeModelLevel` can be read for overlays but
-  not constructed by callers. Point order is load-bearing (greedy termination evaluates a
+- **The document is its own set of types.** Private document structs in
+  `crates/vision-metrology/src/matching/model/persist.rs` are the only serde types; the
+  in-memory model and its levels derive nothing. A caller cannot build a `ShapeModel` from
+  arbitrary JSON past the version gate, and the in-memory layout can change without
+  touching the format. `tests/model_format.rs` keeps a frozen format-5 document that must
+  load and write back byte for byte.
+- **The levels are private.** Point order is load-bearing (greedy termination evaluates a
   prefix, which must sample the whole contour), and `radius`, `angle_step` and `scale_step`
-  are derived.
+  are derived, so callers neither build nor walk a level. They read a level's numbers
+  through `ShapeModel::level_info` (a `matching::diagnostics::LevelInfo`), and its points
+  through `model_geometry` / `reference_geometry`, which copy them out in one frame.
 - **The model carries its own `PreSmooth`.** `ShapeMatcher::find` reads it off the model,
   which makes invariant 3 impossible to break from the search config.
 - **Breaking bumps are batched; additive bumps are backward-loading.**
@@ -25,7 +32,7 @@ quantities.
   - Bumps above it are additive: each adds `#[serde(default)]` fields, and an older document
     reads the value the field always implicitly meant.
   - The current format is `FORMAT_VERSION`. What each format added is the table in its
-    comment, in `crates/vision-metrology/src/matching/model.rs`.
+    comment, in `crates/vision-metrology/src/matching/model/persist.rs`.
 
 ## Alternatives
 

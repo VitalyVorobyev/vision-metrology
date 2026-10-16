@@ -9,25 +9,12 @@ use super::config::Polarity;
 /// 16 bytes, array-of-structs: all four floats are consumed by a single
 /// inner-loop iteration, so keeping them adjacent is what the cache wants.
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct ModelPoint {
-    pub(crate) d: Vec2f,
-    pub(crate) t: Vec2f,
-}
-
-impl ModelPoint {
+pub(crate) struct ModelPoint {
     /// Offset from this level's reference point, in this level's pixel units.
-    #[inline]
-    pub fn d(&self) -> Vec2f {
-        self.d
-    }
-
+    pub(crate) d: Vec2f,
     /// Unit gradient direction, dark-to-bright — the same convention as
     /// [`Edgel::n`](vm_primitives::Edgel).
-    #[inline]
-    pub fn t(&self) -> Vec2f {
-        self.t
-    }
+    pub(crate) t: Vec2f,
 }
 
 /// One teach-time edge point, stored **before** grid decimation, at level 0.
@@ -44,7 +31,6 @@ impl ModelPoint {
 /// `matching::build` uses it only to pick a cell's surviving point, never as
 /// a score input, so its scale never matters outside that tie-break.
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub(crate) struct TeachPoint {
     /// Offset from the model's origin, level-0 pixel units.
     pub(crate) d: Vec2f,
@@ -55,53 +41,42 @@ pub(crate) struct TeachPoint {
 }
 
 /// One pyramid level of a [`ShapeModel`].
+///
+/// Private: point order is load-bearing (greedy early termination evaluates a
+/// prefix of `points`, so the prefix must be spread over the whole contour),
+/// and the steps and radius are derived from the points.
+/// [`ShapeModel::level_info`] reports the numbers a caller can use.
 #[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct ShapeModelLevel {
+pub(crate) struct ShapeModelLevel {
+    /// Model points, in spatially stratified order.
     pub(crate) points: Vec<ModelPoint>,
+    /// Angle step this level can be searched with, in radians.
     pub(crate) angle_step: f32,
+    /// Relative scale step this level can be searched with.
     pub(crate) scale_step: f32,
+    /// Largest `|d|` over the level's points, in this level's pixel units.
     pub(crate) radius: f32,
+    /// Bounding box of the points, relative to the level reference point.
     pub(crate) bbox: Rect2f,
 }
 
-impl ShapeModelLevel {
-    /// Model points, in spatially stratified order.
-    ///
-    /// The order matters: greedy early termination evaluates a prefix of this
-    /// list, so the prefix must be spread over the whole contour. In contour
-    /// order a localised occlusion would sit entirely inside the prefix and
-    /// abort a pose that is in fact correct. Read-only for that reason — a
-    /// caller who reorders or extends the points invalidates both the greedy
-    /// bound and `score ≈ 1 − occluded_fraction`.
-    #[inline]
-    pub fn points(&self) -> &[ModelPoint] {
-        &self.points
-    }
-
-    /// Angle step this level can be searched with, in radians.
-    #[inline]
-    pub fn angle_step(&self) -> f32 {
-        self.angle_step
-    }
-
-    /// Relative scale step this level can be searched with.
-    #[inline]
-    pub fn scale_step(&self) -> f32 {
-        self.scale_step
-    }
-
-    /// Largest `|d|` over the level's points, in this level's pixel units.
-    #[inline]
-    pub fn radius(&self) -> f32 {
-        self.radius
-    }
-
-    /// Bounding box of the points, relative to the level reference point.
-    #[inline]
-    pub fn bbox(&self) -> Rect2f {
-        self.bbox
-    }
+/// What one pyramid level of a [`ShapeModel`] holds, from
+/// [`ShapeModel::level_info`].
+///
+/// A diagnostic: it describes how the model was built, and gains fields as
+/// the model does.
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
+pub struct LevelInfo {
+    /// Number of model points at this level, the `n` the score divides by.
+    pub points: usize,
+    /// Largest distance of a point from the reference point, in this level's
+    /// pixel units.
+    pub radius: f32,
+    /// Angle step this level is searched with, in radians.
+    pub angle_step: f32,
+    /// Relative scale step this level is searched with.
+    pub scale_step: f32,
 }
 
 /// A rotation- and scale-searchable model of an object's edge geometry.
@@ -117,7 +92,6 @@ impl ShapeModelLevel {
 /// agree; decimated level-0 points would give the model a sharpness the scene
 /// does not have, systematically depressing the coarse score.
 #[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ShapeModel {
     levels: Vec<ShapeModelLevel>,
     origin: Point2f,
@@ -129,13 +103,11 @@ pub struct ShapeModel {
     /// Level-0 edge points before grid decimation — `None` for a model
     /// loaded from a format-3 document, which predates this field. See
     /// [`resample_at`](Self::resample_at).
-    #[cfg_attr(feature = "serde", serde(default))]
     teach_points: Option<Vec<TeachPoint>>,
     /// Angle, in radians, the model frame is rotated by relative to the
     /// reference image — the caller's chosen canonical orientation. `0.0`
     /// (the default, and what a format-4 document deserializes to) means the
     /// two frames coincide. See [`reference_angle`](Self::reference_angle).
-    #[cfg_attr(feature = "serde", serde(default))]
     reference_angle: f32,
 }
 
@@ -198,7 +170,7 @@ impl ShapeModel {
     /// are computed from differently band-limited images and disagree for
     /// reasons that have nothing to do with the object.
     #[inline]
-    pub fn smooth(&self) -> SmoothKind {
+    pub(crate) fn smooth(&self) -> SmoothKind {
         self.smooth
     }
 
@@ -212,20 +184,26 @@ impl ShapeModel {
     /// wrong kernel.
     // Invariant 3.
     #[inline]
-    pub fn pre_smooth(&self) -> PreSmooth {
+    pub(crate) fn pre_smooth(&self) -> PreSmooth {
         self.pre_smooth
-    }
-
-    /// All pyramid levels, finest first.
-    #[inline]
-    pub fn levels(&self) -> &[ShapeModelLevel] {
-        &self.levels
     }
 
     /// Level `i`, or `None` when `i >= num_levels()`.
     #[inline]
-    pub fn level(&self, i: usize) -> Option<&ShapeModelLevel> {
+    pub(crate) fn level(&self, i: usize) -> Option<&ShapeModelLevel> {
         self.levels.get(i)
+    }
+
+    /// What level `i` holds — its point count, radius and search steps — or
+    /// `None` when `i >= num_levels()`. A diagnostic, for printing or
+    /// checking how a model was built.
+    pub fn level_info(&self, i: usize) -> Option<LevelInfo> {
+        self.levels.get(i).map(|l| LevelInfo {
+            points: l.points.len(),
+            radius: l.radius,
+            angle_step: l.angle_step,
+            scale_step: l.scale_step,
+        })
     }
 
     /// Number of pyramid levels; always at least 1.
@@ -282,7 +260,7 @@ impl ShapeModel {
     ///
     /// | Frame | What is in it | Read it with |
     /// |---|---|---|
-    /// | model | [`ModelPoint::d`], [`CropSpec::rect`](super::CropSpec), what [`ShapeMatch::pose`](super::ShapeMatch::pose) consumes | [`model_geometry`](Self::model_geometry) |
+    /// | model | the stored point offsets, [`CropSpec::rect`](super::CropSpec), what [`ShapeMatch::pose`](super::ShapeMatch::pose) consumes | [`model_geometry`](Self::model_geometry) |
     /// | reference image | the pixels the model was taught from | [`reference_geometry`](Self::reference_geometry), [`reference_points`](Self::reference_points) |
     #[inline]
     pub fn reference_angle(&self) -> f32 {
@@ -343,108 +321,4 @@ impl ShapeModel {
 
 /// Versioned persistence for [`ShapeModel`] (`serde` feature).
 #[cfg(feature = "serde")]
-mod persist {
-    use std::path::Path;
-
-    use vm_primitives::Error;
-
-    use super::ShapeModel;
-
-    /// Bumped whenever the serialized layout of [`ShapeModel`] changes.
-    ///
-    /// Deliberately **not public**: the number is a compatibility check between
-    /// this crate's writer and its reader, and every way a caller could act on
-    /// it — "is this file loadable?" — is answered by [`ShapeModel::load`]
-    /// returning an error.
-    //
-    // Exposing it invited callers to build the envelope themselves, which is exactly
-    // what the opaque byte API removes.
-    //
-    // Format history; this table is its single home:
-    //
-    // | Version | Change |
-    // |---|---|
-    // | 1 | Initial format. `Point2f` / `Vec2f` as `{"x": …, "y": …}`. |
-    // | 2 | `Point2f` / `Vec2f` became nalgebra aliases, which serialize as flat `[x, y]` arrays. |
-    // | 3 | The document is an opaque byte string rather than documented JSON, `ModelPoint` / `ShapeModelLevel` fields are read-only, and the model carries the pyramid `PreSmooth` it was built with (invariant 3). |
-    // | 4 | The model additionally carries its level-0 `teach_points` (pre-decimation edge points), which `ShapeModel::resample_at` needs. A format-3 document still loads — `teach_points` defaults to `None` on a document that predates the field — but `resample_at` on the result returns `Error::InvalidConfig`. |
-    // | 5 | The model carries its `reference_angle` — the canonical orientation its frame is rotated onto. A format-4 document still loads and reads `0.0`, which is exactly what it meant: model frame and reference image coincide. |
-    pub(crate) const FORMAT_VERSION: u32 = 5;
-
-    /// The oldest format version [`ShapeModel::load`]/[`from_bytes`](ShapeModel::from_bytes)
-    /// still accept. `teach_points` is `#[serde(default)]`, so a version-3
-    /// document (which has no such field at all) deserializes cleanly with
-    /// `teach_points: None` — the only behavioral difference a version-3
-    /// reader sees is that [`ShapeModel::resample_at`] then reports a clear
-    /// error instead of silently inventing teach data. Below this floor a
-    /// document is old enough (pre-nalgebra-alias, `{"x":…,"y":…}` points)
-    /// that its *shape* differs, not just a missing field, so it is refused
-    /// rather than guessed at.
-    const MIN_SUPPORTED_FORMAT_VERSION: u32 = 3;
-
-    #[derive(serde::Serialize, serde::Deserialize)]
-    struct Envelope {
-        format_version: u32,
-        model: ShapeModel,
-    }
-
-    impl ShapeModel {
-        /// Serialize the model to an opaque, versioned byte string.
-        ///
-        /// The encoding is **not** part of the API: it carries a format version
-        /// and this crate is the only thing that may read it. A model built by
-        /// one version and loaded by another fails loudly rather than silently
-        /// mis-deserializing.
-        ///
-        /// # Errors
-        /// [`Error::InvalidConfig`] if serialization fails (non-finite floats;
-        /// models built by this crate contain none).
-        pub fn to_bytes(&self) -> Result<Vec<u8>, Error> {
-            let env = Envelope {
-                format_version: FORMAT_VERSION,
-                model: self.clone(),
-            };
-            serde_json::to_vec(&env)
-                .map_err(|_| Error::InvalidConfig("shape model serialization failed"))
-        }
-
-        /// Read back a model written by [`to_bytes`](Self::to_bytes).
-        ///
-        /// # Errors
-        /// [`Error::InvalidConfig`] when the bytes are not a model document or
-        /// carry an unsupported format version.
-        pub fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
-            let env: Envelope = serde_json::from_slice(bytes)
-                .map_err(|_| Error::InvalidConfig("not a valid shape model document"))?;
-            if env.format_version < MIN_SUPPORTED_FORMAT_VERSION
-                || env.format_version > FORMAT_VERSION
-            {
-                return Err(Error::InvalidConfig(
-                    "unsupported shape model format version",
-                ));
-            }
-            Ok(env.model)
-        }
-
-        /// Write the model to `path`.
-        ///
-        /// # Errors
-        /// [`Error::InvalidConfig`] on a serialization or I/O failure.
-        pub fn save(&self, path: impl AsRef<Path>) -> Result<(), Error> {
-            let bytes = self.to_bytes()?;
-            std::fs::write(path, bytes)
-                .map_err(|_| Error::InvalidConfig("could not write shape model file"))
-        }
-
-        /// Read a model written by [`save`](Self::save).
-        ///
-        /// # Errors
-        /// [`Error::InvalidConfig`] on an I/O failure, a document that is not a
-        /// model, or an unsupported format version.
-        pub fn load(path: impl AsRef<Path>) -> Result<Self, Error> {
-            let bytes = std::fs::read(path)
-                .map_err(|_| Error::InvalidConfig("could not read shape model file"))?;
-            Self::from_bytes(&bytes)
-        }
-    }
-}
+mod persist;

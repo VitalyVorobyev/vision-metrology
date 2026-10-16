@@ -22,9 +22,8 @@
 #![allow(dead_code)]
 
 use vision_metrology::matching::{ShapeMatch, ShapeModel};
-use vision_metrology::{
-    BorderMode, Image, Point2f, Rect2f, sample_bilinear_at, sample_bilinear_f32,
-};
+use vision_metrology::vm_primitives::{sample_bilinear_at, sample_bilinear_f32};
+use vision_metrology::{BorderMode, Image, Point2f, Rect2f};
 
 pub const GREEN: [u8; 3] = [40, 220, 60];
 pub const RED: [u8; 3] = [235, 60, 50];
@@ -87,10 +86,7 @@ pub fn diagnostic(
     terms: &[f32],
 ) -> image::RgbImage {
     // Crop window: the model's reach at this pose plus a margin.
-    let radius = model
-        .levels()
-        .first()
-        .map_or(64.0, |l| l.radius() * m.scale());
+    let radius = model.level_info(0).map_or(64.0, |l| l.radius * m.scale());
     let half = (radius + 16.0).ceil() as i32;
     let cx = m.position.x.round() as i32;
     let cy = m.position.y.round() as i32;

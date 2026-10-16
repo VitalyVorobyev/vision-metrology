@@ -33,10 +33,18 @@ pub use vm_primitives;
 ///
 /// Each group follows its module's feature gate, so the prelude shrinks with
 /// the build rather than failing it. Everything here is also reachable at its
-/// module path — the prelude is a convenience, not a second API.
-// Invariant 17.
+/// module path — the prelude is a convenience, not a second API. Free
+/// functions whose names say nothing out of context (`corr::find`,
+/// `corr::displacement`) stay at their module path.
+// Invariant 17: an explicit list, also for the primitives, so nothing added to
+// `vm-primitives` lands here unseen.
 pub mod prelude {
-    pub use vm_primitives::prelude::*;
+    pub use vm_primitives::{
+        BorderMode, Circle2f, Conic2f, Edge1DConfig, Edge1DDetector, Edge2DConfig, Edge2DDetector,
+        EdgePolarity, Edgel, Ellipse2f, Error, Image, ImageView, ImageViewMut, Line2f, Pixel,
+        Point2f, PreSmooth, Pyramid, PyramidConfig, Rect2f, Similarity2f, SmoothKind, Vec2f,
+        Vec2fExt,
+    };
 
     #[cfg(feature = "contour")]
     pub use crate::contour::{
@@ -45,7 +53,6 @@ pub mod prelude {
     #[cfg(feature = "corr")]
     pub use crate::corr::{
         CorrConfig, CorrMatch, CorrTemplate, CorrTemplateConfig, Displacement, DisplacementConfig,
-        displacement, find, find_topk,
     };
     #[cfg(feature = "fit")]
     pub use crate::fit::{
@@ -62,9 +69,9 @@ pub mod prelude {
     };
     #[cfg(feature = "measure")]
     pub use crate::measure::{
-        BeadConfig, BeadTracker, Caliper, EdgeSelect, MeasureConfig, MeasureEdge, MetrologyFit,
-        MetrologyModel, MetrologyObject, MetrologyResult, MetrologyShape, PolaritySelect,
-        RejectReason, TrackedBead,
+        BeadConfig, BeadTracker, Caliper, EdgeSelect, EdgeSequence, MeasureConfig, MeasureEdge,
+        MeasureRect, MeasureStrip, MetrologyFit, MetrologyModel, MetrologyObject, MetrologyResult,
+        MetrologyShape, PolaritySelect, RejectReason, TrackedBead,
     };
     #[cfg(feature = "metric")]
     pub use crate::metric::{
@@ -74,26 +81,26 @@ pub mod prelude {
     };
     #[cfg(feature = "scale")]
     pub use crate::scale::{
-        ScaleEstimate, estimate_scale_logpolar, estimate_scale_moments, find_scale_invariant,
+        ScaleEstimate, ScaleHint, ScaleInvariantConfig, estimate_scale_logpolar,
+        estimate_scale_moments, find_scale_invariant,
     };
     #[cfg(feature = "segment")]
     pub use crate::segment::{
-        AdaptiveThreshConfig, CcLabel, ComponentStats, adaptive_threshold_u8,
+        AdaptiveThreshConfig, CcLabel, ComponentStats, adaptive_threshold_u8, component_stats,
         label_connected_components_u8, otsu_threshold_u8,
     };
     #[cfg(feature = "warp")]
     pub use crate::warp::{Interp, Map};
 }
 
-// The primitives most callers of this crate need by name. Deliberately an
-// explicit list rather than a glob: a glob would make every addition to
-// `vm-primitives` a potential name collision here, and hide what this crate's
-// surface actually is.
+// The primitive *types* most callers of this crate need by name (invariant 17).
+// Deliberately an explicit list rather than a glob: a glob would make every
+// addition to `vm-primitives` a potential name collision here, and hide what
+// this crate's surface actually is. Free functions (sampling, angle and
+// similarity helpers) stay at their `vm_primitives` path.
 pub use vm_primitives::{
     Affine2f, BorderMode, Circle2f, Conic2f, Edge1DConfig, Edge1DDetector, Edge2DConfig,
     Edge2DDetector, EdgePolarity, Edgel, Ellipse2f, Error, Image, ImageView, ImageViewMut,
     Isometry2f, Isometry3f, Line2f, Pixel, Point2f, Point3f, Polyline2f, PreSmooth, Projective2f,
     Pyramid, PyramidConfig, Rect2f, Similarity2f, SmoothKind, SubpixRefine, Vec2f, Vec2fExt, Vec3f,
-    sample_bilinear_at, sample_bilinear_f32, sample_nearest, similarity_from_parts,
-    similarity_parts, transform_point, transform_vec, wrap_angle,
 };

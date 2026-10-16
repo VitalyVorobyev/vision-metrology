@@ -77,11 +77,12 @@ mod search;
 
 pub use build::{ContourOrientation, ShapeModelBuilder};
 pub use config::{
-    Contrast, Polarity, Refinement, ShapeModelConfig, ShapeSearchConfig, ShapeSearchTuning,
+    Contrast, Polarity, Refinement, ShapeModelConfig, ShapeModelTuning, ShapeSearchConfig,
+    ShapeSearchTuning,
 };
 pub use crop::CropSpec;
 pub use matcher::{ShapeMatch, ShapeMatcher};
-pub use model::{ModelPoint, ShapeModel, ShapeModelLevel};
+pub use model::ShapeModel;
 
 // Invariant 17.
 /// Re-exported for `scale::find_scale_invariant` only — not part of this

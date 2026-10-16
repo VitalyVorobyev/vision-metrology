@@ -216,7 +216,8 @@ fn bench_translation(c: &mut Criterion) {
 #[cfg(feature = "corr-experimental")]
 fn bench_similarity(c: &mut Criterion) {
     use vision_metrology::corr::{SimilarityConfig, SimilarityEstimator, TranslationStatus};
-    use vision_metrology::{Point2f, Similarity2f, Vec2f, transform_point};
+    use vision_metrology::vm_primitives::transform_point;
+    use vision_metrology::{Point2f, Similarity2f, Vec2f};
     for (w, h) in [(320, 97), (1280, 1024)] {
         let center = Point2f::new((w - 1) as f32 * 0.5, (h - 1) as f32 * 0.5);
         let linear = Similarity2f::new(Vec2f::zeros(), 0.01, 1.005);

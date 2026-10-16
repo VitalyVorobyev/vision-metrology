@@ -349,7 +349,7 @@ fn circle_fit_illustration() {
     }
     let inliers: std::collections::HashSet<u32> = fit.inliers.iter().copied().collect();
     for (i, p) in pts.iter().enumerate() {
-        let is_inlier = fit.inliers.is_empty() || inliers.contains(&(i as u32));
+        let is_inlier = inliers.contains(&(i as u32));
         dot(
             &mut canvas,
             p.x,

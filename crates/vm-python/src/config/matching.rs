@@ -6,9 +6,11 @@ use pyo3::prelude::*;
 use vision_metrology::matching::Contrast as NativeContrast;
 use vision_metrology::matching::Polarity as NativePolarity;
 use vision_metrology::matching::Refinement as NativeRefinement;
-use vision_metrology::matching::ShapeModelConfig as NativeShapeModelConfig;
 use vision_metrology::matching::ShapeSearchConfig as NativeShapeSearchConfig;
 use vision_metrology::matching::ShapeSearchTuning as NativeShapeSearchTuning;
+use vision_metrology::matching::{
+    ShapeModelConfig as NativeShapeModelConfig, ShapeModelTuning as NativeShapeModelTuning,
+};
 use vm_primitives::PreSmooth as NativePreSmooth;
 use vm_primitives::{Point2f, Rect2f};
 
@@ -95,7 +97,9 @@ fn parse_polarity(s: &str) -> PyResult<NativePolarity> {
     }
 }
 
-/// Mirrors `vision_metrology::matching::ShapeModelConfig`.
+/// Mirrors `vision_metrology::matching::ShapeModelConfig`, flat: the Rust
+/// config's `tuning` fields (`num_levels`, `edge`, `pre_smooth`, `max_points`,
+/// `min_points_per_level`) sit beside the others here.
 #[pyclass(get_all, set_all, from_py_object)]
 #[derive(Debug, Clone)]
 pub struct ShapeModelConfig {
@@ -126,14 +130,14 @@ impl Default for ShapeModelConfig {
     fn default() -> Self {
         let n = NativeShapeModelConfig::default();
         Self {
-            num_levels: n.num_levels.map(NonZeroUsize::get),
+            num_levels: n.tuning.num_levels.map(NonZeroUsize::get),
             edge: EdgeConfig::default(),
-            pre_smooth: match n.pre_smooth {
+            pre_smooth: match n.tuning.pre_smooth {
                 NativePreSmooth::None => "none".to_string(),
                 NativePreSmooth::Binomial121 => "binomial121".to_string(),
             },
             min_contrast: Contrast::from_native(n.min_contrast),
-            max_points: n.max_points.map(NonZeroUsize::get),
+            max_points: n.tuning.max_points.map(NonZeroUsize::get),
             origin: n.origin.map(|p| (p.x, p.y)),
             reference_angle: n.reference_angle,
             angle_min: n.angle_range.0,
@@ -141,7 +145,7 @@ impl Default for ShapeModelConfig {
             scale_min: n.scale_range.0,
             scale_max: n.scale_range.1,
             polarity: "match".to_string(),
-            min_points_per_level: n.min_points_per_level,
+            min_points_per_level: n.tuning.min_points_per_level,
         }
     }
 }
@@ -232,17 +236,19 @@ impl ShapeModelConfig {
             }
         };
         Ok(NativeShapeModelConfig {
-            num_levels: self.num_levels.and_then(NonZeroUsize::new),
-            edge: self.edge.to_native()?,
-            pre_smooth,
             min_contrast: self.min_contrast.to_native(),
-            max_points: self.max_points.and_then(NonZeroUsize::new),
             origin: self.origin.map(|(x, y)| Point2f::new(x, y)),
             reference_angle: self.reference_angle,
             angle_range: (self.angle_min, self.angle_max),
             scale_range: (self.scale_min, self.scale_max),
             polarity: parse_polarity(&self.polarity)?,
-            min_points_per_level: self.min_points_per_level,
+            tuning: NativeShapeModelTuning {
+                num_levels: self.num_levels.and_then(NonZeroUsize::new),
+                edge: self.edge.to_native()?,
+                pre_smooth,
+                max_points: self.max_points.and_then(NonZeroUsize::new),
+                min_points_per_level: self.min_points_per_level,
+            },
         })
     }
 }

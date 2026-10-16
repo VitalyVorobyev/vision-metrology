@@ -21,6 +21,28 @@ fn to_rect(roi: (f32, f32, f32, f32)) -> Rect2f {
     }
 }
 
+/// What one pyramid level of a :class:`ShapeModel` holds — mirrors
+/// `vision_metrology::matching::diagnostics::LevelInfo`. `radius` is in that
+/// level's pixel units, `angle_step` in radians.
+#[pyclass(get_all, skip_from_py_object)]
+#[derive(Debug, Clone, Copy)]
+pub struct LevelInfo {
+    pub points: usize,
+    pub radius: f32,
+    pub angle_step: f32,
+    pub scale_step: f32,
+}
+
+#[pymethods]
+impl LevelInfo {
+    fn __repr__(&self) -> String {
+        format!(
+            "LevelInfo(points={}, radius={:.2}, angle_step={:.5}, scale_step={:.5})",
+            self.points, self.radius, self.angle_step, self.scale_step
+        )
+    }
+}
+
 /// Fixed crop geometry for :meth:`ShapeMatch.model_frame_map` — rectify a
 /// located match into a canonical, model-frame patch.
 ///
@@ -141,11 +163,20 @@ impl ShapeModel {
     /// Points per pyramid level, finest first.
     #[getter]
     pub fn point_counts(&self) -> Vec<usize> {
-        self.inner
-            .levels()
-            .iter()
-            .map(|l| l.points().len())
+        (0..self.inner.num_levels())
+            .map(|i| self.inner.point_count(i))
             .collect()
+    }
+
+    /// What pyramid level `level` holds (point count, radius, search steps),
+    /// or `None` when `level >= num_levels`. A diagnostic.
+    pub fn level_info(&self, level: usize) -> Option<LevelInfo> {
+        self.inner.level_info(level).map(|l| LevelInfo {
+            points: l.points,
+            radius: l.radius,
+            angle_step: l.angle_step,
+            scale_step: l.scale_step,
+        })
     }
 
     /// Level-0 model points in reference-image coordinates, as a list of `(x, y)`.

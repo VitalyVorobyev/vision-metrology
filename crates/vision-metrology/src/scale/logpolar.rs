@@ -103,7 +103,7 @@ pub fn estimate_scale_logpolar(
 
     let r_ref = model
         .level(0)
-        .map(|l| l.radius())
+        .map(|l| l.radius)
         .filter(|r| *r > 0.0)
         .ok_or(Error::Degenerate(
             "estimate_scale_logpolar: model has zero level-0 radius",

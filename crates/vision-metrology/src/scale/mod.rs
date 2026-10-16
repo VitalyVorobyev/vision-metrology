@@ -23,8 +23,8 @@
 //!   `crate::segment`) and compares its spatial spread to the taught
 //!   model's own. Needs a part that segments cleanly against its
 //!   background; cheap (`O(roi area)`); works on **any**
-//!   [`ShapeModel`](crate::matching::ShapeModel) — it reads
-//!   `level(0).points()`, which every model has.
+//!   [`ShapeModel`](crate::matching::ShapeModel) — it reads the
+//!   level-0 model points, which every model has.
 //! * [`estimate_scale_logpolar`] — no segmentation required, but needs an
 //!   approximate center and stored teach data
 //!   ([`ShapeModel::teach_point_count`](crate::matching::ShapeModel::teach_point_count)
