@@ -10,6 +10,7 @@ only its source, licence, checksums and split of IDs are tracked.
 | `fetch.py` | downloads a `verified` entry into `data/<id>/`, verifies its checksums and extracts it; prints the manual steps for any other |
 | `make_split.py` | writes a dataset's split file from the fetched data, by a fixed seeded rule, and `--check` reproduces it |
 | `splits/<id>.json` | the dev and test IDs, never any data |
+| `annotations/<id>/` | our own annotations of a dataset, under CC BY 4.0, with a `LICENSE` that attributes the source |
 
 ```bash
 python3 tools/datasets/fetch.py --list
@@ -44,7 +45,8 @@ A new dataset is registered before anything is evaluated on it:
    at the source, with its URL: an SPDX id, or the exact terms quoted. If none is stated,
    the status is `licence-unclear`. Never infer a licence from a mirror or an aggregator.
 2. **Nothing from the dataset is committed**: no images, crops, overlays, annotations or
-   per-item results. Data goes under `data/<id>/`, outputs outside the repository.
+   per-item results. Data goes under `data/<id>/`, outputs outside the repository. The one
+   exception is [our own annotations](#our-own-annotations), which are not the dataset's.
 3. **Files and checksums**: a direct URL, pinned to a revision where the host allows it,
    with its byte size and SHA-256, so `fetch.py` reproduces it. A dataset behind a
    sign-up gets its route in `route` and no `files`.
@@ -65,5 +67,24 @@ A new dataset is registered before anything is evaluated on it:
   never straddle the split. `tools/bead_eval/paths.py --split dev` (or `test`) builds the
   reference paths of one side; the default, `all`, reproduces the published numbers,
   which predate the split and pool all 1500 images.
+- **HRF**, by image, within each subject group (healthy, diabetic retinopathy,
+  glaucoma): 4 dev and 11 test images in each. One image yields many cross-sections.
 - **HPatches**, by sequence, within illumination (`i_`) and viewpoint (`v_`): 17 and 18
   dev sequences, 40 and 41 test. Every frame pair is drawn within one sequence.
+
+## Our own annotations
+
+When no public dataset annotates what a benchmark needs, we annotate a `verified`
+dataset ourselves. The annotations are our work, so they are committed, under
+`annotations/<id>/`, with:
+- a `LICENSE` that puts them under CC BY 4.0 and attributes the source dataset;
+- a pointer from the registry entry, `annotations.path`;
+- `protocol.dataset` set to the entry's id inside each file.
+
+They hold geometry only, such as station positions and wall offsets, never pixels.
+Synthetic stand-ins for testing are never committed. `tools/check-invariants.py` enforces
+all of this.
+
+- **`hrf/`, `damsegment/`**: cross-sections with two walls each, for the
+  [two-boundary benchmark](../bead_eval/README.md#hand-annotated-cross-sections). The
+  stations are frozen, 120 per dataset, split by image as above. Annotation is pending.

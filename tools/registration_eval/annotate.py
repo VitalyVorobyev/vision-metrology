@@ -171,21 +171,24 @@ def main():
     parser.add_argument('--seed', type=int, default=0, help='station and order seed')
     parser.add_argument('--span', type=parse_span, action='append', default=[],
                         help='FRAME,S0,S1,COUNT: extra stations on a hard span (arc length, px)')
-    parser.add_argument('--half-length', type=float, default=annotation.HALF_LENGTH,
-                        help='profile reach either side of the station, px')
+    parser.add_argument('--half-length', type=float,
+                        help="profile reach either side of the station, px (default: the file's "
+                             f'protocol, else {annotation.HALF_LENGTH:g})')
     parser.add_argument('--profile', choices=('cubic', 'sampler'), default='cubic')
     parser.add_argument('--sigma', type=float, default=1., help='ProfileSampler σ, px')
     parser.add_argument('--port', type=int, default=8766)
     args = parser.parse_args()
-    if args.count < 0 or args.half_length <= 0 or args.sigma <= 0:
+    if args.count < 0 or (args.half_length is not None and args.half_length <= 0) or args.sigma <= 0:
         parser.error('count >= 0, half-length > 0 and sigma > 0')
     sequence = Sequence(args.manifest)
     curves = annotation.load_curves(sequence, args.curves)
     path = args.annotations or default_path(sequence)
     protocol = {'curves': args.curves.name if args.curves else 'seed', 'profile': args.profile,
-                'step_px': annotation.STEP, 'half_length_px': args.half_length}
+                'step_px': annotation.STEP, 'half_length_px': args.half_length or annotation.HALF_LENGTH}
     session = open_session(sequence, path, curves, args.count, args.seed, args.span, protocol)
-    app = App(sequence, session, args.annotator, curves, args.half_length, args.profile, args.sigma)
+    # A resumed file keeps the profile reach it was made with, unless one is given.
+    half_length = args.half_length or float(session.doc['protocol'].get('half_length_px', annotation.HALF_LENGTH))
+    app = App(sequence, session, args.annotator, curves, half_length, args.profile, args.sigma)
     httpd = server(app, args.port)
     print(f'{path}: {len(session.sections)} sections; serving http://127.0.0.1:{httpd.server_port}/')
     if sequence.annotations_path is None:

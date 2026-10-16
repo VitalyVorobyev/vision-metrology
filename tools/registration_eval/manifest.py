@@ -137,28 +137,30 @@ class Sequence:
     def group(self, i):
         return self.frames[i]['group']
 
+    # Images and masks are cached by file, so frames that share one (such as several
+    # curves on one image) hold a single copy.
     def image(self, i):
-        if i not in self._images:
-            path = self.frames[i]['image']
-            if path is None:
-                raise ValueError(f'frame {i} has no image')
+        path = self.frames[i]['image']
+        if path is None:
+            raise ValueError(f'frame {i} has no image')
+        if path not in self._images:
             array = load_array(path)
             if array.shape != self.shape:
                 raise ValueError(f'frame {i}: shape {array.shape} differs from {self.shape}')
-            self._images[i] = array
-        return self._images[i]
+            self._images[path] = array
+        return self._images[path]
 
     def _bool(self, i, key, cache):
-        if i not in cache:
-            path = self.frames[i][key]
+        path = self.frames[i][key]
+        if path not in cache:
             if path is None:
-                cache[i] = np.ones(self.shape, dtype=bool)
+                cache[path] = np.ones(self.shape, dtype=bool)
             else:
                 array = load_array(path)
                 if array.shape != self.shape:
                     raise ValueError(f'frame {i}: {key} shape {array.shape} differs from {self.shape}')
-                cache[i] = array != 0
-        return cache[i]
+                cache[path] = array != 0
+        return cache[path]
 
     def mask(self, i):
         """Registration validity: True where the pixel may serve as substrate evidence."""

@@ -1,0 +1,68 @@
+{
+ "dataset": "hrf",
+ "unit": "image",
+ "rule": "per stratum, rank IDs by sha256('vision-metrology-split-v1|<id>'); the first round(0.3 * n) are dev, the rest test",
+ "strata": {
+  "healthy": {
+   "dev": 4,
+   "test": 11
+  },
+  "diabetic_retinopathy": {
+   "dev": 4,
+   "test": 11
+  },
+  "glaucoma": {
+   "dev": 4,
+   "test": 11
+  }
+ },
+ "dev": [
+  "04_h",
+  "06_h",
+  "11_h",
+  "12_h",
+  "02_dr",
+  "06_dr",
+  "12_dr",
+  "15_dr",
+  "03_g",
+  "07_g",
+  "09_g",
+  "12_g"
+ ],
+ "test": [
+  "01_h",
+  "02_h",
+  "03_h",
+  "05_h",
+  "07_h",
+  "08_h",
+  "09_h",
+  "10_h",
+  "13_h",
+  "14_h",
+  "15_h",
+  "01_dr",
+  "03_dr",
+  "04_dr",
+  "05_dr",
+  "07_dr",
+  "08_dr",
+  "09_dr",
+  "10_dr",
+  "11_dr",
+  "13_dr",
+  "14_dr",
+  "01_g",
+  "02_g",
+  "04_g",
+  "05_g",
+  "06_g",
+  "08_g",
+  "10_g",
+  "11_g",
+  "13_g",
+  "14_g",
+  "15_g"
+ ]
+}

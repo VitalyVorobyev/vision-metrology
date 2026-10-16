@@ -197,7 +197,7 @@ def main():
     parser.add_argument('--out', type=Path, help='write the report as JSON here')
     parser.add_argument('--stations-out', type=Path, help='write the annotated stations here')
     parser.add_argument('--annotator', help='only this annotator (default: all)')
-    parser.add_argument('--source', nargs='+', choices=('uniform', 'span', 'user'),
+    parser.add_argument('--source', nargs='+', choices=('uniform', 'span', 'user', 'stratified'),
                         help='only sections from these sources (default: all)')
     parser.add_argument('--match-px', type=float, default=MATCH_PX)
     parser.add_argument('--per-section', action='store_true',

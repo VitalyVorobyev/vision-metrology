@@ -1,0 +1,15 @@
+Cross-section annotations of DamSegment crack walls, by the vision-metrology contributors.
+
+The files in this folder are licensed under the Creative Commons Attribution 4.0
+International licence (CC BY 4.0): https://creativecommons.org/licenses/by/4.0/
+
+They hold station positions and wall offsets only, no image data. The stations were
+derived from the crack masks of DamSegment, which its authors release under CC BY 4.0
+(https://doi.org/10.17632/z5z6gtt5t4.1). When you use these annotations, cite this
+repository and the source dataset:
+
+  V. Gharehbaghi, C. R. Bennett, R. Lequesne, H. Zhao and J. Li, DamSegment, Mendeley
+  Data, V1, 2025, doi:10.17632/z5z6gtt5t4.1.
+
+The images themselves are not distributed here; fetch them with
+`python3 tools/datasets/fetch.py damsegment`.

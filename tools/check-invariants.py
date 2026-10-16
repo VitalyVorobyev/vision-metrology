@@ -41,6 +41,9 @@ Checks, over every file tracked by git:
      dataset names, matched as whole words, case-sensitively. Every split file the
      registry names must exist. Add to KNOWN_DATASETS when a new benchmark comes into
      view: the list is what catches a dataset nobody registered.
+ 10. Every annotation file under tools/datasets/annotations/<id>/ belongs to a dataset
+     registered as `verified` whose `annotations.path` names it, says so in its
+     `protocol.dataset`, sits beside a LICENSE, and holds no synthetic annotations.
 
 Retiring an invariant is still allowed — keep its number and mark the entry
 `**(retired)**`, saying what replaced it. That keeps the list contiguous and every old
@@ -231,6 +234,46 @@ def dataset_problems() -> list[str]:
     return problems
 
 
+ANNOTATIONS_REL = "tools/datasets/annotations/"
+
+
+def annotation_problems() -> list[str]:
+    """Check 10: our own committed annotation files reference a registered, verified
+    dataset, carry a licence note, and are never synthetic."""
+    files = [rel for rel in all_tracked() if rel.startswith(ANNOTATIONS_REL) and rel.endswith(".json")]
+    if not files:
+        return []
+    try:
+        entries = {e["id"]: e for e in json.loads((REPO / REGISTRY_REL).read_text(encoding="utf-8"))["datasets"]}
+    except (OSError, ValueError, KeyError) as err:
+        return [f"{REGISTRY_REL}: unreadable ({err})"]
+    problems = []
+    for rel in files:
+        parts = PurePosixPath(rel).relative_to(ANNOTATIONS_REL).parts
+        dataset = parts[0] if len(parts) == 2 else None
+        e = entries.get(dataset)
+        if e is None or e["status"] != "verified":
+            problems.append(f"{rel}: not under the folder of a dataset registered as 'verified'")
+            continue
+        if (e.get("annotations") or {}).get("path") != str(PurePosixPath(rel).relative_to("tools/datasets")):
+            problems.append(f"{rel}: the registry entry '{dataset}' does not name it in annotations.path")
+        if not (REPO / ANNOTATIONS_REL / dataset / "LICENSE").is_file():
+            problems.append(f"{rel}: no LICENSE beside it")
+        try:
+            doc = json.loads((REPO / rel).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as err:
+            problems.append(f"{rel}: unreadable ({err})")
+            continue
+        protocol = doc.get("protocol", {})
+        if protocol.get("dataset") != dataset:
+            problems.append(f"{rel}: protocol.dataset is {protocol.get('dataset')!r}, not '{dataset}'")
+        if protocol.get("synthetic") or any(
+            str(a.get("annotator", "")).startswith("synthetic") for a in doc.get("annotations", [])
+        ):
+            problems.append(f"{rel}: holds synthetic annotations, which are never committed")
+    return problems
+
+
 def registered_names(entries: list[dict]) -> list[str]:
     return [n for e in entries for n in [e["name"], *e.get("aliases", [])]]
 
@@ -381,6 +424,7 @@ def main() -> int:
         (f"size cap of {SIZE_CAP} code lines (invariant 14)", sizes),
         ("private dataset leaks", private),
         ("public datasets in the registry", dataset_problems()),
+        ("committed annotation files", annotation_problems()),
     ]
     failed = [(title, items) for title, items in sections if items]
     if failed:

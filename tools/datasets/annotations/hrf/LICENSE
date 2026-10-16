@@ -1,0 +1,16 @@
+Cross-section annotations of HRF vessel walls, by the vision-metrology contributors.
+
+The files in this folder are licensed under the Creative Commons Attribution 4.0
+International licence (CC BY 4.0): https://creativecommons.org/licenses/by/4.0/
+
+They hold station positions and wall offsets only, no image data. The stations were
+derived from the vessel segmentations of the High-Resolution Fundus (HRF) image
+database, which its authors release under CC BY 4.0
+(https://www5.cs.fau.de/research/data/fundus-images/). When you use these annotations,
+cite this repository and the source dataset:
+
+  A. Budai, R. Bock, A. Maier, J. Hornegger and G. Michelson, "Robust Vessel Segmentation
+  in Fundus Images", International Journal of Biomedical Imaging, 2013.
+
+The images themselves are not distributed here; fetch them with
+`python3 tools/datasets/fetch.py hrf`.

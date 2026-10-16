@@ -23,6 +23,7 @@
         }
       ],
       "split": "splits/damsegment.json",
+      "annotations": {"path": "annotations/damsegment/annotations.json", "licence": "CC-BY-4.0", "what": "our own two-pass cross-section annotations of crack walls, at stations derived from the dataset's crack masks"},
       "used_by": ["tools/bead_eval"],
       "notes": "1500 photographs of concrete, 640x640, Easy/Medium/Hard sets of 500, with crack and spalling masks. The archive keeps the dataset's own spelling, 'Damage Segmentaion'."
     },
@@ -174,9 +175,10 @@
           "extract_to": "extracted"
         }
       ],
-      "split": null,
-      "used_by": [],
-      "notes": "45 fundus images with one binary vessel segmentation each. No width or paired-edge annotations, and one observer, so it does not meet the two-boundary benchmark's need for several observers. Files are registered when a tool first uses it."
+      "split": "splits/hrf.json",
+      "annotations": {"path": "annotations/hrf/annotations.json", "licence": "CC-BY-4.0", "what": "our own two-pass cross-section annotations of vessel walls, at stations derived from the dataset's vessel masks"},
+      "used_by": ["tools/bead_eval/crosssections.py", "tools/bead_eval/crosssection_eval.py"],
+      "notes": "45 fundus images, 3504x2336, 15 each of healthy, diabetic retinopathy and glaucoma, with one binary vessel segmentation and a field-of-view mask each. It has no width or paired-edge annotations, so this project annotates cross-sections itself (annotations/hrf/)."
     },
     {
       "id": "crack500",

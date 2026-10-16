@@ -7,7 +7,7 @@
 A split holds IDs only, never data. The rule is fixed and stated in the file, so anyone
 with the data reproduces it:
 - the IDs are grouped into strata (DamSegment: its difficulty; HPatches: illumination
-  or viewpoint);
+  or viewpoint; HRF: the subject group);
 - within a stratum, IDs are ranked by `sha256("<seed>|<id>")`, and the first
   `round(dev_fraction * n)` are dev, the rest test.
 
@@ -59,8 +59,20 @@ def hpatches_ids(folder: pathlib.Path) -> dict[str, list[str]]:
     }
 
 
+def hrf_ids(folder: pathlib.Path) -> dict[str, list[str]]:
+    """Images, by stem (`01_h`), per group: healthy `_h`, diabetic retinopathy `_dr` and
+    glaucoma `_g`. One image yields many cross-sections, so the split is by image."""
+    root = folder / "extracted" / "images"
+    stems = sorted((p.stem for p in root.iterdir() if p.suffix.lower() == ".jpg"), key=natural)
+    return {
+        group: [s for s in stems if s.endswith(f"_{suffix}")]
+        for group, suffix in (("healthy", "h"), ("diabetic_retinopathy", "dr"), ("glaucoma", "g"))
+    }
+
+
 LISTERS = {
     "damsegment": (damsegment_ids, "image"),
+    "hrf": (hrf_ids, "image"),
     "hpatches": (hpatches_ids, "sequence"),
 }
 
