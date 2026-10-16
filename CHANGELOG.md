@@ -15,6 +15,23 @@ are relative to 0.1.0.
 
 ### Added
 
+- **Planar rig substrate pose** (`metric::rig::RigPoseEstimator`). One rigid SE(2)
+  substrate→plane pose per frame from one measured translation per view and step, for
+  several fixed views of a planar substrate with plane→image homographies. Each
+  translation is lifted at its region centroid, so rotation comes from the lever arms
+  between views. Each step runs Huber from the cross-view median, then a graduated Tukey
+  biweight from the Huber solution and from the constant-velocity prediction. A step with
+  one usable view holds the rotation at a prior (`SingleView`); a step with none carries
+  the last increment forward with growing covariance (`Bridged`), and the chain is never
+  split. Every frame reports its step kind, pose and increment covariances, residual in
+  plane units and residual scale. Every view reports its outcome, weight, lift point and
+  residual. Also: sequence statistics, the path-length ratio against an external path as
+  the scale check, and a gated Rauch–Tung–Striebel smoother over the increments.
+  `step` is allocation-free once `begin` has sized it. Python parity is the batch API
+  (`RigPoseEstimator`, `RigTrajectory`, `RigSmoothed` and the configs).
+  `tools/sequence_bench/rig_eval.py` reports on the rig presets. The synthetic accuracy,
+  the benchmark presets' numbers and the cost are in `docs/performance.md`.
+
 - **Continuous derivative-of-Gaussian profiles.** `vm_primitives::edge::ProfileSampler`
   samples the smoothed intensity and its derivative along any direction at continuous
   points, with a Gaussian tapered by `(1 − d²/r²)²` to zero at `r = 4σ`, so both are C¹.

@@ -59,6 +59,8 @@ mod ribbon;
 #[path = "accuracy/bead.rs"]
 mod bead;
 
+#[path = "accuracy/rig.rs"]
+mod rig;
 #[cfg(feature = "corr-experimental")]
 #[path = "accuracy/similarity.rs"]
 mod similarity;
@@ -1281,6 +1283,8 @@ struct Row {
 /// | rectify_repeatability (8-bit units)  | 0.8775              | 1.6883           | 1.30            | 2.50              |
 /// | displacement_quadratic (px)          | 0.0239              | 0.0164           | 0.04            | 0.025             |
 /// | displacement_lk (px)                 | 0.0204              | 0.0141           | 0.035           | 0.022             |
+/// | rig_pose_translation (mm, 2026-10-16) | 0.0002              | 0.0016           | 0.0004          | 0.0025            |
+/// | rig_pose_rotation (deg, 2026-10-16)  | 0.0003              | 0.0029           | 0.0005          | 0.0045            |
 ///
 /// The strip and caliper rows (`accuracy/strip.rs`, measured 2026-10-03) run on
 /// CaliperBench's pixel-integrated image model, the strips with CaliperBench's textbook
@@ -1360,6 +1364,20 @@ const ROWS: &[Row] = &[
         measure: translation::sweep,
         bias_envelope: 0.14,
         sigma_envelope: 0.016,
+    },
+    Row {
+        // mm per step, the worse of tx and ty.
+        name: "rig_pose_translation",
+        measure: rig::translation,
+        bias_envelope: 0.0004,
+        sigma_envelope: 0.0025,
+    },
+    Row {
+        // Degrees per step.
+        name: "rig_pose_rotation",
+        measure: rig::rotation,
+        bias_envelope: 0.0005,
+        sigma_envelope: 0.0045,
     },
     Row {
         name: "translation_masked_clean",

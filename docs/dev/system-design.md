@@ -146,3 +146,4 @@ update its status and date. Do not append a contradicting one.
 | [0018](adr/0018-tracked-curves.md) | Tracked curves: a prior, two caliper stages and a regularised normal solve |
 | [0020](adr/0020-shared-path-and-smoother-cores.md) | The shared min-path and smoother cores stay inside `measure` |
 | [0021](adr/0021-continuous-profiles.md) | Continuous profiles: a tapered derivative of Gaussian sampled at the point |
+| [0022](adr/0022-planar-rig-substrate-pose.md) | Planar rig substrate pose lives in `metric::rig`: one-point lifts, Huber then a two-start biweight, bridges |

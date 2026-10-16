@@ -57,6 +57,9 @@ Other operators:
 | `corr::TranslationEstimator`, prepared two-mask 1280×1024, successful refinement and regions | 124 ms |
 | `corr::SimilarityEstimator`, prepared two-mask f32 320×97, native refinement and regions | 6.53 ms |
 | `corr::SimilarityEstimator`, prepared two-mask f32 1280×1024, nearby prediction | 242 ms |
+| `metric::rig::RigPoseEstimator::estimate`, 1000 steps × 2 / 3 / 8 views | 1.02 / 1.50 / 2.43 ms |
+| `metric::rig::RigPoseEstimator::estimate`, 10 000 steps × 3 views | 14.9 ms |
+| `metric::rig::RigPoseEstimator::smooth`, 1000 / 10 000 steps | 93 µs / 0.93 ms |
 
 The masked translation timings were measured 2026-10-12 with 10 Criterion samples,
 1 s warmup and 2 s measurement request. Inputs are deterministic u8 analytic texture,
@@ -712,6 +715,69 @@ repeatability, because it is measured over different physical cans, so part-to-p
 variation of the rim is inside it.
 
 The can-end dataset is not distributed with this repository.
+
+## Planar rig substrate pose
+
+`metric::rig::RigPoseEstimator`, measured 2026-10-16. The speed rows above use the
+`rig` bench: one view 3 px wrong every tenth step, so the biweight runs from both starts
+there. A step costs about 0.5 µs per view.
+
+### Synthetic accuracy
+
+The fixture (`tests/rig/fixture.rs`) has three affine views 120° apart around the plane
+origin, 30 mm out, at 20 px/mm with their own shear and aspect, and a known per-step
+increment: 0.4 mm along x with a slow sine across it and 0.011° of rotation per step on
+average. Shifts get 0.05 px of Gaussian noise per axis, and the estimator runs with its
+defaults (shift floor 0.05 px). Per-step increment error over 300 steps and eight seeds:
+
+| Component | Bias | σ |
+|---|---:|---:|
+| tx | −0.000005 mm | 0.0015 mm |
+| ty | 0.00002 mm | 0.0015 mm |
+| θ | −0.00002° | 0.0028° |
+
+The accuracy suite pins the worst seed: translation |bias| 0.0002 mm and σ 0.0016 mm
+(envelope 0.0004 / 0.0025), rotation |bias| 0.0003° and σ 0.0029° (envelope 0.0005 /
+0.0045). The cases `tests/rig_pose.rs` checks:
+
+- **Noise-free** shifts give every increment to 2·10⁻⁵ mm and 2·10⁻⁶ rad, and the
+  300-step pose to 2·10⁻³ mm.
+- **The final pose** after 300 noisy steps lies within 4σ of its reported covariance in
+  every seed.
+- **A bridged step** carries the previous increment with a larger covariance; after three
+  bridged steps in 60 the pose is within 0.05 mm.
+- **A gross view** 3 px (~60σ) wrong is rejected by the biweight, leaving the step within
+  0.004 mm and 10⁻⁴ rad. Huber alone gives it weight below 0.1 but leaves at least twice
+  that error.
+- **A single-view step** holds the previous rotation increment (or zero), and its
+  translation is off by the rotation error times the lever to the origin.
+- **The smoother** brings the increment RMS below 0.6 of the raw one at 0.2 px of noise,
+  fills a three-step gap to 0.02 mm and gates a consistent 0.5 mm spike.
+- **A 1% plane-height error** leaves the views agreeing to 10⁻³ mm while the path-length
+  ratio reads 0.990.
+
+### Synthetic sequence benchmark
+
+`tools/sequence_bench` presets `rig-bridged`, `rig-gross` and `rig-single-view`, seed 86,
+measured 2026-10-16 on `main` at 2d3294b with this operator, by
+`tools/sequence_bench/rig_eval.py`. The settings were frozen before the run:
+`TranslationEstimator` defaults except `max_region_error=None` (the substrate rotates
+0.48° per frame on the arc, so one view's regions disagree by design), the shift lifted
+at the centroid of the previous frame's registration mask, and `RigPoseEstimator`
+defaults anchored at the given frame-0 pose. Errors are per-step increment errors over
+the 39 steps against `truth.poses`.
+
+| Preset | tx bias / σ (su) | ty bias / σ (su) | θ bias / σ (°) | Provenance | Path ratio |
+|---|---|---|---|---|---:|
+| rig-bridged | 0.033 / 0.018 | −0.008 / 0.003 | −0.0007 / 0.0083 | bridged at frames 20, 21; all others measured | 0.987 |
+| rig-gross | 0.035 / 0.021 | 0.018 / 0.016 | 0.0016 / 0.0082 | the moving camera rejected on all ten steps it moves (times 14→15 to 23→24), the other two weighted ≥ 0.96 | 0.988 |
+| rig-single-view | 0.034 / 0.018 | −0.003 / 0.020 | −0.0007 / 0.0083 | single-view at frames 20, 21, with view 0 | 0.988 |
+
+The translation bias is the registration's, not the lift's: against the exact image motion
+of each lift point, the accepted shifts err by 0.002 ± 0.037 px in x and 0.052 ± 0.034 px
+in y (111 shifts, rig-bridged), and the 1.2% path shortfall follows from it. Under that
+error, the steps' residual scale has median 1.00 at the default 0.05 px shift floor; the
+registration's own covariances (σ 0.003–0.005 px) would put every view 10–50σ off.
 
 ## Real data: masked translation
 

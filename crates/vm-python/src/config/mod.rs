@@ -49,3 +49,6 @@ pub use translation::{TranslationConfig, TranslationTuning};
 
 mod similarity;
 pub use similarity::SimilarityConfig;
+
+mod rig;
+pub use rig::{MotionNoise, RigPoseConfig, RigPoseTuning, RigSmootherConfig};
