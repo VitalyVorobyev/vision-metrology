@@ -94,7 +94,7 @@ impl Default for TranslationTuning {
     fn default() -> Self {
         Self {
             max_levels: NonZeroUsize::new(3).unwrap(),
-            iterations: NonZeroUsize::new(12).unwrap(),
+            iterations: NonZeroUsize::new(30).unwrap(),
             tolerance: 0.005,
             huber: 1.5,
             min_texture: 1e-5,

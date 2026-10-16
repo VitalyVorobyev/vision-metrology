@@ -25,7 +25,7 @@ pub struct TranslationTuning {
 #[pymethods]
 impl TranslationTuning {
     #[new]
-    #[pyo3(signature=(*,max_levels=3,iterations=12,tolerance=0.005,huber=1.5,min_texture=1e-5))]
+    #[pyo3(signature=(*,max_levels=3,iterations=30,tolerance=0.005,huber=1.5,min_texture=1e-5))]
     fn new(
         max_levels: usize,
         iterations: usize,

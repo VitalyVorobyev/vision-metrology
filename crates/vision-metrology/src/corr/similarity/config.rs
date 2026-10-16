@@ -16,7 +16,7 @@ pub struct SimilarityConfig {
 impl Default for SimilarityConfig {
     fn default() -> Self {
         let mut translation = TranslationConfig::default();
-        translation.tuning.iterations = std::num::NonZeroUsize::new(20).unwrap();
+        translation.tuning.iterations = std::num::NonZeroUsize::new(30).unwrap();
         // About 1% false rejects of true similarities on the synthetic study in
         // `tools/registration_eval/false_reject.py`.
         translation.region_check = Some(RegionCheck {

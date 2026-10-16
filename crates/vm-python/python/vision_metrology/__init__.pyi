@@ -1474,7 +1474,7 @@ class TranslationTuning:
     tolerance: float
     huber: float
     min_texture: float
-    def __init__(self, *, max_levels: int = 3, iterations: int = 12,
+    def __init__(self, *, max_levels: int = 3, iterations: int = 30,
                  tolerance: float = 0.005, huber: float = 1.5,
                  min_texture: float = 1e-5) -> None: ...
 

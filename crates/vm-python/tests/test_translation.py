@@ -63,6 +63,7 @@ def test_photometry_and_failures():
 
 def test_region_check_config_and_rotation_rejection():
     cfg = vm.TranslationConfig()
+    assert vm.TranslationTuning().iterations == cfg.tuning.iterations == 30
     assert isinstance(cfg.region_check, vm.RegionCheck)
     assert cfg.region_check.max_chi2 > 0 and cfg.region_check.bias_floor_px >= 0
     y, x = np.mgrid[:97, :320].astype(np.float64)

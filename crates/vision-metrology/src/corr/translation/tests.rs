@@ -438,3 +438,54 @@ fn tap_window_matches_a_brute_force_block_check() {
         }
     }
 }
+
+#[test]
+fn sparse_texture_on_a_flat_background_converges() {
+    // Most pixels are exactly flat, so the median residual of all pixels is ~0 and a
+    // Huber scale taken from it treats every textured pixel as an outlier; refinement
+    // then creeps and exhausts its budget.
+    let (w, h) = (320, 97);
+    let sparse = |shift: [f64; 2], seed: f32| {
+        let img = image(w, h, shift, 1.0, 0.0, 0.0);
+        Image::from_vec(
+            w,
+            h,
+            img.data()
+                .iter()
+                .enumerate()
+                .map(|(i, v)| {
+                    // Noise on the texture only: the background stays exactly flat.
+                    let s = (v - 140.0).max(0.0);
+                    s + f32::from(s > 0.0) * 0.5 * (i as f32 * 12.9898 + seed).sin().fract()
+                })
+                .collect(),
+        )
+        .unwrap()
+    };
+    let a = sparse([0.0, 0.0], 0.0);
+    let flat = a.data().iter().filter(|v| **v == 0.0).count();
+    assert!(flat * 10 > 6 * w * h, "most of the fixture is flat");
+    let mut e = TranslationEstimator::new();
+    let cfg = TranslationConfig {
+        region_check: None,
+        ..Default::default()
+    };
+    for shift in [[0.89, -0.63], [1.49, -0.78], [-0.37, 1.21]] {
+        let f = e
+            .estimate(
+                &a.as_view(),
+                &sparse(shift, 1.7).as_view(),
+                None,
+                None,
+                None,
+                &cfg,
+            )
+            .unwrap();
+        assert_eq!(f.status, TranslationStatus::Accepted, "{shift:?}: {f:?}");
+        let p = f.shift.unwrap();
+        assert!(
+            (p.x as f64 - shift[0]).hypot(p.y as f64 - shift[1]) < 0.05,
+            "{f:?}"
+        );
+    }
+}
