@@ -290,6 +290,17 @@ python tools/registration_eval/false_reject.py --motion similarity --contrast 4 
   --trials 400 --out /tmp/similarity-false-rejects.json
 ```
 
+`hpatches.py` takes the same questions to real texture: HPatches (registered in
+`tools/datasets/registry.json`, fetched into the git-ignored `data/`, split by sequence
+in `tools/datasets/splits/hpatches.json`). On 320×97 crops of image 1 it compares
+`--pairs self` (image 1 resampled by a known translation or small similarity: real
+texture, exact model), `rectified` (image k resampled through the ground-truth
+homography, then moved by the known map: real illumination or viewpoint change, with the
+homography's own error in the truth) and `natural` (the same crop of image k).
+`--residual rotation|affine` adds the negative controls. Tune on `--split dev`; run
+`test` once with the settings frozen. Both tools take `--max-chi2` and `--bias-floor` to
+try other `RegionCheck` values.
+
 ## The synthetic sequence: `synthetic.py`
 
 A textured substrate under known similarity motion, with a light two-boundary bead that

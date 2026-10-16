@@ -17,7 +17,7 @@ from manifest import Sequence
 from settings import describe_translation, translation_config
 
 FIELDS = ('shift', 'score', 'margin', 'support', 'residual_rms', 'residual_max',
-          'gain', 'offset', 'covariance', 'regions', 'region_error', 'status')
+          'gain', 'offset', 'covariance', 'regions', 'region_error', 'region_chi2', 'status')
 
 
 def shift_map(shift):
@@ -32,7 +32,7 @@ def estimate(estimator, sequence, previous, current, preprocess):
     start = perf_counter()
     result = estimator.estimate(a, b, previous_mask=am, current_mask=bm)
     elapsed_ms = 1000 * (perf_counter() - start)
-    row = {k: getattr(result, k) for k in FIELDS} | {
+    row = {k: getattr(result, k, None) for k in FIELDS} | {
         'previous': previous, 'current': current, 'group': sequence.group(previous),
         'prepare_ms': prepared_ms, 'estimate_python_ms': elapsed_ms}
     truth = sequence.truth_map(previous, current)

@@ -17,7 +17,7 @@ from manifest import Sequence
 from settings import describe_similarity, similarity_config, translation_config
 
 FIELDS = ('transform', 'score', 'margin', 'support', 'residual_rms', 'residual_max',
-          'gain', 'offset', 'covariance', 'regions', 'region_error', 'status')
+          'gain', 'offset', 'covariance', 'regions', 'region_error', 'region_chi2', 'status')
 
 
 def estimate(estimator, sequence, previous, current, preprocess, prediction=None):
@@ -27,7 +27,7 @@ def estimate(estimator, sequence, previous, current, preprocess, prediction=None
     preparation = 1000*(perf_counter()-start)
     start = perf_counter()
     result = estimator.estimate(a, b, previous_mask=am, current_mask=bm, prediction=prediction)
-    row = {field: getattr(result, field) for field in FIELDS}
+    row = {field: getattr(result, field, None) for field in FIELDS}
     return row | {'source': sequence.name, 'previous': previous, 'current': current,
                   'group': sequence.group(previous),
                   'prepare_ms': preparation, 'estimate_python_ms': 1000*(perf_counter()-start)}
@@ -56,7 +56,7 @@ def evaluate_sequence(sequence, count, anchor_every, max_closure, preprocess, ch
         b, bm = sequence.prepare(frame+1, preprocess)
         start = perf_counter()
         t = translation.estimate(a, b, previous_mask=am, current_mask=bm)
-        row['translation'] = {field: getattr(t, field) for field in FIELDS if field != 'transform'} | {
+        row['translation'] = {field: getattr(t, field, None) for field in FIELDS if field != 'transform'} | {
             'shift': t.shift, 'estimate_python_ms': 1000*(perf_counter()-start)}
         if t.status == 'accepted':
             reverse_t = translation.estimate(b, a, previous_mask=bm, current_mask=am)

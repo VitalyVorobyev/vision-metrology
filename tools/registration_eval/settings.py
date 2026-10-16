@@ -19,15 +19,28 @@ def _disable(cfg):
     return cfg
 
 
-def translation_config(check=True):
-    cfg = vm.TranslationConfig()
+def _override(cfg, max_chi2, bias_floor_px):
+    if max_chi2 is None and bias_floor_px is None:
+        return cfg
+    check = cfg.region_check
+    if max_chi2 is not None:
+        check.max_chi2 = max_chi2
+    if bias_floor_px is not None:
+        check.bias_floor_px = bias_floor_px
+    cfg.region_check = check
+    return cfg
+
+
+def translation_config(check=True, max_chi2=None, bias_floor_px=None):
+    """Defaults; optional RegionCheck overrides, then the decision disabled if asked."""
+    cfg = _override(vm.TranslationConfig(), max_chi2, bias_floor_px)
     return cfg if check else _disable(cfg)
 
 
-def similarity_config(check=True):
+def similarity_config(check=True, max_chi2=None, bias_floor_px=None):
     cfg = SimilarityConfig()
-    if not check:
-        cfg.translation = _disable(cfg.translation)
+    translation = _override(cfg.translation, max_chi2, bias_floor_px)
+    cfg.translation = translation if check else _disable(translation)
     return cfg
 
 

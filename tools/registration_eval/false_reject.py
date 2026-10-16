@@ -100,20 +100,9 @@ def motion(kind, rng, magnitude):
 def estimator(kind, check, max_chi2=None, bias_floor_px=None):
     """Defaults, optionally overridden; `check=False` keeps the statistics without their
     decision."""
-    translation = kind in ('translation', 'rotation')
-    cfg = translation_config(check) if translation else similarity_config(check)
-    inner = cfg if translation else cfg.translation
-    if max_chi2 is not None or bias_floor_px is not None:
-        region = inner.region_check
-        if max_chi2 is not None and check:
-            region.max_chi2 = max_chi2
-        if bias_floor_px is not None:
-            region.bias_floor_px = bias_floor_px
-        inner.region_check = region
-    if translation:
-        return vm.TranslationEstimator(cfg)
-    cfg.translation = inner
-    return SimilarityEstimator(cfg)
+    if kind in ('translation', 'rotation'):
+        return vm.TranslationEstimator(translation_config(check, max_chi2, bias_floor_px))
+    return SimilarityEstimator(similarity_config(check, max_chi2, bias_floor_px))
 
 
 def trial(kind, index, args, mask):
