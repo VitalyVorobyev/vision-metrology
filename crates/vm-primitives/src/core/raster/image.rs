@@ -464,41 +464,9 @@ fn min_required_len(width: usize, height: usize, stride: usize) -> Option<usize>
     base.checked_add(width)
 }
 
-/// Convert a `u8` image to `f32` (values in `[0.0, 255.0]`).
-pub fn to_f32(img: &ImageView<'_, u8>) -> Image<f32> {
-    let mut out = Vec::with_capacity(img.width() * img.height());
-    for y in 0..img.height() {
-        for &px in img.row(y) {
-            out.push(px as f32);
-        }
-    }
-
-    Image {
-        width: img.width(),
-        height: img.height(),
-        data: out,
-    }
-}
-
-/// Convert a `u16` image to `f32` (values in `[0.0, 65535.0]`).
-pub fn to_f32_u16(img: &ImageView<'_, u16>) -> Image<f32> {
-    let mut out = Vec::with_capacity(img.width() * img.height());
-    for y in 0..img.height() {
-        for &px in img.row(y) {
-            out.push(px as f32);
-        }
-    }
-
-    Image {
-        width: img.width(),
-        height: img.height(),
-        data: out,
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{Image, ImageView, ImageViewMut, to_f32, to_f32_u16};
+    use super::{ImageView, ImageViewMut};
 
     #[test]
     fn view_indexing_with_stride() {
@@ -547,16 +515,5 @@ mod tests {
         assert_eq!(sub.row(0), &[2, 3]);
         assert_eq!(sub.row(2), &[42, 11]);
         assert_eq!(sub.get(0, 2), Some(&42));
-    }
-
-    #[test]
-    fn convert_to_f32_variants() {
-        let img8 = Image::from_vec(2, 2, vec![1u8, 2, 3, 4]).expect("valid image");
-        let out8 = to_f32(&img8.as_view());
-        assert_eq!(out8.data(), &[1.0, 2.0, 3.0, 4.0]);
-
-        let img16 = Image::from_vec(2, 2, vec![100u16, 200, 300, 400]).expect("valid image");
-        let out16 = to_f32_u16(&img16.as_view());
-        assert_eq!(out16.data(), &[100.0, 200.0, 300.0, 400.0]);
     }
 }

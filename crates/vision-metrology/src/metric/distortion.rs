@@ -25,7 +25,7 @@ const UNDISTORT_ITERS: u32 = 20;
 /// Map normalized camera coordinates to pixel coordinates through the
 /// pinhole intrinsics: `u = fx*x + skew*y + cx`, `v = fy*y + cy`.
 #[inline]
-pub fn normalized_to_pixel(intrinsics: &PinholeIntrinsics, normalized: Point2f) -> Point2f {
+pub(crate) fn normalized_to_pixel(intrinsics: &PinholeIntrinsics, normalized: Point2f) -> Point2f {
     Point2f::new(
         intrinsics.fx * normalized.x + intrinsics.skew * normalized.y + intrinsics.cx,
         intrinsics.fy * normalized.y + intrinsics.cy,
@@ -36,7 +36,10 @@ pub fn normalized_to_pixel(intrinsics: &PinholeIntrinsics, normalized: Point2f) 
 /// distortion. Closed-form (no iteration): the intrinsics matrix is upper
 /// triangular.
 #[inline]
-pub fn pixel_to_normalized_linear(intrinsics: &PinholeIntrinsics, pixel: Point2f) -> Point2f {
+pub(crate) fn pixel_to_normalized_linear(
+    intrinsics: &PinholeIntrinsics,
+    pixel: Point2f,
+) -> Point2f {
     let y = (pixel.y - intrinsics.cy) / intrinsics.fy;
     let x = (pixel.x - intrinsics.cx - intrinsics.skew * y) / intrinsics.fx;
     Point2f::new(x, y)

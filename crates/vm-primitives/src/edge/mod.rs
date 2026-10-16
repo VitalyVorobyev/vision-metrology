@@ -39,5 +39,5 @@ pub use edge2d::{
 };
 pub use gradient::{DirectionField, TiledField};
 pub use kernels1d::DoGKernel1D;
-pub use laser1d::{EdgePair1D, EdgePairConfig, best_edge_pair, best_edge_pair_in_row_u8};
+pub use laser1d::{EdgePair1D, EdgePairConfig, best_edge_pair};
 pub use level1d::{HalfContrastConfig, LevelCrossing1D, LevelEdge, LevelOutcome};

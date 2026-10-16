@@ -19,7 +19,7 @@ pub enum BorderMode<T> {
 ///
 /// Returns `None` when `mode` is `Constant` (the constant value should be
 /// used directly) or when `len == 0`.
-pub fn map_index<T>(i: isize, len: usize, mode: &BorderMode<T>) -> Option<usize> {
+pub(crate) fn map_index<T>(i: isize, len: usize, mode: &BorderMode<T>) -> Option<usize> {
     match mode {
         BorderMode::Constant(_) => None,
         BorderMode::Clamp => {

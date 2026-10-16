@@ -1,4 +1,4 @@
-use core::{f32::consts::PI, ops::Neg};
+use core::f32::consts::PI;
 
 /// A 2-D point in floating-point pixel coordinates.
 ///
@@ -127,47 +127,6 @@ impl Rect2f {
             width: self.width + 2.0 * margin,
             height: self.height + 2.0 * margin,
         }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Angle
-// ---------------------------------------------------------------------------
-
-/// Oriented angle in radians with canonical range `(-π, π]`.
-///
-/// Use [`Angle::new`] to wrap an arbitrary radian value and
-/// [`Angle::diff`] to compute the shortest signed angular distance.
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default)]
-pub struct Angle(f32);
-
-impl Angle {
-    /// Wrap `radians` into `(-π, π]`.
-    pub fn new(radians: f32) -> Self {
-        Self(wrap_angle(radians))
-    }
-
-    /// Raw radian value in `(-π, π]`.
-    #[inline]
-    pub fn value(self) -> f32 {
-        self.0
-    }
-
-    /// Shortest signed angular difference `self - other`, result in `(-π, π]`.
-    pub fn diff(self, other: Self) -> Self {
-        Self(wrap_angle(self.0 - other.0))
-    }
-
-    /// Absolute angular difference in `[0, π]`.
-    pub fn abs_diff(self, other: Self) -> f32 {
-        self.diff(other).0.abs()
-    }
-}
-
-impl Neg for Angle {
-    type Output = Self;
-    fn neg(self) -> Self {
-        Self(wrap_angle(-self.0))
     }
 }
 
@@ -304,7 +263,7 @@ pub fn parabolic_peak_offset(ym: f32, y0: f32, yp: f32) -> Option<f32> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Angle, Point2f, Rect2f, Vec2f, Vec2fExt};
+    use super::{Point2f, Rect2f, Vec2f, Vec2fExt};
 
     #[test]
     fn vec_ops_and_normalize() {
@@ -353,19 +312,6 @@ mod tests {
         let e = r.expanded_by(1.0);
         assert_eq!(e.x, 0.0);
         assert_eq!(e.width, 6.0);
-    }
-
-    #[test]
-    fn angle_wrap_and_diff() {
-        use core::f32::consts::PI;
-        let a = Angle::new(PI + 0.1);
-        // Wraps to ≈ -π + 0.1.
-        assert!((a.value() - (-PI + 0.1)).abs() < 1e-5);
-
-        let x = Angle::new(0.3);
-        let y = Angle::new(-0.1);
-        assert!((x.diff(y).value() - 0.4).abs() < 1e-5);
-        assert!((x.abs_diff(y) - 0.4).abs() < 1e-5);
     }
 
     #[test]

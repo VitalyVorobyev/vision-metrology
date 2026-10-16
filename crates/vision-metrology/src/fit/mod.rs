@@ -52,7 +52,7 @@ mod line;
 mod ransac;
 
 pub use circle::fit_circle;
-pub use ellipse::{fit_conic, fit_ellipse};
+pub use ellipse::fit_ellipse;
 pub use line::fit_line;
 
 use vm_primitives::Point2f;

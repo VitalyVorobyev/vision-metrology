@@ -32,14 +32,13 @@ mod geom;
 mod raster;
 
 pub use geom::{
-    Affine2f, Angle, Circle2f, Conic2f, Ellipse2f, Isometry2f, Isometry3f, Line2f, Point2f,
-    Point3f, Polyline2f, Projective2f, Rect2f, Similarity2f, Vec2f, Vec2fExt, Vec3f,
-    parabolic_peak_offset, similarity_from_parts, similarity_parts, transform_point, transform_vec,
-    wrap_angle,
+    Affine2f, Circle2f, Conic2f, Ellipse2f, Isometry2f, Isometry3f, Line2f, Point2f, Point3f,
+    Polyline2f, Projective2f, Rect2f, Similarity2f, Vec2f, Vec2fExt, Vec3f, parabolic_peak_offset,
+    similarity_from_parts, similarity_parts, transform_point, transform_vec, wrap_angle,
 };
+pub(crate) use raster::map_index;
 pub use raster::{
-    BorderMode, Error, Image, ImageView, ImageViewMut, Pixel, map_index, sample_bilinear_f32,
-    sample_nearest, to_f32, to_f32_u16,
+    BorderMode, Error, Image, ImageView, ImageViewMut, Pixel, sample_bilinear_f32, sample_nearest,
 };
 
 /// Bilinear sample at a [`Point2f`] — the geometry-side convenience over

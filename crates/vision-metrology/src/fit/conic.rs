@@ -1,30 +1,20 @@
-//! Direct algebraic conic fitting.
+//! Direct algebraic ellipse fitting: Fitzgibbon DLS.
 //!
-//! Two methods are provided:
-//!
-//! ## Bookstein (`use_bookstein = true`)
-//! Constraint: `‖c‖ = 1` (unit-norm coefficient vector). Solves the right
-//! singular vector of the design matrix `D` for the smallest singular value.
-//! Similarity-invariant. Works for any conic type.
-//!
-//! Input coordinates are translated to their centroid and scaled to unit
-//! variance before forming the scatter matrix. The resulting coefficients are
-//! mapped back to original coordinate space before returning.
-//!
-//! ## Fitzgibbon DLS (`use_bookstein = false`)
 //! Constraint: `4AC − B² = 1`, which forces an ellipse solution.
 //! Reduced 3×3 eigenproblem `M a₁ = λ a₁` where
 //! `M = C₁₁⁻¹ (S₁₁ − S₁₂ S₂₂⁻¹ S₂₁)`.
 //! After selecting the ellipse eigenvector, the full coefficient vector is
 //! rescaled to satisfy `a₁ᵀ C₁₁ a₁ = 1` (the actual constraint).
 //!
+//! Input coordinates are translated to their centroid and scaled to unit
+//! variance before forming the scatter matrix. The resulting coefficients are
+//! mapped back to original coordinate space before returning.
+//!
 //! # References
-//! - Bookstein, F.L. (1979). Fitting conic sections to scattered data.
-//!   Computer Graphics and Image Processing 9(1), 56–71.
 //! - Fitzgibbon, A., Pilu, M., Fisher, R.B. (1999). Direct least squares
 //!   fitting of ellipses. IEEE TPAMI 21(5), 476–480.
 
-use nalgebra::{Matrix3, Matrix6, SVD, SymmetricEigen, Vector3};
+use nalgebra::{Matrix3, Matrix6, SVD, Vector3};
 use vm_primitives::{Error, Point2f};
 
 use vm_primitives::Conic2f;
@@ -127,59 +117,6 @@ fn denormalise_conic(coeffs: &[f64; 6], cx: f64, cy: f64, scale: f64) -> [f32; 6
     [
         an as f32, bn as f32, cn as f32, dn as f32, en as f32, fn_ as f32,
     ]
-}
-
-// ---------------------------------------------------------------------------
-// Bookstein fit
-// ---------------------------------------------------------------------------
-
-/// Fit a conic to `pts` using the Bookstein `‖c‖ = 1` constraint.
-///
-/// Coordinates are normalised to zero mean and unit RMS radius before fitting,
-/// then the result is mapped back to the original coordinate frame.
-///
-/// # Errors
-/// - [`Error::InsufficientData`] when `pts.len() < 5`.
-/// - [`Error::Degenerate`] when the scatter matrix is numerically degenerate.
-pub(crate) fn fit_bookstein(pts: &[Point2f]) -> Result<Conic2f, Error> {
-    if pts.len() < 5 {
-        return Err(Error::InsufficientData {
-            need: 5,
-            got: pts.len(),
-        });
-    }
-
-    ensure_finite(pts)?;
-
-    let (cx, cy, scale) = normalise_params(pts);
-    let xs: Vec<f64> = pts.iter().map(|p| (p.x as f64 - cx) / scale).collect();
-    let ys: Vec<f64> = pts.iter().map(|p| (p.y as f64 - cy) / scale).collect();
-
-    let s = scatter_matrix_xy(&xs, &ys);
-    // Smallest-eigenvalue eigenvector of DᵀD = Bookstein solution.
-    let eig = SymmetricEigen::new(s);
-    // nalgebra does NOT guarantee sorted eigenvalues — find the minimum explicitly.
-    // Skip non-finite eigenvalues rather than ordering against them: `partial_cmp`
-    // returns `None` for NaN, so comparing them at all is a panic. `ensure_finite`
-    // rules out the common cause, but a finite input can still be rank-deficient
-    // enough for the decomposition to produce NaN, and there is no sensible
-    // "smallest" among them.
-    let min_col = eig
-        .eigenvalues
-        .iter()
-        .enumerate()
-        .filter(|(_, v)| v.is_finite())
-        .min_by(|(_, a), (_, b)| a.partial_cmp(b).expect("finite compare"))
-        .map(|(i, _)| i)
-        .ok_or(Error::Degenerate(
-            "Bookstein fit: scatter matrix has no finite eigenvalue",
-        ))?;
-    let v = eig.eigenvectors.column(min_col);
-    let raw: [f64; 6] = [v[0], v[1], v[2], v[3], v[4], v[5]];
-
-    // Map back to original coordinate space.
-    let coeffs = denormalise_conic(&raw, cx, cy, scale);
-    Ok(Conic2f { coeffs })
 }
 
 // ---------------------------------------------------------------------------
@@ -328,36 +265,6 @@ mod tests {
     }
 
     #[test]
-    fn bookstein_fits_circle() {
-        // 20 exact points on a circle of radius 15 centred at (30, 25).
-        // Bookstein fit should recover centre within 0.5 px and radius within 1%.
-        let ell = Ellipse2f {
-            center: Point2f::new(30.0, 25.0),
-            semi_axes: Vec2f::new(15.0, 15.0),
-            angle: 0.0,
-        };
-        let pts = ellipse_points(&ell, 20);
-        let conic = fit_bookstein(&pts).expect("bookstein fit");
-        assert!(conic.is_ellipse(), "result should be ellipse");
-        let recovered = conic.to_ellipse().expect("to_ellipse");
-        assert!(
-            (recovered.center.x - 30.0).abs() < 0.5,
-            "cx={}",
-            recovered.center.x
-        );
-        assert!(
-            (recovered.center.y - 25.0).abs() < 0.5,
-            "cy={}",
-            recovered.center.y
-        );
-        assert!(
-            (recovered.semi_major() - 15.0).abs() < 0.5,
-            "a={}",
-            recovered.semi_major()
-        );
-    }
-
-    #[test]
     fn fitzgibbon_fits_rotated_ellipse() {
         // 20 exact points on an ellipse: a=20, b=8, angle=45°, centre=(60,40).
         // Fitzgibbon fit should recover axes within 0.3 px.
@@ -395,7 +302,6 @@ mod tests {
     #[test]
     fn insufficient_data_returns_error() {
         let pts = vec![Point2f::new(1.0, 2.0); 3];
-        assert!(fit_bookstein(&pts).is_err());
         assert!(fit_fitzgibbon(&pts).is_err());
     }
 
@@ -414,10 +320,6 @@ mod tests {
             Point2f::new(-1.0, 1.0),
         ];
         assert!(
-            matches!(fit_bookstein(&pts), Err(Error::Degenerate(_))),
-            "non-finite input must be reported as degenerate"
-        );
-        assert!(
             matches!(fit_fitzgibbon(&pts), Err(Error::Degenerate(_))),
             "non-finite input must be reported as degenerate"
         );
@@ -433,7 +335,6 @@ mod tests {
             Point2f::new(0.0, 3.0),
             Point2f::new(-1.0, 1.0),
         ];
-        assert!(matches!(fit_bookstein(&pts), Err(Error::Degenerate(_))));
         assert!(matches!(fit_fitzgibbon(&pts), Err(Error::Degenerate(_))));
     }
 }

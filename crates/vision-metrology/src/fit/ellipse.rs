@@ -1,23 +1,10 @@
 //! Ellipse fitting: algebraic initialisation followed by geometric refinement.
 
-use vm_primitives::{Conic2f, Ellipse2f, Error, Point2f};
+use vm_primitives::{Ellipse2f, Error, Point2f};
 
-use super::conic::{fit_bookstein, fit_fitzgibbon};
+use super::conic::fit_fitzgibbon;
 use super::ransac::ransac_fit_ellipse;
 use super::{Fit, FitConfig, RobustLoss};
-
-/// Fit a general conic `A x² + B x y + C y² + D x + E y + F = 0`.
-///
-/// Uses the Bookstein `‖c‖ = 1` constraint, which is similarity-invariant and
-/// admits any conic — use it when the data may not be an ellipse. For an
-/// ellipse specifically, prefer [`fit_ellipse`].
-///
-/// # Errors
-/// - [`Error::InsufficientData`] with fewer than 5 points.
-/// - [`Error::Degenerate`] when the point set is numerically degenerate.
-pub fn fit_conic(pts: &[Point2f]) -> Result<Conic2f, Error> {
-    fit_bookstein(pts)
-}
 
 /// Fit an ellipse, minimising approximate orthogonal distance.
 ///
@@ -164,7 +151,7 @@ pub(crate) fn sampson(e: &Ellipse2f, p: Point2f) -> Option<f32> {
 
 #[cfg(test)]
 mod tests {
-    use super::{fit_conic, fit_ellipse, sampson};
+    use super::{fit_ellipse, sampson};
     use crate::fit::{FitConfig, RansacConfig, RobustLoss};
     use vm_primitives::{Ellipse2f, Point2f, Vec2f};
 
@@ -260,19 +247,5 @@ mod tests {
     fn too_few_points_is_an_error() {
         let pts = vec![Point2f::new(0.0, 0.0); 4];
         assert!(fit_ellipse(&pts, &FitConfig::default()).is_err());
-        assert!(fit_conic(&pts).is_err());
-    }
-
-    #[test]
-    fn a_general_conic_fit_accepts_non_ellipses() {
-        // Points on the hyperbola x*y = 1.
-        let pts: Vec<Point2f> = (1..8)
-            .map(|i| {
-                let x = i as f32 * 0.5;
-                Point2f::new(x, 1.0 / x)
-            })
-            .collect();
-        let c = fit_conic(&pts).expect("bookstein handles any conic");
-        assert!(!c.is_ellipse(), "x*y = 1 is a hyperbola");
     }
 }
