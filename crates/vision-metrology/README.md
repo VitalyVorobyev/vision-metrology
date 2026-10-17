@@ -46,7 +46,7 @@ vision-metrology = { version = "0.1", default-features = false, features = ["mat
 |---|---|---|
 | `contour` | `contour` | — |
 | `corr` | `corr` | — |
-| `corr-experimental` | `corr::SimilarityEstimator`, `SimilarityConfig`, `Similarity`: experimental, outside the semver promise until the regional check is recalibrated; off by default | `corr` |
+| `corr-experimental` | `corr::SimilarityEstimator`, `SimilarityConfig`, `Similarity`: experimental, outside the semver promise until the evidence supports promotion; off by default | `corr` |
 | `fit` | `fit` | — |
 | `laser` | `laser` | — |
 | `lsd` | `lsd` | — |

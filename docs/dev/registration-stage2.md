@@ -8,7 +8,7 @@ reference-to-current fixture localization. Ordinary teach/find remains in corrma
 ## Contract
 
 The three types are behind the non-default `corr-experimental` feature, and in Python
-under `vision_metrology.experimental`, until the regional check is recalibrated (backlog,
+under `vision_metrology.experimental`, until the evidence supports promotion (backlog,
 Measurement).
 
 Add `SimilarityEstimator`, `SimilarityConfig`, and `Similarity` using the existing

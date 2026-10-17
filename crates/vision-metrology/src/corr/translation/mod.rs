@@ -6,7 +6,7 @@ mod refine;
 mod result;
 mod search;
 
-pub use config::{TranslationConfig, TranslationTuning};
+pub use config::{RegionCheck, TranslationConfig, TranslationTuning};
 pub use result::{Translation, TranslationStatus};
 
 use plane::Plane;
@@ -37,16 +37,11 @@ impl TranslationEstimator {
         Self::default()
     }
 
-    /// Estimate content motion from `previous` into `current`.
-    ///
-    /// The prediction centers the bounded search; `None` means zero motion.
-    /// Intensities may be u8, u16 or f32, without quantization. Dimensions may
-    /// differ. Photometry is `previous ≈ gain * current(x + shift) + offset`.
-    ///
-    /// # Errors
-    /// Invalid configuration, mask dimensions, images smaller than 4×4,
-    /// non-finite prediction, or non-finite valid f32 pixels.
-    pub fn estimate<P: Pixel>(
+    /// The bounded integer search alone: validation, planes, pyramid search and the
+    /// score/margin/boundary gates, without refinement. An `Accepted` status here means
+    /// the integer peak passed those gates; `shift` is that peak. Also returns the
+    /// standardization `[mean_a, scale_a, mean_b, scale_b]`.
+    pub(crate) fn search<P: Pixel>(
         &mut self,
         previous: &ImageView<'_, P>,
         current: &ImageView<'_, P>,
@@ -54,7 +49,7 @@ impl TranslationEstimator {
         current_mask: Option<&ImageView<'_, u8>>,
         prediction: Option<Vec2f>,
         cfg: &TranslationConfig,
-    ) -> Result<Translation, Error> {
+    ) -> Result<(Translation, [f64; 4]), Error> {
         cfg.validate()?;
         for (img_w, img_h, mask) in [
             (previous.width(), previous.height(), previous_mask),
@@ -93,20 +88,21 @@ impl TranslationEstimator {
         self.current.resize_with(levels, Plane::default);
         let (mean_a, scale_a, na) = self.previous[0].load(previous, previous_mask)?;
         let (mean_b, scale_b, nb) = self.current[0].load(current, current_mask)?;
+        let stats = [mean_a, scale_a, mean_b, scale_b];
         for l in 1..levels {
             let (a, b) = self.previous.split_at_mut(l);
             b[0].downsample(&a[l - 1]);
             let (a, b) = self.current.split_at_mut(l);
             b[0].downsample(&a[l - 1]);
         }
-        self.scratch.residuals.reserve(
-            previous.width() * previous.height()
-                - self
-                    .scratch
-                    .residuals
-                    .len()
-                    .min(previous.width() * previous.height()),
-        );
+        let n = previous.width() * previous.height();
+        let scratch = &mut self.scratch;
+        scratch
+            .residuals
+            .reserve(n - scratch.residuals.len().min(n));
+        scratch
+            .observations
+            .reserve(n - scratch.observations.len().min(n));
         let mut shift = [prediction.x as f64, prediction.y as f64];
         let mut peak = None;
         let mut margin = f64::INFINITY;
@@ -116,10 +112,13 @@ impl TranslationEstimator {
             .reserve(side * side - self.scores.len().min(side * side));
         // Prepare all buffers even when this valid call has no usable evidence.
         if na.min(nb) < cfg.min_support.get() {
-            return Ok(Translation::empty(TranslationStatus::InsufficientSupport));
+            return Ok((
+                Translation::empty(TranslationStatus::InsufficientSupport),
+                stats,
+            ));
         }
         if scale_a <= 0.0 || scale_b <= 0.0 {
-            return Ok(Translation::empty(TranslationStatus::LowTexture));
+            return Ok((Translation::empty(TranslationStatus::LowTexture), stats));
         }
         for l in (0..levels).rev() {
             let scale = (1usize << l) as f64;
@@ -159,7 +158,7 @@ impl TranslationEstimator {
                     peak = None;
                     continue;
                 }
-                Err(status) => return Ok(Translation::empty(status)),
+                Err(status) => return Ok((Translation::empty(status), stats)),
             };
             shift = p.shift.map(|v| v as f64 * scale);
             margin = margin.min(p.margin);
@@ -173,14 +172,52 @@ impl TranslationEstimator {
         out.support = peak.support;
         if peak.score < cfg.min_score as f64 || margin < cfg.min_margin as f64 {
             out.status = TranslationStatus::Ambiguous;
-            return Ok(out);
+            return Ok((out, stats));
         }
         if (shift[0] - prediction.x as f64).abs() >= radius - 0.5
             || (shift[1] - prediction.y as f64).abs() >= radius - 0.5
         {
             out.status = TranslationStatus::SearchBoundary;
-            return Ok(out);
+            return Ok((out, stats));
         }
+        Ok((out, stats))
+    }
+
+    /// Estimate content motion from `previous` into `current`.
+    ///
+    /// The prediction centers the bounded search; `None` means zero motion.
+    /// Intensities may be u8, u16 or f32, without quantization. Dimensions may
+    /// differ. Photometry is `previous ≈ gain * current(x + shift) + offset`.
+    ///
+    /// # Errors
+    /// Invalid configuration, mask dimensions, images smaller than 4×4,
+    /// non-finite prediction, or non-finite valid f32 pixels.
+    pub fn estimate<P: Pixel>(
+        &mut self,
+        previous: &ImageView<'_, P>,
+        current: &ImageView<'_, P>,
+        previous_mask: Option<&ImageView<'_, u8>>,
+        current_mask: Option<&ImageView<'_, u8>>,
+        prediction: Option<Vec2f>,
+        cfg: &TranslationConfig,
+    ) -> Result<Translation, Error> {
+        let (mut out, [mean_a, scale_a, mean_b, scale_b]) = self.search(
+            previous,
+            current,
+            previous_mask,
+            current_mask,
+            prediction,
+            cfg,
+        )?;
+        let Some(peak) = out
+            .shift
+            .filter(|_| out.status == TranslationStatus::Accepted)
+        else {
+            return Ok(out);
+        };
+        let prediction = prediction.unwrap_or_else(|| Vec2f::new(0.0, 0.0));
+        let radius = cfg.search_radius.get() as f64;
+        let shift = [peak.x as f64, peak.y as f64];
         let (a, b) = (&self.previous[0], &self.current[0]);
         let fit = match refine::refine(
             a,
@@ -224,8 +261,8 @@ impl TranslationEstimator {
             out.status = TranslationStatus::SearchBoundary;
             return Ok(out);
         }
-        if let Some(limit) = cfg.max_region_error {
-            let mut regions = [[0.0; 2]; 4];
+        if let Some(check) = cfg.region_check {
+            let mut regions = [([0.0; 2], [0.0f32; 3]); 4];
             for r in [
                 [0, a.w / 2, 0, a.h / 2],
                 [a.w / 2, a.w, 0, a.h / 2],
@@ -241,27 +278,45 @@ impl TranslationEstimator {
                     &cfg.tuning,
                     &mut self.scratch,
                 ) {
-                    regions[out.regions] = f.p;
+                    regions[out.regions] = (f.p, f.covariance);
                     out.regions += 1;
                 }
             }
             if out.regions >= 2 {
-                let mut error = 0.0f64;
-                for i in 0..out.regions {
-                    for j in 0..i {
-                        error = error.max(
-                            (regions[i][0] - regions[j][0]).hypot(regions[i][1] - regions[j][1]),
-                        );
-                    }
-                }
+                let (error, chi2) = regional_disagreement(&regions[..out.regions], check);
                 out.region_error = Some(error as f32);
-                if error > limit as f64 {
+                out.region_chi2 = Some((chi2 as f32).min(f32::MAX));
+                if chi2.is_nan() || chi2 > check.max_chi2 as f64 {
                     out.status = TranslationStatus::ModelMismatch;
                 }
             }
         }
         Ok(out)
     }
+}
+
+/// Largest pairwise shift distance (px) and largest pairwise χ² (2 dof), each pair's
+/// difference normalized by the summed regional covariances plus the bias floor.
+fn regional_disagreement(regions: &[([f64; 2], [f32; 3])], check: RegionCheck) -> (f64, f64) {
+    let floor = (check.bias_floor_px as f64).powi(2);
+    let (mut error, mut chi2) = (0.0f64, 0.0f64);
+    for (i, (pi, ci)) in regions.iter().enumerate() {
+        for (pj, cj) in &regions[..i] {
+            let d = [pi[0] - pj[0], pi[1] - pj[1]];
+            let xx = ci[0] as f64 + cj[0] as f64 + floor;
+            let xy = ci[1] as f64 + cj[1] as f64;
+            let yy = ci[2] as f64 + cj[2] as f64 + floor;
+            let det = xx * yy - xy * xy;
+            let q = if det > 0.0 {
+                (yy * d[0] * d[0] - 2.0 * xy * d[0] * d[1] + xx * d[1] * d[1]) / det
+            } else {
+                f64::INFINITY
+            };
+            error = error.max(d[0].hypot(d[1]));
+            chi2 = chi2.max(q);
+        }
+    }
+    (error, chi2)
 }
 
 #[cfg(test)]

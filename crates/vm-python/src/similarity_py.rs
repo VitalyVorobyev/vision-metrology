@@ -20,6 +20,7 @@ pub struct Similarity {
     pub covariance: Option<[[f32; 4]; 4]>,
     pub regions: usize,
     pub region_error: Option<f32>,
+    pub region_chi2: Option<f32>,
     pub status: &'static str,
 }
 impl From<corr::Similarity> for Similarity {
@@ -39,6 +40,7 @@ impl From<corr::Similarity> for Similarity {
             covariance: n.covariance,
             regions: n.regions,
             region_error: n.region_error,
+            region_chi2: n.region_chi2,
             status: n.status.as_str(),
         }
     }

@@ -23,6 +23,23 @@ impl Pose {
             self.center[1] + self.p[1] + self.p[3] * u + self.p[2] * v,
         ]
     }
+    /// The same map, parameterized about `center` and normalized by `radius`.
+    pub fn recentred(&self, center: [f64; 2], radius: f64) -> Self {
+        let q = self.map(center[0], center[1]);
+        let (a, b) = (self.p[2] / self.radius, self.p[3] / self.radius);
+        Self {
+            center,
+            radius,
+            p: Vector::new(
+                q[0] - center[0],
+                q[1] - center[1],
+                a * radius,
+                b * radius,
+                self.p[4],
+                self.p[5],
+            ),
+        }
+    }
     pub fn angle(&self) -> f64 {
         self.p[3].atan2(self.p[2])
     }
@@ -38,17 +55,52 @@ pub(super) struct Fit {
     pub max: f64,
     pub covariance: [[f32; 4]; 4],
 }
+/// Reusable refinement scratch: residual magnitudes and the frozen observation set.
+#[derive(Default)]
+pub(super) struct Workspace {
+    pub residuals: Vec<f64>,
+    pub observations: Vec<bool>,
+}
+/// Valid previous pixels whose current-image taps stay valid while the map moves by less
+/// than ½ px from `pose` (see `Plane::window_valid`). The set is then fixed.
+fn freeze(a: &Plane, b: &Plane, pose: &Pose, region: [usize; 4], out: &mut Vec<bool>) -> usize {
+    out.resize(a.w * a.h, false);
+    let mut n = 0;
+    for y in region[2]..region[3] {
+        for x in region[0]..region[1] {
+            let i = y * a.w + x;
+            let q = pose.map(x as f64, y as f64);
+            out[i] = a.valid[i] && b.window_valid(q[0], q[1]);
+            n += usize::from(out[i]);
+        }
+    }
+    n
+}
+/// Largest per-axis displacement between two maps over a region; for affine maps the
+/// extremes are at the corners.
+fn departure(p: &Pose, q: &Pose, region: [usize; 4]) -> f64 {
+    let (x0, x1) = (region[0] as f64, region[1].saturating_sub(1) as f64);
+    let (y0, y1) = (region[2] as f64, region[3].saturating_sub(1) as f64);
+    [(x0, y0), (x1, y0), (x0, y1), (x1, y1)]
+        .into_iter()
+        .map(|(x, y)| {
+            let (a, b) = (p.map(x, y), q.map(x, y));
+            (a[0] - b[0]).abs().max((a[1] - b[1]).abs())
+        })
+        .fold(0.0, f64::max)
+}
 fn observations(
     a: &Plane,
     b: &Plane,
     pose: Pose,
+    frozen: &[bool],
     region: [usize; 4],
     mut f: impl FnMut(f64, f64, f64, f64, f64, f64),
 ) {
     for y in region[2]..region[3] {
         for x in region[0]..region[1] {
             let i = y * a.w + x;
-            if !a.valid[i] {
+            if !frozen[i] {
                 continue;
             }
             let q = pose.map(x as f64, y as f64);
@@ -65,29 +117,40 @@ fn observations(
         }
     }
 }
-#[allow(clippy::too_many_arguments)]
-fn system(
+/// 1.4826 × the median absolute photometric residual.
+fn robust_scale(
     a: &Plane,
     b: &Plane,
     pose: Pose,
     region: [usize; 4],
-    tuning: &TranslationTuning,
-    residuals: &mut Vec<f64>,
-) -> (Matrix, Vector, f64, f64, usize) {
+    scratch: &mut Workspace,
+) -> f64 {
+    let Workspace {
+        residuals,
+        observations: frozen,
+    } = scratch;
     residuals.clear();
-    observations(a, b, pose, region, |u, v, _, _, _, _| {
+    observations(a, b, pose, frozen, region, |u, v, _, _, _, _| {
         residuals.push((pose.p[4] * v + pose.p[5] - u).abs())
     });
     let n = residuals.len();
-    let scale = if n == 0 {
-        1.0
-    } else {
-        let (_, median, _) = residuals.select_nth_unstable_by(n / 2, f64::total_cmp);
-        (*median * 1.4826).max(1e-4)
-    };
-    let cutoff = tuning.huber as f64 * scale;
-    let (mut h, mut rhs, mut sum, mut max) = (Matrix::zeros(), Vector::zeros(), 0.0, 0.0f64);
-    observations(a, b, pose, region, |u, v, gx, gy, x, y| {
+    if n == 0 {
+        return 1.0;
+    }
+    let (_, median, _) = residuals.select_nth_unstable_by(n / 2, f64::total_cmp);
+    (*median * 1.4826).max(1e-4)
+}
+fn system(
+    a: &Plane,
+    b: &Plane,
+    pose: Pose,
+    cutoff: f64,
+    region: [usize; 4],
+    frozen: &[bool],
+) -> (Matrix, Vector, f64, f64, usize) {
+    let (mut h, mut rhs, mut sum, mut max, mut n) =
+        (Matrix::zeros(), Vector::zeros(), 0.0, 0.0f64, 0usize);
+    observations(a, b, pose, frozen, region, |u, v, gx, gy, x, y| {
         let r = pose.p[4] * v + pose.p[5] - u;
         let w = (cutoff / r.abs().max(cutoff)).min(1.0);
         let g = pose.p[4];
@@ -103,9 +166,14 @@ fn system(
         rhs += j * (w * r);
         sum += r * r;
         max = max.max(r.abs());
+        n += 1;
     });
     (h, rhs, sum, max, n)
 }
+/// Robust six-parameter Gauss–Newton over a frozen observation set, re-frozen only when
+/// the map leaves the ±½ px window of the pose it was frozen at. The Huber scale is
+/// estimated at the seed and after the first step, then fixed; convergence tests the
+/// motion step alone.
 pub(super) fn refine(
     a: &Plane,
     b: &Plane,
@@ -113,11 +181,24 @@ pub(super) fn refine(
     region: [usize; 4],
     min_support: usize,
     tuning: &TranslationTuning,
-    residuals: &mut Vec<f64>,
+    scratch: &mut Workspace,
 ) -> Result<Fit, TranslationStatus> {
+    let mut frozen_at = pose;
+    let mut support = freeze(a, b, &frozen_at, region, &mut scratch.observations);
+    let mut cutoff = 0.0;
     let mut converged = false;
-    for _ in 0..tuning.iterations.get() {
-        let (h, rhs, _, _, n) = system(a, b, pose, region, tuning, residuals);
+    for iteration in 0..tuning.iterations.get() {
+        if departure(&pose, &frozen_at, region) >= 0.5 {
+            frozen_at = pose;
+            support = freeze(a, b, &frozen_at, region, &mut scratch.observations);
+        }
+        if support < min_support {
+            return Err(TranslationStatus::InsufficientSupport);
+        }
+        if iteration < 2 {
+            cutoff = tuning.huber as f64 * robust_scale(a, b, pose, region, scratch);
+        }
+        let (h, rhs, _, _, n) = system(a, b, pose, cutoff, region, &scratch.observations);
         if n < min_support {
             return Err(TranslationStatus::InsufficientSupport);
         }
@@ -146,10 +227,7 @@ pub(super) fn refine(
         if pose.p.iter().any(|v| !v.is_finite()) || pose.p[4] <= 0.0 || pose.scale() <= 0.0 {
             return Err(TranslationStatus::RefinementFailed);
         }
-        if step.fixed_rows::<4>(0).norm() < tuning.tolerance as f64
-            && step[4].abs() < tuning.tolerance as f64
-            && step[5].abs() < tuning.tolerance as f64
-        {
+        if step.fixed_rows::<4>(0).norm() < tuning.tolerance as f64 {
             converged = true;
             break;
         }
@@ -157,7 +235,10 @@ pub(super) fn refine(
     if !converged {
         return Err(TranslationStatus::RefinementFailed);
     }
-    let (h, _, sum, max, n) = system(a, b, pose, region, tuning, residuals);
+    if departure(&pose, &frozen_at, region) >= 0.5 {
+        freeze(a, b, &pose, region, &mut scratch.observations);
+    }
+    let (h, _, sum, max, n) = system(a, b, pose, cutoff, region, &scratch.observations);
     if n < min_support {
         return Err(TranslationStatus::InsufficientSupport);
     }

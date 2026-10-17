@@ -24,6 +24,7 @@ pub struct Translation {
     pub covariance: Option<(f32, f32, f32)>,
     pub regions: usize,
     pub region_error: Option<f32>,
+    pub region_chi2: Option<f32>,
     pub status: &'static str,
 }
 
@@ -41,6 +42,7 @@ impl From<corr::Translation> for Translation {
             covariance: n.covariance.map(|c| (c[0], c[1], c[2])),
             regions: n.regions,
             region_error: n.region_error,
+            region_chi2: n.region_chi2,
             status: n.status.as_str(),
         }
     }

@@ -6,6 +6,8 @@ pub(super) struct Plane {
     pub h: usize,
     pub data: Vec<f32>,
     pub valid: Vec<bool>,
+    /// Forward 3×3 erosion of `valid`, filled by `load`; read through `window_valid`.
+    pub window: Vec<bool>,
 }
 
 impl Plane {
@@ -43,6 +45,7 @@ impl Plane {
                 }
             }
         }
+        self.prepare_window();
         let scale = (m2 / n.max(1) as f64).sqrt();
         if scale > 0.0 {
             for (v, valid) in self.data.iter_mut().zip(&self.valid) {
@@ -69,6 +72,40 @@ impl Plane {
                 };
             }
         }
+    }
+
+    /// Mark the pixels whose bilinear taps stay valid for every position within ±½ px:
+    /// a sample at `(x, y)` with `window_valid(x, y)` stays valid for any `(x + dx, y + dy)`
+    /// with `|dx|, |dy| < ½`. Separable forward 3-run erosion in place, row-major, so
+    /// `window[r * w + c]` covers rows `r..=r+2` and columns `c..=c+2`.
+    fn prepare_window(&mut self) {
+        let (w, h) = (self.w, self.h);
+        self.window.resize(w * h, false);
+        for y in 0..h {
+            let row = y * w;
+            for x in 0..w {
+                self.window[row + x] =
+                    x + 2 < w && self.valid[row + x..=row + x + 2].iter().all(|&v| v);
+            }
+        }
+        // Each row reads only itself and the three rows below, all still horizontal.
+        for y in 0..h {
+            for x in 0..w {
+                let i = y * w + x;
+                self.window[i] =
+                    y + 2 < h && self.window[i] && self.window[i + w] && self.window[i + 2 * w];
+            }
+        }
+    }
+
+    /// Whether the ±½ px tap window about `(x, y)` is valid: the 3×3 block
+    /// `[rx-1, rx+1] × [ry-1, ry+1]` about `(rx, ry) = round(x, y)` is in bounds and valid.
+    pub fn window_valid(&self, x: f64, y: f64) -> bool {
+        let (fx, fy) = (x.round(), y.round());
+        if !(fx >= 1.0 && fy >= 1.0 && fx + 1.0 < self.w as f64 && fy + 1.0 < self.h as f64) {
+            return false;
+        }
+        self.window[(fy as usize - 1) * self.w + fx as usize - 1]
     }
 
     /// Bilinear value and exact derivatives. All four taps must be valid, even

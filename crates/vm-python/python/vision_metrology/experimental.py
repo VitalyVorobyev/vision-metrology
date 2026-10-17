@@ -1,8 +1,8 @@
 """Experimental API, outside the compatibility promise.
 
 `SimilarityEstimator`, `SimilarityConfig` and `Similarity` (local masked similarity
-registration) may change or be removed in any release, until the regional consistency
-check is recalibrated for real data.
+registration) may change or be removed in any release, until the evidence supports
+promotion.
 """
 
 from .vision_metrology import _experimental as _native
