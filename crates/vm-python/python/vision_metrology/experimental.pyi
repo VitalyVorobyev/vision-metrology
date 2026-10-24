@@ -14,6 +14,8 @@ from . import TranslationConfig
 __all__ = ["Similarity", "SimilarityConfig", "SimilarityEstimator"]
 
 class SimilarityConfig:
+    # The default translation config carries similarity's own iterations and RegionCheck;
+    # a plain TranslationConfig() passed here carries translation's.
     translation: TranslationConfig
     max_angle: float
     max_log_scale: float
@@ -31,7 +33,8 @@ class Similarity:
     offset: Optional[float]
     covariance: Optional[List[List[float]]]  # centre dx/dy, angle, log-scale
     regions: int
-    region_error: Optional[float]
+    region_error: Optional[float]  # px, within each region's RMS radius
+    region_chi2: Optional[float]
     status: str
 
 class SimilarityEstimator:

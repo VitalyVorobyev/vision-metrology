@@ -26,9 +26,14 @@ pub struct Similarity {
     pub covariance: Option<[[f32; 4]; 4]>,
     /// Independently supported regional similarity fits.
     pub regions: usize,
-    /// Largest regional map disagreement over full-image corners, in pixels.
+    /// Largest disagreement of a regional fit with the global map within that region's
+    /// RMS radius about its centroid, in pixels: `|Δq(centroid)| + ρ |(Δangle, Δlog-scale)|`.
     /// Absent with fewer than two supported regions or when checks are disabled.
     pub region_error: Option<f32>,
+    /// Largest covariance-normalized χ² of a regional fit against the global one
+    /// (4 degrees of freedom), the statistic `RegionCheck` tests. `None` when
+    /// `region_error` is.
+    pub region_chi2: Option<f32>,
     /// Acceptance or reason the map is diagnostic only.
     pub status: TranslationStatus,
 }
@@ -46,6 +51,7 @@ impl Similarity {
             covariance: None,
             regions: 0,
             region_error: None,
+            region_chi2: None,
             status,
         }
     }

@@ -15,6 +15,21 @@ are relative to 0.1.0.
 
 ### Added
 
+- **Registration calibration.** `TranslationConfig::region_check:
+  Option<RegionCheck { max_chi2, bias_floor_px }>` replaces the fixed px limit with a
+  covariance-normalized test: translation tests every pair of quadrant shifts (χ², 2 dof)
+  against their summed covariances plus the bias floor; similarity refits each quadrant
+  about its own centroid and RMS radius and compares it with the global fit there (4 dof),
+  without extrapolating to the image corners. Results report `region_chi2`. Defaults:
+  χ² limits at the 99.9% quantiles; similarity's floor, 0.06 px, calibrated on a synthetic
+  false-reject study and HPatches development pairs; translation's, 0.1 px, a tolerance
+  above that calibrated minimum. Refinement freezes
+  its observations within ±½ px of the seed, fixes the Huber scale after the first step,
+  tests convergence on the motion step alone and has a 30-iteration budget; the
+  similarity initializer runs the integer search alone. `tools/registration_eval` gains
+  `false_reject.py`, `hpatches.py`, `diagnose.py` and `--region-check off`. Python gains
+  `RegionCheck` and `region_chi2`. Results are in `docs/performance.md`.
+
 - **Planar rig substrate pose** (`metric::rig::RigPoseEstimator`). One rigid SE(2)
   substrate→plane pose per frame from one measured translation per view and step, for
   several fixed views of a planar substrate with plane→image homographies. Each
@@ -70,7 +85,7 @@ are relative to 0.1.0.
 
 - **Local masked similarity, experimental** (`corr::SimilarityEstimator`, behind the
   non-default `corr-experimental` feature; in Python, `vision_metrology.experimental`).
-  Outside the semver promise until its regional check is recalibrated. Previous-to-current
+  Outside the semver promise until the evidence supports promotion. Previous-to-current
   `Similarity2f`, explicit prediction/bounds, robust photometry, motion rank checks,
   covariance and independent regional map comparisons; native scratch reuse and
   matching Python bindings. Development tooling (`tools/registration_eval`) reads a

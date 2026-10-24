@@ -11,12 +11,13 @@ from time import perf_counter
 import numpy as np
 from PIL import Image, ImageDraw
 import vision_metrology as vm
-from vision_metrology.experimental import SimilarityConfig, SimilarityEstimator
+from vision_metrology.experimental import SimilarityEstimator
 from anchors import AnchoredSequence, matrix, parts, corner_distance
 from manifest import Sequence
+from settings import describe_similarity, similarity_config, translation_config
 
 FIELDS = ('transform', 'score', 'margin', 'support', 'residual_rms', 'residual_max',
-          'gain', 'offset', 'covariance', 'regions', 'region_error', 'status')
+          'gain', 'offset', 'covariance', 'regions', 'region_error', 'region_chi2', 'status')
 
 
 def estimate(estimator, sequence, previous, current, preprocess, prediction=None):
@@ -26,17 +27,18 @@ def estimate(estimator, sequence, previous, current, preprocess, prediction=None
     preparation = 1000*(perf_counter()-start)
     start = perf_counter()
     result = estimator.estimate(a, b, previous_mask=am, current_mask=bm, prediction=prediction)
-    row = {field: getattr(result, field) for field in FIELDS}
+    row = {field: getattr(result, field, None) for field in FIELDS}
     return row | {'source': sequence.name, 'previous': previous, 'current': current,
                   'group': sequence.group(previous),
                   'prepare_ms': preparation, 'estimate_python_ms': 1000*(perf_counter()-start)}
 
 
-def evaluate_sequence(sequence, count, anchor_every, max_closure, preprocess):
+def evaluate_sequence(sequence, count, anchor_every, max_closure, preprocess, check=True):
     """Adjacent pairs within a group; a group change is a handover and ends a segment."""
     rows = []
-    estimator, anchor_estimator = SimilarityEstimator(), SimilarityEstimator()
-    translation = vm.TranslationEstimator()
+    estimator = SimilarityEstimator(similarity_config(check))
+    anchor_estimator = SimilarityEstimator(similarity_config(check))
+    translation = vm.TranslationEstimator(translation_config(check))
     chain = None
     for frame in range(count-1):
         group = sequence.group(frame)
@@ -54,7 +56,7 @@ def evaluate_sequence(sequence, count, anchor_every, max_closure, preprocess):
         b, bm = sequence.prepare(frame+1, preprocess)
         start = perf_counter()
         t = translation.estimate(a, b, previous_mask=am, current_mask=bm)
-        row['translation'] = {field: getattr(t, field) for field in FIELDS if field != 'transform'} | {
+        row['translation'] = {field: getattr(t, field, None) for field in FIELDS if field != 'transform'} | {
             'shift': t.shift, 'estimate_python_ms': 1000*(perf_counter()-start)}
         if t.status == 'accepted':
             reverse_t = translation.estimate(b, a, previous_mask=bm, current_mask=am)
@@ -123,11 +125,11 @@ def summarize(rows):
             'estimate_python_ms_p95': float(np.percentile(times, 95)) if times else None}
 
 
-def evaluate(sequences, limit, anchor_every, max_closure, preprocess):
+def evaluate(sequences, limit, anchor_every, max_closure, preprocess, check=True):
     rows = []
     for sequence in sequences:
         count = min(len(sequence), limit) if limit else len(sequence)
-        rows += evaluate_sequence(sequence, count, anchor_every, max_closure, preprocess)
+        rows += evaluate_sequence(sequence, count, anchor_every, max_closure, preprocess, check)
     return {'summary': summarize(rows), 'pairs': rows,
             'anchors': {'every': anchor_every, 'max_closure_px': max_closure,
                         'policy': 'fixed first keyframe per reciprocal supported segment; failed constraints unavailable'}}
@@ -158,6 +160,8 @@ def main():
     parser.add_argument('--max-closure', type=float, default=.25)
     parser.add_argument('--anchor-every', type=int, default=8)
     parser.add_argument('--preprocess', choices=('dog', 'none'), default='dog')
+    parser.add_argument('--region-check', choices=('on', 'off'), default='on',
+                        help='off reports the regional statistics without rejecting on them')
     args = parser.parse_args()
     if args.anchor_every <= 0 or not np.isfinite(args.max_closure) or args.max_closure <= 0:
         parser.error('choose a positive anchor interval and closure bound')
@@ -169,12 +173,11 @@ def main():
     if out.is_relative_to(repo) or any(out.is_relative_to(s.root) for s in sequences):
         parser.error('output must be outside the repository and the manifest directories')
     out.mkdir(parents=True, exist_ok=True)
-    report = evaluate(sequences, args.limit, args.anchor_every, args.max_closure, args.preprocess)
+    check = args.region_check == 'on'
+    report = evaluate(sequences, args.limit, args.anchor_every, args.max_closure, args.preprocess, check)
     report['provenance'] = {s.name: s.provenance for s in sequences}
-    cfg = SimilarityConfig()
-    report['settings'] = {'max_angle': cfg.max_angle, 'max_log_scale': cfg.max_log_scale,
-                          'translation': {k: getattr(cfg.translation, k) for k in ('search_radius', 'min_support', 'min_score', 'min_margin', 'max_region_error')},
-                          'tuning': {k: getattr(cfg.translation.tuning, k) for k in ('iterations', 'max_levels', 'tolerance', 'huber', 'min_texture')}}
+    report['region_check'] = args.region_check
+    report['settings'] = describe_similarity(similarity_config(check))
     by_name = {s.name: s for s in sequences}
     for sequence in sequences:
         for group in dict.fromkeys(r['group'] for r in report['pairs'] if r['source'] == sequence.name):

@@ -16,21 +16,47 @@ pub(super) struct Refined {
 #[derive(Default)]
 pub(super) struct Workspace {
     pub residuals: Vec<f64>,
+    /// Frozen observations of the current refinement, one flag per previous pixel.
+    pub observations: Vec<bool>,
+}
+
+/// Freeze the observations: valid previous pixels whose current-image taps stay valid for
+/// every shift within ±½ px of `centre`. The set then stays fixed while the shift moves, so
+/// taps entering or leaving validity cannot make the objective chatter.
+fn freeze(
+    a: &Plane,
+    b: &Plane,
+    centre: [f64; 2],
+    region: [usize; 4],
+    out: &mut Vec<bool>,
+) -> usize {
+    out.resize(a.w * a.h, false);
+    let mut n = 0;
+    for y in region[2]..region[3] {
+        for x in region[0]..region[1] {
+            let i = y * a.w + x;
+            out[i] = a.valid[i] && b.window_valid(x as f64 + centre[0], y as f64 + centre[1]);
+            n += usize::from(out[i]);
+        }
+    }
+    n
 }
 
 fn observations(
     a: &Plane,
     b: &Plane,
     p: [f64; 2],
+    frozen: &[bool],
     region: [usize; 4],
     mut f: impl FnMut(f64, f64, f64, f64),
 ) {
     for y in region[2]..region[3] {
         for x in region[0]..region[1] {
             let i = y * a.w + x;
-            if !a.valid[i] {
+            if !frozen[i] {
                 continue;
             }
+            // Within the freeze window every tap is valid; `None` cannot occur there.
             if let Some((v, gx, gy)) = b.sample(x as f64 + p[0], y as f64 + p[1]) {
                 f(a.data[i] as f64, v, gx, gy);
             }
@@ -38,6 +64,36 @@ fn observations(
     }
 }
 
+/// Robust scale of the photometric residuals: 1.4826 × median absolute residual.
+fn robust_scale(
+    a: &Plane,
+    b: &Plane,
+    p: [f64; 2],
+    photometry: [f64; 2],
+    region: [usize; 4],
+    scratch: &mut Workspace,
+) -> f64 {
+    let Workspace {
+        residuals,
+        observations: frozen,
+    } = scratch;
+    residuals.clear();
+    observations(a, b, p, frozen, region, |u, v, _, _| {
+        residuals.push((photometry[0] * v + photometry[1] - u).abs())
+    });
+    let n = residuals.len();
+    if n == 0 {
+        return 1.0;
+    }
+    let (_, median, _) = residuals.select_nth_unstable_by(n / 2, f64::total_cmp);
+    (*median * 1.4826).max(1e-4)
+}
+
+/// Robust Gauss–Newton for `(dx, dy, gain, offset)` over a frozen observation set.
+///
+/// The set is frozen about the seed, and re-frozen only if the shift leaves that ±½ px
+/// window. The Huber scale is estimated at the seed and once more after the first step,
+/// then fixed. Convergence tests the translation step alone.
 pub(super) fn refine(
     a: &Plane,
     b: &Plane,
@@ -48,9 +104,23 @@ pub(super) fn refine(
     scratch: &mut Workspace,
 ) -> Result<Refined, TranslationStatus> {
     let (mut p, mut gain, mut offset) = (seed, 1.0, 0.0);
+    let mut centre = seed;
+    let mut support = freeze(a, b, centre, region, &mut scratch.observations);
+    let mut cutoff = 0.0;
     let mut converged = false;
-    for _ in 0..tuning.iterations.get() {
-        let (h, rhs, _, _, n) = system(a, b, p, gain, offset, region, tuning, scratch);
+    for iteration in 0..tuning.iterations.get() {
+        if (p[0] - centre[0]).abs() >= 0.5 || (p[1] - centre[1]).abs() >= 0.5 {
+            centre = p;
+            support = freeze(a, b, centre, region, &mut scratch.observations);
+        }
+        if support < min_support {
+            return Err(TranslationStatus::InsufficientSupport);
+        }
+        if iteration < 2 {
+            cutoff = tuning.huber as f64 * robust_scale(a, b, p, [gain, offset], region, scratch);
+        }
+        let (h, rhs, _, _, n) =
+            system(a, b, p, gain, offset, cutoff, region, &scratch.observations);
         if n < min_support {
             return Err(TranslationStatus::InsufficientSupport);
         }
@@ -85,10 +155,7 @@ pub(super) fn refine(
         {
             return Err(TranslationStatus::RefinementFailed);
         }
-        if step[0].hypot(step[1]) < tuning.tolerance as f64
-            && step[2].abs() < tuning.tolerance as f64
-            && step[3].abs() < tuning.tolerance as f64
-        {
+        if step[0].hypot(step[1]) < tuning.tolerance as f64 {
             converged = true;
             break;
         }
@@ -96,7 +163,10 @@ pub(super) fn refine(
     if !converged {
         return Err(TranslationStatus::RefinementFailed);
     }
-    let (h, _, sum, max, n) = system(a, b, p, gain, offset, region, tuning, scratch);
+    if (p[0] - centre[0]).abs() >= 0.5 || (p[1] - centre[1]).abs() >= 0.5 {
+        freeze(a, b, p, region, &mut scratch.observations);
+    }
+    let (h, _, sum, max, n) = system(a, b, p, gain, offset, cutoff, region, &scratch.observations);
     if n < min_support {
         return Err(TranslationStatus::InsufficientSupport);
     }
@@ -124,26 +194,13 @@ fn system(
     p: [f64; 2],
     gain: f64,
     offset: f64,
+    cutoff: f64,
     region: [usize; 4],
-    tuning: &TranslationTuning,
-    scratch: &mut Workspace,
+    frozen: &[bool],
 ) -> (Matrix4<f64>, Vector4<f64>, f64, f64, usize) {
-    scratch.residuals.clear();
-    observations(a, b, p, region, |u, v, _, _| {
-        scratch.residuals.push((gain * v + offset - u).abs())
-    });
-    let n = scratch.residuals.len();
-    let scale = if n == 0 {
-        1.0
-    } else {
-        let (_, median, _) = scratch
-            .residuals
-            .select_nth_unstable_by(n / 2, f64::total_cmp);
-        (*median * 1.4826).max(1e-4)
-    };
-    let cutoff = tuning.huber as f64 * scale;
-    let (mut h, mut rhs, mut sum, mut max) = (Matrix4::zeros(), Vector4::zeros(), 0.0, 0.0f64);
-    observations(a, b, p, region, |u, v, gx, gy| {
+    let (mut h, mut rhs, mut sum, mut max, mut n) =
+        (Matrix4::zeros(), Vector4::zeros(), 0.0, 0.0f64, 0usize);
+    observations(a, b, p, frozen, region, |u, v, gx, gy| {
         let r = gain * v + offset - u;
         let w = (cutoff / r.abs().max(cutoff)).min(1.0);
         let j = Vector4::new(gain * gx, gain * gy, v, 1.0);
@@ -151,6 +208,7 @@ fn system(
         rhs += j * (w * r);
         sum += r * r;
         max = max.max(r.abs());
+        n += 1;
     });
     (h, rhs, sum, max, n)
 }

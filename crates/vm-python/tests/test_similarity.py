@@ -41,6 +41,7 @@ def test_similarity_and_prediction(dtype):
     assert f.status == 'accepted'
     assert corner_error(f.transform, truth) < .1
     assert f.support > 400 and f.regions >= 2 and f.region_error < .5
+    assert 0 <= f.region_chi2 <= experimental.SimilarityConfig().translation.region_check.max_chi2
     covariance = np.asarray(f.covariance)
     assert covariance.shape == (4, 4)
     assert np.linalg.eigvalsh(covariance).min() > -1e-9

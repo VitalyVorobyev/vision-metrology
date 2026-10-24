@@ -270,6 +270,40 @@ noise (the annotator's σ/√2 for two passes) cannot be resolved by these annot
 Report the uniform and the hard-span sections separately. Annotations of private data stay
 with the data, and only aggregates under opaque labels go into `docs/performance.md`.
 
+## Regional-check diagnosis: `--region-check off`, `diagnose.py`, `false_reject.py`
+
+Both evaluators take `--region-check off`: the regional statistics are still computed and
+reported, but never reject (diagnosis only; propagation refuses it). `diagnose.py` reads
+such reports and prints aggregates: regional disagreement percentiles, its rank
+correlation with forward/backward closure, closure p95 on either side of a px limit, and,
+for similarity, each anchor's correction against the summed regional disagreement of the
+steps it corrects.
+
+`false_reject.py` measures how often the regional check rejects a motion its model
+represents exactly. Each trial renders a fresh band-limited texture at 320×97 (a sum of
+cosines whose frequencies follow the masked DoG band's power, integrated over the pixel
+area), moves it by a known translation (`--motion translation`) or a small similarity
+(`similarity`), adds Gaussian read noise, quantizes to 8 bits and excludes a horizontal
+band from both masks. `rotation` (0.01 rad by default) and `affine` (±0.5% anisotropic
+scale) are the negative controls that must be rejected. `--no-check` keeps the
+statistics without their decision, to choose a threshold from the distribution.
+
+```bash
+python tools/registration_eval/false_reject.py --motion similarity --contrast 4 --noise 4 \
+  --trials 400 --out /tmp/similarity-false-rejects.json
+```
+
+`hpatches.py` takes the same questions to real texture: HPatches (registered in
+`tools/datasets/registry.json`, fetched into the git-ignored `data/`, split by sequence
+in `tools/datasets/splits/hpatches.json`). On 320×97 crops of image 1 it compares
+`--pairs self` (image 1 resampled by a known translation or small similarity: real
+texture, exact model), `rectified` (image k resampled through the ground-truth
+homography, then moved by the known map: real illumination or viewpoint change, with the
+homography's own error in the truth) and `natural` (the same crop of image k).
+`--residual rotation|affine` adds the negative controls. Tune on `--split dev`; run
+`test` once with the settings frozen. Both tools take `--max-chi2` and `--bias-floor` to
+try other `RegionCheck` values.
+
 ## The synthetic sequence: `synthetic.py`
 
 A textured substrate under known similarity motion, with a light two-boundary bead that

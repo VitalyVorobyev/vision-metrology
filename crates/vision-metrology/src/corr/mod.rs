@@ -57,6 +57,8 @@
 mod adapter;
 mod config;
 mod displacement;
+#[cfg(test)]
+mod fixtures;
 mod plane;
 #[cfg(feature = "corr-experimental")]
 mod similarity;
@@ -73,5 +75,6 @@ pub use similarity::{Similarity, SimilarityConfig, SimilarityEstimator};
 pub use template::{CorrMatch, CorrTemplate, find, find_topk};
 
 pub use translation::{
-    Translation, TranslationConfig, TranslationEstimator, TranslationStatus, TranslationTuning,
+    RegionCheck, Translation, TranslationConfig, TranslationEstimator, TranslationStatus,
+    TranslationTuning,
 };

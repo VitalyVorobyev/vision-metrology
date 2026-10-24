@@ -354,3 +354,143 @@ fn unrepresentable_photometry_is_a_failed_result_not_infinity() {
     assert_eq!(result.gain, None);
     assert_eq!(result.residual_rms, None);
 }
+
+#[test]
+fn speckled_masks_near_integer_shifts_converge() {
+    // A masked DoG of a speckled mask, and shifts within 0.01 px of an integer: taps
+    // enter and leave validity as the shift crosses pixel boundaries. Refinement over a
+    // re-derived observation set with a re-estimated Huber scale chattered here until its
+    // budget ran out (`RefinementFailed`).
+    use crate::corr::fixtures::{bandpass, speckle};
+    let (w, h) = (320, 97);
+    let mut e = TranslationEstimator::new();
+    let cfg = TranslationConfig {
+        region_check: None,
+        ..Default::default()
+    };
+    let mut outcomes = Vec::new();
+    for k in 0..16u64 {
+        // Within 0.01 px of an integer, or (from k = 12) of a half-integer.
+        let half = if k >= 12 { 0.5 } else { 0.0 };
+        let shift = [
+            (k % 5) as f64 - 2.0 + half + 0.003 * (k as f64 - 6.0) / 6.0,
+            (k % 3) as f64 - 1.0 + half - 0.004 * (k as f64 - 5.0) / 6.0,
+        ];
+        let (ma, mb) = (speckle(w, h, 0.1, 2 * k), speckle(w, h, 0.1, 2 * k + 1));
+        let a = bandpass(&image(w, h, [0.0, 0.0], 1.0, 0.0, 0.0), &ma);
+        let b = bandpass(&image(w, h, shift, 1.0, 0.0, 0.0), &mb);
+        let f = e
+            .estimate(
+                &a.as_view(),
+                &b.as_view(),
+                Some(&ma.as_view()),
+                Some(&mb.as_view()),
+                None,
+                &cfg,
+            )
+            .unwrap();
+        let error = f
+            .shift
+            .map(|p| (p.x as f64 - shift[0]).hypot(p.y as f64 - shift[1]));
+        outcomes.push((f.status, error));
+    }
+    assert!(
+        outcomes
+            .iter()
+            .all(|(s, e)| *s == TranslationStatus::Accepted && e.unwrap() < 0.1),
+        "{outcomes:?}"
+    );
+}
+
+#[test]
+fn tap_window_matches_a_brute_force_block_check() {
+    let (w, h) = (23, 17);
+    let mask = crate::corr::fixtures::speckle(w, h, 0.08, 5);
+    let mut p = Plane::default();
+    p.load(
+        &Image::new_fill(w, h, 1.0f32).as_view(),
+        Some(&mask.as_view()),
+    )
+    .unwrap();
+    for y in -2..h as i64 + 2 {
+        for x in -2..w as i64 + 2 {
+            // (x + 0.3, y - 0.3) rounds to (x, y): its block is [x-1, x+1] × [y-1, y+1].
+            let brute = (y - 1..=y + 1).all(|yy| {
+                (x - 1..=x + 1).all(|xx| {
+                    xx >= 0
+                        && yy >= 0
+                        && xx < w as i64
+                        && yy < h as i64
+                        && p.valid[yy as usize * w + xx as usize]
+                })
+            });
+            assert_eq!(
+                p.window_valid(x as f64 + 0.3, y as f64 - 0.3),
+                brute,
+                "{x} {y}"
+            );
+            if brute {
+                for (dx, dy) in [(-0.49, -0.49), (0.49, 0.49), (-0.49, 0.49)] {
+                    let (sx, sy) = (x as f64 + 0.3 + dx, y as f64 - 0.3 + dy);
+                    assert!(p.sample(sx, sy).is_some(), "{sx} {sy}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn sparse_texture_on_a_flat_background_converges() {
+    // Most pixels are exactly flat, so the median residual of all pixels is ~0 and a
+    // Huber scale taken from it treats every textured pixel as an outlier; refinement
+    // then creeps and exhausts its budget.
+    let (w, h) = (320, 97);
+    let sparse = |shift: [f64; 2], seed: u64| {
+        let img = image(w, h, shift, 1.0, 0.0, 0.0);
+        Image::from_vec(
+            w,
+            h,
+            img.data()
+                .iter()
+                .enumerate()
+                .map(|(i, v)| {
+                    // Noise on the texture only (an integer hash, identical on every
+                    // platform): the background stays exactly flat.
+                    let mut z = (i as u64 ^ (seed << 32)).wrapping_mul(0x9e37_79b9_7f4a_7c15);
+                    z ^= z >> 29;
+                    z = z.wrapping_mul(0xbf58_476d_1ce4_e5b9);
+                    let noise = (z >> 40) as f32 / (1u64 << 24) as f32 - 0.5;
+                    let s = (v - 140.0).max(0.0);
+                    s + f32::from(s > 0.0) * noise
+                })
+                .collect(),
+        )
+        .unwrap()
+    };
+    let a = sparse([0.0, 0.0], 0);
+    let flat = a.data().iter().filter(|v| **v == 0.0).count();
+    assert!(flat * 10 > 6 * w * h, "most of the fixture is flat");
+    let mut e = TranslationEstimator::new();
+    let cfg = TranslationConfig {
+        region_check: None,
+        ..Default::default()
+    };
+    for shift in [[0.89, -0.63], [1.49, -0.78], [-0.37, 1.21]] {
+        let f = e
+            .estimate(
+                &a.as_view(),
+                &sparse(shift, 1).as_view(),
+                None,
+                None,
+                None,
+                &cfg,
+            )
+            .unwrap();
+        assert_eq!(f.status, TranslationStatus::Accepted, "{shift:?}: {f:?}");
+        let p = f.shift.unwrap();
+        assert!(
+            (p.x as f64 - shift[0]).hypot(p.y as f64 - shift[1]) < 0.08,
+            "{f:?}"
+        );
+    }
+}

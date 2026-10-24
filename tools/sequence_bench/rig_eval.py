@@ -3,7 +3,7 @@
 Each step and view registers the previous frame against the current one with
 `TranslationEstimator` over both frames' registration masks, and lifts it at the
 centroid of the previous frame's mask. The registration runs with its defaults except
-`max_region_error=None`: the substrate rotates in every view on the arc, so the regions
+`region_check=None`: the substrate rotates in every view on the arc, so the regions
 of one view disagree by design, and the cross-view solve is the consistency check here. The rig estimator runs with its
 defaults, anchored at the given frame-0 pose. Against `truth.poses` it reports, per step,
 the increment's translation error (su) and rotation error (degrees) as bias, σ and count,
@@ -50,7 +50,7 @@ def measure(root: Path):
     cov[:, :, 1] = 0.0
     cen = np.zeros((steps, n, 2))
     acc = np.zeros((steps, n), dtype=bool)
-    est = vm.TranslationEstimator(vm.TranslationConfig(max_region_error=None))
+    est = vm.TranslationEstimator(vm.TranslationConfig(region_check=None))
     for k in range(steps):
         for v in range(n):
             a, b = frames.get((v, k)), frames.get((v, k + 1))

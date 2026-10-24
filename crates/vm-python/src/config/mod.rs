@@ -47,7 +47,7 @@ pub use measure::{Locate, MeasureConfig};
 pub use scale::{LogPolarScaleConfig, MomentScaleConfig, ScaleInvariantConfig};
 
 mod translation;
-pub use translation::{TranslationConfig, TranslationTuning};
+pub use translation::{RegionCheck, TranslationConfig, TranslationTuning};
 
 mod similarity;
 pub use similarity::SimilarityConfig;
