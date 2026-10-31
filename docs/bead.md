@@ -43,7 +43,7 @@ edge, and orange at the start, where the step lies within `clearance` of the bea
   all. For a first frame without a reference part, a CAD or robot path or a taught
   frame, any detector that returns a path within the reach will do: a skeletonised
   ridge filter is enough on a clean part, because the tracker measures the centre and
-  width itself ([finding a bead without a prior](performance.md#finding-a-bead-without-a-prior)).
+  width itself ([finding a bead without a prior](../tools/bead_eval/README.md#results)).
 
 ```rust
 use vision_metrology::measure::{BeadConfig, BeadTracker};
@@ -181,53 +181,20 @@ is for diagnostics; no gate reads it.
 
 ## Choosing both walls along the curve: coupled pairing
 
-The gates choose each station's pair on its own. A wrong pair as strong as the bead's,
-such as another line in the window, is then measured as well as the bead would be.
-`BeadConfig::pairing = BeadPairing::Coupled(BeadCoupling::default())` instead chooses the
-walls of every station together, as one exact shortest path along the curve:
+The per-station gates choose each station's pair on its own, so a wrong pair as strong as the
+bead's is measured as well as the bead would be. `BeadPairing::Coupled(BeadCoupling::default())`
+chooses the walls of every station together, as one exact shortest path along the curve. Use
+it with one tracking pass (`passes = 1`): a later pass re-centres the window on the chosen line.
 
-```rust
-use vision_metrology::measure::{BeadConfig, BeadCoupling, BeadPairing, BeadTuning};
-use std::num::NonZeroUsize;
+- It chooses each station's centre, width, and whether one wall, both or neither is measured.
+  Edge location stays the caliper's: a chosen wall moves to the nearest caliper edge of its
+  polarity within a pixel.
+- `clearance` is a cost, not a gate, and `min_margin` must be `None`. The margins flag a
+  competing line in the window. They do not certify a lock.
 
-let cfg = BeadConfig {
-    min_width: 2.0,
-    max_width: 12.0,
-    pairing: BeadPairing::Coupled(BeadCoupling::default()),
-    // One tracking pass: a later one re-centres the window on the chosen line.
-    tuning: BeadTuning { passes: NonZeroUsize::MIN, ..BeadTuning::default() },
-    ..BeadConfig::default()
-};
-```
-
-- **What it chooses.** Per station, the bead's centre and width on a grid of `bin_px`
-  (rounded to whole profile samples), and whether it measures both walls, one, or none.
-  The evidence is each strip's caliper response, signed to the bead's polarity and softly
-  saturated (`saturation`), so one strong edge cannot carry a pair. The path pays for every
-  step of either wall and of the width along the curve (`wall_stiffness`,
-  `width_stiffness`, bounded by the slopes), and `switch_cost` for each change between
-  present and absent. The costs are per pixel of curve, so the result does not depend on
-  `spacing`.
-- **One wall.** Where one wall's position lies off the image, the station can measure the
-  other alone: `hit` is `Err(BeadReject::OneSided)` and `BeadSample::wall` holds the wall.
-  On the image a station measures both walls or neither.
-- **Absence** is `BeadReject::Absent`, or the caliper's own reason when the strip found no
-  edge or lay off the image. The path bridges a gap with the geometry on either side.
-- **Edge location stays the caliper's.** Each chosen wall moves to the nearest caliper edge
-  of its polarity within a pixel. A wall with no such edge is not measured, and a station
-  with neither is `NoPair`.
-- **`clearance` is a cost**, not a gate: a wall pays the evidence of the strongest other
-  edge within `clearance` px outside it. It keeps a strong edge just inside the bead, such
-  as a dark reversal, from standing in for a wall. `min_margin` must be `None`.
-- **Margins.** `BeadSample::margin` is what the best path that moves a wall more than
-  `margin_tol_px` at that station costs over the chosen one. Each stage's
-  `BeadPathScore` has a low quantile of them and the path's mean evidence per pixel. The
-  first pass's (`track.passes[0].path`) is the call's competitor flag, because its window
-  is the prior's: a low margin means another line in the window was nearly as good. It
-  flags a parallel line; it does not certify a lock, since most wrong locks on textured
-  surfaces have a stronger structure behind them.
-- **Cost.** The path adds a dynamic programme per stage to the strips. The
-  [benchmarks](performance.md) give the time at 300 stations, and the real-data numbers.
+The cost terms, the margin definitions and the measured trade-off are in
+[`tools/bead_eval/README.md`](../tools/bead_eval/README.md#coupled-two-boundary-extraction)
+and the [results](../tools/bead_eval/README.md#results).
 
 ## The regulariser
 
@@ -556,7 +523,7 @@ raises `ValueError`. A missing bead does not raise: every station is rejected.
 - [Bead tracking on real cracks](performance.md#real-data-bead-tracking-on-damsegment-cracks):
   how often the tracker locks onto a concrete crack from a perturbed prior, and how it
   fails when it does not.
-- [Finding a bead without a prior](performance.md#finding-a-bead-without-a-prior): ridge
+- [Finding a bead without a prior](../tools/bead_eval/README.md#results): ridge
   detectors as the source of a first prior, and how the tracker does from what they find.
 
 [`BeadTracker`]: ../crates/vision-metrology/src/measure/bead/mod.rs

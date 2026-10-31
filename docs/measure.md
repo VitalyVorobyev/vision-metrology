@@ -279,16 +279,7 @@ has both on the same fixtures.
 
 ## `MeasureConfig`
 
-```rust
-pub struct MeasureConfig {
-    pub threshold: f32,
-    pub polarity: PolaritySelect,
-    pub select: EdgeSelect,
-    pub locate: Locate,
-    pub max_obliquity_deg: f32,
-    pub profile: ProfileConfig, // sigma, derivative, step, border, off_image
-}
-```
+The fields, with their defaults, are in rustdoc.
 
 - **`threshold`** — the minimum `|derivative response|` to report an edge, on
   the input pixel scale like every other threshold in this library (re-tune for
@@ -450,75 +441,12 @@ A bead tracker's run is explained the same way, every station of every pass, wit
 
 ## Running CaliperBench
 
-[CaliperBench](https://github.com/VitalyVorobyev/caliperbench) scores edge
-localization on real and synthetic strips. It runs an implementation as a black box:
-`COMMAND --requests R --data-root D --output O`, one JSON request per line in, one
-prediction row per line out. `examples/caliperbench_run.rs` is that command for this
-crate. Each request becomes a [`MeasureStrip`] with its exact endpoints and counts, and
-the answer is each edge's `t`.
-
-```text
-cargo build --release -p vision-metrology --example caliperbench_run
-# the binary: target/release/examples/caliperbench_run
-```
-
-| `--method` | `MeasureConfig::locate` | CaliperBench |
-|---|---|---|
-| `gradient_parabolic` | `GradientPeak { refine: Parabolic3 }` | its `gradient_parabolic` baseline |
-| `gradient_integer` | `GradientPeak { refine: None }` | its `gradient_integer` baseline |
-| `midpoint_crossing` | `MidpointCrossing` | its `midpoint_crossing` baseline |
-| `gradient_gaussian` | `GradientPeak { refine: Gaussian3 }` | — |
-| `half_contrast` | `HalfContrast`, flanks 3–8 px | its reference edge definition |
-
-The first three return the same rows as CaliperBench's own baselines: the same status
-and reason, and edges within 1e-4 px. To get there, the runner configures the caliper
-the way those baselines work:
-
-- `sigma` and `radius` are in samples, as CaliperBench has them, and become pixels
-  through the strip's spacing. The derivative is `SmoothThenCentral`, numpy's
-  `np.gradient` of the smoothed profile; `--operator dog` selects the derivative of
-  Gaussian instead.
-- `min_response` is the `threshold`; bounds are strict (`OffImage::Reject`); there is no
-  obliquity gate.
-- One or two polarities become `EdgeSelect::StrongestInOrder` (`either` admits both). A
-  negative task, with no polarities, takes the `Strongest` edge as a false detection, or
-  reports an empty success when there is none.
-- A strip one line across but wider than 1 px samples numpy's first transverse offset,
-  `−(width − 1)/2`, as CaliperBench does.
-- An 8-bit grayscale image is read as is and an RGB one through Pillow's luma, both
-  scaled to `[0, 1]`. Any other image mode fails its rows.
-
-`--params FILE` takes the JSON CaliperBench's `run --params` and its lab take
-(`sigma`, `radius`, `min_response`, `endpoint_samples`, `min_contrast`, and the strip
-overrides `width_px`, `across`, `samples`); `half_contrast` uses `min_contrast` for its
-flanks. `--trace FILE` writes each request's intermediates as JSONL, with the keys of
-CaliperBench's lab trace (`step`, `profile`, `smooth`, then `gradient` and `candidates`,
-or `levels` and `threshold`). The exit status is 0 once the predictions are written,
-failed rows included, and non-zero only for bad arguments, bad parameters or an
-unreadable requests file.
-
-To make the methods selectable in CaliperBench's lab and in `caliperbench bench
---external`, register them in its `caliperbench.local.toml`:
-
-```toml
-[lab.executables]
-vm-parabolic = ["/path/to/caliperbench_run", "--method", "gradient_parabolic"]
-vm-integer = ["/path/to/caliperbench_run", "--method", "gradient_integer"]
-vm-gaussian = ["/path/to/caliperbench_run", "--method", "gradient_gaussian"]
-vm-midpoint = ["/path/to/caliperbench_run", "--method", "midpoint_crossing"]
-vm-halfcontrast = ["/path/to/caliperbench_run", "--method", "half_contrast"]
-```
-
-A run from CaliperBench's repository, scored next to its baseline:
-
-```text
-uv run caliperbench run-external outputs/requests.jsonl --data-root data \
-  --output outputs/vm.jsonl --label vm-parabolic -- \
-  /path/to/caliperbench_run --method gradient_parabolic
-uv run caliperbench compare data/annotations.jsonl \
-  --run baseline=outputs/baseline.jsonl --run vm=outputs/vm.jsonl \
-  --output outputs/compare.json --markdown outputs/compare.md
-```
+[CaliperBench](https://github.com/VitalyVorobyev/caliperbench) runs this crate as a black box
+through `examples/caliperbench_run.rs`: one JSON request per line in, one prediction row per
+line out. Its methods map to `MeasureConfig::locate` (`gradient_parabolic`, `gradient_integer`,
+`midpoint_crossing`, `gradient_gaussian`, `half_contrast`). The first three match CaliperBench's
+own baselines to 1e-4 px. The golden fixture and its regeneration are in
+[CONTRIBUTING](../CONTRIBUTING.md#tests).
 
 ## The metrology model: `find → pose → apply → fit`
 
@@ -665,9 +593,7 @@ That last step is what makes the reported repeatability mean something: every
 frame re-derives the rim from wherever the tab was found, so the spread of
 the measured radius across frames is the fixture *and* the measurement
 combined, not a restatement of where the part happened to sit under a fixed
-camera. Measured on set1 (Tukey(2 px), 96 calipers, tolerance 2 px on
-`max_dev`): 100/100 frames measured across two lighting conditions, mean rim
-radius 365.2–365.7 px, σ ≈ 0.3 px. The full table is in
+camera. The measured repeatability is in
 [performance and accuracy](performance.md#real-data-the-can-end-chain).
 
 ```text
