@@ -153,9 +153,23 @@ What the numbers say:
   vectorise; the Phase 0 prototype was 0.62x. Wider windows switch to a running sum, which is
   sequential, and that path is the open gap: 0.79x at r = 8. Parity on both targets is not
   met yet for r of 8 or more.
+- **x86_64 (GitHub `ubuntu-latest`, same run as libblur, single thread, best of 25).** The
+  integer kernel against libblur's box, as libblur / kernel:
+
+  | case | default target: kernel / libblur | x86-64-v3: kernel / libblur |
+  |---|---|---|
+  | box r = 1 | 2.05 ms / 4.70 ms = 2.3x | 1.79 ms / 2.02 ms = 1.13x |
+  | box r = 4 | 2.60 ms / 4.80 ms = 1.8x | 2.27 ms / 2.09 ms = 0.92x |
+  | box r = 8 | 2.61 ms / 4.71 ms = 1.8x | 2.25 ms / 2.05 ms = 0.91x |
+  | binomial order 2, 4, 6 | 0.85, 1.22, 1.58 ms | 0.66, 0.99, 1.30 ms |
+
+  The default-target build is 1.4x slower without dispatch (portable 2.81 ms at r = 1), so the
+  AVX2 clone is what matters there. Under `x86-64-v3` the portable build is already AVX2, so the
+  two match. On x86 the box is ahead of libblur on the default target and level or slightly
+  behind it on AVX2 at r ≥ 4. The shared runner moved the prototype's box by about 40% between
+  runs, so only the ratios within one run count.
 - **Dispatch makes no difference on aarch64.** NEON is in the baseline, so the cloned
-  functions are identical. The x86_64 effect is measured by the `filter-bench` job on both
-  matrix targets (the integer timing runs in the same job as the libblur column).
+  functions are identical.
 - **Binomial has no libblur comparator.** libblur has no binomial; the integer kernel is
   compared with the box only, and its exactness is checked against a naive integer
   reference on every border and size in the tests.
