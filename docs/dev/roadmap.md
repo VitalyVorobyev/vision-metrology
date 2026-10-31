@@ -250,16 +250,21 @@ rectangularity.
 **Accept:** analytic shapes (ellipse, rotated rectangle) recover their parameters within a
 pinned tolerance; Python parity.
 
-### B3: `filter`, `planned`
+### B3: `filter`, `in progress` ([ADR-0023](adr/0023-linear-filter-module.md))
 
 - Separable and recursive (Deriche / van Vliet) Gaussian, sliding-window box mean, an
   O(1)-per-radius histogram median, and grayscale erode/dilate/open/close/top-hat
   (van Herk–Gil-Werman). `edge/conv1d.rs` folds in here.
 - It feeds the pyramid pre-smooth and illumination correction. The rank-filter scope stops
   at median ([ADR-0016](adr/0016-scope-what-we-do-not-build.md)).
+- Phase 0 is done (ADR-0023): the headroom gate is measured against libblur, and the exact
+  Gaussian is at parity with it. Speed targets are set for the box and large-sigma paths.
 
-**Accept:** each filter matches a naive reference bit-for-bit on seeded fixtures; median
-cost is measured constant in radius.
+**Accept:** integer paths (box, binomial on `u8`/`u16`) match the naive integer reference
+bit for bit on seeded fixtures. Float paths match an f64 naive reference within a stated
+few-ulp bound for the storage type; they are not bit-identical across summation orders.
+The f64 oracle is checked against scipy golden files. Median cost is measured constant in
+radius.
 
 ### Lab catch-up, `planned`
 

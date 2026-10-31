@@ -1,0 +1,23 @@
+# Phase 0 of the `filter` module (ADR-0023): a headroom measurement, not library
+# code. It compares a prototype of box and Gaussian filters against libblur, the strongest
+# pure-Rust blur crate, on the same images, and checks both against an f64 reference.
+#
+# Standalone on purpose: the empty `[workspace]` keeps libblur out of the root workspace
+# and out of every library crate's dependency graph (ADR-0023, invariant 5).
+[package]
+name = "filter_bench"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "Phase 0 headroom bench for the filter module: prototype versus libblur"
+
+[workspace]
+
+[dependencies]
+# Pinned: the numbers in tools/filter_bench/README.md are for this exact version.
+libblur = "=0.24.0"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
