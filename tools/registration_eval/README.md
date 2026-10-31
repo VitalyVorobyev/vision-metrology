@@ -277,3 +277,102 @@ rides on it and a stationary block. Masks exclude the bead and the block; visibi
 excludes the block. The sequence splits into two groups, so its middle pair is a
 handover. `truth` holds every pose and both boundaries, and `seed` the bead at frame 0.
 The tests use it to check the evaluators end to end, with no private data.
+
+## Results
+
+
+Measured 2026-10-12 on Apple M4 Pro. The native successful-path Criterion benchmarks
+use deterministic f32 texture, an excluded central rectangle, 0.01 rad rotation and
+1.005 scale, with 0.7/-0.3 px centre motion. The 320×97 case starts at identity; the
+1280×1024 case needs an explicit nearby prediction (0.008 rad / 1.004 scale) to stay
+inside the translation initializer's capture range. An unpredicted larger case correctly
+failed ambiguity, so its timing is not presented as successful registration.
+There are ten samples, one second of warmup and two seconds requested measurement.
+Prepared native times exclude I/O/preprocessing/Python conversion; allocation tests
+include an empty first mask followed by all-valid evidence and count zero allocations.
+
+6.53 ms exceeds the eventual 5 ms online budget by 1.53 ms before acquisition or tracking.
+The existing translation benchmark is 2.92 ms. Similarity's prediction warp, six-parameter
+solve, rank checks and independently refined regional maps add work; the two fixtures
+also differ in pixel type and motion, so this is not a controlled speedup comparison.
+The larger 242 ms result is an offline-window scale, not an online budget claim.
+
+### Known-transform accuracy
+
+161×97 analytic f32 texture, an excluded central rectangle, three rotations
+(-0.02/0.01/0.03 rad), two scales (0.985/1.02), gain 1.3, offset 17, five seeded
+trials and independent uniform 0/2/5 GL noise in both images. Corner rows report the
+worst x/y component bias/spread over all four corners. Other rows use radians/log-scale.
+
+| Quantity | Worst bias | Worst σ | Pinned bias / σ envelope |
+|---|---|---|---|
+| Clean corner coordinate, px | 0.00329 | 0 (deterministic repeats) | 0.005 / 0.000001 |
+| Noisy corner coordinate, px | 0.02164 | 0.02195 | 0.035 / 0.035 |
+| Angle, rad | 0.0001113 | 0.0001408 | 0.00018 / 0.00022 |
+| Log-scale | 0.0002021 | 0.0001640 | 0.00032 / 0.00026 |
+
+Unit fixtures cover reciprocal composition, photometry, masks/invalid pixels,
+strided and odd views, predicted large motion, angle search limits, native motion rank
+loss, a single supported quadrant with unavailable consistency, and incompatible regional
+motion rejected as model mismatch. A known 64-frame noisy sequence composes native estimates
+and constrains against an independently observed first keyframe every eight steps. Anchors
+reduce mean error against truth and keep corner error below 0.1 px; unsupported constraints
+leave the pose unchanged. Covariance has no certified statistical coverage.
+
+### Private sequence results
+
+The following compares the two operators using identical prepared inputs. Sequences A–F
+keep their development/held-out split, camera groups and masks. Similarity defaults are
+identical in all runs. The raw multi-strip sequence G has 141 frames, with each of its
+three strips evaluated independently using the explicit caller-selected valid texture ROI
+x/y/w/h = 5/5/100/85. It has no camera groups, foreground mask, blank pair or reference
+curve; there is no invented bead seed.
+
+Native acceptance is distinct from caller-owned sequence support. Sequence steps require
+accepted reverse registration and at most 0.25 px maximum corner closure; the gate was
+added after observing development-run closure failures. Anchors obey the same reciprocal
+policy and are attempted every eight supported steps within a segment. Camera handover,
+registration or reciprocity loss breaks composition. Failed constraints stay unavailable.
+The closure column reports all native estimates accepted in both directions, including
+those withheld by the sequence gate. Small closure sample counts are explicit.
+
+| Run | Translation accepted | Similarity accepted / pairs | Reciprocal sequence steps | Closure samples; median / p95 px | Python estimate median / p95 ms |
+|---|---|---|---|---|---|
+| G | 289 | 147 / 420 (35.0%) | 118 | 124; 0.069 / 0.237 | 2.47 / 4.01 |
+| A | 284 | 53 / 484 (11.0%) | 20 | 22; 0.099 / 0.268 | 8.31 / 13.86 |
+| B | 327 | 68 / 546 (12.5%) | 31 | 32; 0.077 / 0.162 | 7.43 / 10.69 |
+| C | 70 | 0 / 139 (0.0%) | 0 | 0; unavailable / unavailable | 7.74 / 10.67 |
+| D | 47 | 10 / 259 (3.9%) | 2 | 3; 0.201 / 1.401 | 4.86 / 7.63 |
+| E | 104 | 9 / 197 (4.6%) | 2 | 2; 0.120 / 0.183 | 10.25 / 13.31 |
+| F | 16 | 6 / 237 (2.5%) | 1 | 1; 0.157 / 0.157 | 3.57 / 14.28 |
+
+Native similarity failure counts below retain every reason. Most failures are regional
+map disagreement; extra parameters and full-corner extrapolation are substantially less
+stable on these strips than a translation-only shift. G's small texture ROI also
+loses rank in two regions. The accepted sample in D still has a 1.401 px p95 reciprocal
+closure, so native acceptance alone is not sufficient for trustworthy sequence transport.
+
+| Run | Model mismatch | Ambiguity | Low texture | Refinement | Search bound | Handover |
+|---|---|---|---|---|---|---|
+| G | 101 | 76 | 89 | 5 | 2 | 0 |
+| A | 352 | 60 | 17 | 2 | 0 | 0 |
+| B | 411 | 11 | 0 | 55 | 0 | 1 |
+| C | 137 | 2 | 0 | 0 | 0 | 0 |
+| D | 236 | 2 | 0 | 11 | 0 | 0 |
+| E | 186 | 0 | 0 | 0 | 0 | 2 |
+| F | 123 | 93 | 0 | 14 | 0 | 1 |
+
+G provides three reciprocally supported independent anchor corrections; A–F currently
+provide none. Closures and generated cached estimates are not
+independent motion truth. The six-run comparison is exploratory validation of this new
+stage; it does not establish accuracy of private pixels or a production reference-learning
+pipeline. Regional conditioning, noise and actual model/lighting departures need controlled
+investigation before broader curve extension or fusion. Translation remains available
+with its existing contract rather than being replaced by the lower-coverage model.
+
+Development outputs include local per-pair PNG blends and standalone HTML viewers with
+camera/model controls, frame playback, masks, mapped grids, failure timelines and chained
+versus anchored trajectories. Existing translation seed-segment outputs can be overlaid
+separately, retaining amber predictions and green caliper evidence plus geometry provenance.
+Detailed reports/pixels are private artifacts outside the repository; no source images,
+annotations or per-frame geometry are published.

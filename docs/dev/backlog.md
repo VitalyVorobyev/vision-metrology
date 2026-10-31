@@ -2,7 +2,7 @@
 
 Known debt and unscheduled features. Each item has enough context to be picked up cold.
 When an item is scheduled it moves to [`roadmap.md`](roadmap.md); when it lands it is
-deleted here.
+deleted here. Measured numbers live in [`performance.md`](../performance.md), not here.
 
 ## Shape matching
 
@@ -13,60 +13,21 @@ deleted here.
 - **Anisotropic scale.** A 5-DOF search with a different refinement Jacobian. Design it
   from scratch when a use case exists; do not bolt it onto the 4-DOF pose structs.
 - **Quantized directions and a SIMD score loop.** On the cluttered fixture most of the
-  search is the candidate descent, which is per-pose cost
-  ([`docs/performance.md`](../performance.md)). i8 directions with i16 dot products would
-  cut it 3–4×, but the scores stop being bit-comparable to f32. Do it as its own change
-  with a documented tolerance policy.
-- **`PreparedScene` for several models on one scene.** With lazy tiled fields, the
-  shareable per-scene work is a small fraction of one search. Revisit only if a
-  multi-model station measures the per-model overhead as material.
+  search is the candidate descent ([performance](../performance.md)). i8 directions with
+  i16 dot products would cut it 3–4×, but the scores stop being bit-comparable to f32. Do it
+  as its own change with a documented tolerance policy.
+- **`PreparedScene` for several models on one scene.** The shareable per-scene work is a
+  small fraction of one search. Revisit only if a multi-model station measures the
+  per-model overhead as material.
 - **A `rayon` feature.** The top-level angle sweep is the natural fan-out. Results must
   stay deterministic (stable reduction order).
 - **Scale search in clutter with no prior.** `find_scale_invariant` needs a segmentable
   ROI or an approximate centre. With neither, the options are a coarse scan at the top
-  pyramid level only, or a small bank of models pre-resampled at K scales.
+  pyramid level, or a small bank of models pre-resampled at K scales.
 - **Point-collapse score inflation at `scale < 1`.** Pinned by a test; the rejected fixes
   and what a fix must satisfy are in [ADR-0013](adr/0013-scale-invariance.md).
 
 ## Measurement
-
-- **Masked refinement can exhaust its budget on real crops.** Translation and similarity
-  return `TranslationStatus::RefinementFailed`, and never promote the integer initializer
-  to an accepted pose. The root cause is in `corr/translation/refine.rs` and
-  `corr/similarity/refine.rs`, where three things let the solve chatter until its
-  iteration budget runs out:
-  - the observation set is re-derived at every iteration, because taps enter or leave
-    validity as the pose moves;
-  - the MAD/Huber scale is re-estimated at every iteration;
-  - convergence also requires the standardized photometric steps to fall below 0.005.
-
-  The evaluation and failure counts are in `docs/performance.md`, and
-  `tools/registration_eval` reproduces them. Reproduce the failure with a synthetic
-  overlap/mask fixture first; then freeze the observation set at the start, fix the
-  Huber scale after the first iteration, and test convergence on the motion step only.
-  Preserve explicit regional model-mismatch rejection. Scheduled in the roadmap's
-  registration calibration stage ([#81]).
-
-- **Similarity's regional check extrapolates, and is the likely cause of its low
-  coverage.** Each quadrant fits a full similarity but keeps the full-image centre and
-  radius, so its angle and scale are much noisier than the global fit's, and every pair
-  of regional maps is compared at the four full-image corners against a fixed 0.5 px
-  limit. Across a 320×97 strip's diagonal, about 1.5 mrad of regional angle disagreement
-  already rejects. The accuracy suite passes on a smooth analytic texture, but on the
-  private development sequences most rejections are `ModelMismatch`, and coverage is
-  0–12.5%. Translation's check has the same fixed-px shape without covariance, so its
-  rejections may be real rotation or perspective, or noise. The fix is a
-  covariance-normalized test at each region's own centroid and extent (translation: χ²
-  on the pairwise regional shift differences). Do not loosen held-out thresholds or mute
-  failures to get longer tracks. Scheduled in the roadmap's registration calibration
-  stage ([#81]); the estimator stays behind `corr-experimental` until then.
-
-- **Similarity spends work it does not need.** Its initializer runs a full translation
-  refinement (up to 20 iterations) and then discards everything but the seed; each
-  regional fit runs up to 20 more six-parameter iterations; every iteration makes two
-  full passes (a median select, then the normal equations). Native 320×97 latency is
-  6.53 ms against translation's 2.92 ms, over the 5 ms online budget. Give the
-  initializer a search-only path, and measure before any online use. Scheduled ([#81]).
 
 - **Pixel-unit settings convert with the nominal `step`** for rect, arc and radial
   calipers: σ, the `SmoothThenCentral` radius and the half-contrast flank distances and
@@ -78,113 +39,74 @@ deleted here.
   results on exact ties.
 - **σ in samples is not constant along a bead stage.** A strip's endpoints are stored in
   `f32`, so its sample spacing, and σ in samples with it, differs between a bead tracker's
-  stations by a few ulps. The caliper refills its kernel in place at most stations: 955 of
-  the 1200 strips of the 300-station, 3-pass bench, about 37 ns each, 1.4% of the call.
-  The radius can flip between neighbours (3↔4), and edge positions move by about 1e-4 px.
-  A nominal-spacing option on strips, which converts σ with `step` as rect calipers do,
-  would remove both.
-- **Bead ends.** With a prior that runs onto the bead's square end, the end station can
-  pair noise. In 1 trial of 270 this swung the curve's end by about 7 px, and the robust
-  loss did not stop it.
-  - Options: a per-end support check, a down-weighted or frozen end once its station
-    loses support, or a reported end status.
-  - Tangential end extension is not observable with normal searches. Scheduled: [#78]
-    measures the end as a polar rim pinned to the walls' last points.
+  stations by a few ulps. The radius can flip between neighbours (3↔4), and edge positions
+  move by about 1e-4 px. A nominal-spacing option on strips, which converts σ with `step`
+  as rect calipers do, would remove both.
 - **A distractor within about 2 px of a bead's edge merges with it.** The edge detector
   sees one edge, so `clearance` never sees the distractor, and the width reads about
-  0.4 px short. `docs/bead.md` documents it. A fix would need a profile-shape check, such
-  as edge symmetry, or a two-edge model. Coupled pairing (`BeadPairing::Coupled`) reads the
-  same biased wall: the merge happens in the derivative, before any choice between edges.
-- **Silent wrong locks on a textured surface.** On DamSegment cracks, 91% of the calls
-  that fail to lock still report a support of at least 0.5. `tools/bead_eval/signals.py`
-  measured every per-call signal against the lock, over 5400 calls on 300 paths:
-  - the AUC is 0.71 for support, 0.68 for `longest_gap`, 0.59 for `center_rms` and 0.48
-    for the median `BeadHit::confidence`;
-  - `min_margin` 0.1, 0.2 or 0.3 does not help: support's AUC is 0.66–0.68 and the lock
-    rate rises from 85% to 86%;
-  - a support threshold that keeps 90% of the locked calls passes 65% of the others.
-
-  A wrong lock is typically another dark line in the window, a pit, a shadow or a
-  parallel crack, measured as well as the crack would be, so no signal of the pair or of
-  the fit can see it. A fix needs evidence from outside the station: the profile's
-  contrast and width against the previous frame's, a second line in the window as an
-  ambiguity flag over the whole call, or an appearance check along the curve. Needs a
-  design, and a dataset whose truth is the dark line, not a mask.
-
-  Coupled pairing ([ADR-0019](adr/0019-coupled-two-boundary-extraction.md)) chooses both
-  walls along the whole curve and reports the path's max-marginal margin. It locks more
-  and accepts fewer wrong locks at equal coverage, but its margin does not separate the
-  wrong locks that remain (AUC about 0.5): most are not close calls, since another
-  structure has at least as much evidence as the crack. It does flag a competing parallel
-  line on synthetic beads, and the path's mean evidence separates about as well as
-  support. Numbers: [performance](../performance.md#choosing-both-walls-along-the-curve).
+  0.4 px short ([`docs/bead.md`](../bead.md)). A fix needs a profile-shape check, such as
+  edge symmetry, or a two-edge model. Coupled pairing reads the same biased wall: the merge
+  happens in the derivative, before any choice between edges.
+- **Silent wrong locks on a textured surface.** On DamSegment cracks, 91% of the calls that
+  fail to lock still report a support of at least 0.5, and no per-call signal separates
+  them (support's AUC is 0.71). A wrong lock is typically another dark line, a pit, a shadow
+  or a parallel crack, measured as well as the crack itself, so no signal of the pair or of
+  the fit can see it. A fix needs evidence from outside the station: the profile's contrast
+  and width against the previous frame's, an ambiguity flag from a second line in the window,
+  or an appearance check along the curve. It needs a design and a dataset whose truth is the
+  dark line, not a mask. Numbers: [performance](../performance.md#real-data-bead-tracking-on-damsegment-cracks).
 - **Coupled pairing has no mask, and wants one pass.** The tracker reads the whole image,
-  so a wall goes one-sided only where it leaves the image; an occluder inside it is
-  evidence like any other. The path handles invalid samples (its unit tests run issue
-  #73's occluded profiles), but `track` would need a mask argument and `ProfileSampler`
-  evidence to use it, and `tools/sequence_bench`'s `fusion-single` scene needs that mask.
-  A second tracking pass re-centres the window on the chosen line and locked less often
-  on DamSegment's development split, so the docs recommend `passes = 1` while
-  `BeadTuning`'s default stays 3 for per-station pairing; a pairing-dependent default
-  would be a breaking change to decide before the release.
+  so an occluder inside a wall is evidence like any other. The path handles invalid samples,
+  but `track` needs a mask argument and `ProfileSampler` evidence to use it. A second
+  tracking pass re-centres the window on the chosen line and locked less often on
+  DamSegment's development split, so the docs recommend `passes = 1` while `BeadTuning`'s
+  default stays 3 for per-station pairing. A pairing-dependent default would be a breaking
+  change to decide before the release. Prerequisite of [#73](https://github.com/VitalyVorobyev/vision-metrology/issues/73).
 - **`Converged` almost never fires on real data.** 99.9% of DamSegment calls stop on
-  `PassLimit`, because `max|d| < tol` (0.05 px) is far below a rough crack's station
-  noise. With 10 passes the median rms correction levels off near 0.09 px, about a
-  tenth of the residual, and the median largest near 0.33 px; 13% of those calls
-  converge. At the third pass, the candidate tests hold for:
-  - `rms(d) < tol`: 1% of calls; `rms(d) < 2·tol`: 13%;
-  - `max|d| < residual_rms / 2`: 19%; `rms(d) < residual_rms / 10`: 3%.
-
+  `PassLimit`, because `max|d| < tol` (0.05 px) is far below a rough crack's station noise.
   Options: an rms test, a test relative to the pass's residual, or keeping `max|d|` and
-  documenting `PassLimit` as the normal outcome on rough edges. Changing what
-  `Converged` means is an API-semantics decision for the user. The numbers are in
-  `signals.py`'s report (`--passes 10` for the long runs).
+  documenting `PassLimit` as the normal outcome on rough edges. Changing what `Converged`
+  means is an API-semantics decision for the user. Numbers and the candidate tests are in
+  [performance](../performance.md#bead-tracking-convergence).
 - **Acquisition without a prior** is not built ([ADR-0018](adr/0018-tracked-curves.md)).
-  The recommendation is not to build a Rust ridge module now. The evaluation
-  (`tools/bead_eval/acquire_eval.py`, numbers in
-  [`docs/performance.md`](../performance.md#finding-a-bead-without-a-prior)) showed that a
-  detected path seeds the tracker as well as the truth does, so a ridge detector's
-  sub-pixel output adds nothing; the open problem is choosing the bead among other
-  lines. What would change the answer:
-  - an inspection case with no prior source at all (no reference part, CAD or robot
-    path, or taught frame), in a deployment that cannot run a Python or OpenCV detector
-    for the first frame;
-  - a selection rule that works on real images: width, polarity and contrast gates, or a
-    region, that leave one candidate per bead. The evaluation is the place to try one;
-  - `filter` landing with recursive Gaussian derivatives, which would make a
-    full-image Hessian at a wide bead's scale cheap to build.
-
-  If built, it should be its own module, never on the prior-driven path, with sub-pixel
-  centre and width from the Hessian (Steger), scale selection over a real scale space
-  (ADR-0016), a stated junction scope, accuracy rows and a bench.
+  A detected path seeds the tracker as well as the truth does, so a ridge detector adds
+  nothing; the open problem is choosing the bead among other lines
+  ([performance](../performance.md#finding-a-bead-without-a-prior-and-choosing-both-walls)). Revisit when:
+  - an inspection case has no prior source at all (no reference part, CAD or robot path, or
+    taught frame), in a deployment that cannot run a Python or OpenCV detector for the first
+    frame;
+  - a selection rule works on real images (width, polarity and contrast gates, or a region
+    that leaves one candidate per bead);
+  - `filter` gains recursive Gaussian derivatives, which would make a full-image Hessian at a
+    wide bead's scale cheap. Any such module is its own module, never on the prior-driven
+    path, with sub-pixel centre and width from the Hessian (Steger), real scale selection
+    (ADR-0016), accuracy rows and a bench.
 - **`MeasureArc` obliquity** is checked against the arc tangent, which is right for
-  features crossing the arc. A mode that measures the arc's own edge would check the
-  radial direction.
+  features crossing the arc. A mode that measures the arc's own edge would check the radial
+  direction.
 - **Fuzzy / expected-position scoring.** Prefer an edge near the nominal geometry over an
-  equally strong one elsewhere, by scoring candidates against an expected
-  position/amplitude profile before `EdgeSelect` (HALCON `fuzzy_measure_pos`).
-- **Variation model (golden template).** Teach a per-pixel mean/σ band from N good parts
+  equally strong one elsewhere, by scoring candidates against an expected position and
+  amplitude profile before `EdgeSelect` (HALCON `fuzzy_measure_pos`). Trigger: a consumer
+  reports a wrong lock that nominal geometry would have prevented.
+- **Variation model (golden template).** Teach a per-pixel mean and σ band from N good parts
   warped to a common pose with `warp::Map`, then flag pixels outside it (HALCON
-  `create_variation_model`). No design work started.
+  `create_variation_model`). No design work started. Trigger: a consumer asks for it.
 - **Laser profile in millimetres.** Laser image → stripe centreline → 3-D profile through a
-  calibrated laser plane (`LaserPlane`, `laser_line_to_profile`). Needs the laser-plane
+  calibrated laser plane (`LaserPlane`, `laser_line_to_profile`). Trigger: the laser-plane
   export from calibration-rs.
 
 ## Edges
 
 - **The default caliper derivative locks to the pixel grid.** A bilinear profile's
   derivative has knots at the pixel boundaries, so the default strip locks in the phase
-  sweep at every blur, and a wider σ does not remove it.
-  `Derivative::Continuous` does (ADR-0021), at several times the cost, so it is an option.
-  Making it the default would re-pin every accuracy envelope, the can-end baseline and the
-  lab's contract fixtures; decide it with the release, from `docs/performance.md`'s costs.
-
-- **`SubpixRefine::Centroid` locks** when the derivative peak is wider than its window:
-  the truncated window pulls the centroid to the peak sample. A radius of at least 3× the
-  response's σ, `√(σ² + σ_psf² + 1/12)` samples, keeps the locking index near that of the
-  parabola (measured bounds in `docs/performance.md`); the variant's doc says so. A
-  window that follows the response width, or a baseline subtracted before the centroid,
-  would remove the need to choose it.
+  sweep at every blur. `Derivative::Continuous` does not (ADR-0021), at several times the
+  cost. Making it the default re-pins every accuracy envelope, the can-end baseline and the
+  lab's contract fixtures. Decide it with the release, from `docs/performance.md`'s costs.
+- **`SubpixRefine::Centroid` locks** when the derivative peak is wider than its window: the
+  truncated window pulls the centroid to the peak sample. A radius of at least 3× the
+  response's σ keeps the locking index near that of the parabola (bounds in
+  `docs/performance.md`). A window that follows the response width, or a baseline subtracted
+  before the centroid, would remove the need to choose it.
 
 ## Contour
 
@@ -195,13 +117,13 @@ deleted here.
 ## Mosaic
 
 - **Exposure and gain compensation across cameras.** Estimate per-camera gain and offset
-  from the overlap and apply them before compositing. Needs an accuracy fixture with a
-  known exposure ratio.
+  from the overlap and apply them before compositing. Needs an accuracy fixture with a known
+  exposure ratio.
 - **The lab's `/api/mosaic` composites on `z = 0` of the calibration's reference frame.**
-  For a rig whose reference frame is a camera, that plane passes through the camera
-  centre and the homography is singular. `examples/birdseye_mosaic.rs` estimates the target
-  plane from the images instead. Let `MosaicRequest` carry an explicit plane and return
-  the overlap ZNCC.
+  For a rig whose reference frame is a camera, that plane passes through the camera centre
+  and the homography is singular. `examples/birdseye_mosaic.rs` estimates the target plane
+  from the images instead. Let `MosaicRequest` carry an explicit plane and return the overlap
+  ZNCC.
 
 ## Python
 
@@ -209,26 +131,92 @@ deleted here.
   vm-python README.
 - **No `Edge1DDetector` or `LevelCrossing1D` binding.** 1-D detection is reachable only
   through `Caliper`.
+- **The Python projection is a copy of the Rust one.** `metric_py.rs` `project_plane_points`
+  repeats the pose, perspective divide and distortion chain of
+  `metric::homography::plane_to_camera_matrix`, and has no Rust test. The lab's mosaic code
+  calls it "the exact forward geometry". Add `metric::plane_to_pixel` on the Rust side, bind
+  it, and delete the loop.
+- **Binding helpers are copied.** `to_rect` appears five times, `parse_border` and
+  `parse_polarity` twice each, and `positive` twice with different messages. `POLARITIES` is
+  defined twice in `vm-python/src/config` with different meanings. Move the validators to
+  `config/mod.rs` and parameterise one border parser by type.
 
 ## Testing
 
-- **Laser extractor over u16/f32.** The generic scan loop makes the full matrix cheap.
-  u16 has two tests (rows against u8, transposed columns against gather) and f32 one (rows
-  against u8).
+- **Laser extractor over u16/f32.** The generic scan loop makes the full matrix cheap. The
+  u16 and f32 agreement checks are one combined test (`laser/tests.rs`); split them when the
+  matrix is extended.
 
 ## Code health
 
-- **Files over the size cap** (invariant 14), measured as non-blank, non-`//` lines
-  before the first `#[cfg(test)]`. `tools/check-invariants.py` reads this list: it fails
-  on an offender missing from it and on a listed file back under the cap.
-  - `crates/vision-metrology/src/contour/build.rs`
+Findings from the 2026-10 review. Each names the copies to unify; the fixes are breaking
+where the API is named, so they belong before the release or after it, by decision.
 
-  Split a listed file when a change touches it.
-- **`fit/circle.rs` hand-rolls a 3×3 solve** (`solve3`, Gaussian elimination with
-  pivoting) that nalgebra provides. ADR-0002 says to use nalgebra's.
+- **Border resolution exists in five copies.** The canonical one is `core::raster`'s
+  `map_index`. `filter/fir.rs` and `filter/cascade.rs` have identical `resolve` bodies,
+  `filter/integer.rs` a u8 copy, and `edge/conv1d.rs` re-implements Clamp, Constant and
+  Reflect101 with `clamp_index`. A border change must be made five times today.
+- **Parabolic peak is computed twice** with different degenerate behaviour: `edge/edge1d.rs`
+  `parabola_offset` returns 0 below `1e-12`, and `core::geom::transform`
+  `parabolic_peak_offset` returns `None` at `<= 1e-12`. The shared helper is scalar 1-D maths
+  and does not belong in the geometry module.
+- **1-D kernels in four places:** `filter::Kernel1D::gaussian`, the DoG in
+  `edge/kernels1d.rs`, an inline unnormalised exp loop in `edge/edge1d.rs`, and
+  `edge::convolve_f32`, which is public next to filter's crate-internal `separable_fir_f32`.
+  Its only external caller is in-crate (`laser/tests.rs`).
+- **Smoothing and median helpers are duplicated.** `smooth_binomial3` is in
+  `edge/gradient.rs` and `edge/edge2d.rs`, about 25 lines each. `median` is in
+  `metric/rig/solve.rs` and `median_of` in `edge/level1d.rs`. `corr/plane.rs` `downsample`
+  repeats `pyr`'s 2×2 mean with a mask, and defines a private `Plane` parallel to
+  `Image<f32>`.
+- **Hand-rolled linear solves.** `solve3` in `fit/circle.rs`, `solve_weighted` in
+  `fit/line.rs` and `gauss_newton_step` in `fit/circle.rs` do work that nalgebra provides
+  (ADR-0002).
+- **Invariant 19 is broken.** Single-type operations carry `_u8` suffixes: the morph
+  operations in `morph/mod.rs`, `morph/thin.rs`, `morph/distance.rs`, the segment functions,
+  and `filter::box_mean_u8` and `binomial_u8`. `morph` has four `*3x3_binary_u8` aliases of
+  `Square(1)`. `sample_bilinear_f32` takes any `Pixel`, so its suffix lies, and it takes
+  `BorderMode<f32>` while `sample_nearest` takes `BorderMode<T>`. Make these generic over
+  `Pixel`, delete the aliases, and give both samplers one border type.
+- **Invariant 6 is not met in `filter`.** Every call copies the image and builds fresh
+  scratch. The module doc defers a reusable-scratch object to the hot-path work, which this
+  list now tracks; see the roadmap's B3 entry.
+- **Public output enums lack `#[non_exhaustive]`.** About 30 `pub` enums, among them
+  `RejectReason`, `RigStep`, `ViewOutcome`, `LevelOutcome` and `Interp`. `BeadReject` and
+  `TranslationStatus` have it. Breaking, so before the release.
+- **Polarity has five vocabularies:** `EdgePolarity`, `PolaritySelect`, `BeadPolarity`,
+  `BlobPolarity` and `matching::Polarity`. One vocabulary with a documented mapping is a
+  breaking decision.
+- **`corr` names one concept two ways.** `min_score` is `f32` in `TranslationConfig`,
+  `Option<f32>` in `CorrConfig` and `f32` in `DisplacementConfig`. Levels are `max_levels` and
+  `max_image_levels`. Invariant 10 says Option for no floor.
+- **A public kernel type exposes mutable fields.** `DoGKernel1D` in `edge/kernels1d.rs` has
+  public `sigma`, `radius`, `g` and `dg`, while `rebuild` keeps the normalisation. Make them
+  private with getters.
+- **Public result types with lifetimes break invariant 9:** `GradientBuffers<'a>` in
+  `edge/edge2d.rs` and `TiledField<'a>` in `edge/gradient.rs`. Neither is bound in vm-python
+  today. Record an exception in `system-design.md`, or return owned data.
+- **Dead or leaky public items:** `measure::layout_object` (used only by its test and one doc
+  line), `core::raster::Image::as_contiguous_slice_mut` (no caller), and public
+  `unsafe fn get_unchecked*` on `Image`, which invariant 7 does not mention.
+- **Error handling is mixed.** `sample_bilinear_f32` panics on an empty image with a
+  non-constant border, `edge::conv1d` asserts, and `filter` returns `Error::InvalidConfig`.
+  Invariant 8 asks for `Result`.
+- **`pub mod core` shadows the std crate name.** It works because `error.rs` imports from a
+  submodule. Rename before 1.0.
+- **Files over the size cap** (invariant 14). Split a listed file when a change touches it.
+  Two examples are also over 600 lines; the checker does not scan `examples/`, so they are
+  not listed.
+  - `crates/vision-metrology/src/contour/build.rs`
 - **The `serde` feature implies `matching`.** Serde derives on non-matching types such as
-  `CaliperTrace` therefore pull in the matcher. Split model persistence into its own
-  feature.
+  `CaliperTrace` pull in the matcher. Split model persistence into its own feature.
+
+## Waiting on upstream
+
+- **corrmatch scale search.** corrmatch has rotation but no scale, so the ZNCC cross-check
+  in `pose_audit` is valid at scale ≈ 1 only.
+- **corrmatch `u16`/`f32`.** `corr` is `u8`-only because corrmatch is
+  ([ADR-0011](adr/0011-corr-delegates-to-corrmatch.md)).
 
 ## Lab
 
@@ -244,12 +232,4 @@ deleted here.
 - **Desktop distribution is unsigned.** A real distribution needs a signing identity and
   macOS notarization.
 
-## Waiting on upstream
-
-- **corrmatch scale search.** corrmatch has rotation but no scale, so the ZNCC cross-check
-  in `pose_audit` is valid at scale ≈ 1 only.
-- **corrmatch `u16`/`f32`.** `corr` is `u8`-only because corrmatch is
-  ([ADR-0011](adr/0011-corr-delegates-to-corrmatch.md)).
-
-[#78]: https://github.com/VitalyVorobyev/vision-metrology/issues/78
-[#81]: https://github.com/VitalyVorobyev/vision-metrology/issues/81
+[#73]: https://github.com/VitalyVorobyev/vision-metrology/issues/73

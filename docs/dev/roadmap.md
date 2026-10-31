@@ -17,7 +17,8 @@ general-purpose `corr` operator.
 The program below turns this into what tracked-curve metrology needs next: one curve model
 from many registered observations, measured on native pixels. A downstream application
 prototype has validated each step on private data and reimplemented it locally. Its
-generic findings are issues [#73]–[#78]. The goal is that such applications stand on
+generic findings are issues [#73], [#75] and [#78] (still open; [#74] and [#77] have
+shipped). The goal is that such applications stand on
 these operators instead of copies of them.
 
 ## How the work is grounded
@@ -56,22 +57,20 @@ substrate is flagged, not absorbed as motion.
 
 ### R: first release, `in progress` ([#79])
 
-- Done: CI packages both library crates on every PR (`release-crates.yml`), and builds
-  each abi3 wheel, installs it into a clean venv and runs the README quick starts on Linux
-  x86_64 and aarch64, macOS and Windows (`python-wheels.yml`). The wheel version comes from
-  `Cargo.toml`. Both publish jobs exist, over OIDC, gated to version tags on this
-  repository.
-- The public Rust and Python surface is reviewed before the release fixes it, in four
-  phases, each approved on its own. Done: phase 1 (scaffolding and dead surface) and
-  phase 2 (honest structure: private model levels and stored-model types, the model
-  config's `tuning`, explicit preludes and facade root). Left: phase 3 (`#[non_exhaustive]`,
-  common traits, the registration status and region-check shapes, after registration
-  calibration settles `TranslationConfig`) and phase 4 (the Python surface).
-- CHANGELOG cut, versions 0.2.0, install sections point at crates.io and PyPI.
-- crates.io's first publish is manual (trusted publishing needs an existing crate). Then
-  configure the trusted publishers (crates.io: both crates, `release-crates.yml`,
-  environment `crates-io`; PyPI: `python-wheels.yml`, environment `pypi`) and set the
-  repository variable `CRATES_IO_TRUSTED_PUBLISHING=true`. No stored tokens.
+- Done: CI packages and installs both library crates and the wheel on every PR, and the
+  publish workflows are in place ([CONTRIBUTING](../../CONTRIBUTING.md#releasing)).
+- Done: API phases 1 (scaffolding, dead surface) and 2 (honest structure, preludes, facade
+  root).
+- Left: API phase 3 (`#[non_exhaustive]` on output enums, common traits, the registration
+  status and region-check shapes after registration calibration settles
+  `TranslationConfig`) and phase 4 (the Python surface).
+- Left: the release itself. Cut `[Unreleased]` in the CHANGELOG as 0.2.0, bump the version
+  (`Cargo.toml` is still 0.1.0), make the manual first crates.io publish, and configure the
+  trusted publishers.
+- Decide before the release: `Derivative::Continuous` as the default caliper derivative
+  (backlog, Edges). It re-pins every accuracy envelope and the lab's contract fixtures.
+- Decide before the release: the polarity vocabulary (one enum, or a documented mapping),
+  and the `_u8` suffix policy (backlog, Code health).
 
 **Accept:** `vm-primitives` and `vision-metrology` 0.2.0 on crates.io with docs.rs builds;
 the `vision-metrology` 0.2.0 wheel on PyPI imports and runs the README quick start on all
@@ -79,7 +78,7 @@ four targets.
 
 ### Registration calibration, `planned` ([#81])
 
-The similarity design is in [registration-stage2.md](registration-stage2.md).
+The experimental estimator and its contract are in [registration.md](../registration.md).
 - Diagnose first. Synthetic: a true translation or similarity on DoG-band texture at
   320×97 with realistic noise, measuring the current false-reject rate. Private: on
   development sequences A and B, disable the regional check and compare `region_error`
@@ -161,6 +160,8 @@ consuming operators' numbers in `performance.md`.
 
 ### Multi-observation fusion, `planned` ([#73])
 
+- Prerequisite: the coupled extraction needs a mask argument before it can read occluded
+  observations ([backlog, Measurement](backlog.md#measurement)).
 - Stations in the model's own coordinates. Each observation is sampled in its native
   frame through the caller's map, as soft-saturated continuous profiles, weighted by
   visibility, registration uncertainty and whether the edge's support lies on the
@@ -252,16 +253,11 @@ pinned tolerance; Python parity.
 
 ### B3: `filter`, `in progress` ([ADR-0023](adr/0023-linear-filter-module.md))
 
-- Shipped: exact box mean and binomial on `u8` (bit-exact integers), Gaussian on `f32` (exact
-  FIR below σ = 8, a three-box cascade above it), public with Python bindings, and the
-  pyramid pre-smooth on the FIR. Measurements are in ADR-0023 and [performance](../performance.md).
-- Remaining: the O(1)-per-radius histogram median, grayscale erode/dilate/open/close/top-hat
-  (van Herk–Gil-Werman), and the rest of the large-σ work (box-width speed on NEON and AVX2 at
-  radius ≥ 8, and a vectorised cascade). Recursive (Deriche / van Vliet) Gaussian was
-  dropped in ADR-0023 in favour of the measured cascade.
-- `edge/conv1d.rs`, `gradient::smooth_binomial3` and `edge1d` stay on their own paths
-  (ADR-0023, Phase 4).
+- Remaining: the O(1)-per-radius histogram median, grayscale erode, dilate, open, close and
+  top-hat (van Herk–Gil-Werman), a reusable-scratch object (invariant 6), and the large-σ
+  speed work: box width at radius ≥ 8 on NEON and ≥ 4 on AVX2, and a vectorised cascade.
 - The rank-filter scope stops at median ([ADR-0016](adr/0016-scope-what-we-do-not-build.md)).
+- Shipped and measured: [performance](../performance.md#linear-filters); design in ADR-0023.
 
 **Accept:** integer paths (box, binomial on `u8`) match the naive integer reference bit for bit
 on seeded fixtures. Float paths match an f64 naive reference within a stated bound: a few ulp
@@ -289,20 +285,25 @@ Mosaic works on the desktop.
 ### C3: bindings and CI, `planned`
 
 - Generate the vm-python config conversions instead of mirroring them by hand
-  (`src/config/*.rs`, about 1,850 lines).
+  (`src/config/*.rs`, about 3,000 lines).
 - Python bindings for `laser`, `segment::watershed` / region growing and
   `build_graph_from_edgels`.
 - A weekly miri job over every `unsafe` block.
+
+**Accept:** the Python config conversions are generated from the Rust types and the
+conversion tests pass unchanged; the bindings parity tests cover each new function; miri
+runs clean on every `unsafe` block and the job is green for a week.
 
 ---
 
 ## Later
 
-- **Direct `calibration-rs` dependency.** It replaces the `metric` mirror types
+- **Direct `calibration-rs` dependency.** Trigger: calibration-rs's solver chain reaches 0.35. It replaces the `metric` mirror types
   ([ADR-0003](adr/0003-metric-calibration-bridge.md)). The nalgebra range already lets
   the two share one nalgebra ([ADR-0002](adr/0002-dependency-and-toolchain-policy.md)),
   but until calibration-rs's solver chain moves to 0.35 our own lock would sit on 0.34.
-- **A shared raster substrate.** Several sibling crates carry their own `ImageView`.
+- **A shared raster substrate.** Trigger: a second crate in the family copies `ImageView`
+  or `map_index` and the first release has settled the API. Several sibling crates carry their own `ImageView`.
   Publishing `core::raster` as a common crate would end that, and is worth doing after the
   first release settles the API ([ADR-0004](adr/0004-core-raster-and-geometry.md)).
 

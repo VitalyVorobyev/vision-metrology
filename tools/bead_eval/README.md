@@ -247,7 +247,7 @@ whole curve are one shortest path, and the path's max-marginals say what a diffe
 choice at each station would cost. `coupled_eval.py` compares it with the tracker and with
 the library's operator, `BeadTracker` with coupled pairing (the `rust` method). The
 measured numbers are in
-[`docs/performance.md`](../../docs/performance.md#choosing-both-walls-along-the-curve).
+[`docs/performance.md`](#results).
 
 ```bash
 python -I tools/bead_eval/coupled_eval.py --data-dir $D --workers 6   # about 1 min; after priors.py
@@ -487,3 +487,205 @@ under `<out-dir>/adhesive/`: the prior, the refined centreline, the final edges 
 rejected stations. It also writes each bead's summary to `<out-dir>/adhesive.json`. The
 script works on any folder of images, so you can try it on your own captures the same
 way.
+
+## Results
+
+### Finding a bead without a prior
+
+The tracker needs a prior within its reach. For a first frame with no reference part, CAD
+or robot path or taught frame, something else has to find the bead. These runs measure
+how well a ridge detector does that, and whether what it finds is a good prior. They are
+an offline evaluation with Python packages, not a library feature.
+
+**The detectors,** each given the bead's expected width:
+- scikit-image's `sato` and `meijering` ridge filters, at scales of `w/(2√3)` and `w/2`.
+  The response is thresholded with hysteresis, relative to its median and spread, then
+  skeletonised and split at junctions into non-branching paths. Their width is the
+  thresholded mask's;
+- [`ridge-detector`](https://pypi.org/project/ridge-detector/), a Python implementation
+  after C. Steger's detector ("An Unbiased Detector of Curvilinear Structures", *IEEE
+  PAMI* 20(2), 1998), with sub-pixel points and widths. On a bead wider than 8 px it runs
+  on a mean-pooled image, because its contrast thresholds round to 0 at large scales.
+
+**Synthetic beads,** 1280×1024 with exact truth: a light ribbon of 60 DN contrast, blurred
+by σ 1 px, along a line, an arc (R 300 px) or a sine; 3, 8 or 30 px wide. Each is
+rendered clean (2 DN of noise), noisy (8 DN), beside a 40 DN step edge 10 px beyond the
+bead, or broken by a 30 px gap, with two noise seeds: 72 images. *Found* means at least
+80% of the bead within `max(2 px, w/2)` of one path; *precision* is the share of found
+length that lies on the bead.
+
+| Detector | Found, without a gap | Precision: clean / noisy / beside the step | Centre, median / p95 | Width read at 3 / 8 / 30 px | Time per image at 3 / 8 / 30 px |
+|---|---:|---:|---:|---:|---:|
+| `sato` | 100% | 100% / 100% / 62% | 0.12 / 1.99 px | 2.6 / 7.1 / 29.6 px | 0.39 / 0.21 / 0.57 s |
+| `meijering` | 100% | 100% / 100% / 39% | 0.12 / 1.40 px | 2.6 / 7.1 / 29.3 px | 0.41 / 0.23 / 0.59 s |
+| `ridge-detector` | 100% | 100% / 7% / 100% | 0.03 / 0.54 px | 4.1 / 8.4 / 31.4 px | 1.3 / 1.3 / 0.09 s |
+
+Each found path, cut to where it lies on the bead, is then the prior of a `track` call
+with the default config and a width range of `0.5w` to `1.5w`. *Locked* means 90% of the
+stations within `w/2 + 1 px` of the true centreline, and *converged* 90% within 1 px of the
+curve tracked from the true centreline:
+
+| Prior | Calls | Refined centreline, median / p95 from the truth | Locked | Converged |
+|---|---:|---:|---:|---:|
+| found by `sato` | 60 | 0.033 / 0.147 px | 100% | 100% |
+| found by `meijering` | 54 | 0.037 / 0.139 px | 100% | 100% |
+| found by `ridge-detector` | 54 | 0.022 / 0.148 px | 100% | 100% |
+| the true centreline | 60 | 0.018 / 0.111 px | 100% | – |
+| the true centreline, moved 4 px | 60 | 0.018 / 0.108 px | 100% | 100% |
+
+**Real cracks.** The same detectors on the DamSegment images and reference paths of the
+section above (Gharehbaghi et al., [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)),
+expecting dark lines 3, 5 and 8 px wide. *Precision* is the share of found length within
+1 px of the crack mask, so an unannotated dark line, such as a formwork seam, counts
+against it. Each found piece is tracked with the config of the section above:
+
+| Detector, setting | Cracks touched | Found in one piece | Precision | Paths per image | Time per image | Tracked from a found piece: locked / converged |
+|---|---:|---:|---:|---:|---:|---:|
+| `sato`, threshold 3 | 38% | 14% | 14% | 113 | 0.29 s | 99% / 91% |
+| `sato`, threshold 8 | 20% | 8% | 35% | 26 | 0.22 s | – |
+| `meijering`, threshold 3 | 42% | 15% | 20% | 85 | 0.28 s | 100% / 89% |
+| `ridge-detector`, contrast 20/40 | 81% | 24% | 5% | 508 | 1.8 s | 99% / 83% |
+
+*Touched* asks for 80% of a crack's reference path within `max(2 px, w/2)` of any found
+path, *found in one piece* of a single path. The threshold is in robust deviations of the
+filter's response above its median. From the reference path itself, the same cracks lock
+in 96–97% of the calls, and from a 4 px translation of it, 95% lock and 82–88% converge.
+
+How to read them:
+- **On a clean part every detector finds the bead, and what it finds is as good a prior as
+  the truth.** The tracker ends on the curve it reaches from the true centreline.
+  - A skeleton path, a tenth of a pixel off the centre at the median and up to 2 px at
+    the 95th percentile, is enough: the tracker measures the centre and the width
+    itself. Steger's sub-pixel centre adds nothing the tracker needs.
+  - From a skeleton path, the refined curve keeps a little of its pixel-scale wiggle
+    after three passes: 0.033 px against 0.018 px from the truth
+    ([limitations](../../docs/bead.md#limitations)).
+- **Each detector also reports what is not the bead.**
+  - `meijering` at every width, and `sato` mostly at 30 px, follow the step edge.
+  - `ridge-detector` passes noise ridges at its default contrast on the noisy 3 px bead,
+    about 1100 paths per image; its strictest setting removes them.
+  - A gap breaks the bead into two paths, except under `sato` at 30 px, whose 15 px scale
+    bridges it.
+- **On cracks, the choice is the problem.** `ridge-detector` touches 81% of the cracks,
+  but among about 500 paths per image, and only a quarter of the cracks come out in one
+  piece. The filters find fewer cracks and fewer other lines. No setting gives both.
+- **A found piece seeds the tracker as well as the annotation does.** From a found piece,
+  99–100% of the calls lock, and 83–91% end on the curve tracked from the reference path,
+  against 82–88% from a 4 px translation of it. The piece is cut to the crack with the
+  reference's help, so these rows measure how good a found path is as a prior, not how
+  to choose it.
+- **The detectors filter the whole image at the bead's scale.** In scikit-image, the
+  filter alone takes 0.15–0.53 s per 1280×1024 image and 0.18–0.20 s per 640×640 crack
+  image, on one core, against 0.27 ms for a `track` call on a crack. Times are medians,
+  measured one image at a time.
+
+The dataset is not distributed with this repository.
+[`tools/bead_eval/README.md`](#acquisition-without-a-prior)
+reproduces these numbers.
+
+### Choosing both walls along the curve
+
+The tracker chooses each station's edge pair on its own. A prototype chooses the pairs of
+all stations together, as one shortest path over the profiles with smoothness on both
+walls and an explicit "absent" state, and reads an ambiguity for the whole call from the
+path's max-marginals: what the best answer with a wall more than 5 px elsewhere costs.
+It comes in two variants: a Viterbi over the caliper's candidate pairs (*sparse*), and a
+dynamic programme over every centre and width bin of the profile (*dense*). Both refine
+the walls with the caliper's own sub-pixel edges. It is Python around the bindings'
+caliper, an offline evaluation and not a library feature.
+
+On the DamSegment calls of the [tracker's signals](../../docs/performance.md#real-data-bead-tracking-on-damsegment-cracks):
+5400 calls from the priors within the reach on 300 paths, with the same reach, width range
+and threshold. Intervals are 90% bootstrap intervals over paths. *Wrong at equal coverage*
+lets each method's support accept as many locked calls as the tracker's support of at
+least 0.5 does, 84.5% of all calls, and counts the calls it accepts that did not lock:
+
+| Method | Locked | Not locked, support ≥ 0.5 | Wrong at equal coverage | AUC: support / ambiguity / path evidence | Time per call |
+|---|---:|---:|---:|---:|---:|
+| tracker | 85.3% [82.6, 88.0] | 13.0% [10.6, 15.4] | 13.0% [10.5, 15.4] | 0.71 / – / – | 0.4 ms |
+| sparse | 86.3% [84.3, 88.2] | 7.1% [5.7, 8.8] | 12.4% [10.0, 14.3] | 0.70 / 0.54 / 0.70 | 13 ms |
+| dense | 91.0% [88.8, 93.3] | 8.8% [6.6, 11.0] | 7.1% [5.0, 8.8] | 0.58 / 0.50 / 0.72 | 19 ms |
+
+- **The dense choice locks more and wrongly less.** Paired with the tracker on the same
+  calls, it locks 5.7 percentage points more [4.1, 7.3] and, at equal coverage, accepts
+  6.0 points fewer wrong locks [4.1, 7.8]. On the 257 paths whose reference itself locks
+  for every method, it locks 98.0% of the calls against 94.1%, and the wrong locks at equal
+  coverage fall from 5.5% to 1.4%.
+- **The sparse choice does not.** At equal coverage it accepts about as many wrong locks
+  as the tracker, 0.7 points fewer [−1.5, 3.8]. It has fewer false locks only because its
+  support is lower on every call: 64% on average, against the tracker's 90% and the dense
+  variant's 99%.
+- **The max-marginal ambiguity does not predict wrong locks on cracks.** Its AUC is 0.50
+  (dense) and 0.54 (sparse), and 0.59–0.63 on the lockable paths, under support's. The
+  wrong locks are not close calls. In 86% of the dense variant's, the path it took has at
+  least as much evidence as the best path along the annotation (54% on the lockable
+  paths), so another structure is genuinely stronger. They are partial: a median of 82% of
+  the stations stays on the crack, and 63% of those that leave it lie in the outer fifth
+  at either end, where 40% would if they were spread evenly. The best path's mean evidence
+  is a better whole-call signal, with an AUC of 0.72.
+- **It does flag a competing parallel line.** On synthetic beads with an identical bead
+  14 px away, the six calls whose prior lies midway between the two score an ambiguity
+  below 0.85, and every other synthetic call scores above 4. Half of the six follow the
+  wrong bead, and they are the only wrong locks of either variant, so the ambiguity's AUC
+  on the synthetic set is 1.00, against 0.43 for the dense variant's support. The
+  tracker's support also separates them there, because the tracker loses stations
+  between the two beads.
+- **Accuracy is the caliper's.** On the synthetic walls (clean, asymmetric and varying in
+  width, with a gap or an occluder), both variants find every visible wall within 1 px,
+  with a bias within 0.005 px and a σ of 0.046 px against the tracker's 0.051 px. Where
+  a nearby edge merges with a wall in the derivative, every method reads the same biased
+  wall, and a choice between edges cannot undo it: a stripe 2 px outside the wall pulls it
+  0.43 px inwards, and a highlight inside the bead 0.38 px.
+- **Time.** The dense programme has 65 centres by a median of 28 widths per station on
+  these paths. The Python prototype takes 19 ms per call, median, of which 3 ms is
+  sampling the profiles; the tracker takes 0.4 ms in Rust. Measured with 8 worker
+  processes.
+
+The settings were chosen on a tuning subset of 120 other paths and on the synthetic
+scenes. [`tools/bead_eval/README.md`](#coupled-two-boundary-extraction)
+reproduces the numbers.
+
+### The library's operator
+
+`BeadPairing::Coupled` is the dense variant in the library. `coupled_eval.py` runs it as
+the `rust` method: `run_tracker.py`'s config with coupled pairing at its defaults and one
+tracking pass. The tracking stage's profile step stays at 1 px, so the path's grid is
+1 px there and 0.5 px in the final stage, against the prototype's 0.25 px. The settings
+were chosen on the registry split's development images (`tools/datasets/splits/damsegment.json`,
+100 seeded paths per difficulty): there, a second and third tracking pass locked 1.9
+points less often, and a 0.25 px profile step changed the lock rate by half a point or
+less. The test split was then run once.
+
+| Set | Method | Locked | Wrong at equal coverage | AUC: support / ambiguity / path evidence | Time per call |
+|---|---|---:|---:|---:|---:|
+| test split, 5400 calls on 300 paths | tracker | 85.6% [83.4, 87.8] | 13.2% [11.0, 15.2] | 0.71 / – / – | 0.4 ms |
+| | dense (Python) | 91.4% [89.4, 93.2] | 6.5% [4.7, 8.2] | 0.60 / 0.57 / 0.75 | 25 ms |
+| | coupled (Rust) | 91.0% [89.1, 93.0] | 5.8% [4.2, 7.5] | 0.71 / 0.59 / 0.77 | 0.6 ms |
+| #76's set, 5400 calls on 300 paths | tracker | 85.3% [82.6, 88.0] | 13.0% [10.5, 15.4] | 0.71 / – / – | 0.4 ms |
+| | dense (Python) | 91.0% [88.8, 93.3] | 7.1% [5.0, 8.8] | 0.58 / 0.50 / 0.72 | 23 ms |
+| | coupled (Rust) | 91.1% [89.2, 93.2] | 5.8% [4.1, 7.5] | 0.67 / 0.50 / 0.72 | 0.6 ms |
+
+- **The Rust operator reproduces the prototype.** On the test split, paired on the same
+  calls, it locks 0.4 points less than the dense prototype [−1.3, +0.5] and accepts 0.7
+  points fewer wrong locks at equal coverage [−1.8, +0.4]; against the tracker it locks
+  5.4 points more [3.6, 7.2] and accepts 7.4 fewer wrong locks [5.3, 9.6]. On #76's set it
+  locks 0.1 points more than the prototype [−0.7, +1.0].
+- **Its support is a better signal than the prototype's.** It has fewer stations with a
+  wall that no caliper edge supports, so support separates locked calls about as well as
+  the tracker's does, and its false locks (support ≥ 0.5, not locked) are 6.0% against
+  the prototype's 8.2%.
+- **The margin still does not predict wrong locks on cracks**, as for the prototype (AUC
+  0.50–0.59). The path's mean evidence is the best whole-call signal.
+- **Synthetic walls.** On `synthetic.py`'s scenes it matches the prototype's lock and
+  coverage in every condition, the ambiguity's AUC included (1.00 on the parallel bead).
+  Its walls snap to the final stage's 0.5 px profile, so their σ is the tracker's,
+  0.052 px, against the prototype's 0.046 px on a 0.25 px profile.
+- **Development sequence A** (private, aggregates only). On the 445 frames with saved
+  ribbon geometry, from that geometry and from it moved ±4 px along its normals (1335
+  calls, the same width range and a reach of ±8 px), the tracker stays on the reference
+  in 93.6% of calls with per-station pairing and in 100% with coupled pairing (one pass).
+  Both walls are measured at a median 79% of stations per call with per-station pairing
+  and 74% with coupled pairing, which measures one wall at a further 25% of stations, most
+  of them where the other wall leaves the image.
+
+`tools/bead_eval/README.md` reproduces the public numbers.

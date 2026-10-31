@@ -35,7 +35,9 @@ CI runs these and more:
 | Release-profile tests | `cargo test --release --workspace --all-features` on Linux, Windows and macOS |
 | Lab | frontend typecheck, lint, test and build; desktop crate fmt, clippy and test, which includes the contract replay |
 
-CI does not run the lab backend's pytest; run it locally when touching `lab/backend`.
+CI does not run the lab backend's pytest; run it locally when touching `lab/backend`
+(`lab/ARCHITECTURE.md` [Tests](lab/ARCHITECTURE.md#tests) gives the commands). The lab's own
+run instructions are in [`lab/README.md`](lab/README.md#run-it).
 
 The other workflows:
 - `audit.yml` runs weekly: `cargo audit` and `cargo deny check`, with no ignores. A licence
@@ -54,6 +56,26 @@ The other workflows:
   crates.io over trusted publishing, once the repository variable
   `CRATES_IO_TRUSTED_PUBLISHING` is `true`.
 - `publish-docs.yml` publishes the rustdoc to GitHub Pages on every push to `main`.
+- `filter-bench.yml` (manual, and on `filter/**` branches that touch the filter) runs the
+  libblur comparator and the integer kernels on x86_64, with the same numbers reported in
+  [`docs/performance.md`](docs/performance.md#linear-filters).
+- `ci.yml` runs the `sequence_bench` and `registration_eval` Python tests on synthetic data.
+
+## Releasing
+
+The first release has steps that no later release repeats. Remaining work for 0.2.0 is in the
+[roadmap](docs/dev/roadmap.md#v020-consumable).
+
+1. Cut `[Unreleased]` in `CHANGELOG.md` as the new version, and bump the workspace version in
+   the root `Cargo.toml`. `pyproject.toml` takes it from there.
+2. Make the first crates.io publish by hand (trusted publishing needs an existing crate), in
+   dependency order: `vm-primitives`, then `vision-metrology`.
+3. Configure the trusted publishers: crates.io for both crates (workflow
+   `release-crates.yml`, environment `crates-io`); PyPI for `vision-metrology` (workflow
+   `python-wheels.yml`, environment `pypi`).
+4. Set the repository variable `CRATES_IO_TRUSTED_PUBLISHING` to `true`.
+5. Tag the version. The tag publishes both crates and the wheels over OIDC. Nothing is stored
+   as a token.
 
 **MSRV.** It is `rust-version` in the root `Cargo.toml`, explained in
 [ADR-0002](docs/dev/adr/0002-dependency-and-toolchain-policy.md). Clippy's
@@ -131,6 +153,13 @@ pytest tests/
   doc gives the commands.
 - **Doctests are API smoke tests.** The two crate READMEs are the crate-level rustdoc
   (`#![doc = include_str!("../README.md")]`), so their examples compile and run.
+- **Public datasets** (DamSegment, HRF, HPatches) are fetched and verified by
+  [`tools/datasets`](tools/datasets/README.md) into the git-ignored `data/`. The bead and
+  registration evaluations need them; the unit and accuracy tests do not.
+- **Evidence tiers.** Every operator reports the tiers that apply to it. *Synthetic*: exact
+  ground truth, in CI, deterministic. *Public real*: a registered dataset with a frozen
+  split, reported with bootstrap intervals. *Private*: application sequences under opaque
+  labels, aggregates only. Tracked files never name private data beyond those labels.
 - **Private datasets.** Tests that need one skip with a message when it is absent. The
   datasets are not distributed:
   - the can-end frames used by `inspect_canend`, `pose_audit` and the lab's folder test;
@@ -152,7 +181,8 @@ The experimental similarity benches in `corr` need `--features corr-experimental
 
 Add a benchmark when you add or change a hot path, and put before/after numbers in the PR
 description. Published numbers live in [`docs/performance.md`](docs/performance.md);
-update it when a change moves them.
+update it when a change moves them. Numbers from shared CI runners compare ratios within one
+run, never absolute times across runs.
 
 ## Documentation
 
