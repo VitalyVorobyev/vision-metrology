@@ -136,6 +136,24 @@ Pro (`benches/measure_numeric.rs`):
   in the final stage), and prunes the planes a layer lacks; its `track` call is in the
   [speed table](#speed).
 
+## Linear filters
+
+Measured on the Apple M4 Pro (NEON), 1280×1024 image, best of 25 after 3 warm-ups, the same
+session as libblur (ADR-0023 has the full tables, including x86_64).
+
+| case | this crate | libblur (1 thread) | libblur / ours |
+|---|---|---|---|
+| box `u8`, radius 1 (exact) | 0.63 ms | 0.83 ms | 1.3x |
+| box `u8`, radius 4 (exact) | 0.97 ms | 0.91 ms | 0.93x |
+| box `u8`, radius 8 (exact) | 1.06 ms | 0.84 ms | 0.79x |
+| Gaussian `f32`, σ = 2 (FIR) | 1.37 ms | not compared | |
+| Gaussian `f32`, σ = 8 (cascade) | 4.51 ms | not compared | |
+
+The box is exact on every target; libblur's box differs from the exact rounded mean by up to
+1 LSB. On x86_64 the box is ahead of libblur on the default target and level or slightly
+behind it on AVX2 at radius ≥ 4. The Gaussian cascade is flat in σ; it is faster than the
+exact FIR from σ ≈ 8.
+
 ## Accuracy envelopes
 
 Masked translation, measured 2026-10-12: analytic f32 texture at nine subpixel shifts,
