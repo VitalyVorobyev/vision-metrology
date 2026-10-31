@@ -1,6 +1,6 @@
 # ADR-0023: The `filter` module: exact linear filters, built in-house, gated on measured headroom
 
-- Status: Accepted (Phase 0 gate accepted; Linux x86_64 measurement pending in CI)
+- Status: Accepted; decisions 3 and 4 amended in Phase 2 (see below)
 - Date: 2026-10-31
 
 ## Context
@@ -35,12 +35,13 @@ box, median and grayscale morphology.
      paths is amended in this PR.
    - The oracle itself is checked against scipy (`tools/filter_bench/reference.py`
      writes golden files; the Rust tests compare against them).
-3. **Gaussian by sigma, with the method chosen by measurement.** The exact folded FIR,
+3. *(Amended in Phase 2, below.)* **Gaussian by sigma, with the method chosen by measurement.** The exact folded FIR,
    register-blocked over chunks of output columns, is the baseline for every sigma. A
    large-sigma method (a recursive filter or a cascade of boxes) is added only if it beats
    the FIR at that sigma and stays inside a measured error budget against the oracle. Its
    threshold is set by measurement in Phase 3, not guessed here.
 4. **SIMD: safe code shaped for autovectorisation, register blocking, runtime dispatch.**
+   The dispatch crate is now chosen (Phase 2, below).
    No `unsafe` (invariant 7). The choice between `pulp` and `multiversion` for dispatch is
    deferred to Phase 2 and recorded there with a measurement.
 5. **Speed claims require measurement on both targets.** No claim over libblur is made
@@ -119,6 +120,49 @@ What the Linux numbers change:
 - **The runner is noisy.** The prototype's box time moved from 1.77 ms to 2.48 ms across three
   runs of the same code. The ratios within one run are the usable figures, and even they
   moved by up to 0.05 between runs.
+
+## Phase 2 amendment
+
+Phase 2 covers the exact integer paths: box mean and binomial smoothing on `u8`, in
+`vm-primitives::filter::integer`. Two decisions change, both on the Phase 0 numbers.
+
+- **The float Gaussian is out of the in-house scope for now.** The Phase 0 gate found no
+  speed headroom over libblur on the exact Gaussian, and the x86_64 default target lags it
+  (0.47x to 0.67x). Accepted as a stated lag. The crate-internal FIR from Phase 1 stays as
+  the reference for the `f32` tests and is not public. Where a consumer needs a float
+  Gaussian, the choice (a libblur backend, or a narrower in-house method) is made in
+  Phase 4 with its own decision record.
+- **Dispatch uses `multiversion` 0.9, not `pulp`.** The kernels are slice loops that the
+  compiler vectorises. `multiversion` compiles each one for the CPU levels of the target and
+  picks at run time; it needs no hand-written SIMD. `pulp` would need explicit generic SIMD
+  code, which is more `unsafe`-adjacent surface and more code to test per ISA.
+
+Phase 2 measurements, Apple M4 Pro (NEON), 1280x1024 `u8`, best of 25, load about 33. The
+libblur column was measured in the same session as the box:
+
+| case | integer kernel | libblur (1 thread) | libblur / kernel |
+|---|---|---|---|
+| box r = 1 | 0.63 ms | 0.83 ms | 1.3x |
+| box r = 4 | 0.97 ms | 0.91 ms | 0.93x |
+| box r = 8 | 1.06 ms | 0.84 ms | 0.79x |
+| binomial order 2, 4, 6 | 0.63, 0.87, 1.11 ms | n/a | n/a |
+
+What the numbers say:
+
+- **Box at small radius now beats libblur on NEON.** Direct tap sums in the horizontal pass
+  vectorise; the Phase 0 prototype was 0.62x. Wider windows switch to a running sum, which is
+  sequential, and that path is the open gap: 0.79x at r = 8. Parity on both targets is not
+  met yet for r of 8 or more.
+- **Dispatch makes no difference on aarch64.** NEON is in the baseline, so the cloned
+  functions are identical. The x86_64 effect is measured by the `filter-bench` job on both
+  matrix targets (the integer timing runs in the same job as the libblur column).
+- **Binomial has no libblur comparator.** libblur has no binomial; the integer kernel is
+  compared with the box only, and its exactness is checked against a naive integer
+  reference on every border and size in the tests.
+
+Exactness: the box divides with a float reciprocal and an integer correction, which is exact
+for windows up to `(2·1023+1)²`. Binomial divides by `4^order` with a shift. Both are
+bit-identical to the naive integer reference (tests in `filter::integer`).
 
 ## Alternatives
 

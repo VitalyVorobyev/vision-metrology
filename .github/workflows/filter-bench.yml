@@ -16,6 +16,7 @@ on:
     branches: ["filter/**"]
     paths:
       - "tools/filter_bench/**"
+      - "crates/vm-primitives/src/filter/**"
       - ".github/workflows/filter-bench.yml"
 
 env:
@@ -79,6 +80,9 @@ jobs:
         working-directory: tools/filter_bench
         run: cargo run --release 2>&1 | tee bench.log
 
+      - name: Integer kernels (vm-primitives, box and binomial, dispatched)
+        run: cargo test --release -p vm-primitives time_ -- --ignored --nocapture 2>&1 | tee integer.log
+
       - name: Summary
         working-directory: tools/filter_bench
         run: |
@@ -92,10 +96,18 @@ jobs:
             echo "\`libblur / prototype\` ratio with the Apple M4 Pro numbers in ADR-0023."
             echo
             grep '^|' bench.log || true
+            echo
+            echo "Integer kernels in vm-primitives (same run; compare with the libblur column above):"
+            echo
+            echo '```'
+            grep -E '^(box|binomial) ' ../../integer.log || true
+            echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload log
         uses: actions/upload-artifact@v4
         with:
           name: filter-bench-${{ matrix.id }}
-          path: tools/filter_bench/bench.log
+          path: |
+            tools/filter_bench/bench.log
+            integer.log

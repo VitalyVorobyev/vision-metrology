@@ -15,6 +15,7 @@ categories = ["computer-vision", "science"]
 include = ["/src/**", "/benches/**", "/README.md", "/LICENSE-MIT", "/LICENSE-APACHE"]
 
 [dependencies]
+multiversion = "0.9"
 nalgebra = { workspace = true }
 serde = { version = "1", features = ["derive"], optional = true }
 
