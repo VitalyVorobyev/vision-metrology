@@ -7,7 +7,7 @@
 //! exact integer correction; binomial divides by `4^order`, which is a shift.
 //!
 //! The per-row loops are written as plain slice code and compiled for each CPU level by
-//! `multiversion` (safe, no `unsafe`; ADR-0023 decision 4).
+//! `multiversion` (safe, no `unsafe`; see ADR-0023).
 
 use multiversion::multiversion;
 
