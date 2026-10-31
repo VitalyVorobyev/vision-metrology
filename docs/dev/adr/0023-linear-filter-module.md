@@ -45,7 +45,8 @@ box, median and grayscale morphology.
    deferred to Phase 2 and recorded there with a measurement.
 5. **Speed claims require measurement on both targets.** No claim over libblur is made
    until it is measured on macOS (aarch64) and Linux (x86_64), single-threaded and
-   multi-threaded, with the machine load recorded. Phase 0 is macOS only.
+   multi-threaded, with the machine load recorded. The Linux measurement is in the section
+   below; multi-threaded runs are not measured yet.
 
 ## Phase 0 gate: what was measured
 
@@ -83,9 +84,41 @@ What the numbers say:
 **Gate result:** proceed to Phase 1 on the reframed goal. The module is justified by
 exactness, stated accuracy and a single engine for derived uses. It is not justified by a
 speed lead over libblur on the exact Gaussian, which the measurements do not support.
-Speed targets for Phase 2 and 3 are: box at least at parity with libblur (currently
-0.62x), and a large-sigma path that beats the exact FIR at its crossover sigma while
+Speed targets for Phase 2 and 3 are: box at parity with libblur on both targets (NEON is
+0.62x; x86_64 is already ahead), and a large-sigma path that beats the exact FIR at its crossover sigma while
 staying within its error budget.
+
+## Linux x86_64 measurement
+
+Run in CI on `ubuntu-latest` (rustc 1.99.1), with the same bench, single thread, best of 25.
+Two matrix entries: the default `x86_64` target (SSE2 only), and `target-cpu=x86-64-v3`
+(AVX2 and FMA). The fused variant uses `f32::mul_add` in the tap update. Each cell is
+libblur's time divided by the prototype's, so above 1 means the prototype is faster. The
+full logs are in the `filter-bench` workflow artifacts.
+
+| case | default target | x86-64-v3 | x86-64-v3, fused |
+|---|---|---|---|
+| box u8, r = 4 (exact) | 1.89x | 1.30x | not run |
+| Gaussian f32, sigma = 1 | 0.47x | 0.57x | 0.60x |
+| Gaussian f32, sigma = 2 | 0.52x | 0.74x | 0.78x |
+| Gaussian f32, sigma = 4 | 0.56x | 0.84x | 0.91x |
+| Gaussian f32, sigma = 6 | 0.67x | 0.90x | 0.99x |
+
+What the Linux numbers change:
+
+- **The Gaussian is not at parity on x86_64.** It is behind by 0.47x to 0.67x on the default
+  target and by 0.57x to 0.99x with AVX2 and FMA. On the M4 it was at parity. The gap is
+  wider at small sigma, and its cause is not identified.
+- **Fusing the tap update helps only a little** (at most 10%) once FMA is enabled. Without
+  hardware FMA, `mul_add` becomes a library call and is 10 to 20 times slower (22 to
+  130 ms). So a fused kernel may only run where the target has FMA, which is a dispatch
+  requirement, not a flag.
+- **The box goes the other way.** On x86_64 the prototype is faster than libblur (1.3x to
+  1.9x). On the M4 it was slower (0.62x). libblur's box is target-dependent; the prototype's
+  is not, so the box gap is specific to NEON.
+- **The runner is noisy.** The prototype's box time moved from 1.77 ms to 2.48 ms across three
+  runs of the same code. The ratios within one run are the usable figures, and even they
+  moved by up to 0.05 between runs.
 
 ## Alternatives
 
@@ -106,8 +139,13 @@ staying within its error budget.
   the consumers and Python bindings, and Phase 5 updates the docs.
 - Roadmap B3's acceptance criterion is amended in the same PR: bit-exact for integer
   paths, a stated few-ulp bound for float paths. The roadmap entry names this ADR.
-- `tools/filter_bench` stays as the comparator. It is not published and not in CI. Its
-  golden files are the first cross-implementation check of the oracle, and the library
-  tests will reuse them.
-- Open before Phase 1: the Linux x86_64 measurement (not yet run); the f64-accumulation
-  comparison against libblur's `IeeeBinaryConvolutionMode::High`; and the box gap.
+- `tools/filter_bench` stays as the comparator. It is not published. Its golden files are
+  the first cross-implementation check of the oracle, and the library tests reuse them. A
+  manual-plus-branch CI job (`filter-bench.yml`) runs it on x86_64.
+- **The speed target is now target-dependent, and runtime dispatch is needed to meet it.**
+  The default x86_64 build cannot reach parity on the Gaussian, and only FMA-enabled code
+  may use fused taps. Phase 2 therefore has to decide the dispatch mechanism on measured
+  evidence for both targets. Whether parity on x86_64 is required, or a stated lag on the
+  default target is accepted, is a gate decision for the user.
+- Open: the f64-accumulation comparison against libblur's `IeeeBinaryConvolutionMode::High`;
+  the box gap on NEON; the small-sigma gap on x86_64.

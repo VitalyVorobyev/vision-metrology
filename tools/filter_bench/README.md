@@ -88,3 +88,21 @@ what brings the FIR from 2.9x slower to parity at sigma = 6.
   (f64) was not measured.
 - **Context rows are not comparisons.** `fast_gaussian` is an approximation with no sigma
   and no error column, and its timings include a 1.3 MB copy.
+
+## Linux x86_64 (GitHub runner)
+
+Run by the `filter-bench` workflow on `ubuntu-latest`, rustc 1.99.1, single thread, best of
+25. Two builds: the default `x86_64` target, and `-C target-cpu=x86-64-v3` (AVX2 and FMA).
+Cells are libblur time divided by prototype time, so above 1 means the prototype is faster.
+
+| case | default target | x86-64-v3 | x86-64-v3, fused `mul_add` |
+|---|---|---|---|
+| box u8, r = 4 (exact) | 1.89x | 1.30x | not run |
+| Gaussian f32, sigma = 1 | 0.47x | 0.57x | 0.60x |
+| Gaussian f32, sigma = 2 | 0.52x | 0.74x | 0.78x |
+| Gaussian f32, sigma = 4 | 0.56x | 0.84x | 0.91x |
+| Gaussian f32, sigma = 6 | 0.67x | 0.90x | 0.99x |
+
+Without hardware FMA, the fused variant is a libm call and runs 22 to 130 ms, so it must
+only run where FMA is enabled. The shared runner moved the prototype's box time by about 40%
+between runs; use the within-run ratios. The full discussion is in ADR-0023.

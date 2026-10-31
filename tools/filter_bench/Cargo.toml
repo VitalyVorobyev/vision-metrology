@@ -1,4 +1,4 @@
-# Phase 0 of the `filter` module (roadmap B3, ADR-0023): a headroom measurement, not library
+# Phase 0 of the `filter` module (ADR-0023): a headroom measurement, not library
 # code. It compares a prototype of box and Gaussian filters against libblur, the strongest
 # pure-Rust blur crate, on the same images, and checks both against an f64 reference.
 #
