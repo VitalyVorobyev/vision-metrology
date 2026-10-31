@@ -118,6 +118,15 @@ fn gauss_case(src32: &[f32], ref64: &[f64], sigma: f64) {
     scratch.apply_saxpy(src32, W, H, &mut saxpy);
     let saxpy64: Vec<f64> = saxpy.iter().map(|&v| v as f64).collect();
     let saxpy_err = max_abs_err(&saxpy64, ref64);
+    let mut fused = vec![0f32; W * H];
+    scratch.apply_fused(src32, W, H, &mut fused);
+    let fused64: Vec<f64> = fused.iter().map(|&v| v as f64).collect();
+    let fused_err = max_abs_err(&fused64, ref64);
+    let fused_t = best_ms(|| {
+        scratch.apply_fused(black_box(src32), W, H, &mut fused);
+        black_box(&fused);
+    });
+    println!("| (fused mul_add) gauss sigma={sigma} | {fused_t:.3} | | | | {fused_err:.1e} | |");
     let saxpy_t = best_ms(|| {
         scratch.apply_saxpy(black_box(src32), W, H, &mut saxpy);
         black_box(&saxpy);
