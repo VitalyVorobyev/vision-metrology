@@ -178,6 +178,32 @@ Exactness: the box divides with a float reciprocal and an integer correction, wh
 for windows up to `(2·1023+1)²`. Binomial divides by `4^order` with a shift. Both are
 bit-identical to the naive integer reference (tests in `filter::integer`).
 
+## Phase 3 amendment: large-sigma Gaussian
+
+Phase 3 adds the large-sigma path that the Gaussian section above calls for. The method is chosen by measurement:
+
+- **Exact FIR below the crossover, cascade of three extended boxes above it.** The three passes
+  are identical. Each has weight 1 on `|j| ≤ r` and a fractional weight `α` on `|j| = r+1`,
+  with `r` and `α` set so that each pass has variance exactly `σ²/3`. Integer-width boxes
+  could not match `σ²` (a first version was off by up to 3% of σ² at σ = 12), so the ends are
+  fractional. The cascade's cost per pixel does not depend on σ.
+- **Crossover σ = 8**, measured on the M4 Pro (1280×1024 `f32`, best of 25): FIR 4.9 ms, cascade
+  4.7 ms at σ = 8, and the cascade is faster above it. The FIR cost grows with σ, so the
+  cascade wins from there on.
+- **Error budget (decision recorded for review):** the cascade is within **5 grey levels**
+  (about 2% of 0..255) of the untruncated Gaussian on the test fixture for σ from 2 to 8. The
+  fixture has a step of 160 and noise of ±64, so the figure is a stress case. The worst
+  measured cases are `Constant(7)` at σ = 3 (3.2) and at σ = 16 (4.4). Below σ = 2 the three-box
+  approximation is coarse (about 2 grey levels at σ = 1.5), so the `Auto` path does not use it.
+- **Cost.** The horizontal pass is a serial running sum, so it is latency-bound. The cascade is
+  about 4.8 ms at every σ. Vectorising across rows would lower that, and it is the next
+  optimisation if large-σ speed matters. No libblur comparison is made here; the libblur
+  `fast_gaussian` is approximate and has no error contract, so the comparison is not like for
+  like.
+
+Exactness of the border handling is checked separately from the approximation: the cascade equals
+the separable convolution with its effective kernel, to `1e-3`, for every border mode.
+
 ## Alternatives
 
 - **Depend on libblur.** Fast, but it brings its own image and edge types, an approximate
