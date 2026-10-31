@@ -1,4 +1,4 @@
-//! Linear filters (roadmap B3, ADR-0023).
+//! Linear filters (ADR-0023).
 //!
 //! Phase 1: the folded symmetric [`Kernel1D`] and the exact separable FIR, crate-internal.
 //! The public API, its Python parity and the box/binomial/large-sigma methods arrive in
