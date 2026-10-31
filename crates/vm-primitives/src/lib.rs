@@ -2,7 +2,7 @@
 
 pub mod core;
 pub mod edge;
-mod filter;
+pub mod filter;
 pub mod morph;
 pub mod pyr;
 

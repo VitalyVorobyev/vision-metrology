@@ -15,6 +15,7 @@ mod contour_py;
 mod convert;
 mod corr_py;
 mod detector;
+mod filter_py;
 mod functions;
 mod match_py;
 mod measure_py;

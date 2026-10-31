@@ -26,7 +26,7 @@ const CH: usize = 32;
 
 /// Reusable scratch for [`separable_fir_f32`]. It grows to the largest size seen and is
 /// then reused, so repeated calls on same-sized images allocate nothing.
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub(crate) struct FirScratch {
     /// Horizontally filtered image, `width · height`.
     tmp: Vec<f32>,
@@ -318,8 +318,8 @@ mod tests {
     fn matches_the_reference_when_the_radius_exceeds_the_image() {
         // Radius 4 on a 3-pixel-wide image: every sample is a border sample.
         for border in BORDERS {
-            check(3, 50, &Kernel1D::box_mean(4), border);
-            check(50, 2, &Kernel1D::box_mean(4), border);
+            check(3, 50, &Kernel1D::from_folded(&[1.0; 5]), border);
+            check(50, 2, &Kernel1D::from_folded(&[1.0; 5]), border);
         }
     }
 
@@ -428,7 +428,7 @@ mod tests {
             &[0.0; 3],
             2,
             2,
-            &Kernel1D::box_mean(1),
+            &Kernel1D::from_folded(&[1.0; 2]),
             BorderMode::Clamp,
             &mut FirScratch::default(),
             &mut out,

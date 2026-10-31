@@ -15,6 +15,12 @@ are relative to 0.1.0.
 
 ### Added
 
+- **Linear filters** (`vm_primitives::filter`, ADR-0023). `box_mean_u8` is an exact box mean
+  on `u8`, rounded half up. `binomial_u8` is exact binomial smoothing of even order 2 to 12.
+  `gaussian_f32` is exact below σ = 8 and a three-box cascade above it, within 5 grey levels
+  of the Gaussian on the test fixture. All take a `BorderMode`. The Python bindings are
+  `box_mean`, `binomial` and `gaussian`.
+
 - **Planar rig substrate pose** (`metric::rig::RigPoseEstimator`). One rigid SE(2)
   substrate→plane pose per frame from one measured translation per view and step, for
   several fixed views of a planar substrate with plane→image homographies. Each
@@ -282,6 +288,8 @@ are relative to 0.1.0.
 
 ### Changed
 
+- The pyramid's `PreSmooth::Binomial121` now runs through the `filter` FIR. The result is the
+  same filter, and the output differs only in `f32` rounding order.
 - **Breaking:** each domain module of `vision-metrology` is a default-on Cargo feature.
   Names live at their module path; the flat crate-root re-export of domain types is gone,
   and `prelude` replaces it.

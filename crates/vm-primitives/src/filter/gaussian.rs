@@ -25,7 +25,7 @@ pub(crate) struct GaussianScratch {
 ///
 /// # Panics
 /// Panics when the slices do not match `w · h`, or `sigma` is not finite and positive.
-pub(crate) fn gaussian_f32(
+pub(crate) fn gaussian_into(
     src: &[f32],
     w: usize,
     h: usize,
@@ -53,7 +53,7 @@ mod tests {
         let mut scratch = GaussianScratch::default();
         for sigma in [1.0f64, CROSSOVER_SIGMA + 2.0] {
             let mut auto = vec![0.0f32; w * h];
-            gaussian_f32(
+            gaussian_into(
                 &src,
                 w,
                 h,

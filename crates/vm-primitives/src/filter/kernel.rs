@@ -25,11 +25,6 @@ impl Kernel1D {
         Self::from_folded(&g)
     }
 
-    /// Box mean of width `2·radius + 1`.
-    pub(crate) fn box_mean(radius: usize) -> Self {
-        Self::from_folded(&vec![1.0; radius + 1])
-    }
-
     /// Kernel from folded weights `g[0..=r]` (centre first). Any non-zero scale is accepted;
     /// the result is normalised.
     ///
@@ -82,14 +77,6 @@ mod tests {
         let total = g[0] + 2.0 * g[1..].iter().sum::<f64>();
         for (j, &t) in k.taps().iter().enumerate() {
             assert!((t as f64 - g[j] / total).abs() < 1e-7, "tap {j}");
-        }
-    }
-
-    #[test]
-    fn box_mean_has_equal_taps() {
-        let k = Kernel1D::box_mean(2);
-        for &t in k.taps() {
-            assert!((t - 0.2).abs() < 1e-7);
         }
     }
 

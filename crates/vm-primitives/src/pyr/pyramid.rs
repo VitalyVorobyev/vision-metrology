@@ -1,4 +1,5 @@
-use crate::core::{Image, ImageView, Pixel};
+use crate::core::{BorderMode, Image, ImageView, Pixel};
+use crate::filter::{FirScratch, Kernel1D, separable_fir_f32};
 
 use super::downsample::{downsample2x2_mean_to_f32_into, dst_dims};
 
@@ -60,6 +61,7 @@ pub struct Pyramid {
     levels: Vec<Image<f32>>,
     /// Scratch for the separable pre-smooth; empty when `PreSmooth::None`.
     scratch: Vec<f32>,
+    fir: FirScratch,
 }
 
 impl Pyramid {
@@ -99,7 +101,7 @@ impl Pyramid {
             let (head, tail) = self.levels.split_at_mut(idx);
             let prev = &mut head[idx - 1];
             if cfg.pre_smooth == PreSmooth::Binomial121 {
-                binomial121_in_place(prev, &mut self.scratch);
+                binomial121_in_place(prev, &mut self.scratch, &mut self.fir);
             }
             downsample2x2_mean_to_f32_into(&prev.as_view(), &mut tail[0].as_view_mut())
                 .expect("level dimensions come from the same halving chain");
@@ -214,44 +216,15 @@ fn copy_to_f32<P: Pixel>(src: &ImageView<'_, P>, dst: &mut Image<f32>) {
     }
 }
 
-/// Separable `[1 2 1] / 4` in place, `Clamp` borders, using `scratch` for the
-/// intermediate horizontal pass.
-fn binomial121_in_place(img: &mut Image<f32>, scratch: &mut Vec<f32>) {
+/// Separable `[1 2 1] / 4` in place, `Clamp` borders, through the exact FIR of the
+/// `filter` module. `scratch` holds the filtered copy before it is written back.
+fn binomial121_in_place(img: &mut Image<f32>, scratch: &mut Vec<f32>, fir: &mut FirScratch) {
     let (w, h) = (img.width(), img.height());
-    if w < 3 && h < 3 {
-        return;
-    }
     scratch.clear();
     scratch.resize(w * h, 0.0);
-    let data = img.data_mut();
-
-    // Horizontal pass: data -> scratch.
-    if w >= 3 {
-        for y in 0..h {
-            let row = &data[y * w..(y + 1) * w];
-            let out = &mut scratch[y * w..(y + 1) * w];
-            out[0] = (row[0] * 3.0 + row[1]) * 0.25;
-            for x in 1..w - 1 {
-                out[x] = (row[x - 1] + 2.0 * row[x] + row[x + 1]) * 0.25;
-            }
-            out[w - 1] = (row[w - 2] + row[w - 1] * 3.0) * 0.25;
-        }
-    } else {
-        scratch.copy_from_slice(data);
-    }
-
-    // Vertical pass: scratch -> data.
-    if h >= 3 {
-        for y in 0..h {
-            let (ym, yp) = (y.saturating_sub(1), (y + 1).min(h - 1));
-            for x in 0..w {
-                data[y * w + x] =
-                    (scratch[ym * w + x] + 2.0 * scratch[y * w + x] + scratch[yp * w + x]) * 0.25;
-            }
-        }
-    } else {
-        data.copy_from_slice(scratch);
-    }
+    let kernel = Kernel1D::from_folded(&[2.0, 1.0]);
+    separable_fir_f32(img.data(), w, h, &kernel, BorderMode::Clamp, fir, scratch);
+    img.data_mut().copy_from_slice(scratch);
 }
 
 #[cfg(test)]
