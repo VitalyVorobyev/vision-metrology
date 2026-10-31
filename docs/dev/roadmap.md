@@ -252,19 +252,21 @@ pinned tolerance; Python parity.
 
 ### B3: `filter`, `in progress` ([ADR-0023](adr/0023-linear-filter-module.md))
 
-- Separable and recursive (Deriche / van Vliet) Gaussian, sliding-window box mean, an
-  O(1)-per-radius histogram median, and grayscale erode/dilate/open/close/top-hat
-  (van Herk–Gil-Werman). `edge/conv1d.rs` folds in here.
-- It feeds the pyramid pre-smooth and illumination correction. The rank-filter scope stops
-  at median ([ADR-0016](adr/0016-scope-what-we-do-not-build.md)).
-- Phase 0 is done (ADR-0023): the headroom gate is measured against libblur, and the exact
-  Gaussian is at parity with it. Speed targets are set for the box and large-sigma paths.
+- Shipped: exact box mean and binomial on `u8` (bit-exact integers), Gaussian on `f32` (exact
+  FIR below σ = 8, a three-box cascade above it), public with Python bindings, and the
+  pyramid pre-smooth on the FIR. Measurements are in ADR-0023 and [performance](../performance.md).
+- Remaining: the O(1)-per-radius histogram median, grayscale erode/dilate/open/close/top-hat
+  (van Herk–Gil-Werman), and the rest of the large-σ work (box-width speed on NEON and AVX2 at
+  radius ≥ 8, and a vectorised cascade). Recursive (Deriche / van Vliet) Gaussian was
+  dropped in ADR-0023 in favour of the measured cascade.
+- `edge/conv1d.rs`, `gradient::smooth_binomial3` and `edge1d` stay on their own paths
+  (ADR-0023, Phase 4).
+- The rank-filter scope stops at median ([ADR-0016](adr/0016-scope-what-we-do-not-build.md)).
 
-**Accept:** integer paths (box, binomial on `u8`/`u16`) match the naive integer reference
-bit for bit on seeded fixtures. Float paths match an f64 naive reference within a stated
-few-ulp bound for the storage type; they are not bit-identical across summation orders.
-The f64 oracle is checked against scipy golden files. Median cost is measured constant in
-radius.
+**Accept:** integer paths (box, binomial on `u8`) match the naive integer reference bit for bit
+on seeded fixtures. Float paths match an f64 naive reference within a stated bound: a few ulp
+for the FIR, and 5 grey levels on the test fixture for the cascade against the untruncated
+Gaussian. Median cost is measured constant in radius.
 
 ### Lab catch-up, `planned`
 
