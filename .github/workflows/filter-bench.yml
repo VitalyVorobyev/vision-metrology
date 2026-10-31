@@ -7,8 +7,16 @@ name: Filter bench (Linux)
 # support is the ratio between libblur and the prototype on the same run, not the absolute
 # milliseconds. The runner's CPU model and load are written to the job summary so the
 # numbers can be read against them.
+# Runs on pushes to filter/* branches that touch the bench, so the measurement is produced
+# from the PR branch. GitHub only dispatches a workflow from a branch once it is on the
+# default branch, so the manual trigger works after the merge.
 on:
   workflow_dispatch:
+  push:
+    branches: ["filter/**"]
+    paths:
+      - "tools/filter_bench/**"
+      - ".github/workflows/filter-bench.yml"
 
 env:
   CARGO_TERM_COLOR: always
