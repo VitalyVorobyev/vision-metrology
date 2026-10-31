@@ -66,11 +66,19 @@ def main() -> int:
         "gauss_1_5.txt": (gauss, "%.17g"),
     }
     if "--check" in sys.argv:
+        # Numeric comparison, not string comparison: scipy's last bits can differ between
+        # platforms (macOS-generated goldens are checked on Linux CI), so floats get a
+        # tolerance and integers must match exactly.
         bad = []
-        for name, (vals, fmt) in expected.items():
+        for name, (vals, _fmt) in expected.items():
             p = GOLDEN / name
-            want = " ".join(fmt % v for v in vals.ravel()) + "\n"
-            if not p.exists() or p.read_text() != want:
+            if not p.exists():
+                bad.append(name)
+                continue
+            got = np.array([float(t) for t in p.read_text().split()])
+            want = vals.ravel().astype(np.float64)
+            tol = 0.0 if name.startswith(("src", "box")) else 1e-9
+            if got.shape != want.shape or not np.allclose(got, want, rtol=0.0, atol=tol):
                 bad.append(name)
         if bad:
             print("golden out of date:", ", ".join(bad))

@@ -1,0 +1,77 @@
+name: Filter bench (Linux)
+
+# Manually triggered. The filter headroom bench (ADR-0023) has no x86_64 measurement yet,
+# and any speed claim for the filter module needs one. This job is that measurement.
+#
+# Shared GitHub runners are noisy. The bench reports best-of-25 times, and what it can
+# support is the ratio between libblur and the prototype on the same run, not the absolute
+# milliseconds. The runner's CPU model and load are written to the job summary so the
+# numbers can be read against them.
+on:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  bench:
+    name: Headroom bench (ubuntu, x86_64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install scipy for the golden check
+        run: python3 -m pip install --quiet numpy scipy
+
+      - name: Record machine
+        run: |
+          set -euo pipefail
+          {
+            echo "## Machine"
+            echo
+            echo '```'
+            lscpu | grep -E "Architecture|Model name|^CPU\(s\)|L2|L3" || true
+            echo "load: $(cut -d' ' -f1-3 /proc/loadavg)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Golden check (scipy versus the Rust oracle inputs)
+        working-directory: tools/filter_bench
+        run: python3 reference.py --check
+
+      - name: Unit tests
+        working-directory: tools/filter_bench
+        run: cargo test --release
+
+      - name: Headroom bench
+        working-directory: tools/filter_bench
+        run: cargo run --release 2>&1 | tee bench.log
+
+      - name: Summary
+        working-directory: tools/filter_bench
+        run: |
+          set -euo pipefail
+          {
+            echo "## Headroom bench, x86_64"
+            echo
+            echo "Best of 25 runs after 3 warm-up, single thread unless noted. Compare the"
+            echo "\`libblur / prototype\` ratio with the Apple M4 Pro numbers in ADR-0023."
+            echo
+            grep '^|' bench.log || true
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload log
+        uses: actions/upload-artifact@v4
+        with:
+          name: filter-bench-x86_64
+          path: tools/filter_bench/bench.log

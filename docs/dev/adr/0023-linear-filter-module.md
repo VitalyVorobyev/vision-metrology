@@ -1,6 +1,6 @@
 # ADR-0023: The `filter` module: exact linear filters, built in-house, gated on measured headroom
 
-- Status: Proposed (Phase 0 gate reported; awaiting acceptance before Phase 1)
+- Status: Accepted (Phase 0 gate accepted; Linux x86_64 measurement pending in CI)
 - Date: 2026-10-31
 
 ## Context
