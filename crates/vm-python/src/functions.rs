@@ -97,5 +97,6 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(component_stats, m)?)?;
     crate::contour_py::register(m)?;
     crate::morph_py::register(m)?;
+    crate::filter_py::register(m)?;
     Ok(())
 }

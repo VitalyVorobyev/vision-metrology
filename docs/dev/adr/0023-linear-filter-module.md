@@ -204,6 +204,37 @@ Phase 3 adds the large-sigma path that the Gaussian section above calls for. The
 Exactness of the border handling is checked separately from the approximation: the cascade equals
 the separable convolution with its effective kernel, to `1e-3`, for every border mode.
 
+## Phase 4 amendment: public API, consumers
+
+The `filter` module is public. The API breaks no earlier contract: the module did not exist
+publicly before. Three functions take images and return images, each with a `BorderMode`
+and a `Result`:
+
+- `box_mean_u8(src, radius, border)`: exact box mean, rounded half up.
+- `binomial_u8(src, order, border)`: exact binomial of even order 2 to 12.
+- `gaussian_f32(src, sigma, border)`: exact FIR below σ = 8, three-box cascade from σ = 8.
+
+Scratch is internal. A reusable-scratch API is deferred to the hot-path work, once a consumer
+measures the allocation. The Python bindings are `box_mean`, `binomial` and `gaussian`, with
+the same names and border strings (`"clamp"`, `"reflect101"`, `"constant"` with `value`).
+
+Consumers, decided by what each one computes:
+
+- **Pyramid pre-smooth (`PreSmooth::Binomial121`) now uses the FIR.** It is the same `[1 2 1]/4`
+  filter with `Clamp` borders. The output changes only in `f32` rounding order, and the
+  pyramid tests pass unchanged.
+- **Not rewired: `gradient::smooth_binomial3`, `edge1d` and `conv1d`.** `smooth_binomial3` is
+  part of an expression tree that the tiled gradient path must reproduce bit for bit, and its
+  tests lock that tree. `edge1d` smooths 1-D `f64` signals with its own kernel and the locked
+  laser results depend on it. `conv1d` is a 1-D `f32` convolution, and no caller needs the
+  2-D filter. Rewiring any of them changes locked numbers, so each stays until a measured
+  benefit justifies it.
+- **The integer kernels have no consumer yet.** They are public for callers that work on `u8`
+  images, and the Python bindings expose them.
+
+Not measured: the pyramid pre-smooth before and after. The FIR does the same work as the
+hand-written loop, so no speed claim is made for it.
+
 ## Alternatives
 
 - **Depend on libblur.** Fast, but it brings its own image and edge types, an approximate

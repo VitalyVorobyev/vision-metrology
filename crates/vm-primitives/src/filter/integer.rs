@@ -104,7 +104,7 @@ fn row_of<'a>(
 ///
 /// The quotient comes from a float reciprocal, which can be one too high or low. The
 /// remainder then decides the correction, so the result is always exact. The bounds hold
-/// for `d < 2²²` (see [`box_mean_u8`]): `2s + d < 2³¹` and the float error is below one.
+/// for `d < 2²²` (see [`box_mean_into`]): `2s + d < 2³¹` and the float error is below one.
 #[inline(always)]
 fn round_div(s: u32, d: u32, inv: f32) -> u8 {
     let x = (2 * s + d) as i32;
@@ -197,7 +197,7 @@ fn box_body(
 /// # Panics
 /// Panics when the slices do not match `width · height`, or when `(2·radius + 1)² ≥ 2²²`
 /// (the rounding divide is exact only below that bound).
-pub(crate) fn box_mean_u8(
+pub(crate) fn box_mean_into(
     src: &[u8],
     width: usize,
     height: usize,
@@ -305,7 +305,7 @@ fn binomial_row(order: usize, out: &mut [u32]) {
 ///
 /// # Panics
 /// Panics when the slices do not match `width · height`, or `order` is odd or out of range.
-pub(crate) fn binomial_u8(
+pub(crate) fn binomial_into(
     src: &[u8],
     width: usize,
     height: usize,
@@ -489,7 +489,7 @@ mod tests {
                 for border in borders() {
                     let mut scratch = IntScratch::default();
                     let mut got = vec![0u8; w * h];
-                    box_mean_u8(&src, w, h, r, &border, &mut scratch, &mut got);
+                    box_mean_into(&src, w, h, r, &border, &mut scratch, &mut got);
                     assert_eq!(
                         got,
                         naive_box(&src, w, h, r, &border),
@@ -509,7 +509,7 @@ mod tests {
                 for border in borders() {
                     let mut scratch = IntScratch::default();
                     let mut got = vec![0u8; w * h];
-                    binomial_u8(&src, w, h, n, &border, &mut scratch, &mut got);
+                    binomial_into(&src, w, h, n, &border, &mut scratch, &mut got);
                     assert_eq!(
                         got,
                         naive_binomial(&src, w, h, n, &border),
@@ -531,9 +531,9 @@ mod tests {
         ] {
             let mut scratch = IntScratch::default();
             let mut out = vec![0u8; w * h];
-            box_mean_u8(&src, w, h, 4, &border, &mut scratch, &mut out);
+            box_mean_into(&src, w, h, 4, &border, &mut scratch, &mut out);
             assert!(out.iter().all(|&v| v == 42), "box {border:?}");
-            binomial_u8(&src, w, h, 6, &border, &mut scratch, &mut out);
+            binomial_into(&src, w, h, 6, &border, &mut scratch, &mut out);
             assert!(out.iter().all(|&v| v == 42), "binomial {border:?}");
         }
     }
@@ -562,7 +562,7 @@ mod tests {
         let mut scratch = IntScratch::default();
         for r in [1usize, 4, 8] {
             let dispatched = best_ms(|| {
-                box_mean_u8(
+                box_mean_into(
                     std::hint::black_box(&src),
                     w,
                     h,
@@ -590,7 +590,7 @@ mod tests {
         }
         for n in [2usize, 4, 6] {
             let dispatched = best_ms(|| {
-                binomial_u8(
+                binomial_into(
                     std::hint::black_box(&src),
                     w,
                     h,
@@ -610,7 +610,7 @@ mod tests {
     fn odd_binomial_order_is_rejected() {
         let src = vec![0u8; 4];
         let mut out = vec![0u8; 4];
-        binomial_u8(
+        binomial_into(
             &src,
             2,
             2,
