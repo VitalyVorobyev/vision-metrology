@@ -97,10 +97,10 @@ jobs:
             echo
             grep '^|' bench.log || true
             echo
-            echo "Integer kernels in vm-primitives (same run; compare with the libblur column above):"
+            echo "Integer kernels and the f32 Gaussian in vm-primitives (same run; compare with the libblur column above):"
             echo
             echo '```'
-            grep -E '^(box|binomial) ' ../../integer.log || true
+            grep -E '^(box|binomial|gauss f32) ' ../../integer.log || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
