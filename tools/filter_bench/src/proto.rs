@@ -95,6 +95,13 @@ pub fn gaussian_taps(sigma: f64, r: usize) -> Vec<f64> {
     g.iter().map(|v| v / total).collect()
 }
 
+/// One tap update, `a + k·s`: separate multiply and add, or one fused `mul_add`. Rust never
+/// contracts the former into the latter, so the choice is explicit.
+#[inline(always)]
+fn madd<const FUSED: bool>(k: f32, s: f32, a: f32) -> f32 {
+    if FUSED { k.mul_add(s, a) } else { a + k * s }
+}
+
 /// Reusable scratch for [`GaussF32`].
 pub struct GaussF32 {
     tmp: Vec<f32>,
@@ -124,6 +131,15 @@ impl GaussF32 {
     /// accumulator in a fixed-size local array across all taps, so the loads and stores
     /// per tap are the two taps' inputs only, not the whole row.
     pub fn apply(&mut self, src: &[f32], w: usize, h: usize, dst: &mut [f32]) {
+        self.apply_generic::<false>(src, w, h, dst)
+    }
+
+    /// Same as [`apply`](Self::apply), with each tap update as one fused `mul_add`.
+    pub fn apply_fused(&mut self, src: &[f32], w: usize, h: usize, dst: &mut [f32]) {
+        self.apply_generic::<true>(src, w, h, dst)
+    }
+
+    fn apply_generic<const FUSED: bool>(&mut self, src: &[f32], w: usize, h: usize, dst: &mut [f32]) {
         const CH: usize = 32;
         let r = self.r;
         let k = &self.taps;
@@ -147,7 +163,7 @@ impl GaussF32 {
                     let rr = &pad[r + x0 + j..r + x0 + j + CH];
                     let kj = k[j];
                     for i in 0..CH {
-                        acc[i] += kj * (l[i] + rr[i]);
+                        acc[i] = madd::<FUSED>(kj, l[i] + rr[i], acc[i]);
                     }
                 }
                 out[x0..x0 + CH].copy_from_slice(&acc);
@@ -180,7 +196,7 @@ impl GaussF32 {
                     let d = &tmp[dn * w + x0..dn * w + x0 + CH];
                     let kj = k[j];
                     for i in 0..CH {
-                        acc[i] += kj * (u[i] + d[i]);
+                        acc[i] = madd::<FUSED>(kj, u[i] + d[i], acc[i]);
                     }
                 }
                 out[x0..x0 + CH].copy_from_slice(&acc);
